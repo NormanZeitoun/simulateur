@@ -3322,6 +3322,8 @@ function purgOldSimulations() {
 var OD_CLIENT_ID = '3677e9c0-4799-4919-b006-b8a0273e4cbf';
 var OD_TENANT_ID = '852bdb08-0744-407f-b606-e42f7313beae';
 var OD_FILE_PATH = '/General/Seven Portage Simlateur/SP_Historique_Global.json';
+var OD_SITE_ID = '028ba072-fb75-4244-898b-a227541fbf94';
+var OD_DRIVE_BASE = '/sites/' + OD_SITE_ID + '/drive';
 var odToken = null;
 var odAccount = null;
 var odFilterCommercialVal = '';
@@ -3428,7 +3430,7 @@ function odLoad() {
   odWithToken(function(token) {
     odSetStatus('Chargement...', false);
     var path = encodeURIComponent(OD_FILE_PATH);
-    fetch('https://graph.microsoft.com/v1.0/me/drive/root:' + path + ':/content', {
+    fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + path + ':/content', {
       headers: { 'Authorization': 'Bearer ' + token }
     }).then(function(r) {
       if (r.status === 404) { odSetStatus('Fichier non trouvé — sera créé au 1er envoi', false); return null; }
@@ -3455,7 +3457,7 @@ function odPush() {
     odSetStatus('Synchronisation...', false);
     var hist = getHistory();
     var path = encodeURIComponent(OD_FILE_PATH);
-    fetch('https://graph.microsoft.com/v1.0/me/drive/root:' + path + ':/content', {
+    fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + path + ':/content', {
       headers: { 'Authorization': 'Bearer ' + token }
     }).then(function(r) {
       return r.status === 404 ? null : r.json();
@@ -3467,7 +3469,7 @@ function odPush() {
       var merged = Object.values(tsMap);
       merged.sort(function(a,b) { return (b.timestamp||0)-(a.timestamp||0); });
       var content = JSON.stringify({ version: 1, updated: new Date().toISOString(), simulations: merged });
-      return fetch('https://graph.microsoft.com/v1.0/me/drive/root:' + path + ':/content', {
+      return fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + path + ':/content', {
         method: 'PUT',
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
         body: content
