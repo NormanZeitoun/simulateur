@@ -200,6 +200,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .hist-finale-check { display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; color:#6B5E9C; font-weight:500; user-select:none; }
 .hist-finale-check input[type=checkbox] { accent-color:#F0A500; width:14px; height:14px; cursor:pointer; }
 </style>
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 </head>
 <body>
 
@@ -3316,7 +3317,7 @@ function purgOldSimulations() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// ONEDRIVE SYNC — Device Code Flow + SharePoint
+// ONEDRIVE SYNC — MSAL loginPopup + SharePoint
 // ═══════════════════════════════════════════════════════════
 var OD_CLIENT_ID = '3677e9c0-4799-4919-b006-b8a0273e4cbf';
 var OD_TENANT_ID = '852bdb08-0744-407f-b606-e42f7313beae';
@@ -3326,120 +3327,64 @@ var OD_DRIVE_BASE = '/sites/' + OD_SITE_ID + '/drive';
 var odToken = null;
 var odAccount = null;
 var odFilterCommercialVal = '';
-var odPollTimer = null;
+var msalApp = null;
 
 function odInit() {
-  // Vérifier token stocké
-  try {
-    var stored = JSON.parse(localStorage.getItem('sp_od_session') || 'null');
-    if (stored && stored.token && stored.expiry > Date.now()) {
-      odToken = stored.token;
-      odSetConnected(stored.name || 'Connecté');
+  if (typeof msal === 'undefined') {
+    setTimeout(odInit, 500);
+    return;
+  }
+  msalApp = new msal.PublicClientApplication({
+    auth: {
+      clientId: OD_CLIENT_ID,
+      authority: 'https://login.microsoftonline.com/' + OD_TENANT_ID,
+      redirectUri: window.location.origin + window.location.pathname
+    },
+    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false }
+  });
+  msalApp.handleRedirectPromise().then(function(res) {
+    if (res && res.accessToken) {
+      odToken = res.accessToken;
+      odAccount = res.account;
+      odSetConnected(res.account.name || res.account.username);
       odLoad();
-      return;
+    } else {
+      var accounts = msalApp.getAllAccounts();
+      if (accounts.length > 0) {
+        odAccount = accounts[0];
+        msalApp.acquireTokenSilent({
+          scopes: ['Files.ReadWrite', 'User.Read', 'Sites.ReadWrite.All'],
+          account: odAccount
+        }).then(function(r) {
+          odToken = r.accessToken;
+          odSetConnected(odAccount.name || odAccount.username);
+          odLoad();
+        }).catch(function() {});
+      }
     }
-  } catch(e) {}
+  }).catch(function(e) { console.warn('MSAL:', e); });
 }
 
 function odConnect() {
-  odSetStatus('Demande de code...', false);
-  var scopes = 'Files.ReadWrite User.Read Sites.ReadWrite.All offline_access';
-  fetch('https://login.microsoftonline.com/' + OD_TENANT_ID + '/oauth2/v2.0/devicecode', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'client_id=' + OD_CLIENT_ID + '&scope=' + encodeURIComponent(scopes)
-  }).then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data.error) { odSetStatus('Erreur : ' + (data.error_description || data.error), true); return; }
-    odShowCodeModal(data.user_code, data.verification_uri, data.device_code, data.interval || 5);
-  }).catch(function(e) { odSetStatus('Erreur réseau : ' + e.message, true); });
+  if (!msalApp) { odSetStatus('MSAL non chargé', true); return; }
+  msalApp.loginPopup({
+    scopes: ['Files.ReadWrite', 'User.Read', 'Sites.ReadWrite.All']
+  }).then(function(res) {
+    odToken = res.accessToken;
+    odAccount = res.account;
+    odSetConnected(res.account.name || res.account.username);
+    odLoad();
+  }).catch(function(e) {
+    odSetStatus('Connexion annulée : ' + (e.message || e), true);
+  });
 }
 
-function odShowCodeModal(userCode, url, deviceCode, interval) {
-  var existing = document.getElementById('od-code-modal');
-  if (existing) existing.remove();
-  var modal = document.createElement('div');
-  modal.id = 'od-code-modal';
-  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
-  var inner = document.createElement('div');
-  inner.style.cssText = 'background:#fff;border-radius:14px;padding:28px 32px;max-width:420px;width:90%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,0.2);';
-  inner.innerHTML =
-    '<div style="font-size:22px;margin-bottom:8px;">&#9729;&#65039;</div>' +
-    '<div style="font-size:16px;font-weight:700;color:#1A1033;margin-bottom:8px;">Connexion OneDrive</div>' +
-    '<div style="font-size:13px;color:#6B5E9C;margin-bottom:12px;">1. Copiez ce code</div>' +
-    '<div style="font-size:36px;font-weight:800;letter-spacing:6px;color:#7343EE;background:#F5F3FF;border-radius:10px;padding:14px;margin-bottom:12px;">' + userCode + '</div>' +
-    '<div style="font-size:13px;color:#6B5E9C;margin-bottom:12px;">2. Ouvrez <strong>' + url + '</strong> et collez le code</div>' +
-    '<div id="od-code-status" style="font-size:12px;color:#6B5E9C;margin-bottom:12px;">En attente de la connexion...</div>';
-  var copyBtn = document.createElement('button');
-  copyBtn.textContent = 'Copier le code';
-  copyBtn.style.cssText = 'margin-right:8px;padding:8px 18px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;';
-  copyBtn.onclick = function() { try { navigator.clipboard.writeText(userCode); copyBtn.textContent = 'Copié !'; } catch(e) {} };
-  var openBtn = document.createElement('button');
-  openBtn.textContent = 'Ouvrir le lien';
-  openBtn.style.cssText = 'margin-right:8px;padding:8px 18px;background:#0078D4;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;';
-  openBtn.onclick = function() { window.open(url, '_blank'); };
-  var cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'Annuler';
-  cancelBtn.style.cssText = 'padding:8px 18px;background:#fff;color:#E24B4A;border:1.5px solid #E24B4A;border-radius:7px;font-size:12px;cursor:pointer;';
-  cancelBtn.onclick = odCancelConnect;
-  inner.appendChild(copyBtn);
-  inner.appendChild(openBtn);
-  inner.appendChild(document.createElement('br'));
-  inner.appendChild(document.createElement('br'));
-  inner.appendChild(cancelBtn);
-  modal.appendChild(inner);
-  document.body.appendChild(modal);
-  odStartPolling(deviceCode, interval);
-}
 
-function odStartPolling(deviceCode, interval) {
-  if (odPollTimer) clearInterval(odPollTimer);
-  odPollTimer = setInterval(function() {
-    fetch('https://login.microsoftonline.com/' + OD_TENANT_ID + '/oauth2/v2.0/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'grant_type=urn:ietf:params:oauth:grant-type:device_code&client_id=' + OD_CLIENT_ID + '&device_code=' + deviceCode
-    }).then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.access_token) {
-        clearInterval(odPollTimer);
-        odToken = data.access_token;
-        // Récupérer le nom
-        fetch('https://graph.microsoft.com/v1.0/me', {
-          headers: { 'Authorization': 'Bearer ' + odToken }
-        }).then(function(r) { return r.json(); })
-        .then(function(me) {
-          var name = me.displayName || me.userPrincipalName || 'Connecté';
-          localStorage.setItem('sp_od_session', JSON.stringify({
-            token: odToken, name: name,
-            expiry: Date.now() + ((data.expires_in || 3600) - 120) * 1000
-          }));
-          var modal = document.getElementById('od-code-modal');
-          if (modal) modal.remove();
-          odSetConnected(name);
-          odLoad();
-        });
-      } else if (data.error === 'expired_token') {
-        clearInterval(odPollTimer);
-        var modal = document.getElementById('od-code-modal');
-        if (modal) modal.remove();
-        odSetStatus('Code expiré — recommencez', true);
-      }
-      // authorization_pending = on continue à attendre
-    });
-  }, interval * 1000);
-}
 
-function odCancelConnect() {
-  if (odPollTimer) clearInterval(odPollTimer);
-  var modal = document.getElementById('od-code-modal');
-  if (modal) modal.remove();
-  odSetStatus('Connexion annulée', false);
-}
 
 function odLogout() {
-  odToken = null;
-  localStorage.removeItem('sp_od_session');
+  odToken = null; odAccount = null;
+  if (msalApp) msalApp.logoutPopup();
   document.getElementById('od-btn-connect').style.display = 'inline-block';
   document.getElementById('od-btn-load').style.display = 'none';
   document.getElementById('od-btn-push').style.display = 'none';
@@ -3467,7 +3412,12 @@ function odSetStatus(msg, isError) {
 
 function odWithToken(cb) {
   if (odToken) { cb(odToken); return; }
-  odSetStatus('Non connecté — cliquez Se connecter', true);
+  if (!msalApp || !odAccount) { odSetStatus('Non connecté', true); return; }
+  msalApp.acquireTokenSilent({
+    scopes: ['Files.ReadWrite', 'User.Read', 'Sites.ReadWrite.All'],
+    account: odAccount
+  }).then(function(r) { odToken = r.accessToken; cb(odToken); })
+  .catch(function() { odSetStatus('Session expirée, reconnectez-vous', true); });
 }
 
 function odLoad() {
