@@ -30,7 +30,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .badge-commercial { background: rgba(255,255,255,0.2); color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 
 /* LAYOUT */
-.app { display: grid; grid-template-columns: 380px 1fr; gap: 0; min-height: calc(100vh - 64px); }
+.app { display: grid; grid-template-columns: 460px 1fr; gap: 0; min-height: calc(100vh - 64px); }
 .panel-left { background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; padding: 20px; }
 .panel-right { padding: 20px; overflow-y: auto; }
 
@@ -2986,6 +2986,9 @@ function buildDashboard(all) {
 function showHistorique() {
   var currentMonth = String(new Date().getMonth() + 1);
   histPeriod = currentMonth;
+  // Par défaut : filtrer sur le commercial de la session
+  var myName = getCommercialData().nom;
+  if (myName) histFilterCommercial = myName;
   renderHistorique();
   openModal('modal-historique');
   var selM = document.getElementById('hist-select-period');
@@ -2993,6 +2996,8 @@ function showHistorique() {
   histPeriod = 'month';
   var selD = document.getElementById('hist-select-dest');
   if (selD) selD.value = histFilterDest;
+  var selC = document.getElementById('hist-select-commercial');
+  if (selC && myName) selC.value = myName;
   purgOldSimulations();
   checkBackupReminder();
 }
