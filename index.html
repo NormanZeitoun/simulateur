@@ -2654,6 +2654,7 @@ var HIST_KEY = 'sp_historique_v3';
 var histSearch = '';
 var histFilter = '__all__';
 var histFilterDest = '__all__';
+var histFilterCommercial = '__all__';
 
 function getHistory() {
   try { return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch(e) { return []; }
@@ -3008,9 +3009,30 @@ function setHistFilterDestSelect(val) {
   renderHistorique();
 }
 
+function setHistFilterCommercial(val) {
+  histFilterCommercial = val;
+  buildDashboard(getHistory());
+  renderHistorique();
+}
+
 function renderHistorique() {
   var all      = getHistory();
   buildDashboard(all);
+  // Peupler le select commercial
+  var selC = document.getElementById('hist-select-commercial');
+  if (selC) {
+    var currentVal = selC.value;
+    var comms = {};
+    all.forEach(function(s) { if (s.commercial) comms[s.commercial] = 1; });
+    selC.innerHTML = '<option value="__all__">Tous les commerciaux</option>';
+    Object.keys(comms).sort().forEach(function(name) {
+      var opt = document.createElement('option');
+      opt.value = name; opt.textContent = name;
+      if (name === histFilterCommercial) opt.selected = true;
+      selC.appendChild(opt);
+    });
+    if (currentVal && currentVal !== '__all__') selC.value = currentVal;
+  }
   var listEl   = document.getElementById('hist-list');
   var emptyEl  = document.getElementById('hist-empty');
   var countEl  = document.getElementById('hist-result-count');
@@ -3024,6 +3046,10 @@ function renderHistorique() {
   // Appliquer filtre destinataire
   if (histFilterDest !== '__all__') {
     arr = arr.filter(function(s) { return s.dest === histFilterDest; });
+  }
+  // Appliquer filtre commercial
+  if (histFilterCommercial !== '__all__') {
+    arr = arr.filter(function(s) { return (s.commercial || '') === histFilterCommercial; });
   }
 
   // Appliquer recherche
@@ -3602,6 +3628,10 @@ function odFilterCommercial(val) {
           <option value="candidat">Candidat</option>
           <option value="client">Client</option>
           <option value="les_deux">Les deux</option>
+        </select>
+        <select id="hist-select-commercial" onchange="setHistFilterCommercial(this.value)"
+          style="padding:8px 10px;border:1.5px solid #7343EE;border-radius:8px;font-size:12px;color:#7343EE;background:#F5F3FF;cursor:pointer;outline:none;min-width:150px;font-weight:600;">
+          <option value="__all__">Tous les commerciaux</option>
         </select>
       </div>
       <div id="hist-result-count" class="hist-result-count" style="margin-top:6px;"></div>
