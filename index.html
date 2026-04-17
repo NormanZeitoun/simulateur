@@ -25,6 +25,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 
 /* HEADER */
 .header { background: linear-gradient(135deg, var(--brand3) 0%, var(--brand) 100%); padding: 18px 28px; display: flex; align-items: center; justify-content: space-between; }
+.main-nav { background:#fff; border-bottom:2px solid #E4E0FA; padding:0 28px; display:flex; align-items:center; gap:4px; position:sticky; top:0; z-index:100; box-shadow:0 2px 8px rgba(115,67,238,0.07); }
+.main-nav-btn { padding:12px 18px; border:none; background:none; font-size:13px; font-weight:600; color:#6B5E9C; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; transition:all .15s; white-space:nowrap; }
+.main-nav-btn:hover { color:#7343EE; background:#F5F3FF; }
+.main-nav-btn.active { color:#7343EE; border-bottom-color:#7343EE; }
 .header h1 { color: #fff; font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
 .header .subtitle { color: rgba(255,255,255,0.75); font-size: 12px; margin-top: 2px; }
 .badge-commercial { background: rgba(255,255,255,0.2); color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; }
@@ -196,6 +200,27 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .hist-dashboard-wrap { padding:12px 22px 0; border-bottom:1px solid #E4E0FA; background:#fff; flex-shrink:0; }
 .hist-item.finale { border-color:#F0A500; background:#FFFBF0; }
 .hist-item.finale:hover { border-color:#D4880A; }
+.hist-item.placed { border-color:#1D9E75; background:#F0FDF4; border-width:2px; }
+.hist-item.placed:hover { border-color:#159A65; }
+.cf-lbl { font-size:10px; font-weight:700; color:#9E9E9E; text-transform:uppercase; letter-spacing:0.4px; display:block; margin-bottom:3px; }
+.cf-inp { width:100%; padding:6px 9px; border:1.5px solid #E4E0FA; border-radius:7px; font-size:12px; box-sizing:border-box; outline:none; transition:border-color .15s; }
+.cf-inp:focus { border-color:#7343EE; }
+.cand-card-hover { border-color:#7343EE !important; box-shadow:0 4px 16px rgba(115,67,238,0.12) !important; }
+.cand-card { background:#fff; border:1.5px solid #E4E0FA; border-radius:10px; padding:12px; cursor:pointer; transition:all .15s; position:relative; overflow:hidden; width:190px; height:190px; display:flex; flex-direction:column; justify-content:space-between; box-sizing:border-box; }
+.cand-card:hover { border-color:#7343EE; box-shadow:0 4px 16px rgba(115,67,238,0.12); }
+.deals-table-wrap { overflow-x:auto; max-height:calc(100vh - 220px); }
+.deals-table { border-collapse:collapse; font-size:12px; min-width:100%; }
+.deals-table th { background:#7343EE; color:#fff; padding:8px 12px; text-align:left; white-space:nowrap; font-size:11px; font-weight:700; position:sticky; top:0; z-index:2; }
+.deals-table th.col-freeze { position:sticky; left:0; z-index:4; background:#5A2ED4; min-width:100px; }
+.deals-table th.col-freeze2 { position:sticky; left:100px; z-index:4; background:#5A2ED4; min-width:160px; }
+.deals-table td { padding:7px 12px; border-bottom:1px solid #F0EDF9; vertical-align:middle; white-space:nowrap; }
+.deals-table td.col-freeze { position:sticky; left:0; z-index:1; box-shadow:2px 0 5px rgba(0,0,0,0.07); min-width:100px; }
+.deals-table td.col-freeze2 { position:sticky; left:100px; z-index:1; box-shadow:2px 0 5px rgba(0,0,0,0.07); min-width:160px; }
+.deals-table tr:nth-child(even) td { background:#FAFAFA; }
+.deals-table tr:nth-child(odd) td { background:#fff; }
+.deals-table tr:hover td { background:#F5F3FF !important; }
+.deals-table td.col-freeze, .deals-table tr:nth-child(even) td.col-freeze { background:#f8f6ff; }
+.deals-table td.col-freeze2, .deals-table tr:nth-child(even) td.col-freeze2 { background:#f8f6ff; }
 .hist-finale-badge { display:inline-flex; align-items:center; gap:4px; background:#FFF3CD; color:#B8860B; border:1.5px solid #F0C040; border-radius:20px; font-size:11px; font-weight:700; padding:2px 10px; }
 .hist-finale-check { display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; color:#6B5E9C; font-weight:500; user-select:none; }
 .hist-finale-check input[type=checkbox] { accent-color:#F0A500; width:14px; height:14px; cursor:pointer; }
@@ -211,8 +236,17 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   </div>
   <div style="display:flex;align-items:center;gap:10px;">
   <div class="badge-commercial" id="badge-commercial">Commercial</div>
+  <button onclick="openSyncModal()" style="background:rgba(255,255,255,0.25);color:#fff;border:1px solid rgba(255,255,255,0.5);border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;" title="Synchroniser toutes les données">&#9729;&#65039; Sync</button>
   <button onclick="resetSimulateur()" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;" title="Remettre tous les champs à zéro">↺ Remise à zéro</button>
 </div>
+</div>
+
+<!-- ===== BARRE DE NAVIGATION PRINCIPALE ===== -->
+<div class="main-nav">
+  <button class="main-nav-btn active" id="mainnav-mission" onclick="mainNavTo('mission')">&#127959;&#65039; Mission</button>
+  <button class="main-nav-btn" id="mainnav-historique" onclick="mainNavTo('historique')">&#128200; Historique</button>
+  <button class="main-nav-btn" id="mainnav-deals" onclick="mainNavTo('deals')">&#128203; Deals</button>
+  <button class="main-nav-btn" id="mainnav-candidats" onclick="mainNavTo('candidats')">&#128100; Candidats</button>
 </div>
 
 <div class="app">
@@ -226,6 +260,8 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
     <button class="tab-btn" onclick="showTab('tab-frais')">Frais</button>
     <button class="tab-btn" onclick="showTab('tab-cotisations')">Cotisations</button>
     <button class="tab-btn" onclick="showTab('tab-params')">Param.</button>
+    <button class="tab-btn" id="btn-tab-deals" onclick="showDealsTab()" style="display:none;">&#128203; Deals</button>
+    <button class="tab-btn" id="btn-tab-candidats" onclick="showCandidatsTab()" style="display:none;">&#128100; Candidats</button>
   </div>
 
   <!-- TAB MISSION -->
@@ -656,6 +692,72 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
     </div>
   </div><!-- /tab-params -->
 
+  <!-- TAB CANDIDATS -->
+  <div id="tab-candidats" style="display:none;">
+    <div style="padding:0 0 12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-size:13px;font-weight:700;color:#1A1033;">&#128100; Candidats</div>
+        <span id="cand-count" style="font-size:11px;color:#6B5E9C;"></span>
+      </div>
+      <!-- Barre recherche -->
+      <div style="position:relative;margin-bottom:12px;">
+        <input id="cand-search" type="text" placeholder="Rechercher par nom, email, entreprise..." oninput="renderCandidats()" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
+        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>
+      </div>
+      <div id="candidats-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,190px));gap:12px;"></div>
+    </div>
+  </div>
+
+  <!-- TAB DEALS -->
+  <div id="tab-deals" style="display:none;">
+    <div style="padding:0 0 12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+        <div style="font-size:13px;font-weight:700;color:#1A1033;">&#128203; Tableau de deals</div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="toggleDealsParams()" style="padding:5px 12px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;">&#9881;&#65039; Colonnes</button>
+          <button onclick="exportDealsExcel()" style="padding:5px 12px;background:#1D9E75;color:#fff;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">&#8681; Export CSV</button>
+        </div>
+      </div>
+      <!-- Filtres -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <select id="deal-filter-etat" onchange="dealFilterEtat=this.value;renderDeals();" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;color:#1A1033;background:#fff;cursor:pointer;">
+          <option value="__all__">Tous états</option>
+          <option value="Nouveau placement">Nouveau placement</option>
+          <option value="En cours">En cours</option>
+          <option value="Signé">Signé</option>
+          <option value="Annulé">Annulé</option>
+          <option value="Sorti des effectifs">Sorti des effectifs</option>
+        </select>
+        <select id="deal-filter-comm" onchange="dealFilterComm=this.value;renderDeals();" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;color:#1A1033;background:#fff;cursor:pointer;">
+          <option value="__all__">Tous commerciaux</option>
+        </select>
+        <select id="deal-view-select" onchange="applyDealView(this.value)" style="padding:6px 10px;border:1.5px solid #7343EE;border-radius:8px;font-size:12px;color:#7343EE;background:#F5F3FF;cursor:pointer;font-weight:600;">
+          <option value="__all__">Vue par défaut</option>
+        </select>
+        <button onclick="resetDealFilters()" style="padding:5px 12px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;">&#8635; Réinitialiser</button>
+      </div>
+      <!-- Panneau paramètres colonnes -->
+      <div id="deals-params-panel" style="display:none;background:#F5F3FF;border:1.5px solid #E4E0FA;border-radius:10px;padding:14px;margin-bottom:12px;">
+        <div style="font-size:12px;font-weight:700;color:#7343EE;margin-bottom:10px;">Gestion des vues</div>
+        <div style="background:#fff;border-radius:8px;padding:12px;margin-bottom:10px;">
+          <div style="font-size:11px;font-weight:700;color:#1A1033;margin-bottom:6px;">Créer / modifier une vue</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+            <input id="deal-view-name" type="text" placeholder="Nom de la vue" style="flex:1;min-width:150px;padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;">
+            <button onclick="saveDealView()" style="padding:5px 12px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">&#10003; Enregistrer</button>
+            <button onclick="deleteCurrDealView()" style="padding:5px 12px;background:#fff;color:#E24B4A;border:1.5px solid #FECACA;border-radius:7px;font-size:11px;cursor:pointer;">&#128465;</button>
+          </div>
+          <div style="font-size:11px;color:#6B5E9C;font-weight:600;margin-bottom:5px;">Colonnes :</div>
+          <div id="deal-col-checkboxes" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:5px;"></div>
+        </div>
+        <div style="background:#fff;border-radius:8px;padding:12px;">
+          <div style="font-size:11px;font-weight:700;color:#1A1033;margin-bottom:6px;">Vues enregistrées</div>
+          <div id="deal-views-list" style="font-size:12px;color:#6B5E9C;">Aucune vue.</div>
+        </div>
+      </div>
+      <div id="deals-list"></div>
+    </div>
+  </div>
+
 </div><!-- /panel-left -->
 
 <!-- ===== PANEL DROIT : RÉSULTATS ===== -->
@@ -778,13 +880,18 @@ function p(id) { return f(id) / 100; }
 // TABS
 // ============================================
 function showTab(id) {
-  ['tab-mission','tab-frais','tab-cotisations','tab-params'].forEach(t => {
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats'].forEach(t => {
     document.getElementById(t).style.display = t === id ? 'block' : 'none';
   });
   document.querySelectorAll('.tab-btn').forEach((b,i) => {
     const tabs = ['tab-mission','tab-frais','tab-cotisations','tab-params'];
     b.classList.toggle('active', tabs[i] === id);
   });
+  // Restaurer panel-right et layout normal
+  var pr = document.querySelector('.panel-right');
+  if (pr) pr.style.display = '';
+  var app = document.querySelector('.app');
+  if (app) app.style.gridTemplateColumns = '';
 }
 
 // ============================================
@@ -2759,14 +2866,23 @@ function buildSimCard(sim, q) {
   var tjm  = sim.tjm ? sim.tjm + ' \u20ac/j' : '—';
   var destLabels = { candidat: '&#128100; Candidat', client: '&#127970; Client', les_deux: '&#128101; Les deux' };
   var ts = sim.timestamp;
+  var deals_list = getDeals ? getDeals() : [];
+  var isPlaced = deals_list.some(function(d) { return d.sim_ts === ts; });
+  var placedDeal = deals_list.find(function(d) { return d.sim_ts === ts; });
   var finaleClass = sim.finale ? ' finale' : '';
-  var html = '<div class="hist-item' + finaleClass + '">';
+  var placedClass = isPlaced ? ' placed' : '';
+  var html = '<div class="hist-item' + finaleClass + placedClass + '">';
 
   // Header
   html += '<div class="hist-header">';
   html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
   html += '<span class="hist-version">v' + sim.version + '</span>';
   if (sim.finale) html += '<span class="hist-finale-badge">&#11088; Simulation finale</span>';
+  if (isPlaced && placedDeal) {
+    var etatColor = {'\'Nouveau placement\'':'#0078D4','\'En cours\'':'#F0A500','\'Sign\u00e9\'':'#1D9E75','\'Annul\u00e9\'':'#E24B4A','\'Sorti des effectifs\'':'#6B5E9C'};
+    var ec = etatColor["'" + (placedDeal.etat||'') + "'"] || '#1D9E75';
+    html += '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:' + ec + ';">&#128203; ' + (placedDeal.etat||'Placement') + '</span>';
+  }
   html += '<span style="font-size:11px;color:#6B5E9C;">' + (destLabels[sim.dest] || sim.dest || '—') + '</span>';
   if (sim.commercial) html += '<span class="hist-comm-badge" style="background:#7343EE20;color:#7343EE;">' + highlight(sim.commercial, q) + '</span>';
   html += '</div>';
@@ -2853,6 +2969,8 @@ function buildSimCard(sim, q) {
   html += '<div class="hist-actions">';
   html += '<button class="hist-btn load" onclick="reopenSim(' + ts + ')">&#8629; Rouvrir</button>';
   html += '<button class="hist-btn new-ver" onclick="newVersionSim(' + ts + ')">+ Version</button>';
+  html += '<button style="padding:4px 10px;border:none;border-radius:6px;background:#1D9E75;color:#fff;font-size:11px;font-weight:600;cursor:pointer;" onclick="openPlacementPopup(' + ts + ')">&#128203; Placement</button>';
+  html += '<button style="padding:4px 10px;border:none;border-radius:6px;background:#E24B4A;color:#fff;font-size:11px;font-weight:600;cursor:pointer;" onclick="openSortiePopup(' + ts + ')">&#128683; Sortie</button>';
   html += '<button class="hist-btn del" onclick="deleteSim(' + ts + ')">&#128465;</button>';
   html += '</div></div>';
   return html;
@@ -3170,6 +3288,8 @@ function saveHistorique(data, dest, email, consultantName) {
   };
   hist.unshift(entry);
   saveHistoryArr(hist);
+  // Enregistrer / mettre à jour le candidat
+  saveCandidatFromEntry(entry);
   // Sync automatique OneDrive si connecté
   odAutoSync();
 }
@@ -3353,6 +3473,7 @@ function purgOldSimulations() {
 var OD_CLIENT_ID = '3677e9c0-4799-4919-b006-b8a0273e4cbf';
 var OD_TENANT_ID = '852bdb08-0744-407f-b606-e42f7313beae';
 var OD_FILE_PATH = '/General/Seven Portage Simlateur/SP_Historique_Global.json';
+var OD_CAND_PATH = '/General/Seven Portage Simlateur/SP_Candidats_Global.json';
 var OD_SITE_ID = 'a906e6f2-cf6c-453e-bc5d-33d274946c65';
 var OD_DRIVE_BASE = '/sites/' + OD_SITE_ID + '/drive';
 var odToken = null;
@@ -3538,6 +3659,1117 @@ function odFilterCommercial(val) {
 
 </script>
 
+<script>
+// ═══════════════════════════════════════════════════════════
+// TABLEAU DE DEALS
+// ═══════════════════════════════════════════════════════════
+var DEALS_KEY = 'sp_deals_v1';
+var currentPlacementTs = null;
+var dealFilterEtat = '__all__';
+var dealFilterComm = '__all__';
+var dealFilterPeriod = '__all__';
+
+function getDeals() {
+  try { return JSON.parse(localStorage.getItem(DEALS_KEY) || '[]'); } catch(e) { return []; }
+}
+function saveDeals(arr) { localStorage.setItem(DEALS_KEY, JSON.stringify(arr)); }
+
+function openPlacementPopup(ts) {
+  var hist = getHistory();
+  var sim = hist.find(function(s) { return s.timestamp === ts; });
+  if (!sim) return;
+  currentPlacementTs = ts;
+
+  // Pré-remplir candidat
+  var parts = (sim.consultant || '').trim().split(' ');
+  document.getElementById('pl-prenom').value = parts[0] || '';
+  document.getElementById('pl-nom').value = parts.slice(1).join(' ') || '';
+  document.getElementById('pl-email').value = sim.email || '';
+  document.getElementById('pl-tel').value = '';
+  document.getElementById('pl-poste').value = sim.poste || '';
+  document.getElementById('pl-entreprise').value = sim.entreprise || '';
+  document.getElementById('pl-email-client').value = sim.email_client || '';
+  document.getElementById('pl-manager').value = sim.manager || '';
+
+  // Pré-remplir deal
+  document.getElementById('pl-commercial').value = sim.commercial || '';
+  document.getElementById('pl-date-deal').value = new Date().toISOString().split('T')[0];
+
+  // Vérifier si deal existant
+  var deals = getDeals();
+  var existing = deals.find(function(d) { return d.sim_ts === ts; });
+  if (existing) {
+    document.getElementById('pl-origine').value = existing.origine || '';
+    document.getElementById('pl-etat').value = existing.etat || 'Nouveau placement';
+    document.getElementById('pl-contrat').value = existing.contrat || '';
+    document.getElementById('pl-date-entree').value = existing.date_entree || '';
+    document.getElementById('pl-commentaire').value = existing.commentaire || '';
+    document.getElementById('pl-connait-tjm').value = existing.connait_tjm || 'Non';
+    document.getElementById('pl-date-deal').value = existing.date_deal || new Date().toISOString().split('T')[0];
+  } else {
+    document.getElementById('pl-origine').value = '';
+    document.getElementById('pl-etat').value = 'Nouveau placement';
+    document.getElementById('pl-contrat').value = '';
+    document.getElementById('pl-date-entree').value = '';
+    document.getElementById('pl-commentaire').value = '';
+    document.getElementById('pl-connait-tjm').value = 'Non';
+  }
+
+  // Simulation (lecture seule)
+  document.getElementById('pl-tjm').value = sim.tjm ? sim.tjm + ' €/j' : '—';
+  document.getElementById('pl-nb-jours').value = sim.nb_jours ? sim.nb_jours + 'j' : '—';
+  document.getElementById('pl-salaire').value = sim.brut ? (parseFloat(sim.brut.replace(/[^0-9.,]/g,'').replace(',','.')) * 12).toLocaleString('fr-FR') + ' €' : '—';
+  document.getElementById('pl-frais-gest').value = sim.marge ? sim.marge + '%' : '—';
+  document.getElementById('pl-mutuelle').value = sim.mutuelle || '—';
+  document.getElementById('pl-swile').value = sim.repas && sim.repas !== 'Non' ? sim.repas : '—';
+  document.getElementById('pl-ik').value = (sim.km_aller && parseFloat(sim.km_aller) > 0) ? sim.km_aller + ' km' : '—';
+  document.getElementById('pl-transport').value = (sim.abo_transport && parseFloat(sim.abo_transport) > 0) ? sim.abo_transport + ' €' : '—';
+  document.getElementById('pl-tt').value = sim.tt ? 'Oui' : 'Non';
+
+  openModal('modal-placement');
+}
+
+function savePlacement() {
+  var hist = getHistory();
+  var sim = hist.find(function(s) { return s.timestamp === currentPlacementTs; });
+  var deals = getDeals();
+  var idx = deals.findIndex(function(d) { return d.sim_ts === currentPlacementTs; });
+
+  var deal = {
+    id: idx >= 0 ? deals[idx].id : Date.now(),
+    sim_ts: currentPlacementTs,
+    date_deal: document.getElementById('pl-date-deal').value,
+    commercial: document.getElementById('pl-commercial').value,
+    origine: document.getElementById('pl-origine').value,
+    etat: document.getElementById('pl-etat').value,
+    contrat: document.getElementById('pl-contrat').value,
+    date_entree: document.getElementById('pl-date-entree').value,
+    commentaire: document.getElementById('pl-commentaire').value,
+    connait_tjm: document.getElementById('pl-connait-tjm').value,
+    // Candidat
+    prenom: document.getElementById('pl-prenom').value,
+    nom: document.getElementById('pl-nom').value,
+    email: document.getElementById('pl-email').value,
+    tel: document.getElementById('pl-tel').value,
+    poste: document.getElementById('pl-poste').value,
+    // Client
+    entreprise: document.getElementById('pl-entreprise').value,
+    email_client: document.getElementById('pl-email-client').value,
+    manager: document.getElementById('pl-manager').value,
+    // Simulation
+    tjm: sim ? sim.tjm : '',
+    nb_jours: sim ? sim.nb_jours : '',
+    salaire_annuel: sim ? (function(){ var b=parseFloat((sim.brut||'').replace(/[^0-9.,]/g,'').replace(',','.')); return b>0?(b*12).toFixed(0):''; })() : '',
+    frais_gestion: sim ? (sim.marge || '') : '',
+    mutuelle: sim ? (sim.mutuelle || '') : '',
+    repas: sim ? (sim.repas || '') : '',
+    km_aller: sim ? (sim.km_aller || '') : '',
+    abo_transport: sim ? (sim.abo_transport || '') : '',
+    tt: sim ? (sim.tt ? 'Oui' : 'Non') : '',
+    abo_tel: sim ? (sim.abo_tel || '') : '',
+    abo_internet: sim ? (sim.abo_internet || '') : '',
+    date_created: idx >= 0 ? deals[idx].date_created : new Date().toLocaleDateString('fr-FR')
+  };
+
+  if (idx >= 0) deals[idx] = deal; else deals.unshift(deal);
+  saveDeals(deals);
+  closeModal('modal-placement');
+  renderHistorique();
+  if (document.getElementById('tab-deals') && document.getElementById('tab-deals').style.display !== 'none') renderDeals();
+}
+
+function openSortiePopup(ts) {
+  document.getElementById('sortie-sim-ts').value = ts;
+  document.getElementById('sortie-raison').value = '';
+  document.getElementById('sortie-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('sortie-commentaire').value = '';
+  openModal('modal-sortie');
+}
+
+function saveSortie() {
+  var ts = parseInt(document.getElementById('sortie-sim-ts').value);
+  var raison = document.getElementById('sortie-raison').value;
+  var date = document.getElementById('sortie-date').value;
+  var commentaire = document.getElementById('sortie-commentaire').value;
+  if (!raison) { alert('Veuillez sélectionner une raison.'); return; }
+
+  var deals = getDeals();
+  var idx = deals.findIndex(function(d) { return d.sim_ts === ts; });
+  if (idx >= 0) {
+    deals[idx].etat = 'Sorti des effectifs';
+    deals[idx].date_sortie = date;
+    deals[idx].raison_sortie = raison;
+    deals[idx].commentaire_sortie = commentaire;
+  } else {
+    // Créer un deal sortie depuis l'historique
+    var hist = getHistory();
+    var sim = hist.find(function(s) { return s.timestamp === ts; });
+    if (sim) {
+      var parts = (sim.consultant || '').split(' ');
+      deals.unshift({
+        id: Date.now(), sim_ts: ts,
+        prenom: parts[0] || '', nom: parts.slice(1).join(' ') || '',
+        email: sim.email || '', poste: sim.poste || '',
+        entreprise: sim.entreprise || '', commercial: sim.commercial || '',
+        etat: 'Sorti des effectifs', date_sortie: date,
+        raison_sortie: raison, commentaire_sortie: commentaire,
+        tjm: sim.tjm || '', nb_jours: sim.nb_jours || '',
+        date_created: new Date().toLocaleDateString('fr-FR')
+      });
+    }
+  }
+  saveDeals(deals);
+  closeModal('modal-sortie');
+  alert('Sortie enregistrée.');
+  if (document.getElementById('tab-deals') && document.getElementById('tab-deals').style.display !== 'none') renderDeals();
+}
+
+// ── Onglet Tableau Deals ──
+function showDealsTab() {
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  var btn = document.getElementById('btn-tab-deals');
+  if (btn) btn.classList.add('active');
+  ['tab-mission','tab-frais','tab-cotisations','tab-params'].forEach(function(id) {
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-deals');
+  if (tab) tab.style.display = 'block';
+  var pr = document.querySelector('.panel-right');
+  if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app');
+  if (app) app.style.gridTemplateColumns = '1fr';
+  renderDeals();
+  openDealsUpdateModal();
+}
+
+function openDealsUpdateModal() {
+  var ex = document.getElementById('modal-deals-update');
+  if (ex) ex.remove();
+  var modal = document.createElement('div');
+  modal.id = 'modal-deals-update';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.5);z-index:3000;display:flex;align-items:center;justify-content:center;';
+  var inner = document.createElement('div');
+  inner.style.cssText = 'background:#fff;border-radius:14px;padding:28px 32px;max-width:400px;width:90%;text-align:center;box-shadow:0 8px 40px rgba(115,67,238,0.25);';
+  var connected = odToken ? true : false;
+  inner.innerHTML = '<div style="font-size:26px;margin-bottom:8px;">&#128203;</div>'
+    + '<div style="font-size:15px;font-weight:700;color:#1A1033;margin-bottom:10px;">Tableau de deals</div>'
+    + (connected
+      ? '<div style="font-size:13px;color:#6B5E9C;margin-bottom:18px;">&#9729;&#65039; Connecté OneDrive.<br>Charger les deals de tous les commerciaux ?</div>'
+      : '<div style="font-size:13px;color:#E24B4A;margin-bottom:18px;">&#9888;&#65039; Non connecté OneDrive.<br><span style="color:#6B5E9C;">Connectez-vous dans Param. pour synchroniser.</span></div>');
+  var row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:10px;justify-content:center;flex-wrap:wrap;';
+  if (connected) {
+    var btnUp = document.createElement('button');
+    btnUp.innerHTML = '&#8595; Mettre à jour';
+    btnUp.style.cssText = 'padding:9px 20px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;';
+    btnUp.onclick = function() { modal.remove(); dealsOdSync(); };
+    row.appendChild(btnUp);
+  }
+  var btnSkip = document.createElement('button');
+  btnSkip.textContent = 'Continuer sans mettre à jour';
+  btnSkip.style.cssText = 'padding:9px 18px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;cursor:pointer;';
+  btnSkip.onclick = function() { modal.remove(); };
+  row.appendChild(btnSkip);
+  inner.appendChild(row);
+  modal.appendChild(inner);
+  modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+}
+
+function dealsOdSync() {
+  if (!odToken) { alert('Non connecté à OneDrive.'); return; }
+  odLoad();
+  var notif = document.createElement('div');
+  notif.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#7343EE;color:#fff;padding:10px 18px;border-radius:9px;font-size:13px;font-weight:600;z-index:4000;box-shadow:0 4px 16px rgba(115,67,238,0.3);';
+  notif.textContent = '✓ Synchronisation en cours...';
+  document.body.appendChild(notif);
+  setTimeout(function() { notif.remove(); renderDeals(); }, 2500);
+}
+
+function renderDeals() {
+  var deals = getDeals();
+  // Filtres
+  if (dealFilterEtat !== '__all__') deals = deals.filter(function(d) { return d.etat === dealFilterEtat; });
+  if (dealFilterComm !== '__all__') deals = deals.filter(function(d) { return (d.commercial||'') === dealFilterComm; });
+
+  var listEl = document.getElementById('deals-list');
+  if (!listEl) return;
+
+  // Peupler select commercial
+  var allDeals = getDeals();
+  var selC = document.getElementById('deal-filter-comm');
+  if (selC) {
+    var cv = selC.value;
+    var comms = {};
+    allDeals.forEach(function(d) { if (d.commercial) comms[d.commercial] = 1; });
+    selC.innerHTML = '<option value="__all__">Tous commerciaux</option>';
+    Object.keys(comms).sort().forEach(function(n) {
+      var o = document.createElement('option'); o.value = n; o.textContent = n;
+      if (n === dealFilterComm) o.selected = true;
+      selC.appendChild(o);
+    });
+  }
+
+  if (deals.length === 0) {
+    listEl.innerHTML = '<div style="text-align:center;padding:40px;color:#9E9E9E;font-size:13px;">Aucun deal enregistré.</div>';
+    return;
+  }
+
+  var etatColors = {
+    'Nouveau placement': '#0078D4', 'En cours': '#F0A500',
+    'Sign\u00e9': '#1D9E75', 'Annul\u00e9': '#E24B4A', 'Sorti des effectifs': '#6B5E9C'
+  };
+
+  renderDealViewSelect();
+  var visKeys = dealVisibleCols.length > 0 ? dealVisibleCols : DEAL_DEFAULT_COLS;
+  var visColDefs = DEAL_ALL_COLS.filter(function(col){ return visKeys.indexOf(col.key)>=0; });
+  var ECOLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
+
+  var html = '<div class="deals-table-wrap"><table class="deals-table"><thead><tr>';
+  visColDefs.forEach(function(col){
+    var fc = col.freeze==='f1' ? ' class="col-freeze"' : col.freeze==='f2' ? ' class="col-freeze2"' : '';
+    html += '<th'+fc+'>'+col.label+'</th>';
+  });
+  html += '</tr></thead><tbody>';
+
+  deals.forEach(function(d){
+    var color = ECOLORS[d.etat]||'#6B5E9C';
+    html += '<tr style="border-left:3px solid '+color+';">';
+    visColDefs.forEach(function(col){
+      var fc = col.freeze==='f1' ? ' class="col-freeze"' : col.freeze==='f2' ? ' class="col-freeze2"' : '';
+      html += '<td'+fc+'>'+getCellValue(d,col.key)+'</td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  listEl.innerHTML = html;
+}
+
+function deleteDeal(id) {
+  if (!confirm('Supprimer ce deal ?')) return;
+  var deals = getDeals().filter(function(d) { return d.id !== id; });
+  saveDeals(deals);
+  renderDeals();
+}
+
+// ════════════════════════════════════════════════════
+// GESTION COLONNES ET VUES
+// ════════════════════════════════════════════════════
+var DEAL_ALL_COLS = [
+  {key:'etat',     label:'État',          freeze:'f1'},
+  {key:'candidat', label:'Candidat',      freeze:'f2'},
+  {key:'email',       label:'Mail'},
+  {key:'tel',         label:'Téléphone'},
+  {key:'poste',       label:'Poste'},
+  {key:'entreprise',  label:'Entreprise'},
+  {key:'tjm',         label:'TJM'},
+  {key:'nb_jours',    label:'Nb j.'},
+  {key:'salaire_annuel', label:'Salaire an.'},
+  {key:'commercial',  label:'Commercial'},
+  {key:'date_deal',   label:'Date deal'},
+  {key:'origine',     label:'Origine'},
+  {key:'contrat',     label:'Contrat'},
+  {key:'date_entree', label:'Date entrée'},
+  {key:'frais_gestion',label:'Frais gest.'},
+  {key:'mutuelle',    label:'Mutuelle'},
+  {key:'repas',       label:'Swile/TR'},
+  {key:'forfait_repas',label:'Forfait repas'},
+  {key:'km_aller',    label:'IK (km)'},
+  {key:'abo_transport',label:'Transport'},
+  {key:'tt',          label:'Télétravail'},
+  {key:'telnet',      label:'Tél/Internet'},
+  {key:'grand_dep',   label:'Grand dépl.'},
+  {key:'connait_tjm', label:'Connait TJM'},
+  {key:'commentaire', label:'Commentaire'},
+  {key:'actions',     label:'Actions'}
+];
+var DEAL_DEFAULT_COLS = ['etat','candidat','poste','entreprise','tjm','nb_jours','commercial','date_deal','date_entree','actions'];
+var dealVisibleCols = (function(){ try { var s=JSON.parse(localStorage.getItem('sp_deal_cols')||'null'); return s||DEAL_DEFAULT_COLS.slice(); } catch(e){ return DEAL_DEFAULT_COLS.slice(); } })();
+var DEAL_VIEWS_KEY = 'sp_deal_views_v1';
+
+function getDealViews(){ try { return JSON.parse(localStorage.getItem(DEAL_VIEWS_KEY)||'[]'); } catch(e){ return []; } }
+function saveDealViewsArr(arr){ localStorage.setItem(DEAL_VIEWS_KEY, JSON.stringify(arr)); }
+
+function toggleDealsParams(){
+  var p = document.getElementById('deals-params-panel');
+  if (!p) return;
+  var open = p.style.display !== 'none';
+  p.style.display = open ? 'none' : 'block';
+  if (!open){ renderDealColCheckboxes(); renderDealViewsList(); }
+}
+
+function renderDealColCheckboxes(){
+  var el = document.getElementById('deal-col-checkboxes');
+  if (!el) return;
+  var html = '';
+  DEAL_ALL_COLS.forEach(function(col){
+    var chk = dealVisibleCols.indexOf(col.key)>=0 ? 'checked' : '';
+    var tag = col.freeze ? ' <span style="font-size:9px;color:#7343EE;">❄</span>' : '';
+    var cbHtml = '<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding:3px 6px;border-radius:5px;border:1px solid #E4E0FA;">'
+          + '<input type="checkbox" ' + chk + ' data-col="' + col.key + '" onchange="toggleDealCol(this.dataset.col,this.checked)" style="accent-color:#7343EE;">'
+          + col.label + tag + '</label>';
+    html += cbHtml;
+  });
+  el.innerHTML = html;
+}
+
+function toggleDealCol(key, checked){
+  if (checked && dealVisibleCols.indexOf(key)<0) dealVisibleCols.push(key);
+  if (!checked) dealVisibleCols = dealVisibleCols.filter(function(k){ return k!==key; });
+  localStorage.setItem('sp_deal_cols', JSON.stringify(dealVisibleCols));
+  renderDeals();
+}
+
+function saveDealView(){
+  var name = (document.getElementById('deal-view-name').value||'').trim();
+  if (!name){ alert('Donnez un nom.'); return; }
+  var views = getDealViews();
+  var idx = views.findIndex(function(v){ return v.name===name; });
+  var view = { name:name, cols:dealVisibleCols.slice() };
+  if (idx>=0) views[idx]=view; else views.push(view);
+  saveDealViewsArr(views);
+  renderDealViewsList(); renderDealViewSelect();
+}
+
+function deleteCurrDealView(){
+  var name = (document.getElementById('deal-view-name').value||'').trim();
+  if (!name){ alert('Entrez le nom à supprimer.'); return; }
+  saveDealViewsArr(getDealViews().filter(function(v){ return v.name!==name; }));
+  renderDealViewsList(); renderDealViewSelect();
+}
+
+function renderDealViewsList(){
+  var el = document.getElementById('deal-views-list');
+  if (!el) return;
+  var views = getDealViews();
+  if (!views.length){ el.innerHTML = 'Aucune vue.'; return; }
+  el.innerHTML = views.map(function(v){
+    return '<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #F0EDF9;">'
+      +'<span style="flex:1;font-weight:600;color:#1A1033;">'+v.name+'</span>'
+      +'<span style="font-size:11px;color:#9E9E9E;">'+v.cols.length+' col.</span>'
+      +'<button data-vn="'+v.name+'" onclick="loadDealView(this.dataset.vn)" style="padding:3px 8px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;">Appliquer</button>'
+      +'</div>';
+  }).join('');
+}
+
+function loadDealView(name){
+  var v = getDealViews().find(function(v){ return v.name===name; });
+  if (!v) return;
+  dealVisibleCols = v.cols.slice();
+  localStorage.setItem('sp_deal_cols', JSON.stringify(dealVisibleCols));
+  renderDealColCheckboxes(); renderDeals();
+  var s=document.getElementById('deal-view-select'); if(s) s.value=name;
+  var n=document.getElementById('deal-view-name'); if(n) n.value=name;
+}
+
+function applyDealView(val){
+  if (val==='__all__'){ dealVisibleCols=DEAL_DEFAULT_COLS.slice(); localStorage.setItem('sp_deal_cols',JSON.stringify(dealVisibleCols)); }
+  else loadDealView(val);
+  renderDeals();
+}
+
+function renderDealViewSelect(){
+  var sel=document.getElementById('deal-view-select'); if(!sel) return;
+  var cur=sel.value;
+  sel.innerHTML='<option value="__all__">Vue par défaut</option>';
+  getDealViews().forEach(function(v){
+    var o=document.createElement('option'); o.value=v.name; o.textContent=v.name;
+    if(v.name===cur) o.selected=true;
+    sel.appendChild(o);
+  });
+}
+
+function resetDealFilters(){
+  dealFilterEtat='__all__'; dealFilterComm='__all__';
+  dealVisibleCols=DEAL_DEFAULT_COLS.slice();
+  localStorage.setItem('sp_deal_cols',JSON.stringify(dealVisibleCols));
+  var se=document.getElementById('deal-filter-etat'); if(se) se.value='__all__';
+  var sc=document.getElementById('deal-filter-comm'); if(sc) sc.value='__all__';
+  var sv=document.getElementById('deal-view-select'); if(sv) sv.value='__all__';
+  renderDeals();
+}
+
+function openSimFromDeal(ts){
+  closeModal('modal-historique');
+  if (typeof showTab==='function') showTab('tab-mission');
+  if (typeof reopenSim==='function') reopenSim(ts);
+}
+
+function getCellValue(d, key){
+  var ETAT_COLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
+  var fmt=function(v){ return (v===null||v===undefined||v==='') ? '—' : String(v); };
+  switch(key){
+    case 'etat': var co=ETAT_COLORS[d.etat]||'#6B5E9C'; return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:'+co+';white-space:nowrap;">'+(d.etat||'—')+'</span>';
+    case 'candidat': return '<span style="font-weight:600;color:#1A1033;">'+(d.prenom||'')+' '+(d.nom||'')+'</span>';
+    case 'email': return fmt(d.email);
+    case 'tel': return fmt(d.tel);
+    case 'poste': return fmt(d.poste);
+    case 'entreprise': return fmt(d.entreprise);
+    case 'tjm': return d.tjm ? '<span style="font-weight:600;color:#7343EE;">'+d.tjm+' €/j</span>' : '—';
+    case 'nb_jours': return fmt(d.nb_jours);
+    case 'salaire_annuel': return d.salaire_annuel ? parseInt(d.salaire_annuel).toLocaleString('fr-FR')+' €' : '—';
+    case 'commercial': return fmt(d.commercial);
+    case 'date_deal': return fmt(d.date_deal);
+    case 'origine': return fmt(d.origine);
+    case 'contrat': return fmt(d.contrat);
+    case 'date_entree': return fmt(d.date_entree);
+    case 'frais_gestion': return d.frais_gestion ? d.frais_gestion+'%' : '—';
+    case 'mutuelle': return fmt(d.mutuelle);
+    case 'repas': return (d.repas && d.repas!=='Non') ? fmt(d.repas) : '—';
+    case 'forfait_repas': return d.repas==='Forfait' ? 'Oui' : '—';
+    case 'km_aller': return (d.km_aller && parseFloat(d.km_aller)>0) ? d.km_aller+' km' : '—';
+    case 'abo_transport': return (d.abo_transport && parseFloat(d.abo_transport)>0) ? d.abo_transport+' €' : '—';
+    case 'tt': return fmt(d.tt);
+    case 'telnet': return ((d.abo_tel && parseFloat(d.abo_tel)>0)||(d.abo_internet && parseFloat(d.abo_internet)>0)) ? 'Oui' : '—';
+    case 'grand_dep': return '—';
+    case 'connait_tjm': return fmt(d.connait_tjm);
+    case 'commentaire': return '<span title="'+(d.commentaire||'')+'" style="display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;">'+(d.commentaire||'—')+'</span>';
+    case 'actions':
+      return '<button onclick="openPlacementPopup('+d.sim_ts+')" title="Modifier" style="padding:3px 7px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#9998;</button>'
+           + '<button onclick="openSortiePopup('+d.sim_ts+')" title="Sortie" style="padding:3px 7px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#128683;</button>'
+           + '<button onclick="openSimFromDeal('+d.sim_ts+')" title="Voir simulation" style="padding:3px 7px;background:#F0FDF4;color:#1D9E75;border:1.5px solid #9FE1CB;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#128200;</button>'
+           + '<button onclick="deleteDeal('+d.id+')" title="Supprimer" style="padding:3px 7px;background:#fff;color:#9E9E9E;border:1.5px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;">&#128465;</button>';
+    default: return '—';
+  }
+}
+
+function exportDealsExcel() {
+  var deals = getDeals();
+  if (deals.length === 0) { alert('Aucun deal à exporter.'); return; }
+  var headers = ['Date deal','Commercial','Origine','État','Prénom','Nom','Email','Téléphone','Poste','Entreprise','Email client','Manager','TJM','Nb jours','Salaire annuel','Frais gestion %','Mutuelle','Swile/TR','Forfait repas','IK (km)','Transport','Télétravail','Tél/Internet','Grand déplacement','Connait TJM','Date entrée','Date sortie','Raison sortie','Commentaire'];
+  var rows = deals.map(function(d) {
+    var telnet = ((d.abo_tel && parseFloat(d.abo_tel)>0)||(d.abo_internet && parseFloat(d.abo_internet)>0)) ? 'Oui' : '';
+    return [d.date_deal||'',d.commercial||'',d.origine||'',d.etat||'',d.prenom||'',d.nom||'',d.email||'',d.tel||'',d.poste||'',d.entreprise||'',d.email_client||'',d.manager||'',d.tjm||'',d.nb_jours||'',d.salaire_annuel||'',d.frais_gestion||'',d.mutuelle||'',d.repas||'',d.repas==='Forfait'?'Oui':'',d.km_aller||'',d.abo_transport||'',d.tt||'',telnet,'',d.connait_tjm||'',d.date_entree||'',d.date_sortie||'',d.raison_sortie||'',d.commentaire||''];
+  });
+  // Générer CSV avec séparateur ;
+  var nl = String.fromCharCode(10);
+  var csv = [headers].concat(rows).map(function(row) {
+    return row.map(function(v) { return '\"' + String(v).replace(/\"/g, '\"\"') + '\"'; }).join(';');
+  }).join(nl);
+  var BOM = '﻿';
+  var blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'Seven_Portage_Deals_' + new Date().toLocaleDateString('fr-FR').replace(/\//g,'-') + '.csv';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+// Fermer modals placement/sortie au clic extérieur
+window.addEventListener('click', function(e) {
+  ['modal-placement','modal-sortie'].forEach(function(id) {
+    var m = document.getElementById(id);
+    if (m && e.target === m) closeModal(id);
+  });
+});
+</script>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// MODULE CANDIDATS
+// ═══════════════════════════════════════════════════════════
+var CAND_KEY = 'sp_candidats_v1';
+var candSearchVal = '';
+
+function candCard(id) {
+  return '<div data-candid="' + id + '" onclick="openCandidatFiche(parseInt(this.dataset.candid))" class="cand-card">';
+}
+
+function closeCandFiche() {
+  var m = document.getElementById('modal-cand-fiche');
+  if (m) m.remove();
+}
+
+function getCandidats() {
+  try { return JSON.parse(localStorage.getItem(CAND_KEY) || '[]'); } catch(e) { return []; }
+}
+function saveCandidatsArr(arr) { localStorage.setItem(CAND_KEY, JSON.stringify(arr)); }
+
+function saveCandidatFromEntry(entry) {
+  var email = (entry.email || '').trim().toLowerCase();
+  if (!email) return; // pas d'email = pas de candidat
+  var cands = getCandidats();
+  var idx = cands.findIndex(function(c) { return (c.email||'').trim().toLowerCase() === email; });
+  var simRef = { timestamp: entry.timestamp, date: entry.date, tjm: entry.tjm, nb_jours: entry.nb_jours, brut: entry.brut, net_payer: entry.net_payer, entreprise: entry.entreprise, poste: entry.poste, commercial: entry.commercial };
+  if (idx >= 0) {
+    // Mettre à jour les infos de base si plus récentes
+    cands[idx].prenom = entry.consultant ? entry.consultant.split(' ')[0] : cands[idx].prenom;
+    cands[idx].nom = entry.consultant ? entry.consultant.split(' ').slice(1).join(' ') : cands[idx].nom;
+    cands[idx].email = entry.email || cands[idx].email;
+    cands[idx].updated = new Date().toLocaleDateString('fr-FR');
+    // Ajouter la simulation si pas déjà présente
+    if (!cands[idx].simulations) cands[idx].simulations = [];
+    var alreadyHas = cands[idx].simulations.some(function(s) { return s.timestamp === entry.timestamp; });
+    if (!alreadyHas) cands[idx].simulations.unshift(simRef);
+  } else {
+    // Nouveau candidat
+    var parts = (entry.consultant || '').trim().split(' ');
+    cands.unshift({
+      id: Date.now(),
+      prenom: parts[0] || '',
+      nom: parts.slice(1).join(' ') || '',
+      email: entry.email || '',
+      tel: '',
+      statut_portage: 'Prospect',
+      created: new Date().toLocaleDateString('fr-FR'),
+      updated: new Date().toLocaleDateString('fr-FR'),
+      commentaire: '',
+      cv_name: '',
+      cv_b64: '',
+      documents: {},
+      simulations: [simRef]
+    });
+  }
+  saveCandidatsArr(cands);
+}
+
+function showCandidatsTab() {
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  var btn = document.getElementById('btn-tab-candidats');
+  if (btn) btn.classList.add('active');
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals'].forEach(function(id) {
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-candidats');
+  if (tab) tab.style.display = 'block';
+  // Pleine largeur
+  var pr = document.querySelector('.panel-right');
+  if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app');
+  if (app) app.style.gridTemplateColumns = '1fr';
+  renderCandidats();
+}
+
+function renderCandidats() {
+  var el = document.getElementById('candidats-list');
+  if (!el) return;
+  var cands = getCandidats();
+  var q = (document.getElementById('cand-search') ? document.getElementById('cand-search').value : '').toLowerCase().trim();
+  var filtStatut = document.getElementById('cand-filter-statut') ? document.getElementById('cand-filter-statut').value : '';
+  var countEl = document.getElementById('cand-count');
+  if (q) {
+    cands = cands.filter(function(cand) {
+      return [(cand.prenom||''),(cand.nom||''),(cand.email||''),((cand.simulations||[]).map(function(s){return s.entreprise||'';}).join(' '))].join(' ').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  if (filtStatut) {
+    cands = cands.filter(function(cand) { return (cand.statut_portage||'Prospect') === filtStatut; });
+  }
+  if (countEl) countEl.textContent = cands.length + ' candidat' + (cands.length > 1 ? 's' : '');
+  if (!cands.length) {
+    el.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:#9E9E9E;font-size:13px;">Aucun candidat trouvé.</div>';
+    return;
+  }
+  var statutCfg = {
+    'Prospect':     { color:'#F0A500', bg:'#FFF8E6' },
+    'Porté':        { color:'#1D9E75', bg:'#F0FDF4' },
+    'Ancien porté': { color:'#6B5E9C', bg:'#F5F3FF' }
+  };
+  var html = '';
+  cands.forEach(function(cand) {
+    var lastSim = (cand.simulations||[])[0];
+    var nbSims = (cand.simulations||[]).length;
+    var initials = ((cand.prenom||'').charAt(0)+(cand.nom||'').charAt(0)).toUpperCase();
+    var statut = cand.statut_portage || 'Prospect';
+    var scfg = statutCfg[statut] || statutCfg['Prospect'];
+    var commercial = lastSim ? (lastSim.commercial||'') : '';
+    var tjm = cand.tjm_actuel || (lastSim ? lastSim.tjm : '') || '';
+    var brut = lastSim ? lastSim.brut : '';
+    var brutMensuel = '';
+    if (brut) {
+      var b = parseFloat((brut+'').replace(/[^0-9.,]/g,'').replace(',','.'));
+      if (!isNaN(b)) brutMensuel = b.toLocaleString('fr-FR') + ' €';
+    }
+    var hasCv = cand.cv_name ? true : false;
+    html += candCard(cand.id);
+
+
+
+    html += '<div style="position:absolute;top:0;left:0;right:0;height:4px;background:' + scfg.color + ';border-radius:12px 12px 0 0;"></div>';
+    html += '<div style="display:flex;align-items:flex-start;gap:10px;margin-top:6px;">';
+    html += '<div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">' + initials + '</div>';
+    html += '<div style="flex:1;min-width:0;">';
+    html += '<div style="font-size:13px;font-weight:800;color:#1A1033;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (cand.prenom||'') + ' ' + (cand.nom||'') + '</div>';
+    html += '<span style="display:inline-block;padding:1px 8px;border-radius:20px;font-size:10px;font-weight:700;color:' + scfg.color + ';background:' + scfg.bg + ';margin-top:2px;">' + statut + '</span>';
+    html += '</div>';
+    if (hasCv) html += '<span style="font-size:10px;color:#1D9E75;background:#F0FDF4;padding:2px 6px;border-radius:5px;flex-shrink:0;white-space:nowrap;">&#128196; CV</span>';
+    html += '</div>';
+    html += '<div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;">';
+    var iRow = function(lbl,val){ return '<div><div style="font-size:10px;color:#9E9E9E;font-weight:600;">' + lbl + '</div><div style="font-size:12px;color:#1A1033;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + val + '</div></div>'; };
+    html += iRow('Téléphone', cand.tel || '—');
+    html += iRow('Commercial', commercial || '—');
+    html += iRow('TJM', tjm ? tjm + ' €/j' : '—');
+    html += iRow('Brut mensuel', brutMensuel || '—');
+    html += '</div>';
+    html += '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #F0EDF9;display:flex;justify-content:space-between;align-items:center;">';
+    html += '<span style="font-size:11px;font-weight:700;color:#7343EE;">' + nbSims + ' simulation' + (nbSims > 1 ? 's' : '') + '</span>';
+    html += '<span style="font-size:10px;color:#9E9E9E;">' + (cand.updated||'') + '</span>';
+    html += '</div>';
+    html += '</div>';
+  });
+  el.innerHTML = html;
+}
+
+function mainNavTo(section) {
+  // Mettre à jour les boutons nav
+  ['mission','historique','deals','candidats'].forEach(function(s) {
+    var btn = document.getElementById('mainnav-' + s);
+    if (btn) btn.classList.toggle('active', s === section);
+  });
+  if (section === 'mission') {
+    showTab('tab-mission');
+  } else if (section === 'historique') {
+    showHistorique();
+  } else if (section === 'deals') {
+    showDealsTab();
+  } else if (section === 'candidats') {
+    showCandidatsTab();
+  }
+}
+
+function openCandidatFiche(id) {
+  var cands = getCandidats();
+  var cand = cands.find(function(c) { return c.id === id; });
+  if (!cand) return;
+  // Créer modal fiche candidat
+  var ex = document.getElementById('modal-cand-fiche');
+  if (ex) ex.remove();
+  var modal = document.createElement('div');
+  modal.id = 'modal-cand-fiche';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 0;';
+  modal.innerHTML = buildCandFicheHTML(cand);
+  modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+  // Init onglets fiche
+  switchCandTab(id, 'simulations');
+}
+
+function buildCandFicheHTML(cand) {
+  var initials = ((cand.prenom||'').charAt(0) + (cand.nom||'').charAt(0)).toUpperCase();
+  var lastSim = cand.simulations && cand.simulations[0];
+  var commercial = lastSim ? (lastSim.commercial||'') : '';
+
+  function fld(lbl, val, fid, type) {
+    type = type || 'text';
+    var v = ((val||'')+'').replace(/"/g,'&quot;');
+    return '<div><label class="cf-lbl">' + lbl + '</label><input type="' + type + '" value="' + v + '" data-field="' + fid + '" data-candid="' + cand.id + '" onchange="updateCandField(this)" class="cf-inp"></div>';
+  }
+  function sel(lbl, val, fid, opts) {
+    var optsHtml = opts.map(function(o){ return '<option value="'+o+'"'+(o===val?' selected':'')+'>'+o+'</option>'; }).join('');
+    return '<div><label class="cf-lbl">' + lbl + '</label><select data-field="' + fid + '" data-candid="' + cand.id + '" onchange="updateCandField(this)" class="cf-inp" style="padding:5px 9px;">' + optsHtml + '</select></div>';
+  }
+
+  // Commentaires HTML
+  var comments = cand.commentaires || [];
+  var cmHtml = comments.map(function(cm) {
+    return '<div style="background:#F5F3FF;border-radius:7px;padding:8px 10px;margin-bottom:6px;">'
+      + '<div style="font-size:10px;color:#9E9E9E;margin-bottom:3px;">' + cm.date + (cm.author ? ' · ' + cm.author : '') + '</div>'
+      + '<div style="font-size:12px;color:#1A1033;">' + cm.text + '</div>'
+      + '</div>';
+  }).join('') || '<div style="color:#C0B8E0;font-size:12px;padding:10px 0;">Aucun commentaire.</div>';
+
+  return '<div style="background:#fff;border-radius:14px;width:98%;max-width:950px;margin:auto;box-shadow:0 8px 40px rgba(115,67,238,0.2);">'
+
+    // ── Header ──
+    + '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);padding:16px 22px;border-radius:14px 14px 0 0;">'
+    + '<div style="display:flex;align-items:center;gap:12px;">'
+    + '<div style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;flex-shrink:0;">' + initials + '</div>'
+    + '<div style="flex:1;">'
+    + '<div style="font-size:17px;font-weight:800;color:#fff;">' + (cand.prenom||'') + ' ' + (cand.nom||'').toUpperCase() + '</div>'
+    + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:3px;">'
+    + (cand.email ? '<span style="font-size:11px;color:rgba(255,255,255,0.85);">&#9993; ' + cand.email + '</span>' : '')
+    + (cand.tel   ? '<span style="font-size:11px;color:rgba(255,255,255,0.85);">&#128222; ' + cand.tel + '</span>' : '')
+    + (commercial ? '<span style="font-size:11px;color:rgba(255,255,255,0.6);">Commercial : ' + commercial + '</span>' : '')
+    + '<span style="font-size:10px;color:rgba(255,255,255,0.4);">MAJ : ' + (cand.updated||'') + '</span>'
+    + '</div>'
+    + '</div>'
+    + '<button onclick="closeCandFiche()" style="background:none;border:none;font-size:22px;cursor:pointer;color:rgba(255,255,255,0.8);line-height:1;flex-shrink:0;">&#215;</button>'
+    + '</div>'
+    + '</div>'
+
+    // ── Bloc identité ──
+    + '<div style="padding:12px 22px;background:#FAFAFA;border-bottom:1.5px solid #E4E0FA;">'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:8px;">'
+    + sel('Civilité', cand.civilite||'', 'civilite', ['','Monsieur','Madame'])
+    + fld('Prénom', cand.prenom, 'prenom')
+    + fld('Nom', cand.nom, 'nom')
+    + fld('Email', cand.email, 'email', 'email')
+    + fld('Téléphone', cand.tel, 'tel', 'tel')
+    + sel('Profil', cand.profil||'', 'profil', ['','Consultant','Manager','Expert','Architecte','Chef de projet','Autre'])
+    + fld('TJM actuel (€/j)', cand.tjm_actuel, 'tjm_actuel')
+    + fld('Disponibilité', cand.disponibilite, 'disponibilite', 'date')
+    + fld('Techno', cand.techno, 'techno')
+    + sel('Statut', cand.statut||'', 'statut', ['','Freelance','Salarié','En poste','Disponible','En recherche'])
+    + sel('Statut portage', cand.statut_portage||'Prospect', 'statut_portage', ['Prospect','Porté','Ancien porté'])
+    + fld('Ville', cand.ville, 'ville')
+    + fld('LinkedIn', cand.linkedin, 'linkedin')
+    + '</div>'
+    + '</div>'
+
+    // ── Corps : onglets gauche + commentaires droite ──
+    + '<div style="display:flex;min-height:320px;">'
+
+    // Colonne gauche : onglets
+    + '<div style="flex:1;min-width:0;border-right:2px solid #F0EDF9;">'
+    + '<div style="display:flex;border-bottom:2px solid #E4E0FA;padding:0 20px;background:#fff;">'
+    + '<button data-tab="simulations" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-simulations" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#7343EE;border-bottom:2px solid #7343EE;margin-bottom:-2px;cursor:pointer;">&#128200; Simulations (' + (cand.simulations||[]).length + ')</button>'
+    + '<button data-tab="documents" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-documents" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128196; Documents</button>'
+    + '</div>'
+    + '<div id="ct-content-' + cand.id + '" style="padding:16px 20px;min-height:280px;max-height:42vh;overflow-y:auto;"></div>'
+    + '</div>'
+
+    // Colonne droite : commentaires fixes
+    + '<div style="width:280px;flex-shrink:0;background:#FAFAFA;border-radius:0 0 14px 0;display:flex;flex-direction:column;">'
+    + '<div style="padding:10px 14px;border-bottom:1.5px solid #E4E0FA;font-size:12px;font-weight:700;color:#7343EE;display:flex;align-items:center;justify-content:space-between;">'
+    + '&#128172; Commentaires'
+    + '<span style="font-size:10px;color:#9E9E9E;font-weight:400;">' + comments.length + ' note(s)</span>'
+    + '</div>'
+    + '<div id="ct-comments-' + cand.id + '" style="flex:1;overflow-y:auto;padding:10px 14px;max-height:38vh;">' + cmHtml + '</div>'
+    + '<div style="padding:10px 14px;border-top:1.5px solid #E4E0FA;">'
+    + '<textarea id="cand-new-comment-' + cand.id + '" placeholder="Ajouter une note..." rows="2" style="width:100%;padding:7px 9px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;resize:none;outline:none;"></textarea>'
+    + '<button data-candid="' + cand.id + '" onclick="addCandComment(parseInt(this.dataset.candid))" style="margin-top:5px;width:100%;padding:7px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;">+ Ajouter</button>'
+    + '</div>'
+    + '</div>'
+
+    + '</div>'
+    + '</div>';
+}
+
+function updateCandField(input) {
+  var id = parseInt(input.dataset.candid);
+  var field = input.dataset.field;
+  var cands = getCandidats();
+  var idx = cands.findIndex(function(c) { return c.id === id; });
+  if (idx < 0) return;
+  cands[idx][field] = input.value;
+  cands[idx].updated = new Date().toLocaleDateString('fr-FR');
+  saveCandidatsArr(cands);
+  renderCandidats();
+}
+
+function switchCandTab(id, tab) {
+  var cands = getCandidats();
+  var cand = cands.find(function(c) { return c.id === id; });
+  if (!cand) return;
+  // Mettre à jour les boutons
+  ['simulations','documents'].forEach(function(t) {
+    var btn = document.getElementById('ct-btn-' + t);
+    if (!btn) return;
+    var active = t === tab;
+    btn.style.color = active ? '#7343EE' : '#6B5E9C';
+    btn.style.borderBottom = active ? '2px solid #7343EE' : 'none';
+    btn.style.marginBottom = active ? '-2px' : '0';
+  });
+  var cont = document.getElementById('ct-content-' + id);
+  if (!cont) return;
+  if (tab === 'simulations') cont.innerHTML = buildCandSimsHTML(cand);
+  else if (tab === 'documents') cont.innerHTML = buildCandDocsHTML(cand);
+  else if (tab === 'commentaires') cont.innerHTML = buildCandCommsHTML(cand);
+}
+
+function buildCandSimsHTML(cand) {
+  var sims = cand.simulations || [];
+  if (!sims.length) return '<div style="color:#9E9E9E;font-size:13px;text-align:center;padding:30px;">Aucune simulation.</div>';
+  var html = '';
+  sims.forEach(function(s) {
+    html += '<div style="background:#F5F3FF;border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">';
+    html += '<div><div style="font-size:12px;font-weight:700;color:#1A1033;">' + (s.entreprise||'—') + (s.poste ? ' · ' + s.poste : '') + '</div>';
+    html += '<div style="font-size:11px;color:#6B5E9C;">' + (s.date||'') + (s.commercial ? ' · ' + s.commercial : '') + '</div></div>';
+    html += '<div style="text-align:right;">';
+    if (s.tjm) html += '<div style="font-size:13px;font-weight:700;color:#7343EE;">' + s.tjm + ' €/j</div>';
+    if (s.net_payer) html += '<div style="font-size:11px;color:#1D9E75;">' + s.net_payer + ' net</div>';
+    html += '</div>';
+    + '<button onclick="var m=document.getElementById(\'modal-cand-fiche\'); if(m) m.remove();" style="background:none;border:none;font-size:22px;cursor:pointer;color:#fff;line-height:1;">&#215;</button>'
+    html += '</div>';
+  });
+  return html;
+}
+
+var DEFAULT_DOCS = ['CV','CNI / Passeport','Carte Vitale','RIB','Justificatif domicile','Dernier bulletin de salaire'];
+
+function buildCandDocsHTML(cand) {
+  var docs = cand.documents || {};
+  var html = '<div style="margin-bottom:16px;">';
+  html += '<div style="font-size:12px;font-weight:700;color:#1A1033;margin-bottom:10px;">Documents reçus</div>';
+  DEFAULT_DOCS.forEach(function(docName) {
+    var checked = docs[docName] ? 'checked' : '';
+    var color = docs[docName] ? '#1D9E75' : '#9E9E9E';
+    html += '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F0EDF9;cursor:pointer;">';
+    html += '<input type="checkbox" ' + checked + ' data-candid="' + cand.id + '" data-docname="' + docName + '" onchange="toggleCandDoc(this)" style="accent-color:#1D9E75;width:15px;height:15px;">';
+    html += '<span style="font-size:13px;color:' + color + ';font-weight:' + (docs[docName] ? '600' : '400') + ';">' + docName + '</span>';
+    if (docs[docName]) html += '<span style="margin-left:auto;font-size:10px;color:#1D9E75;">&#10003; Reçu</span>';
+    html += '</label>';
+  });
+  html += '</div>';
+  // CV Upload
+  html += '<div style="background:#F5F3FF;border-radius:8px;padding:12px;">';
+  html += '<div style="font-size:12px;font-weight:700;color:#7343EE;margin-bottom:8px;">&#128196; CV (PDF)</div>';
+  if (cand.cv_name) {
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">';
+    html += '<span style="font-size:12px;color:#1A1033;font-weight:600;">&#128196; ' + cand.cv_name + '</span>';
+    html += '<button onclick="downloadCandCV(' + cand.id + ')" style="padding:3px 8px;background:#7343EE;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer;">&#8681; Télécharger</button>';
+    html += '<button onclick="deleteCandCV(' + cand.id + ')" style="padding:3px 8px;background:#fff;color:#E24B4A;border:1.5px solid #FECACA;border-radius:5px;font-size:11px;cursor:pointer;">&#128465;</button>';
+    html += '</div>';
+  }
+  html += '<label style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:#7343EE;color:#fff;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;">';
+  html += (cand.cv_name ? 'Remplacer le CV' : '+ Ajouter un CV') + '<input type="file" accept=".pdf" data-candid="' + cand.id + '" onchange="uploadCandCV(this)" style="display:none;"></label>';
+  html += '</div>';
+  return html;
+}
+
+function buildCandCommsHTML(cand) {
+  var html = '<div>';
+  html += '<div style="font-size:12px;font-weight:700;color:#1A1033;margin-bottom:8px;">Commentaires</div>';
+  var comments = cand.commentaires || [];
+  if (comments.length) {
+    html += '<div style="margin-bottom:12px;">';
+    comments.forEach(function(cm) {
+      html += '<div style="background:#F5F3FF;border-radius:8px;padding:10px 12px;margin-bottom:6px;">';
+      html += '<div style="font-size:10px;color:#9E9E9E;margin-bottom:4px;">' + cm.date + (cm.author ? ' · ' + cm.author : '') + '</div>';
+      html += '<div style="font-size:13px;color:#1A1033;">' + cm.text + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  html += '<textarea id="cand-new-comment-' + cand.id + '" placeholder="Ajouter un commentaire..." rows="3" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;resize:vertical;margin-bottom:8px;"></textarea>';
+  html += '<button onclick="addCandComment(' + cand.id + ')" style="padding:7px 18px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;">Ajouter</button>';
+  html += '</div>';
+  return html;
+}
+
+function toggleCandDoc(input) {
+  var id = parseInt(input.dataset.candid);
+  var docName = input.dataset.docname;
+  var cands = getCandidats();
+  var idx = cands.findIndex(function(c) { return c.id === id; });
+  if (idx < 0) return;
+  if (!cands[idx].documents) cands[idx].documents = {};
+  cands[idx].documents[docName] = input.checked;
+  saveCandidatsArr(cands);
+  // Refresh docs tab
+  var cont = document.getElementById('ct-content-' + id);
+  if (cont) cont.innerHTML = buildCandDocsHTML(cands[idx]);
+}
+
+function uploadCandCV(input) {
+  var id = parseInt(input.dataset.candid);
+  var file = input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var b64 = e.target.result.split(',')[1];
+    var cands = getCandidats();
+    var idx = cands.findIndex(function(c) { return c.id === id; });
+    if (idx < 0) return;
+    cands[idx].cv_name = file.name;
+    cands[idx].cv_b64 = b64;
+    saveCandidatsArr(cands);
+    var cont = document.getElementById('ct-content-' + id);
+    if (cont) cont.innerHTML = buildCandDocsHTML(cands[idx]);
+  };
+  reader.readAsDataURL(file);
+}
+
+function downloadCandCV(id) {
+  var cands = getCandidats();
+  var cand = cands.find(function(c) { return c.id === id; });
+  if (!cand || !cand.cv_b64) return;
+  var a = document.createElement('a');
+  a.href = 'data:application/pdf;base64,' + cand.cv_b64;
+  a.download = cand.cv_name || 'cv.pdf';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function deleteCandCV(id) {
+  if (!confirm('Supprimer le CV ?')) return;
+  var cands = getCandidats();
+  var idx = cands.findIndex(function(c) { return c.id === id; });
+  if (idx < 0) return;
+  cands[idx].cv_name = ''; cands[idx].cv_b64 = '';
+  saveCandidatsArr(cands);
+  var cont = document.getElementById('ct-content-' + id);
+  if (cont) cont.innerHTML = buildCandDocsHTML(cands[idx]);
+}
+
+function addCandComment(id) {
+  var textarea = document.getElementById('cand-new-comment-' + id);
+  if (!textarea || !textarea.value.trim()) return;
+  var cands = getCandidats();
+  var idx = cands.findIndex(function(c) { return c.id === id; });
+  if (idx < 0) return;
+  if (!cands[idx].commentaires) cands[idx].commentaires = [];
+  cands[idx].commentaires.unshift({
+    date: new Date().toLocaleDateString('fr-FR') + ' ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}),
+    text: textarea.value.trim(),
+    author: getCommercialData ? getCommercialData().nom : ''
+  });
+  saveCandidatsArr(cands);
+  textarea.value = '';
+  // Rafraîchir la colonne commentaires droite
+  var cmContainer = document.getElementById('ct-comments-' + id);
+  if (cmContainer) {
+    var comments = cands[idx].commentaires || [];
+    cmContainer.innerHTML = comments.map(function(cm) {
+      return '<div style="background:#F5F3FF;border-radius:7px;padding:8px 10px;margin-bottom:6px;">'
+        + '<div style="font-size:10px;color:#9E9E9E;margin-bottom:3px;">' + cm.date + (cm.author ? ' · ' + cm.author : '') + '</div>'
+        + '<div style="font-size:12px;color:#1A1033;">' + cm.text + '</div>'
+        + '</div>';
+    }).join('') || '<div style="color:#C0B8E0;font-size:12px;">Aucun commentaire.</div>';
+  }
+}
+</script>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// SYNC GLOBAL — Historique + Candidats
+// ═══════════════════════════════════════════════════════════
+
+function closeSyncModal() {
+  var m = document.getElementById('modal-sync-global');
+  if (m) m.remove();
+}
+
+function openSyncModal(onClose) {
+  var ex = document.getElementById('modal-sync-global');
+  if (ex) ex.remove();
+  var modal = document.createElement('div');
+  modal.id = 'modal-sync-global';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:5000;display:flex;align-items:center;justify-content:center;';
+  var connected = odToken ? true : false;
+  var inner = document.createElement('div');
+  inner.style.cssText = 'background:#fff;border-radius:16px;width:92%;max-width:420px;box-shadow:0 8px 40px rgba(115,67,238,0.3);overflow:hidden;';
+  inner.innerHTML =
+    '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);padding:18px 24px;display:flex;align-items:center;justify-content:space-between;">'
+    + '<div style="font-size:15px;font-weight:700;color:#fff;">&#9729;&#65039; Synchronisation</div>'
+    + '<button onclick="closeSyncModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:rgba(255,255,255,0.8);">&#215;</button>'
+    + '</div>'
+    + '<div style="padding:22px 24px;">'
+    + (connected
+      ? '<div style="font-size:13px;color:#1A1033;margin-bottom:18px;text-align:center;">'
+        + '&#9989; Connecté à OneDrive<br>'
+        + '<span style="font-size:12px;color:#6B5E9C;">Charger et fusionner toutes les données<br>de tous les commerciaux ?</span>'
+        + '</div>'
+        + '<div id="sync-progress" style="display:none;text-align:center;padding:10px 0;color:#7343EE;font-size:13px;font-weight:600;"></div>'
+        + '<div style="display:flex;flex-direction:column;gap:8px;">'
+        + '<button onclick="runGlobalSync(this)" style="padding:11px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;">&#8595; Mettre à jour tout</button>'
+        + '<button onclick="runGlobalPush(this)" style="padding:11px;background:#fff;color:#7343EE;border:2px solid #7343EE;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;">&#8593; Envoyer mes données</button>'
+        + '</div>'
+      : '<div style="text-align:center;color:#E24B4A;font-size:13px;margin-bottom:18px;">&#9888;&#65039; Non connecté à OneDrive.<br><span style="color:#6B5E9C;font-size:12px;">Allez dans Param. pour vous connecter.</span></div>'
+    )
+    + '<div style="margin-top:12px;text-align:center;">'
+    + '<button onclick="closeSyncModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:rgba(255,255,255,0.8);">&#215;</button>'
+    + '</div>'
+    + '</div>';
+  modal.appendChild(inner);
+  modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+}
+
+function setSyncProgress(msg) {
+  var el = document.getElementById('sync-progress');
+  if (el) { el.style.display = 'block'; el.textContent = msg; }
+}
+
+function runGlobalSync(btn) {
+  if (!odToken) return;
+  if (btn) btn.disabled = true;
+  setSyncProgress('Chargement historique...');
+  var path1 = encodeURIComponent(OD_FILE_PATH);
+  var path2 = encodeURIComponent(OD_CAND_PATH);
+  fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + path1 + ':/content', {
+    headers: { 'Authorization': 'Bearer ' + odToken }
+  }).then(function(r) { return r.status === 404 ? null : r.json(); })
+  .then(function(data) {
+    if (data) {
+      var remoteSims = data.simulations || (Array.isArray(data) ? data : []);
+      var local = getHistory();
+      var tsMap = {};
+      local.forEach(function(s) { tsMap[s.timestamp] = s; });
+      remoteSims.forEach(function(s) { if (!tsMap[s.timestamp]) tsMap[s.timestamp] = s; });
+      var merged = Object.values(tsMap);
+      merged.sort(function(a,b) { return (b.timestamp||0)-(a.timestamp||0); });
+      saveHistoryArr(merged);
+      renderHistorique && renderHistorique();
+      setSyncProgress('Historique OK (' + merged.length + ') — Chargement candidats...');
+    }
+    // Charger candidats
+    return fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + path2 + ':/content', {
+      headers: { 'Authorization': 'Bearer ' + odToken }
+    }).then(function(r) { return r.status === 404 ? null : r.json(); });
+  })
+  .then(function(candData) {
+    if (candData && candData.candidats) {
+      var remote = candData.candidats;
+      var local = getCandidats();
+      var emailMap = {};
+      local.forEach(function(c) { if (c.email) emailMap[c.email.toLowerCase()] = c; });
+      remote.forEach(function(rc) {
+        var key = (rc.email||'').toLowerCase();
+        if (!key) return;
+        if (!emailMap[key]) {
+          emailMap[key] = rc;
+        } else {
+          // Fusionner simulations
+          var sims = emailMap[key].simulations || [];
+          var tsSet = {};
+          sims.forEach(function(s) { tsSet[s.timestamp] = 1; });
+          (rc.simulations||[]).forEach(function(s) { if (!tsSet[s.timestamp]) sims.push(s); });
+          sims.sort(function(a,b) { return (b.timestamp||0)-(a.timestamp||0); });
+          emailMap[key].simulations = sims;
+        }
+      });
+      var merged = Object.values(emailMap);
+      saveCandidatsArr(merged);
+      renderCandidats && renderCandidats();
+    }
+    setSyncProgress('✓ Synchronisation terminée !');
+    setTimeout(function() {
+      closeSyncModal();
+    }, 1500);
+  })
+  .catch(function(e) { setSyncProgress('⚠ Erreur : ' + e.message); });
+}
+
+function runGlobalPush(btn) {
+  if (!odToken) return;
+  if (btn) btn.disabled = true;
+  setSyncProgress('Envoi historique...');
+  var path1 = encodeURIComponent(OD_FILE_PATH);
+  var path2 = encodeURIComponent(OD_CAND_PATH);
+  var hist = getHistory();
+  var cands = getCandidats();
+  // Push historique
+  fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + path1 + ':/content', {
+    method: 'PUT',
+    headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ version:1, updated: new Date().toISOString(), simulations: hist })
+  }).then(function(r) {
+    setSyncProgress('Historique envoyé — Envoi candidats...');
+    return fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + path2 + ':/content', {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version:1, updated: new Date().toISOString(), candidats: cands })
+    });
+  }).then(function() {
+    setSyncProgress('✓ Envoi terminé !');
+    setTimeout(function() {
+      closeSyncModal();
+    }, 1500);
+  }).catch(function(e) { setSyncProgress('⚠ Erreur : ' + e.message); });
+}
+
+// Popup au démarrage si connecté
+window.addEventListener('load', function() {
+  setTimeout(function() {
+    if (odToken) openSyncModal();
+  }, 1200);
+});
+</script>
+
+
+
+
 <!-- ═══ MODAL ENVOI ═══ -->
 <div id="modal-envoi" style="display:none;position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:2000;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:14px;width:90%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(115,67,238,0.2);">
@@ -3644,6 +4876,126 @@ function odFilterCommercial(val) {
     <div id="hist-list" style="padding:16px 22px;overflow-y:auto;flex:1;">
       <div id="hist-empty" style="text-align:center;padding:40px 0;color:#9E9E9E;font-size:13px;">
         Aucune simulation dans l'historique.<br>Les simulations sont enregistrées lors de chaque envoi.
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===== MODAL PLACEMENT ===== -->
+<div id="modal-placement" style="display:none;position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3000;align-items:center;justify-content:center;overflow-y:auto;">
+  <div style="background:#fff;border-radius:14px;width:96%;max-width:680px;margin:20px auto;box-shadow:0 8px 40px rgba(115,67,238,0.25);max-height:90vh;overflow-y:auto;">
+    <div style="background:linear-gradient(135deg,#372EB6,#7343EE);padding:18px 24px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center;">
+      <div style="font-size:16px;font-weight:700;color:#fff;">&#128203; Convertir en placement</div>
+      <button onclick="closeModal('modal-placement')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#fff;">&#215;</button>
+    </div>
+    <div style="padding:20px 24px;">
+      <!-- Infos candidat -->
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#7343EE;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;">&#128100; Informations candidat</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Prénom</label><input id="pl-prenom" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Nom</label><input id="pl-nom" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Email</label><input id="pl-email" type="email" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Téléphone</label><input id="pl-tel" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Poste</label><input id="pl-poste" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Connait son TJM ?</label>
+          <select id="pl-connait-tjm" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;">
+            <option value="Non">Non</option><option value="Oui">Oui</option>
+          </select>
+        </div>
+      </div>
+      <!-- Infos client -->
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#4B36EC;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;">&#127970; Informations client</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Entreprise</label><input id="pl-entreprise" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Email client</label><input id="pl-email-client" type="email" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Manager / Contact</label><input id="pl-manager" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;"></div>
+      </div>
+      <!-- Infos deal -->
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#1D9E75;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;">&#128203; Informations deal</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Date deal</label><input id="pl-date-deal" type="date" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Commercial</label><input id="pl-commercial" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Origine du deal</label>
+          <select id="pl-origine" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;">
+            <option value="">-- Sélectionner --</option>
+            <option>Réseau</option><option>LinkedIn</option><option>Job board</option><option>Recommandation</option><option>Autre</option>
+          </select>
+        </div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">État du dossier</label>
+          <select id="pl-etat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;">
+            <option value="Nouveau placement">Nouveau placement</option>
+            <option value="En cours">En cours</option>
+            <option value="Signé">Signé</option>
+            <option value="Annulé">Annulé</option>
+          </select>
+        </div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Type de contrat</label>
+          <select id="pl-contrat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;">
+            <option value="">-- Sélectionner --</option><option>CDI</option><option>CDD</option><option>Portage</option>
+          </select>
+        </div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Date d'entrée / Starter</label><input id="pl-date-entree" type="date" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;"></div>
+      </div>
+      <!-- Simulation (lecture seule) -->
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#6B5E9C;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;">&#128200; Données simulation (lecture seule)</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">TJM (€/j)</label><input id="pl-tjm" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:13px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Nb jours</label><input id="pl-nb-jours" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:13px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Salaire annuel brut</label><input id="pl-salaire" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:13px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Frais gestion</label><input id="pl-frais-gest" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:13px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Mutuelle</label><input id="pl-mutuelle" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:13px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Swile / TR</label><input id="pl-swile" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:13px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">IK</label><input id="pl-ik" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:13px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Transport</label><input id="pl-transport" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:13px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Télétravail</label><input id="pl-tt" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:13px;background:#F8F7FF;box-sizing:border-box;"></div>
+      </div>
+      <!-- Commentaire -->
+      <div style="margin-bottom:20px;">
+        <label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Commentaire</label>
+        <textarea id="pl-commentaire" rows="3" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;resize:vertical;"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button onclick="closeModal('modal-placement')" style="padding:10px 20px;border:1px solid #E4E0FA;border-radius:8px;background:#fff;font-size:13px;cursor:pointer;">Annuler</button>
+        <button onclick="savePlacement()" style="padding:10px 24px;background:linear-gradient(135deg,#1D9E75,#27C48F);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">&#10003; Enregistrer le placement</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL SORTIE ===== -->
+<div id="modal-sortie" style="display:none;position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3000;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;width:96%;max-width:460px;box-shadow:0 8px 40px rgba(226,75,74,0.25);">
+    <div style="background:linear-gradient(135deg,#C0392B,#E24B4A);padding:18px 24px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center;">
+      <div style="font-size:16px;font-weight:700;color:#fff;">&#128683; Sortie des effectifs</div>
+      <button onclick="closeModal('modal-sortie')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#fff;">&#215;</button>
+    </div>
+    <div style="padding:24px;">
+      <input type="hidden" id="sortie-sim-ts">
+      <div style="margin-bottom:16px;">
+        <label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:6px;">Raison de la sortie</label>
+        <select id="sortie-raison" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;">
+          <option value="">-- Sélectionner --</option>
+          <option>Fin de mission</option>
+          <option>Démission</option>
+          <option>Rupture conventionnelle</option>
+          <option>Licenciement</option>
+          <option>Fin de CDD</option>
+          <option>Départ volontaire</option>
+          <option>Autre</option>
+        </select>
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:6px;">Date de sortie</label>
+        <input id="sortie-date" type="date" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;">
+      </div>
+      <div style="margin-bottom:20px;">
+        <label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:6px;">Commentaire</label>
+        <textarea id="sortie-commentaire" rows="3" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;resize:vertical;"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button onclick="closeModal('modal-sortie')" style="padding:10px 20px;border:1px solid #E4E0FA;border-radius:8px;background:#fff;font-size:13px;cursor:pointer;">Annuler</button>
+        <button onclick="saveSortie()" style="padding:10px 24px;background:#E24B4A;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">&#10003; Confirmer la sortie</button>
       </div>
     </div>
   </div>
