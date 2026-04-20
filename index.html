@@ -4805,7 +4805,7 @@ function setSyncProgress(msg, done) {
 
 function runFullSync(btn) {
   if (!odToken) return;
-  if (btn) { btn.disabled = true; btn.textContent = 'En cours...'; }
+  if (btn) { btn.disabled = true; }
   var loadSteps = [
     { label: '↓ Historique...', path: OD_FILE_PATH, key: 'simulations', merge: mergeHistorique },
     { label: '↓ Candidats...', path: OD_CAND_PATH, key: 'candidats', merge: mergeCandidats },
@@ -4821,29 +4821,80 @@ function runFullSync(btn) {
     { label: '↑ Paramètres...', path: OD_PARAMS_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),params:getAllParams()}; } }
   ];
   var idx = 0;
+  var errors = [];
+
   function nextLoad() {
-    if (idx >= loadSteps.length) { idx=0; nextPush(); return; }
+    if (idx >= loadSteps.length) { idx = 0; nextPush(); return; }
     var step = loadSteps[idx++];
     setSyncProgress(step.label);
-    fetch('https://graph.microsoft.com/v1.0'+OD_DRIVE_BASE+'/root:'+encodeURIComponent(step.path)+':/content',
-      {headers:{'Authorization':'Bearer '+odToken}})
-    .then(function(r){return r.status===404?null:r.json();})
-    .then(function(data){if(data&&data[step.key])step.merge(data[step.key]);nextLoad();})
-    .catch(function(){nextLoad();});
+    console.log('[Sync LOAD]', step.label, step.path);
+    try {
+      fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(step.path) + ':/content', {
+        headers: { 'Authorization': 'Bearer ' + odToken }
+      }).then(function(r){
+        if (r.status === 404) return null;
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      }).then(function(data){
+        try {
+          if (data && data[step.key]) step.merge(data[step.key]);
+        } catch(mergeErr) {
+          console.error('[Sync] Erreur merge ' + step.label, mergeErr);
+          errors.push('merge ' + step.label + ': ' + mergeErr.message);
+        }
+        setTimeout(nextLoad, 50);
+      }).catch(function(err){
+        console.warn('[Sync] Skip ' + step.label, err);
+        errors.push('load ' + step.label + ': ' + err.message);
+        setTimeout(nextLoad, 50);
+      });
+    } catch(e) {
+      console.error('[Sync] Exception ' + step.label, e);
+      errors.push('exc ' + step.label + ': ' + e.message);
+      setTimeout(nextLoad, 50);
+    }
   }
+
   function nextPush() {
     if (idx >= pushSteps.length) {
-      setSyncProgress('✓ Synchronisation terminée !', true);
+      var msg = errors.length ? ('⚠ Terminé avec ' + errors.length + ' avertissement(s)') : '✓ Synchronisation terminée !';
+      setSyncProgress(msg, true);
+      if (errors.length) console.warn('[Sync] Avertissements:', errors);
       setTimeout(closeSyncModal, 1800);
       if (btn) btn.disabled = false;
       return;
     }
     var step = pushSteps[idx++];
     setSyncProgress(step.label);
-    fetch('https://graph.microsoft.com/v1.0'+OD_DRIVE_BASE+'/root:'+encodeURIComponent(step.path)+':/content',
-      {method:'PUT',headers:{'Authorization':'Bearer '+odToken,'Content-Type':'application/json'},body:JSON.stringify(step.getData())})
-    .then(function(){nextPush();}).catch(function(){nextPush();});
+    console.log('[Sync PUSH]', step.label, step.path);
+    try {
+      var body;
+      try { body = JSON.stringify(step.getData()); }
+      catch(serErr) {
+        console.error('[Sync] Erreur sérialisation ' + step.label, serErr);
+        errors.push('serialize ' + step.label);
+        setTimeout(nextPush, 50);
+        return;
+      }
+      fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(step.path) + ':/content', {
+        method: 'PUT',
+        headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
+        body: body
+      }).then(function(r){
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        setTimeout(nextPush, 50);
+      }).catch(function(err){
+        console.warn('[Sync] Echec push ' + step.label, err);
+        errors.push('push ' + step.label + ': ' + err.message);
+        setTimeout(nextPush, 50);
+      });
+    } catch(e) {
+      console.error('[Sync] Exception push ' + step.label, e);
+      errors.push('exc push ' + step.label);
+      setTimeout(nextPush, 50);
+    }
   }
+
   nextLoad();
 }
 
