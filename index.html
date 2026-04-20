@@ -1057,6 +1057,11 @@ let state = {
   tt: false,
   ik_1ere: false,
 };
+// CRITIQUE : let au top-level d'un <script> ne crée PAS window.state.
+// Or tout le code de capture/snapshot lit via window.state.
+// Sans cet alias, window.state === undefined → tous les champs mutuelle/cp/repas/gd_lieu
+// étaient sauvegardés vides et _state était {} à la restauration.
+window.state = state;
 
 function f(id) { var el=document.getElementById(id); return el ? (parseFloat(el.value)||0) : 0; }
 function s(id) { var el=document.getElementById(id); return el ? (el.value||'') : ''; }
