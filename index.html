@@ -4242,11 +4242,18 @@ function exportDealsExcel() {
 }
 
 // Fermer modals placement/sortie au clic extérieur
-window.addEventListener('click', function(e) {
+// IMPORTANT : on vérifie que mousedown ET mouseup sont sur le fond pour éviter
+// les fermetures accidentelles lors de sélection de texte / copier-coller
+var _modalMousedownTarget = null;
+window.addEventListener('mousedown', function(e) {
+  _modalMousedownTarget = e.target;
+});
+window.addEventListener('mouseup', function(e) {
   ['modal-placement','modal-sortie'].forEach(function(id) {
     var m = document.getElementById(id);
-    if (m && e.target === m) closeModal(id);
+    if (m && e.target === m && _modalMousedownTarget === m) closeModal(id);
   });
+  _modalMousedownTarget = null;
 });
 
 // ─── BLOC_6 ───
@@ -4314,10 +4321,15 @@ function saveCandidatFromEntry(entry) {
   var idx = cands.findIndex(function(c) { return (c.email||'').trim().toLowerCase() === email; });
   var simRef = { timestamp: entry.timestamp, date: entry.date, tjm: entry.tjm, nb_jours: entry.nb_jours, brut: entry.brut, net_payer: entry.net_payer, entreprise: entry.entreprise, poste: entry.poste, commercial: entry.commercial };
   if (idx >= 0) {
-    // Mettre à jour les infos de base si plus récentes
+    // Mettre à jour les infos de base
     cands[idx].prenom = entry.consultant ? entry.consultant.split(' ')[0] : cands[idx].prenom;
     cands[idx].nom = entry.consultant ? entry.consultant.split(' ').slice(1).join(' ') : cands[idx].nom;
     cands[idx].email = entry.email || cands[idx].email;
+    // Mettre à jour les infos supplémentaires uniquement si vides localement
+    if (!cands[idx].poste && entry.poste) cands[idx].poste = entry.poste;
+    if (!cands[idx].tjm_actuel && entry.tjm) cands[idx].tjm_actuel = entry.tjm;
+    if (!cands[idx].entreprise && entry.entreprise) cands[idx].entreprise = entry.entreprise;
+    if (!cands[idx].commercial && entry.commercial) cands[idx].commercial = entry.commercial;
     cands[idx].updated = new Date().toLocaleDateString('fr-FR');
     // Ajouter la simulation si pas déjà présente
     if (!cands[idx].simulations) cands[idx].simulations = [];
@@ -4329,11 +4341,22 @@ function saveCandidatFromEntry(entry) {
     cands.unshift({
       id: Date.now(),
       sp_id: generateSpId('CAND', getCandidats()),
+      civilite: '',
       prenom: parts[0] || '',
       nom: parts.slice(1).join(' ') || '',
       email: entry.email || '',
       tel: '',
+      poste: entry.poste || '',
+      profil: '',
+      tjm_actuel: entry.tjm || '',
+      disponibilite: '',
+      techno: '',
+      statut: '',
       statut_portage: 'Prospect',
+      ville: '',
+      linkedin: '',
+      entreprise: entry.entreprise || '',
+      commercial: entry.commercial || '',
       created: new Date().toLocaleDateString('fr-FR'),
       updated: new Date().toLocaleDateString('fr-FR'),
       commentaire: '',
@@ -4461,7 +4484,13 @@ function openCandidatFiche(id) {
   modal.id = 'modal-cand-fiche';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 0;';
   modal.innerHTML = buildCandFicheHTML(cand);
-  modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+    // Fermeture sécurisée : vérifier mousedown+mouseup sur le fond
+  var _mdt = null;
+  modal.addEventListener('mousedown', function(e){ _mdt = e.target; });
+  modal.addEventListener('mouseup', function(e){
+    if (e.target === modal && _mdt === modal) modal.remove();
+    _mdt = null;
+  });
   document.body.appendChild(modal);
   // Init onglets fiche
   switchCandTab(id, 'simulations');
@@ -4789,7 +4818,13 @@ function openSyncModal() {
     + '</div>';
 
   modal.appendChild(inner);
-  modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+    // Fermeture sécurisée : vérifier mousedown+mouseup sur le fond
+  var _mdt = null;
+  modal.addEventListener('mousedown', function(e){ _mdt = e.target; });
+  modal.addEventListener('mouseup', function(e){
+    if (e.target === modal && _mdt === modal) modal.remove();
+    _mdt = null;
+  });
   document.body.appendChild(modal);
 }
 
@@ -5256,7 +5291,13 @@ function openManagerFiche(clid, mgridx) {
   modal.id = 'modal-manager-fiche';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 0;';
   modal.innerHTML = buildManagerFicheHTML(cl, mgridx, m);
-  modal.onclick = function(e){ if(e.target===modal) modal.remove(); };
+    // Fermeture sécurisée : vérifier mousedown+mouseup sur le fond
+  var _mdt = null;
+  modal.addEventListener('mousedown', function(e){ _mdt = e.target; });
+  modal.addEventListener('mouseup', function(e){
+    if (e.target === modal && _mdt === modal) modal.remove();
+    _mdt = null;
+  });
   document.body.appendChild(modal);
 }
 
@@ -5741,17 +5782,42 @@ function uploadCandDoc(input) {
 }
 
 function ensureOdFolder(folderPath, cb) {
-  // Créer le dossier s'il n'existe pas
+  // Création récursive du dossier et de tous ses parents
   var parts = folderPath.split('/').filter(Boolean);
-  var parentPath = '/' + parts.slice(0, -1).join('/');
-  var folderName = parts[parts.length - 1];
-  var encodedParent = encodeURIComponent(parentPath);
-  fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodedParent + ':/children', {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: folderName, folder: {}, '@microsoft.graph.conflictBehavior': 'rename' })
-  }).then(function(r) { cb(r.ok || r.status === 409); })
-  .catch(function() { cb(false); });
+  if (parts.length === 0) { cb(true); return; }
+
+  var idx = 0;
+  function createNext() {
+    if (idx >= parts.length) { cb(true); return; }
+    var parentParts = parts.slice(0, idx);
+    var folderName = parts[idx];
+    idx++;
+    var parentPath = parentParts.length ? '/' + parentParts.join('/') : '/';
+    // URL différente selon qu'on est à la racine ou non
+    var url;
+    if (parentPath === '/') {
+      url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root/children';
+    } else {
+      url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(parentPath) + ':/children';
+    }
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: folderName, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' })
+    }).then(function(r) {
+      // 201 = créé, 409 = existe déjà (ok)
+      if (r.ok || r.status === 409) {
+        createNext();
+      } else {
+        console.warn('[ensureOdFolder] Échec niveau', folderName, 'status', r.status);
+        cb(false);
+      }
+    }).catch(function(err) {
+      console.error('[ensureOdFolder] Erreur', err);
+      cb(false);
+    });
+  }
+  createNext();
 }
 
 function viewCandDoc(candId, docKey) {
@@ -5764,18 +5830,22 @@ function viewCandDoc(candId, docKey) {
   if (!odToken) { alert('Connectez-vous OneDrive pour voir le document.'); return; }
 
   var encodedPath = encodeURIComponent(doc.od_path);
-  // Obtenir l'URL de téléchargement temporaire
-  fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodedPath, {
+  // Télécharger le fichier comme blob pour l'afficher inline (évite les blocages CORS/Content-Security)
+  fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodedPath + ':/content', {
     headers: { 'Authorization': 'Bearer ' + odToken }
-  }).then(function(r) { return r.json(); })
-  .then(function(data) {
-    var url = data['@microsoft.graph.downloadUrl'];
-    if (!url) { alert('Document introuvable.'); return; }
-    openDocViewer(url, doc.name || docKey);
-  }).catch(function(e) { alert('Erreur : ' + e.message); });
+  }).then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.blob();
+  }).then(function(blob) {
+    var blobUrl = URL.createObjectURL(blob);
+    openDocViewer(blobUrl, doc.name || docKey, true);
+  }).catch(function(e) {
+    console.error('[viewCandDoc] Erreur:', e);
+    alert('Erreur lors du chargement du document : ' + e.message);
+  });
 }
 
-function openDocViewer(url, name) {
+function openDocViewer(url, name, isBlob) {
   var ext = (name.split('.').pop()||'').toLowerCase();
   var ex = document.getElementById('modal-doc-viewer');
   if (ex) ex.remove();
@@ -5808,7 +5878,12 @@ function openDocViewer(url, name) {
   }
   inner.innerHTML = header + '<div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">' + content + '</div>';
   modal.appendChild(inner);
-  modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+  modal.onclick = function(e) {
+    if (e.target === modal) {
+      if (isBlob) { try { URL.revokeObjectURL(url); } catch(_){} }
+      modal.remove();
+    }
+  };
   document.body.appendChild(modal);
 }
 
