@@ -3492,9 +3492,18 @@ function reopenSim(ts) {
   var hist = getHistory();
   var entry = null;
   hist.forEach(function(h) { if (h.timestamp === ts) entry = h; });
-  if (!entry || !entry.snapshot) { return; }
-  restoreSnapshot(entry.snapshot);
-  // historique fermé via navigation
+  if (!entry || !entry.snapshot) {
+    alert('Cette simulation ne peut pas être rouverte (données manquantes).');
+    return;
+  }
+  // Naviguer vers le simulateur D'ABORD
+  mainNavTo('mission');
+  // Puis restaurer le snapshot après que la navigation soit effective
+  setTimeout(function() {
+    restoreSnapshot(entry.snapshot);
+    // Recalculer pour afficher les résultats
+    try { if (typeof calc === 'function') calc(); } catch(e) { console.warn('calc error', e); }
+  }, 100);
 }
 
 function newVersionSim(ts) {
@@ -3884,10 +3893,10 @@ function openPlacementPopup(ts) {
   document.getElementById('pl-salaire-contrat').value = brutContratAnnuel;
   document.getElementById('pl-frais-gest').value = sim.marge ? sim.marge + '%' : '—';
 
-  // Mutuelle : afficher le choix même si 'Non'
-  var mutuelleLabels = { 'isolee':'Isolée', 'famille':'Famille', 'isolee_seven':'Isolée (prise par Seven)', 'renoncement':'Non', 'non':'Non', '':'—' };
-  var mutVal = sim.mutuelle || '';
-  document.getElementById('pl-mutuelle').value = mutuelleLabels[mutVal] || (mutVal || '—');
+  // Mutuelle : afficher le choix même si 'Non' (labels insensibles à la casse)
+  var mutuelleLabels = { 'isolee':'Isolée', 'famille':'Famille', 'isolee_seven':'Isolée (prise par Seven)', 'renoncement':'Renoncement', 'non':'Non', '':'—' };
+  var mutVal = (sim.mutuelle || '').toString().toLowerCase();
+  document.getElementById('pl-mutuelle').value = mutuelleLabels[mutVal] || (sim.mutuelle || '—');
 
   // Swile/Repas : afficher le type
   var repasLabels = { 'Forfait':'Swile (Forfait)', 'Reel':'Swile (Réel)', 'forfait':'Swile (Forfait)', 'reel':'Swile (Réel)', 'Non':'Non', '':'—' };
@@ -3940,6 +3949,32 @@ function openPlacementPopup(ts) {
       plGd.value = 'Oui' + (sim.gd_lieu ? ' (' + sim.gd_lieu + ')' : '');
     } else {
       plGd.value = '—';
+    }
+  }
+
+  // Congés payés
+  var plCp = document.getElementById('pl-cp');
+  if (plCp) {
+    var cpVal = (sim.cp || '').toString().toLowerCase();
+    if (cpVal === 'provisionnes' || cpVal === 'provisionnés' || cpVal === 'provisionne') {
+      plCp.value = 'Provisionnés';
+    } else if (cpVal === 'non_provisionnes' || cpVal === 'non' || cpVal === 'non_provisionne') {
+      plCp.value = 'Non provisionnés';
+    } else {
+      plCp.value = sim.cp || '—';
+    }
+  }
+
+  // RTT
+  var plRtt = document.getElementById('pl-rtt');
+  if (plRtt) {
+    var rttVal = parseInt(sim.rtt) || 0;
+    if (rttVal > 0) {
+      plRtt.value = rttVal + ' jours';
+    } else if (rttVal === 0 && sim.rtt !== undefined && sim.rtt !== null && sim.rtt !== '') {
+      plRtt.value = 'Sans RTT';
+    } else {
+      plRtt.value = '—';
     }
   }
 
@@ -7436,6 +7471,8 @@ function addRappelType() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Formation</label><input id="pl-formation" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Matériel pro</label><input id="pl-materiel" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Grand déplacement</label><input id="pl-gd" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Congés payés</label><input id="pl-cp" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">RTT</label><input id="pl-rtt" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
       </div>
 
       <!-- COMMENTAIRE -->
