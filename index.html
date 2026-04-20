@@ -25,10 +25,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 
 /* HEADER */
 .header { background: linear-gradient(135deg, var(--brand3) 0%, var(--brand) 100%); padding: 18px 28px; display: flex; align-items: center; justify-content: space-between; }
-.main-nav { background:#fff; border-bottom:2px solid #E4E0FA; padding:0 28px; display:flex; align-items:center; gap:4px; position:sticky; top:0; z-index:100; box-shadow:0 2px 8px rgba(115,67,238,0.07); }
-.main-nav-btn { padding:12px 18px; border:none; background:none; font-size:13px; font-weight:600; color:#6B5E9C; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; transition:all .15s; white-space:nowrap; }
-.main-nav-btn:hover { color:#7343EE; background:#F5F3FF; }
-.main-nav-btn.active { color:#7343EE; border-bottom-color:#7343EE; }
+/* old main-nav rules removed — see redesigned version below */
 .header h1 { color: #fff; font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
 .header .subtitle { color: rgba(255,255,255,0.75); font-size: 12px; margin-top: 2px; }
 .badge-commercial { background: rgba(255,255,255,0.2); color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; }
@@ -228,6 +225,86 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .deals-table tr.row-etranger td.col-freeze,
 .deals-table tr.row-etranger td.col-freeze2 { background:#FCE8A6 !important; }
 .deals-table tr.row-etranger:hover td { background:#FFE8B0 !important; }
+/* Tooltip custom pour commentaire (position:fixed pour ne pas être clippé par overflow) */
+#cell-tooltip-bubble {
+  position: fixed;
+  display: none;
+  background: rgba(26, 16, 51, 0.95);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  max-width: 360px;
+  white-space: normal;
+  z-index: 9999;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.28);
+  pointer-events: none;
+}
+#cell-tooltip-bubble::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 20px;
+  border: 6px solid transparent;
+  border-top-color: rgba(26, 16, 51, 0.95);
+}
+/* ===== NAVIGATION PRINCIPALE — refonte esthétique ===== */
+.main-nav {
+  background: linear-gradient(to bottom, #ffffff 0%, #FAF8FF 100%);
+  border-bottom: 1px solid rgba(115,67,238,0.10);
+  padding: 10px 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 16px rgba(75,54,236,0.06);
+}
+.main-nav::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(115,67,238,0.18) 20%, rgba(115,67,238,0.18) 80%, transparent 100%);
+  pointer-events: none;
+}
+.main-nav-btn {
+  position: relative;
+  padding: 8px 18px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6B5E9C;
+  cursor: pointer;
+  border-radius: 10px;
+  transition: background .18s ease, color .18s ease, box-shadow .25s ease, transform .18s ease;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  line-height: 1.2;
+}
+.main-nav-btn:hover {
+  color: #4B36EC;
+  background: rgba(115,67,238,0.08);
+}
+.main-nav-btn:active {
+  transform: translateY(1px);
+}
+.main-nav-btn.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #7343EE 0%, #4B36EC 100%);
+  box-shadow: 0 4px 14px rgba(75,54,236,0.32), inset 0 1px 0 rgba(255,255,255,0.22);
+}
+.main-nav-btn.active:hover {
+  background: linear-gradient(135deg, #7F4FF3 0%, #5241EE 100%);
+  color: #ffffff;
+}
 .hist-finale-badge { display:inline-flex; align-items:center; gap:4px; background:#FFF3CD; color:#B8860B; border:1.5px solid #F0C040; border-radius:20px; font-size:11px; font-weight:700; padding:2px 10px; }
 .hist-finale-check { display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; color:#6B5E9C; font-weight:500; user-select:none; }
 .hist-finale-check input[type=checkbox] { accent-color:#F0A500; width:14px; height:14px; cursor:pointer; }
@@ -1017,7 +1094,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
     <div class="frais-row" id="fr-ik" style="display:none;"><span class="label">Indemnités kilométriques</span><span class="val" id="fr-ik-val">0 €</span></div>
     <div class="frais-row" id="fr-repas" style="display:none;"><span class="label">Repas / Swile</span><span class="val" id="fr-repas-val">0 €</span></div>
     <div class="frais-row" id="fr-tt" style="display:none;"><span class="label">Télétravail</span><span class="val" id="fr-tt-val">0 €</span></div>
-    <div class="frais-row" id="fr-transport" style="display:none;"><span class="label">Transport</span><span class="val" id="fr-transport-val">0 €</span></div>
+    <div class="frais-row" id="fr-transport" style="display:none;"><span class="label">Transport (75%)</span><span class="val" id="fr-transport-val">0 €</span></div>
     <div class="frais-row" id="fr-telnet" style="display:none;"><span class="label">Tél. / Internet</span><span class="val" id="fr-telnet-val">0 €</span></div>
     <div class="frais-row" id="fr-formation" style="display:none;"><span class="label">Formation</span><span class="val" id="fr-formation-val">0 €</span></div>
     <div class="frais-row" id="fr-materiel" style="display:none;"><span class="label">Matériel professionnel</span><span class="val" id="fr-materiel-val">0 €</span></div>
@@ -1139,7 +1216,10 @@ function setRTT(v) {
     var js = v === 6 ? 20.5 : 20;
     if (info) { info.style.display = 'block'; info.textContent = v + ' jours RTT/an → base salariale : ' + js + 'j/mois — CP provisionnés obligatoires'; }
   }
-  calc();
+  // RTT impacte les jours salariaux effectifs → relancer le solveur (comme setCP/setRepas)
+  // calc() seul ne suffit pas : il ne rééquilibre pas la relation BRUT↔TJM
+  if (lastEdited === 'tjm') solveBrutFromTJM();
+  else solveTJMFromBrut();
 }
 
 function setCP(v) {
@@ -1395,7 +1475,7 @@ function calcFraisMensuels(nb_jours) {
     frais_repas = taux_gd * (jours_pres / 5) * nb_jours;
   }
   // Transport
-  const frais_transport = f('abo_transport');
+  const frais_transport = f('abo_transport') * 0.75; // 75% pris en charge par l'employeur (config Seven Portage)
   // Télétravail
   let frais_tt = 0;
   if (state.tt) {
@@ -1684,7 +1764,7 @@ function calc() {
   }
 
   // Transport
-  const frais_transport = f('abo_transport');
+  const frais_transport = f('abo_transport') * 0.75; // 75% pris en charge par l'employeur (config Seven Portage)
 
   // Télétravail
   let frais_tt = 0;
@@ -1936,7 +2016,7 @@ function calcFraisMensuels(nb_jours) {
     frais_repas = taux_gd * (jours_pres / 5) * nb_jours;
   }
   // Transport
-  const frais_transport = f('abo_transport');
+  const frais_transport = f('abo_transport') * 0.75; // 75% pris en charge par l'employeur (config Seven Portage)
   // Télétravail
   let frais_tt = 0;
   if (state.tt) {
@@ -1964,7 +2044,11 @@ function solveBrutFromTJM() {
   const MARGE = p('marge');
   if (TJM <= 0 || NB_JOURS <= 0) return;
 
-  const ca_dispo = TJM * NB_JOURS * (1 - MARGE);
+  // RTT : base salariale réduite quand 21j + RTT activé (sinon NB_JOURS brut)
+  const NB_JOURS_SAL = (state.rtt === 6 && NB_JOURS === 21) ? 20.5
+                     : (state.rtt === 12 && NB_JOURS === 21) ? 20 : NB_JOURS;
+  // Facturation sur NB_JOURS ; CA salarial sur NB_JOURS_SAL (après RTT)
+  const ca_dispo = TJM * NB_JOURS_SAL * (1 - MARGE);
 
   // Les frais pro sont 100% à charge de l'employeur → déduits du CA avant solveur
   const frais_solver = calcFraisMensuels(NB_JOURS);
@@ -2220,7 +2304,7 @@ function calc() {
   }
 
   // Transport
-  const frais_transport = f('abo_transport');
+  const frais_transport = f('abo_transport') * 0.75; // 75% pris en charge par l'employeur (config Seven Portage)
 
   // Télétravail
   let frais_tt = 0;
@@ -3904,8 +3988,88 @@ function odPush() {
 }
 
 function odAutoSync() {
+  // Option A : sync auto de TOUS les entités (historique, candidats, deals, clients)
+  // après un envoi de simulation ou une création/édition de placement.
+  // Les Paramètres ne sont PAS synchronisés en auto (trop personnels, risque d'écrasement).
   if (!odToken) return;
-  setTimeout(odPush, 800);
+  // Debounce : si plusieurs appels s'enchaînent (ex: simu + placement dans la foulée),
+  // on annule le précédent timeout et on relance — un seul aller-retour réseau au lieu de N.
+  if (window._odAutoSyncTimer) { clearTimeout(window._odAutoSyncTimer); }
+  window._odAutoSyncTimer = setTimeout(odSilentFullSync, 1200);
+}
+
+function odSilentFullSync() {
+  if (!odToken) return;
+  odWithToken(function(token) {
+    var entities = [
+      { path: OD_FILE_PATH,    key: 'simulations', merge: mergeHistorique, getData: function(){ return {version:1,updated:new Date().toISOString(),simulations:getHistory()}; } },
+      { path: OD_CAND_PATH,    key: 'candidats',   merge: mergeCandidats,  getData: function(){ return {version:1,updated:new Date().toISOString(),candidats:getCandidats()}; } },
+      { path: OD_DEALS_PATH,   key: 'deals',       merge: mergeDeals,      getData: function(){ return {version:1,updated:new Date().toISOString(),deals:getDeals()}; } },
+      { path: OD_CLIENTS_PATH, key: 'clients',     merge: mergeClients,    getData: function(){ return {version:1,updated:new Date().toISOString(),clients:getClients()}; } }
+    ];
+
+    var errors = [];
+    var idx = 0;
+    odSetStatus('Synchronisation...', false);
+    console.log('[AutoSync] Démarrage LOAD+MERGE+PUSH sur', entities.length, 'entités');
+
+    function nextLoad() {
+      if (idx >= entities.length) { idx = 0; nextPush(); return; }
+      var ent = entities[idx++];
+      var loadUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(ent.path) + ':/content';
+      fetch(loadUrl, { headers: { 'Authorization': 'Bearer ' + token } })
+        .then(function(r) {
+          if (r.status === 404) return null;  // Fichier n'existe pas encore côté remote, OK
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function(data) {
+          try {
+            if (data && data[ent.key]) ent.merge(data[ent.key]);
+          } catch(mergeErr) {
+            console.error('[AutoSync merge] ' + ent.key, mergeErr);
+            errors.push('merge ' + ent.key);
+          }
+          setTimeout(nextLoad, 30);
+        })
+        .catch(function(err) {
+          console.warn('[AutoSync load] ' + ent.key, err);
+          errors.push('load ' + ent.key);
+          setTimeout(nextLoad, 30);
+        });
+    }
+
+    function nextPush() {
+      if (idx >= entities.length) {
+        if (errors.length) {
+          console.warn('[AutoSync] Terminé avec avertissements:', errors);
+          odSetStatus('⚠ Sync partielle (' + errors.length + ')', true);
+        } else {
+          odSetStatus('✓ Sync auto OK', false);
+        }
+        return;
+      }
+      var ent = entities[idx++];
+      var putUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(ent.path) + ':/content';
+      var body;
+      try { body = JSON.stringify(ent.getData()); }
+      catch(serErr) { errors.push('ser ' + ent.key); setTimeout(nextPush, 30); return; }
+      fetch(putUrl, {
+        method: 'PUT',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: body
+      }).then(function(r) {
+        if (!r.ok) { errors.push('push ' + ent.key + ' HTTP ' + r.status); console.warn('[AutoSync push] ' + ent.key + ' HTTP ' + r.status); }
+        setTimeout(nextPush, 30);
+      }).catch(function(err) {
+        errors.push('push ' + ent.key);
+        console.warn('[AutoSync push] ' + ent.key, err);
+        setTimeout(nextPush, 30);
+      });
+    }
+
+    nextLoad();
+  });
 }
 
 function odBuildCommercialSelect(sims) {
@@ -4354,6 +4518,8 @@ function savePlacement() {
   closeModal('modal-placement');
   renderHistorique();
   if (document.getElementById('tab-deals') && document.getElementById('tab-deals').style.display !== 'none') renderDeals();
+  // Déclenche sync auto (debouncée) pour pousser deal + candidat + client sur SharePoint
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 
 function openSortiePopup(ts) {
@@ -4481,6 +4647,52 @@ function renderDeals() {
   html += '</tbody></table></div>';
   listEl.innerHTML = html;
 }
+
+// Tooltip flottant pour commentaires (délégation d'événement, actif globalement)
+(function initCellTooltip(){
+  if (window._cellTooltipInit) return;  // idempotent
+  window._cellTooltipInit = true;
+  function ensureBubble() {
+    var b = document.getElementById('cell-tooltip-bubble');
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'cell-tooltip-bubble';
+      document.body.appendChild(b);
+    }
+    return b;
+  }
+  document.addEventListener('mouseover', function(e) {
+    var el = e.target;
+    if (!el || !el.classList || !el.classList.contains('cell-tooltip')) return;
+    var text = el.getAttribute('data-tooltip');
+    if (!text) return;
+    var b = ensureBubble();
+    b.textContent = text;
+    b.style.display = 'block';
+    // Positionner AU-DESSUS de la cellule (ou en-dessous si trop près du haut)
+    var r = el.getBoundingClientRect();
+    var bRect = b.getBoundingClientRect();
+    var top = r.top - bRect.height - 10;
+    var showArrowBottom = true;
+    if (top < 10) { top = r.bottom + 10; showArrowBottom = false; }
+    var left = Math.max(10, Math.min(window.innerWidth - bRect.width - 10, r.left));
+    b.style.top = top + 'px';
+    b.style.left = left + 'px';
+    // Orientation de la flèche : en bas si tooltip au-dessus de la cellule, en haut sinon
+    b.style.setProperty('--arrow-pos', showArrowBottom ? 'bottom' : 'top');
+  });
+  document.addEventListener('mouseout', function(e) {
+    var el = e.target;
+    if (!el || !el.classList || !el.classList.contains('cell-tooltip')) return;
+    var b = document.getElementById('cell-tooltip-bubble');
+    if (b) b.style.display = 'none';
+  });
+  // Cacher au scroll pour éviter les tooltips "coincés"
+  window.addEventListener('scroll', function(){
+    var b = document.getElementById('cell-tooltip-bubble');
+    if (b) b.style.display = 'none';
+  }, true);
+})();
 
 function deleteDeal(id) {
   if (!confirm('Supprimer ce deal ?')) return;
@@ -4710,13 +4922,15 @@ function getCellValue(d, key){
       return (d.repas && d.repas!=='Non') ? (repasLabels[d.repas] || d.repas) : '\u2014';
     case 'forfait_repas': return d.repas==='Forfait' ? 'Oui' : '—';
     case 'km_aller': return (d.km_aller && parseFloat(d.km_aller)>0) ? d.km_aller+' km' : '—';
-    case 'abo_transport': return (d.abo_transport && parseFloat(d.abo_transport)>0) ? d.abo_transport+' €' : '—';
+    case 'abo_transport':
+      var _tr = parseFloat(d.abo_transport) || 0;
+      return _tr > 0 ? (_tr / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
     case 'tt': return fmt(d.tt);
     case 'telnet': 
       var totalTelnet = (parseFloat(d.abo_tel)||0) + (parseFloat(d.abo_internet)||0);
-      return totalTelnet > 0 ? totalTelnet.toLocaleString('fr-FR') + ' €' : '—';
+      return totalTelnet > 0 ? (totalTelnet / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
     case 'grand_dep':
-      // Seulement si repas === 'GD' — on affiche le montant mensuel (taux × nb_jours)
+      // Seulement si repas === 'GD' — on affiche le montant journalier (taux GD par jour)
       if (d.repas !== 'GD' && d.repas !== 'gd') return '\u2014';
       var gdIdfEl = document.getElementById('p_gd_idf');
       var gdAutreEl = document.getElementById('p_gd_autre');
@@ -4724,16 +4938,14 @@ function getCellValue(d, key){
       var _tauxAutre = gdAutreEl ? (parseFloat(gdAutreEl.value) || 82.86) : 82.86;
       var _lieu = (d.gd_lieu || 'IDF').toString();
       var _taux = _lieu === 'IDF' ? _tauxIdf : _tauxAutre;
-      var _nbJ = parseFloat(d.nb_jours) || 0;
-      var _totalGd = Math.round(_taux * _nbJ);
-      if (_totalGd <= 0) return '\u2014';
-      return _totalGd.toLocaleString('fr-FR') + ' €/mois (' + _lieu + ')';
+      if (_taux <= 0) return '\u2014';
+      return _taux.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j (' + _lieu + ')';
     case 'frais_formation': 
       var formVal = parseFloat(d.frais_formation)||0;
-      return formVal > 0 ? formVal.toLocaleString('fr-FR') + ' €' : '\u2014';
+      return formVal > 0 ? (formVal / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
     case 'frais_materiel': 
       var matVal = parseFloat(d.frais_materiel)||0;
-      return matVal > 0 ? matVal.toLocaleString('fr-FR') + ' €' : '\u2014';
+      return matVal > 0 ? (matVal / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
     case 'cp':
       var cpVal = (d.cp || '').toString().toLowerCase();
       if (cpVal === 'cp' || cpVal === 'provisionnes' || cpVal === 'provisionnés' || cpVal === 'oui') return '<span style="color:#1D9E75;font-weight:600;">Oui</span>';
@@ -4744,7 +4956,11 @@ function getCellValue(d, key){
       if (rttVal > 0) return '<span style="color:#1D9E75;font-weight:600;">Oui (' + rttVal + 'j)</span>';
       return '<span style="color:#9E9E9E;">Non</span>';
     case 'connait_tjm': return fmt(d.connait_tjm);
-    case 'commentaire': return '<span title="'+(d.commentaire||'')+'" style="display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;">'+(d.commentaire||'—')+'</span>';
+    case 'commentaire':
+      var _comm = (d.commentaire || '').toString();
+      if (!_comm) return '\u2014';
+      var _safe = _comm.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      return '<span class="cell-tooltip" data-tooltip="'+_safe+'" style="display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;cursor:help;">'+_safe+'</span>';
     // ── Colonnes Onboarding (select éditable) ──
     case 'etat_cdps':
     case 'etat_cdt':
@@ -4801,8 +5017,44 @@ function updateDealField(dealId, key, value) {
   if (idx < 0) return;
   deals[idx][key] = value;
   deals[idx].updated = new Date().toISOString();
+
+  // ── Auto-transition d'état basée sur les 3 champs clés d'onboarding ──
+  // Règle : si les 3 champs suivants sont remplis "positivement" → etat = 'Signé'
+  //   - etat_cdps === 'Reçu'
+  //   - signature_cdps === 'Oui'
+  //   - signature_contrat_travail === 'Oui'
+  // Si au moins un des 3 est rempli sans que les 3 soient complets → etat = 'En cours'
+  // Sinon (aucun rempli) → on laisse l'etat actuel tel quel.
+  // Les états 'Annulé' et 'Sorti des effectifs' ne sont JAMAIS écrasés automatiquement
+  // (décision humaine qui doit primer).
+  if (key === 'etat_cdps' || key === 'signature_cdps' || key === 'signature_contrat_travail') {
+    var currentEtat = deals[idx].etat || '';
+    // Ne rien faire si l'état actuel est déjà une décision manuelle forte
+    if (currentEtat !== 'Annulé' && currentEtat !== 'Sorti des effectifs') {
+      var cdps  = (deals[idx].etat_cdps || '').toString();
+      var sCdps = (deals[idx].signature_cdps || '').toString();
+      var sCdt  = (deals[idx].signature_contrat_travail || '').toString();
+      var hasAny = (cdps && cdps !== '') || (sCdps && sCdps !== '') || (sCdt && sCdt !== '');
+      var allOk = cdps === 'Reçu' && sCdps === 'Oui' && sCdt === 'Oui';
+      if (allOk) {
+        deals[idx].etat = 'Signé';
+      } else if (hasAny) {
+        deals[idx].etat = 'En cours';
+      }
+      // Si aucun rempli : on ne touche pas à l'état (conserve 'Nouveau placement' ou autre)
+    }
+  }
+
   saveDeals(deals);
+  // Préserver la position de scroll du tableau (évite le saut à gauche au change de select)
+  var _wrap = document.querySelector('.deals-table-wrap');
+  var _scrollL = _wrap ? _wrap.scrollLeft : 0;
+  var _scrollT = _wrap ? _wrap.scrollTop  : 0;
   renderDeals();
+  var _wrap2 = document.querySelector('.deals-table-wrap');
+  if (_wrap2) { _wrap2.scrollLeft = _scrollL; _wrap2.scrollTop = _scrollT; }
+  // Sync auto après modif d'un champ deal
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 
 function exportDealsExcel() {
@@ -5939,83 +6191,166 @@ function openClientPage(id) {
 }
 
 function buildClientPageHTML(cl) {
-  var IS = 'width:100%;padding:6px 9px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;';
-  var LB = 'font-size:10px;font-weight:700;color:#9E9E9E;text-transform:uppercase;display:block;margin-bottom:3px;';
-  function fld(lbl,val,fid) {
-    return '<div><label style="'+LB+'">'+lbl+'</label><input value="'+((val||'')+'').replace(/"/g,'&quot;')+'" data-field="'+fid+'" data-clid="'+cl.id+'" onchange="updateClientField(this)" style="'+IS+'"></div>';
-  }
-  var mgrsHtml = (cl.managers||[]).length ? (cl.managers||[]).map(function(m,i){
-    var nbD = (m.deals||[]).length;
-    var initials = m.name.split(' ').map(function(w){return w[0]||'';}).slice(0,2).join('').toUpperCase();
-    return '<div data-mgridx="'+i+'" data-clid="'+cl.id+'" onclick="openManagerFiche(parseInt(this.dataset.clid),parseInt(this.dataset.mgridx))"'
-      + ' style="background:#fff;border:1.5px solid #E4E0FA;border-radius:10px;padding:14px;cursor:pointer;position:relative;overflow:hidden;transition:all .15s;"'
-      + ' onmouseover="this.style.borderColor=\'#4B36EC\'" onmouseout="this.style.borderColor=\'#E4E0FA\'">'
-      + '<div style="position:absolute;top:0;left:0;right:0;height:3px;background:#4B36EC;border-radius:10px 10px 0 0;"></div>'
-      + '<div style="display:flex;align-items:center;gap:10px;margin-top:2px;">'
-      + '<div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#4B36EC,#7343EE);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">'+initials+'</div>'
-      + '<div style="flex:1;"><div style="font-size:13px;font-weight:700;color:#1A1033;">'+m.name+'</div>'
-      + '<div style="font-size:11px;color:#6B5E9C;">'+(m.tel||'')+(m.email?' \u00b7 '+m.email:'')+'</div></div>'
-      + '</div>'
-      + '<div style="margin-top:8px;font-size:11px;font-weight:700;color:#7343EE;">'+nbD+' deal'+(nbD>1?'s':'')+'</div>'
-      + '</div>';
-  }).join('') : '<div style="color:#C0B8E0;font-size:12px;">Aucun manager.</div>';
+  // Helpers locaux de style
+  var IS = 'width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:13px;box-sizing:border-box;background:#fff;transition:border-color .15s, box-shadow .15s;font-family:inherit;color:#1A1033;';
+  var IS_FOCUS = 'onfocus="this.style.borderColor=\'#7343EE\';this.style.boxShadow=\'0 0 0 3px rgba(115,67,238,0.12)\'" onblur="this.style.borderColor=\'#E4E0FA\';this.style.boxShadow=\'none\'"';
+  var LB = 'font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;';
 
-  return '<div style="padding:0 0 12px;">'
-    // Bouton retour + Breadcrumb
-    + '<button class="back-btn" onclick="showClientsTab()" style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:12px;">&#8592; Clients</button>'
-    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">'
-    + '<button onclick="showClientsTab()" style="background:none;border:none;color:#7343EE;font-size:12px;font-weight:600;cursor:pointer;">&#127970; Clients</button>'
-    + '<span style="color:#9E9E9E;">/</span>'
-    + '<span style="font-size:12px;font-weight:700;color:#1A1033;">'+cl.name+'</span>'
+  // Input texte
+  function fld(lbl, val, fid, placeholder) {
+    var ph = placeholder ? ' placeholder="' + placeholder + '"' : '';
+    return '<div><label style="' + LB + '">' + lbl + '</label>'
+      + '<input value="' + ((val || '') + '').replace(/"/g, '&quot;') + '"'
+      + ' data-field="' + fid + '" data-clid="' + cl.id + '"'
+      + ' onchange="updateClientField(this)" ' + IS_FOCUS
+      + ' style="' + IS + '"' + ph + '></div>';
+  }
+
+  // Dropdown (select) piloté par getCustomLists()
+  function fldSelect(lbl, val, fid, listKey, placeholder) {
+    var lists = (typeof getCustomLists === 'function') ? getCustomLists() : {};
+    var options = lists[listKey] || [];
+    var current = val || '';
+    var optsHtml = '<option value="">' + (placeholder || '— Sélectionner —') + '</option>'
+      + options.map(function (o) {
+          var sel = (o === current) ? ' selected' : '';
+          return '<option value="' + o.replace(/"/g, '&quot;') + '"' + sel + '>' + o + '</option>';
+        }).join('');
+    return '<div><label style="' + LB + '">' + lbl + '</label>'
+      + '<select data-field="' + fid + '" data-clid="' + cl.id + '"'
+      + ' onchange="updateClientField(this)" ' + IS_FOCUS
+      + ' style="' + IS + 'cursor:pointer;appearance:none;background-image:url(\'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 12 12%22><path fill=%22%236B5E9C%22 d=%22M6 8L2 4h8z%22/></svg>\');background-repeat:no-repeat;background-position:right 12px center;background-size:10px;padding-right:30px;">'
+      + optsHtml
+      + '</select></div>';
+  }
+
+  // Initiales entreprise
+  var cleanName = (cl.name || '').trim();
+  var initials = cleanName.split(/\s+/).filter(Boolean).map(function (w) { return w[0] || ''; }).slice(0, 2).join('').toUpperCase() || '?';
+
+  // Stats rapides
+  var nbMgrs = (cl.managers || []).length;
+  var nbDeals = (cl.managers || []).reduce(function (acc, m) { return acc + ((m.deals || []).length); }, 0);
+  var lastUpdate = cl.updated || cl.created || '';
+
+  // Cartes managers
+  var mgrsHtml = nbMgrs ? (cl.managers || []).map(function (m, i) {
+    var nbD = (m.deals || []).length;
+    var mInit = (m.name || '').split(/\s+/).filter(Boolean).map(function (w) { return w[0] || ''; }).slice(0, 2).join('').toUpperCase() || '?';
+    return '<div data-mgridx="' + i + '" data-clid="' + cl.id + '"'
+      + ' onclick="openManagerFiche(parseInt(this.dataset.clid),parseInt(this.dataset.mgridx))"'
+      + ' style="background:#fff;border:1.5px solid #E4E0FA;border-radius:12px;padding:16px;cursor:pointer;position:relative;overflow:hidden;transition:transform .15s ease, box-shadow .2s ease, border-color .15s ease;"'
+      + ' onmouseover="this.style.borderColor=\'#7343EE\';this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 8px 24px rgba(75,54,236,0.14)\'"'
+      + ' onmouseout="this.style.borderColor=\'#E4E0FA\';this.style.transform=\'translateY(0)\';this.style.boxShadow=\'none\'">'
+      + '<div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#7343EE 0%, #4B36EC 100%);"></div>'
+      + '<div style="display:flex;align-items:center;gap:11px;">'
+      +   '<div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex-shrink:0;letter-spacing:-0.02em;box-shadow:0 4px 12px rgba(75,54,236,0.3);">' + mInit + '</div>'
+      +   '<div style="flex:1;min-width:0;">'
+      +     '<div style="font-size:13.5px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (m.name || '') + '</div>'
+      +     '<div style="font-size:11.5px;color:#8378B8;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + ((m.tel || '') + (m.email ? ' · ' + m.email : '')) + '</div>'
+      +   '</div>'
+      + '</div>'
+      + '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed #EDE9FF;display:flex;align-items:center;justify-content:space-between;">'
+      +   '<span style="font-size:10px;color:#9E94C4;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">Placements</span>'
+      +   '<span style="font-size:13px;font-weight:800;color:#4B36EC;">' + nbD + '</span>'
+      + '</div>'
+      + '</div>';
+  }).join('') : '<div style="grid-column:1/-1;text-align:center;padding:28px;color:#9E94C4;font-size:13px;background:#FAF8FF;border:1.5px dashed #E4E0FA;border-radius:12px;">Aucun manager enregistré.<div style="font-size:11px;color:#B8AEDB;margin-top:4px;">Ils apparaîtront ici lors du premier placement.</div></div>';
+
+  // Style section-card
+  var CARD = 'background:#fff;border:1px solid #EAE6F8;border-radius:14px;padding:20px 22px;margin-bottom:16px;box-shadow:0 1px 3px rgba(75,54,236,0.04);';
+  var H = 'display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:#4B36EC;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #F0EDF9;';
+  var DOT = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#7343EE;box-shadow:0 0 0 3px rgba(115,67,238,0.18);"></span>';
+
+  // ── Rendu ──
+  return '<div style="padding:4px 0 24px;max-width:1200px;">'
+    // Breadcrumb + retour
+    + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">'
+    +   '<button class="back-btn" onclick="showClientsTab()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:#fff;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;" onmouseover="this.style.background=\'#F5F3FF\';this.style.borderColor=\'#7343EE\'" onmouseout="this.style.background=\'#fff\';this.style.borderColor=\'#E4E0FA\'">← Retour</button>'
+    +   '<div style="flex:1;display:flex;align-items:center;gap:6px;font-size:12px;">'
+    +     '<button onclick="showClientsTab()" style="background:none;border:none;color:#7343EE;font-size:12px;font-weight:600;cursor:pointer;padding:0;">Clients</button>'
+    +     '<span style="color:#C0B8E0;">›</span>'
+    +     '<span style="font-weight:700;color:#1A1033;">' + cleanName + '</span>'
+    +   '</div>'
     + '</div>'
-    // Header entreprise
-    + '<div style="background:linear-gradient(135deg,#372EB6,#4B36EC);border-radius:10px;padding:14px 18px;margin-bottom:14px;">'
-    + '<div style="font-size:16px;font-weight:800;color:#fff;margin-bottom:8px;">&#127970; '+cl.name+'</div>'
-    + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;">'
-    + fld('T\u00e9l\u00e9phone',cl.tel,'tel')
-    + fld('Email',cl.email,'email')
-    + fld('Adresse',cl.adresse,'adresse')
-    + fld("Secteur",cl.secteur,'secteur')
-    + '</div></div>'
-    // Informations contractuelles
-    + '<div style="background:#fff;border:1.5px solid #E4E0FA;border-radius:10px;padding:14px 18px;margin-bottom:14px;">'
-    + '<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#4B36EC;margin-bottom:10px;">&#128196; Informations contractuelles</div>'
-    + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">'
-    + fld('D\u00e9lai de paiement', cl.delai_paiement, 'delai_paiement')
-    + fld('Banque Seven', cl.banque, 'banque')
+
+    // Hero
+    + '<div style="position:relative;background:linear-gradient(135deg,#2A1E82 0%, #4B36EC 45%, #7343EE 100%);border-radius:16px;padding:26px 28px;margin-bottom:20px;overflow:hidden;box-shadow:0 10px 32px rgba(75,54,236,0.28);">'
+    +   '<div style="position:absolute;top:-40px;right:-40px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);pointer-events:none;"></div>'
+    +   '<div style="position:absolute;bottom:-60px;left:30%;width:240px;height:240px;border-radius:50%;background:radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);pointer-events:none;"></div>'
+    +   '<div style="position:relative;display:flex;align-items:center;gap:18px;">'
+    +     '<div style="width:68px;height:68px;border-radius:16px;background:rgba(255,255,255,0.16);backdrop-filter:blur(10px);border:1.5px solid rgba(255,255,255,0.28);color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;flex-shrink:0;letter-spacing:-0.03em;box-shadow:0 6px 18px rgba(0,0,0,0.15);">' + initials + '</div>'
+    +     '<div style="flex:1;min-width:0;">'
+    +       '<div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.01em;line-height:1.15;">' + cleanName + '</div>'
+    +       (cl.secteur ? '<div style="display:inline-flex;align-items:center;gap:4px;margin-top:8px;padding:3px 10px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.24);border-radius:20px;font-size:11px;font-weight:600;color:#fff;">' + cl.secteur + '</div>' : '')
+    +     '</div>'
+    +   '</div>'
+    // Stats
+    +   '<div style="position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px;padding-top:18px;border-top:1px solid rgba(255,255,255,0.15);">'
+    +     '<div><div style="font-size:10px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Managers</div><div style="font-size:22px;font-weight:800;color:#fff;margin-top:2px;">' + nbMgrs + '</div></div>'
+    +     '<div><div style="font-size:10px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Placements</div><div style="font-size:22px;font-weight:800;color:#fff;margin-top:2px;">' + nbDeals + '</div></div>'
+    +     '<div><div style="font-size:10px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Mise à jour</div><div style="font-size:13px;font-weight:700;color:#fff;margin-top:6px;">' + (lastUpdate || '—') + '</div></div>'
+    +   '</div>'
     + '</div>'
-    + '<div style="margin-top:10px;">'
-    + '<label style="'+LB+'">Commentaire</label>'
-    + '<textarea data-field="commentaire" data-clid="'+cl.id+'" onchange="updateClientField(this)" rows="2" style="'+IS+';resize:vertical;min-height:48px;font-family:inherit;">'+((cl.commentaire||'')+'').replace(/</g,'&lt;')+'</textarea>'
+
+    // Section : Contact & adresse
+    + '<div style="' + CARD + '">'
+    +   '<div style="' + H + '">' + DOT + '<span>Contact & adresse</span></div>'
+    +   '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;">'
+    +     fld('Téléphone', cl.tel, 'tel', '+33 …')
+    +     fld('Email', cl.email, 'email', 'contact@…')
+    +     fld('Adresse', cl.adresse, 'adresse', 'Rue, ville, code postal')
+    +     fld('Secteur', cl.secteur, 'secteur', 'IT / Finance …')
+    +   '</div>'
     + '</div>'
+
+    // Section : Informations contractuelles
+    + '<div style="' + CARD + '">'
+    +   '<div style="' + H + '">' + DOT + '<span>Informations contractuelles</span></div>'
+    +   '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;">'
+    +     fldSelect('Délai de paiement', cl.delai_paiement, 'delai_paiement', 'delais_paiement')
+    +     fldSelect('Banque Seven', cl.banque, 'banque', 'banques')
+    +   '</div>'
+    +   '<div style="margin-top:14px;"><label style="' + LB + '">Commentaire</label>'
+    +     '<textarea data-field="commentaire" data-clid="' + cl.id + '" onchange="updateClientField(this)"'
+    +     ' onfocus="this.style.borderColor=\'#7343EE\';this.style.boxShadow=\'0 0 0 3px rgba(115,67,238,0.12)\'" onblur="this.style.borderColor=\'#E4E0FA\';this.style.boxShadow=\'none\'"'
+    +     ' rows="3" style="' + IS + 'resize:vertical;min-height:72px;line-height:1.5;"'
+    +     ' placeholder="Remarques, historique, points d\'attention…">'
+    +     ((cl.commentaire || '') + '').replace(/</g, '&lt;')
+    +     '</textarea>'
+    +   '</div>'
     + '</div>'
-    // Signataire
-    + '<div style="background:#fff;border:1.5px solid #E4E0FA;border-radius:10px;padding:14px 18px;margin-bottom:14px;">'
-    + '<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#4B36EC;margin-bottom:10px;">&#9997; Signataire</div>'
-    + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">'
-    + fld('Nom signataire', cl.nom_signataire, 'nom_signataire')
-    + fld('T\u00e9l. signataire', cl.tel_signataire, 'tel_signataire')
-    + fld('Email signataire', cl.email_signataire, 'email_signataire')
+
+    // Section : Signataire
+    + '<div style="' + CARD + '">'
+    +   '<div style="' + H + '">' + DOT + '<span>Signataire des contrats</span></div>'
+    +   '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;">'
+    +     fld('Nom signataire', cl.nom_signataire, 'nom_signataire', 'Prénom Nom')
+    +     fld('Tél. signataire', cl.tel_signataire, 'tel_signataire', '+33 …')
+    +     fld('Email signataire', cl.email_signataire, 'email_signataire', 'nom@…')
+    +   '</div>'
     + '</div>'
+
+    // Section : Managers
+    + '<div style="' + CARD + '">'
+    +   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #F0EDF9;">'
+    +     '<div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:#4B36EC;">' + DOT + '<span>Managers</span><span style="margin-left:4px;padding:2px 8px;background:#F5F3FF;border-radius:10px;color:#7343EE;font-size:10px;font-weight:700;">' + nbMgrs + '</span></div>'
+    +     '<button data-clid="' + cl.id + '" onclick="showAddManagerForm(parseInt(this.dataset.clid))" style="display:inline-flex;align-items:center;gap:5px;padding:7px 14px;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border:none;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 3px 10px rgba(75,54,236,0.24);transition:transform .12s, box-shadow .2s;" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 5px 14px rgba(75,54,236,0.32)\'" onmouseout="this.style.transform=\'translateY(0)\';this.style.boxShadow=\'0 3px 10px rgba(75,54,236,0.24)\'">+ Ajouter un manager</button>'
+    +   '</div>'
+    +   '<div id="add-manager-form-' + cl.id + '" style="display:none;background:linear-gradient(135deg,#FAF8FF 0%,#F5F3FF 100%);border:1.5px solid #E4E0FA;border-radius:12px;padding:16px;margin-bottom:14px;">'
+    +     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">'
+    +       '<input id="new-mgr-name-' + cl.id + '" placeholder="Nom Prénom *" style="' + IS + '">'
+    +       '<input id="new-mgr-tel-' + cl.id + '" placeholder="Téléphone" style="' + IS + '">'
+    +       '<input id="new-mgr-email-' + cl.id + '" placeholder="Email" style="' + IS + 'grid-column:1/-1;">'
+    +     '</div>'
+    +     '<div style="display:flex;gap:8px;">'
+    +       '<button data-clid="' + cl.id + '" onclick="addManager(parseInt(this.dataset.clid))" style="padding:8px 18px;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border:none;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;">Enregistrer</button>'
+    +       '<button data-clid="' + cl.id + '" onclick="document.getElementById(\'add-manager-form-' + cl.id + '\').style.display=\'none\'" style="padding:8px 18px;background:#fff;color:#6B5E9C;border:1px solid #E4E0FA;border-radius:9px;font-size:12px;cursor:pointer;">Annuler</button>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;">' + mgrsHtml + '</div>'
     + '</div>'
-    // Managers
-    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
-    + '<div style="font-size:13px;font-weight:700;color:#1A1033;">&#128101; Managers</div>'
-    + '<button data-clid="'+cl.id+'" onclick="showAddManagerForm(parseInt(this.dataset.clid))" style="padding:5px 12px;background:#4B36EC;color:#fff;border:none;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;">+ Ajouter</button>'
-    + '</div>'
-    + '<div id="add-manager-form-'+cl.id+'" style="display:none;background:#F5F3FF;border-radius:8px;padding:12px;margin-bottom:12px;">'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">'
-    + '<input id="new-mgr-name-'+cl.id+'" placeholder="Nom pr\u00e9nom *" style="'+IS+'">'
-    + '<input id="new-mgr-tel-'+cl.id+'" placeholder="T\u00e9l\u00e9phone" style="'+IS+'">'
-    + '<input id="new-mgr-email-'+cl.id+'" placeholder="Email" style="'+IS+';grid-column:1/-1;">'
-    + '</div>'
-    + '<div style="display:flex;gap:8px;">'
-    + '<button data-clid="'+cl.id+'" onclick="addManager(parseInt(this.dataset.clid))" style="padding:6px 14px;background:#4B36EC;color:#fff;border:none;border-radius:7px;font-size:12px;cursor:pointer;">Enregistrer</button>'
-    + '<button data-clid="'+cl.id+'" onclick="document.getElementById(\'add-manager-form-'+cl.id+'\').style.display=\'none\'" style="padding:6px 14px;background:#fff;color:#6B5E9C;border:1px solid #E4E0FA;border-radius:7px;font-size:12px;cursor:pointer;">Annuler</button>'
-    + '</div>'
-    + '</div>'
-    + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">'+mgrsHtml+'</div>'
-    + '</div>';
+  + '</div>';
 }
 
 function showAddManagerForm(clid) {
