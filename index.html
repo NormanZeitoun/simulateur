@@ -250,6 +250,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   <button class="main-nav-btn" id="mainnav-deals" onclick="mainNavTo('deals')">&#128203; Deals</button>
   <button class="main-nav-btn" id="mainnav-candidats" onclick="mainNavTo('candidats')">&#128100; Candidats</button>
   <button class="main-nav-btn" id="mainnav-clients" onclick="mainNavTo('clients')">&#127970; Clients</button>
+  <button class="main-nav-btn" id="mainnav-taches" onclick="mainNavTo('taches')">&#128197; Tâches</button>
 </div>
 
 <div class="app">
@@ -701,6 +702,15 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       <div style="font-size:10px;color:#9E9E9E;margin-top:6px;">Ces listes alimentent les menus déroulants du formulaire de placement.</div>
     </div>
   </div>
+
+  <!-- Section Types de rappel -->
+  <div style="margin-top:16px;">
+    <div class="params-section" style="border-radius:6px 6px 0 0;margin-bottom:0;">&#128276; Types de rappel</div>
+    <div style="border:1px solid #E4E0FA;border-top:none;border-radius:0 0 8px 8px;padding:12px;">
+      <div id="rappel-types-container"></div>
+      <div style="font-size:10px;color:#9E9E9E;margin-top:6px;">Définissez les types de rappel et leur couleur affichée dans le calendrier.</div>
+    </div>
+  </div>
   </div><!-- /tab-params -->
 
   <!-- TAB CANDIDATS -->
@@ -783,6 +793,31 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>
       </div>
       <div id="candidats-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,190px));gap:12px;"></div>
+    </div>
+  </div>
+
+  <!-- TAB TACHES / RAPPELS -->
+  <div id="tab-taches" style="display:none;">
+    <div style="padding:0 0 12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="back-btn" onclick="mainNavTo('mission')">&#8592; Retour</button>
+          <div style="font-size:13px;font-weight:700;color:#1A1033;">&#128197; Tâches &amp; Rappels</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button onclick="switchCalendarView('day')" id="cal-view-day" class="cal-view-btn" style="padding:6px 12px;border:1.5px solid #E4E0FA;border-radius:7px;background:#fff;font-size:12px;cursor:pointer;color:#6B5E9C;">Jour</button>
+          <button onclick="switchCalendarView('week')" id="cal-view-week" class="cal-view-btn" style="padding:6px 12px;border:1.5px solid #E4E0FA;border-radius:7px;background:#fff;font-size:12px;cursor:pointer;color:#6B5E9C;">Semaine</button>
+          <button onclick="switchCalendarView('month')" id="cal-view-month" class="cal-view-btn active" style="padding:6px 12px;border:1.5px solid #7343EE;border-radius:7px;background:#7343EE;font-size:12px;cursor:pointer;color:#fff;">Mois</button>
+          <button onclick="openRappelPopup()" style="padding:6px 14px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">+ Nouveau rappel</button>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;background:#F5F3FF;padding:8px 14px;border-radius:8px;">
+        <button onclick="navigateCal(-1)" style="padding:4px 10px;background:#fff;border:1px solid #E4E0FA;border-radius:6px;font-size:14px;cursor:pointer;">&lt;</button>
+        <div id="cal-title" style="flex:1;text-align:center;font-size:13px;font-weight:700;color:#1A1033;"></div>
+        <button onclick="navigateCal(1)" style="padding:4px 10px;background:#fff;border:1px solid #E4E0FA;border-radius:6px;font-size:14px;cursor:pointer;">&gt;</button>
+        <button onclick="gotoToday()" style="padding:4px 12px;background:#7343EE;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;">Aujourd'hui</button>
+      </div>
+      <div id="calendar-container" style="background:#fff;border:1px solid #E4E0FA;border-radius:10px;overflow:hidden;"></div>
     </div>
   </div>
 
@@ -979,7 +1014,7 @@ function p(id) { return f(id) / 100; }
 // TABS
 // ============================================
 function showTab(id) {
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-historique','tab-clients','tab-historique'].forEach(t => {
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-historique','tab-taches','tab-clients','tab-historique'].forEach(t => {
     document.getElementById(t).style.display = t === id ? 'block' : 'none';
   });
   document.querySelectorAll('.tab-btn').forEach((b,i) => {
@@ -3173,7 +3208,7 @@ function showHistorique() {
 
   // Masquer les autres tabs
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-taches'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-historique');
@@ -4376,7 +4411,7 @@ function showCandidatsTab() {
   document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
   var btn = document.getElementById('btn-tab-candidats');
   if (btn) btn.classList.add('active');
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-clients','tab-historique'].forEach(function(id) {
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-clients','tab-historique','tab-taches'].forEach(function(id) {
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-candidats');
@@ -4473,6 +4508,8 @@ function mainNavTo(section) {
     showCandidatsTab();
   } else if (section === 'clients') {
     showClientsTab();
+  } else if (section === 'taches') {
+    showTachesTab();
   }
 }
 
@@ -4570,6 +4607,7 @@ function buildCandFicheHTML(cand) {
     + '<button data-tab="simulations" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-simulations" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#7343EE;border-bottom:2px solid #7343EE;margin-bottom:-2px;cursor:pointer;">&#128200; Simulations (' + (cand.simulations||[]).length + ')</button>'
     + '<button data-tab="placements" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-placements" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128203; Placements</button>'
     + '<button data-tab="documents" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-documents" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128196; Documents</button>'
+    + '<button data-tab="rappels" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-rappels" class="ct-btn-rappels" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128276; Rappels</button>'
     + '</div>'
     + '<div id="ct-content-' + cand.id + '" style="padding:16px 20px;min-height:280px;max-height:42vh;overflow-y:auto;"></div>'
     + '</div>'
@@ -4608,7 +4646,7 @@ function switchCandTab(id, tab) {
   var cand = cands.find(function(c) { return c.id === id; });
   if (!cand) return;
   // Mettre à jour les boutons
-  ['simulations','placements','documents'].forEach(function(t) {
+  ['simulations','placements','documents','rappels'].forEach(function(t) {
     var btn = document.getElementById('ct-btn-' + t);
     if (!btn) return;
     var active = t === tab;
@@ -4621,6 +4659,7 @@ function switchCandTab(id, tab) {
   if (tab === 'simulations') cont.innerHTML = buildCandSimsHTML(cand);
   else if (tab === 'placements') cont.innerHTML = buildCandPlacementsHTML(cand);
   else if (tab === 'documents') cont.innerHTML = buildCandDocsHTML(cand);
+  else if (tab === 'rappels') cont.innerHTML = buildCandRappelsHTML(cand);
   else if (tab === 'commentaires') cont.innerHTML = buildCandCommsHTML(cand);
 }
 
@@ -5016,6 +5055,7 @@ function mergeParams(remote) {
     localStorage.setItem('sp_custom_lists_v1', JSON.stringify(remote.custom_lists));
     if (typeof renderCustomLists === 'function') renderCustomLists();
     if (typeof refreshCustomSelectOptions === 'function') refreshCustomSelectOptions();
+    if (typeof renderRappelTypesParams === 'function') renderRappelTypesParams();
   }
   if (remote.deal_views && Array.isArray(remote.deal_views)) {
     var local = JSON.parse(localStorage.getItem('sp_deal_views_v1') || '[]');
@@ -5438,6 +5478,7 @@ function buildManagerFicheHTML(cl, mgridx, m) {
     + '<div style="display:flex;border-bottom:2px solid #E4E0FA;padding:0 18px;">'
     + '<button id="mgr-tab-btn-sims-' + mgrId + '" data-mgrid="' + mgrId + '" data-tab="sims" onclick="switchMgrTab(this.dataset.mgrid,this.dataset.tab)" style="' + tabBtnActive + '">&#128200; Simulations (' + allSims.length + ')</button>'
     + '<button id="mgr-tab-btn-pl-' + mgrId + '" data-mgrid="' + mgrId + '" data-tab="pl" onclick="switchMgrTab(this.dataset.mgrid,this.dataset.tab)" style="' + tabBtnInact + '">&#128203; Placements (' + mgrDeals.length + ')</button>'
+    + '<button id="mgr-tab-btn-rp-' + mgrId + '" data-mgrid="' + mgrId + '" data-tab="rappels" onclick="switchMgrTab(this.dataset.mgrid,this.dataset.tab)" style="' + tabBtnInact + '">&#128276; Rappels</button>'
     + '</div>'
     + '<div id="mgr-tab-content-' + mgrId + '" style="padding:14px 18px;overflow-y:auto;max-height:45vh;">' + simsHtml + '</div>'
     + '</div>'
@@ -5498,9 +5539,11 @@ function switchMgrTab(mgrId, tab) {
         + '<button data-ts="' + s.timestamp + '" onclick="reopenSim(parseInt(this.dataset.ts));closeMgrFiche();" style="padding:3px 8px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;">&#128200; Voir</button>'
         + '</div></div>';
     }).join('') : '<div style="color:#C0B8E0;font-size:12px;">Aucune simulation.</div>';
-  } else {
+  } else if (tab === 'pl') {
     if (btnSims) btnSims.style.cssText = tabBtnInact;
     if (btnPl) btnPl.style.cssText = tabBtnActive;
+    var btnRp = document.getElementById('mgr-tab-btn-rp-' + mgrId);
+    if (btnRp) btnRp.style.cssText = tabBtnInact;
     var mgrDeals = m.deals || [];
     var ECOLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
     content.innerHTML = mgrDeals.length ? mgrDeals.map(function(d) {
@@ -5515,6 +5558,12 @@ function switchMgrTab(mgrId, tab) {
         + '<button data-email="' + (d.email_candidat||'') + '" onclick="openCandidatByEmail(this.dataset.email)" style="padding:3px 8px;background:#F0FDF4;color:#1D9E75;border:1.5px solid #9FE1CB;border-radius:5px;font-size:11px;cursor:pointer;">&#128100;</button>'
         + '</div></div>';
     }).join('') : '<div style="color:#C0B8E0;font-size:12px;">Aucun placement.</div>';
+  } else if (tab === 'rappels') {
+    if (btnSims) btnSims.style.cssText = tabBtnInact;
+    if (btnPl) btnPl.style.cssText = tabBtnInact;
+    var btnRp = document.getElementById('mgr-tab-btn-rp-' + mgrId);
+    if (btnRp) btnRp.style.cssText = tabBtnActive;
+    content.innerHTML = buildMgrRappelsHTML(clid, mgridx, m);
   }
 }
 
@@ -5983,6 +6032,525 @@ function toggleDocRecu(input) {
   saveCandidatsArr(cands);
 }
 
+
+
+// ═══════════════════════════════════════════════════════════
+// MODULE TÂCHES / RAPPELS / CALENDRIER
+// ═══════════════════════════════════════════════════════════
+var RAPPELS_KEY = 'sp_rappels_v1';
+var RAPPEL_TYPES_KEY = 'sp_rappel_types_v1';
+var calCurrentView = 'month'; // day | week | month
+var calCurrentDate = new Date();
+
+// Types de rappel par défaut avec couleurs
+var DEFAULT_RAPPEL_TYPES = [
+  { label: 'Relance téléphonique', color: '#4B36EC' },
+  { label: 'Relance email', color: '#7343EE' },
+  { label: 'RDV client', color: '#1D9E75' },
+  { label: 'Signature contrat', color: '#F0A500' },
+  { label: 'Suivi onboarding', color: '#0078D4' },
+  { label: 'Autre', color: '#6B5E9C' }
+];
+
+function getRappels() {
+  try { return JSON.parse(localStorage.getItem(RAPPELS_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+function saveRappels(arr) { localStorage.setItem(RAPPELS_KEY, JSON.stringify(arr)); }
+
+function getRappelTypes() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(RAPPEL_TYPES_KEY) || 'null');
+    return saved && saved.length ? saved : JSON.parse(JSON.stringify(DEFAULT_RAPPEL_TYPES));
+  } catch(e) { return JSON.parse(JSON.stringify(DEFAULT_RAPPEL_TYPES)); }
+}
+function saveRappelTypes(arr) { localStorage.setItem(RAPPEL_TYPES_KEY, JSON.stringify(arr)); }
+
+function getRappelColor(typeLabel) {
+  var types = getRappelTypes();
+  var found = types.find(function(t){ return t.label === typeLabel; });
+  return found ? found.color : '#6B5E9C';
+}
+
+// Filtrer uniquement les rappels du commercial connecté
+function getMyRappels() {
+  var all = getRappels();
+  var myName = getCommercialData().nom || '';
+  if (!myName) return all;
+  return all.filter(function(r){ return (r.commercial||'') === myName; });
+}
+
+// ── Vue calendrier ──
+function showTachesTab() {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-taches');
+  if (tab) tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+  renderCalendar();
+}
+
+function switchCalendarView(view) {
+  calCurrentView = view;
+  ['day','week','month'].forEach(function(v){
+    var btn = document.getElementById('cal-view-' + v);
+    if (btn) {
+      if (v === view) {
+        btn.style.cssText = 'padding:6px 12px;border:1.5px solid #7343EE;border-radius:7px;background:#7343EE;font-size:12px;cursor:pointer;color:#fff;';
+      } else {
+        btn.style.cssText = 'padding:6px 12px;border:1.5px solid #E4E0FA;border-radius:7px;background:#fff;font-size:12px;cursor:pointer;color:#6B5E9C;';
+      }
+    }
+  });
+  renderCalendar();
+}
+
+function navigateCal(delta) {
+  var d = new Date(calCurrentDate);
+  if (calCurrentView === 'day') d.setDate(d.getDate() + delta);
+  else if (calCurrentView === 'week') d.setDate(d.getDate() + delta * 7);
+  else if (calCurrentView === 'month') d.setMonth(d.getMonth() + delta);
+  calCurrentDate = d;
+  renderCalendar();
+}
+
+function gotoToday() {
+  calCurrentDate = new Date();
+  renderCalendar();
+}
+
+function renderCalendar() {
+  var title = document.getElementById('cal-title');
+  var container = document.getElementById('calendar-container');
+  if (!title || !container) return;
+
+  var mois = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+  if (calCurrentView === 'month') {
+    title.textContent = mois[calCurrentDate.getMonth()] + ' ' + calCurrentDate.getFullYear();
+    container.innerHTML = renderMonthView(calCurrentDate);
+  } else if (calCurrentView === 'week') {
+    var start = getWeekStart(calCurrentDate);
+    var end = new Date(start); end.setDate(end.getDate() + 6);
+    title.textContent = formatDate(start) + ' — ' + formatDate(end);
+    container.innerHTML = renderWeekView(start);
+  } else {
+    title.textContent = formatFullDate(calCurrentDate);
+    container.innerHTML = renderDayView(calCurrentDate);
+  }
+}
+
+function getWeekStart(d) {
+  var date = new Date(d);
+  var day = date.getDay();
+  var diff = day === 0 ? -6 : 1 - day; // Lundi comme premier jour
+  date.setDate(date.getDate() + diff);
+  date.setHours(0,0,0,0);
+  return date;
+}
+
+function formatDate(d) {
+  return d.getDate() + ' ' + ['jan','fév','mar','avr','mai','juin','juil','aoû','sep','oct','nov','déc'][d.getMonth()];
+}
+function formatFullDate(d) {
+  var jours = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+  var mois = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  return jours[d.getDay()] + ' ' + d.getDate() + ' ' + mois[d.getMonth()] + ' ' + d.getFullYear();
+}
+
+function isoDate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function renderMonthView(date) {
+  var year = date.getFullYear();
+  var month = date.getMonth();
+  var firstDay = new Date(year, month, 1);
+  var lastDay = new Date(year, month+1, 0);
+  var startDate = new Date(firstDay);
+  var dow = startDate.getDay();
+  startDate.setDate(startDate.getDate() - (dow === 0 ? 6 : dow-1));
+
+  var rappels = getMyRappels();
+  var rappelsByDay = {};
+  rappels.forEach(function(r){
+    var key = r.datetime ? r.datetime.split('T')[0] : '';
+    if (!rappelsByDay[key]) rappelsByDay[key] = [];
+    rappelsByDay[key].push(r);
+  });
+
+  var html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid #E4E0FA;background:#F5F3FF;">';
+  ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].forEach(function(j){
+    html += '<div style="padding:8px;text-align:center;font-size:11px;font-weight:700;color:#7343EE;">' + j + '</div>';
+  });
+  html += '</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);">';
+
+  var current = new Date(startDate);
+  var todayStr = isoDate(new Date());
+  for (var i = 0; i < 42; i++) {
+    var isCurrMonth = current.getMonth() === month;
+    var isToday = isoDate(current) === todayStr;
+    var dayRappels = rappelsByDay[isoDate(current)] || [];
+    var bg = isToday ? '#F5F3FF' : '#fff';
+    var textColor = isCurrMonth ? '#1A1033' : '#C0B8E0';
+    html += '<div onclick="openDayRappels(\'' + isoDate(current) + '\')" style="min-height:90px;border-right:1px solid #F0EDF9;border-bottom:1px solid #F0EDF9;padding:4px 6px;background:' + bg + ';cursor:pointer;position:relative;">';
+    html += '<div style="font-size:11px;font-weight:' + (isToday ? '800' : '600') + ';color:' + (isToday ? '#7343EE' : textColor) + ';margin-bottom:4px;">' + current.getDate() + '</div>';
+    dayRappels.slice(0,3).forEach(function(r){
+      var color = getRappelColor(r.type);
+      var time = r.datetime && r.datetime.indexOf('T') > 0 ? r.datetime.split('T')[1].substring(0,5) : '';
+      html += '<div onclick="event.stopPropagation();openRappelPopup(\'' + r.id + '\')" style="background:' + color + ';color:#fff;font-size:10px;padding:1px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;">' + time + ' ' + (r.subject||r.type||'Rappel') + '</div>';
+    });
+    if (dayRappels.length > 3) {
+      html += '<div style="font-size:9px;color:#6B5E9C;font-weight:600;">+' + (dayRappels.length - 3) + ' autres</div>';
+    }
+    html += '</div>';
+    current.setDate(current.getDate() + 1);
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderWeekView(start) {
+  var rappels = getMyRappels();
+  var html = '<div style="display:grid;grid-template-columns:80px repeat(7,1fr);border-bottom:1px solid #E4E0FA;background:#F5F3FF;">';
+  html += '<div></div>';
+  for (var i = 0; i < 7; i++) {
+    var d = new Date(start); d.setDate(d.getDate() + i);
+    var isToday = isoDate(d) === isoDate(new Date());
+    html += '<div style="padding:8px;text-align:center;font-size:11px;font-weight:700;color:' + (isToday ? '#7343EE' : '#6B5E9C') + ';border-right:1px solid #F0EDF9;">';
+    html += ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'][i] + '<br><span style="font-size:14px;">' + d.getDate() + '</span></div>';
+  }
+  html += '</div><div style="max-height:calc(100vh - 280px);overflow-y:auto;">';
+  // Grille horaire 8h à 20h
+  for (var h = 8; h <= 19; h++) {
+    html += '<div style="display:grid;grid-template-columns:80px repeat(7,1fr);border-bottom:1px solid #F0EDF9;min-height:50px;">';
+    html += '<div style="padding:6px;font-size:10px;color:#9E9E9E;border-right:1px solid #F0EDF9;text-align:right;">' + String(h).padStart(2,'0') + ':00</div>';
+    for (var d = 0; d < 7; d++) {
+      var dayDate = new Date(start); dayDate.setDate(dayDate.getDate() + d);
+      var dayStr = isoDate(dayDate);
+      var dayRappels = rappels.filter(function(r){
+        if (!r.datetime) return false;
+        var parts = r.datetime.split('T');
+        if (parts[0] !== dayStr) return false;
+        var rh = parseInt((parts[1]||'00:00').split(':')[0]);
+        return rh === h;
+      });
+      html += '<div onclick="openDayRappels(\'' + dayStr + '\')" style="border-right:1px solid #F0EDF9;padding:2px;cursor:pointer;position:relative;">';
+      dayRappels.forEach(function(r){
+        var color = getRappelColor(r.type);
+        var time = r.datetime.split('T')[1].substring(0,5);
+        html += '<div onclick="event.stopPropagation();openRappelPopup(\'' + r.id + '\')" style="background:' + color + ';color:#fff;font-size:10px;padding:2px 5px;border-radius:3px;margin-bottom:2px;cursor:pointer;overflow:hidden;">' + time + ' ' + (r.subject||r.type||'Rappel') + '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderDayView(date) {
+  var rappels = getMyRappels();
+  var dayStr = isoDate(date);
+  var dayRappels = rappels.filter(function(r){ return r.datetime && r.datetime.split('T')[0] === dayStr; });
+  dayRappels.sort(function(a,b){ return a.datetime.localeCompare(b.datetime); });
+
+  var html = '<div style="max-height:calc(100vh - 280px);overflow-y:auto;padding:16px;">';
+  if (!dayRappels.length) {
+    html += '<div style="text-align:center;padding:40px;color:#9E9E9E;">Aucun rappel pour cette journée.<br><button onclick="openRappelPopup(null,\'' + dayStr + '\')" style="margin-top:12px;padding:8px 16px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;">+ Créer un rappel</button></div>';
+  } else {
+    dayRappels.forEach(function(r){
+      var color = getRappelColor(r.type);
+      var time = r.datetime.split('T')[1].substring(0,5);
+      html += '<div onclick="openRappelPopup(\'' + r.id + '\')" style="background:#fff;border-left:4px solid ' + color + ';border-radius:6px;padding:10px 14px;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,0.04);cursor:pointer;display:flex;align-items:center;gap:12px;">';
+      html += '<div style="font-size:18px;font-weight:800;color:' + color + ';">' + time + '</div>';
+      html += '<div style="flex:1;">';
+      html += '<div style="font-size:13px;font-weight:700;color:#1A1033;">' + (r.subject||r.type||'Rappel') + '</div>';
+      html += '<div style="font-size:11px;color:#6B5E9C;margin-top:2px;">' + (r.type||'') + (r.linked_name ? ' · ' + r.linked_name : '') + '</div>';
+      if (r.comment) html += '<div style="font-size:11px;color:#6B5E9C;margin-top:4px;">' + r.comment + '</div>';
+      html += '</div>';
+      html += '</div>';
+    });
+  }
+  html += '</div>';
+  return html;
+}
+
+function openDayRappels(dateStr) {
+  // Créer un rappel rapide pour cette date
+  openRappelPopup(null, dateStr);
+}
+
+// ── Popup Rappel (création / édition) ──
+function openRappelPopup(rappelId, prefillDate, linkedType, linkedId, linkedName) {
+  var rappels = getRappels();
+  var existing = rappelId ? rappels.find(function(r){ return r.id == rappelId; }) : null;
+
+  var ex = document.getElementById('modal-rappel');
+  if (ex) ex.remove();
+
+  var types = getRappelTypes();
+  var modal = document.createElement('div');
+  modal.id = 'modal-rappel';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:5000;display:flex;align-items:center;justify-content:center;';
+  
+  var now = new Date();
+  var defaultDate = prefillDate || (existing ? existing.datetime.split('T')[0] : isoDate(now));
+  var defaultTime = existing && existing.datetime.indexOf('T') > 0 ? existing.datetime.split('T')[1].substring(0,5) : (String(now.getHours()+1).padStart(2,'0') + ':00');
+
+  var typeOptions = types.map(function(t){
+    var sel = existing && existing.type === t.label ? 'selected' : '';
+    return '<option value="' + t.label + '" ' + sel + ' data-color="' + t.color + '">' + t.label + '</option>';
+  }).join('');
+
+  var IS = 'width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;';
+  var LB = 'font-size:10px;font-weight:700;color:#9E9E9E;text-transform:uppercase;display:block;margin-bottom:4px;';
+
+  var inner = '<div style="background:#fff;border-radius:14px;width:92%;max-width:520px;box-shadow:0 8px 40px rgba(115,67,238,0.25);">'
+    + '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);padding:16px 22px;border-radius:14px 14px 0 0;display:flex;align-items:center;justify-content:space-between;">'
+    + '<div style="font-size:15px;font-weight:700;color:#fff;">&#128276; ' + (existing ? 'Modifier le rappel' : 'Nouveau rappel') + '</div>'
+    + '<button onclick="document.getElementById(\'modal-rappel\').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#fff;">&#215;</button>'
+    + '</div>'
+    + '<div style="padding:18px 22px;">'
+    + '<div style="margin-bottom:12px;"><label style="' + LB + '">Sujet *</label><input id="rappel-subject" type="text" value="' + (existing ? (existing.subject||'').replace(/"/g,'&quot;') : '') + '" placeholder="Ex: Relancer Josi pour son CV" style="' + IS + '"></div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
+    + '<div><label style="' + LB + '">Date *</label><input id="rappel-date" type="date" value="' + defaultDate + '" style="' + IS + '"></div>'
+    + '<div><label style="' + LB + '">Heure *</label><input id="rappel-time" type="time" value="' + defaultTime + '" style="' + IS + '"></div>'
+    + '</div>'
+    + '<div style="margin-bottom:12px;"><label style="' + LB + '">Type</label><select id="rappel-type" style="' + IS + '">' + typeOptions + '</select></div>'
+    + '<div style="margin-bottom:14px;"><label style="' + LB + '">Commentaire</label><textarea id="rappel-comment" rows="3" style="' + IS + 'resize:vertical;">' + (existing ? (existing.comment||'') : '') + '</textarea></div>';
+
+  // Lien vers candidat/manager
+  var linkLabel = '';
+  if (existing && existing.linked_type) {
+    linkLabel = existing.linked_type === 'candidat' ? '&#128100; Candidat : ' + (existing.linked_name||'')
+              : existing.linked_type === 'manager' ? '&#128101; Manager : ' + (existing.linked_name||'')
+              : '';
+  } else if (linkedType) {
+    linkLabel = linkedType === 'candidat' ? '&#128100; Candidat : ' + (linkedName||'')
+              : linkedType === 'manager' ? '&#128101; Manager : ' + (linkedName||'')
+              : '';
+  }
+  if (linkLabel) {
+    inner += '<div style="background:#F5F3FF;padding:8px 12px;border-radius:7px;font-size:11px;color:#7343EE;margin-bottom:14px;">' + linkLabel + '</div>';
+  }
+
+  inner += '<div style="display:flex;gap:8px;justify-content:flex-end;">';
+  if (existing) {
+    inner += '<button onclick="deleteRappel(\'' + existing.id + '\')" style="padding:9px 14px;background:#fff;color:#E24B4A;border:1px solid #FECACA;border-radius:7px;font-size:12px;cursor:pointer;">&#128465; Supprimer</button>';
+  }
+  inner += '<button onclick="document.getElementById(\'modal-rappel\').remove()" style="padding:9px 18px;border:1px solid #E4E0FA;border-radius:7px;background:#fff;font-size:12px;cursor:pointer;">Annuler</button>';
+  inner += '<button onclick="saveRappel(\'' + (existing ? existing.id : '') + '\',\'' + (linkedType||'') + '\',\'' + (linkedId||'') + '\',\'' + (linkedName||'').replace(/\'/g,'') + '\')" style="padding:9px 22px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">&#10003; Enregistrer</button>';
+  inner += '</div>';
+  inner += '</div></div>';
+
+  modal.innerHTML = inner;
+
+  // Fermeture sécurisée mousedown+mouseup
+  var _mdt = null;
+  modal.addEventListener('mousedown', function(e){ _mdt = e.target; });
+  modal.addEventListener('mouseup', function(e){
+    if (e.target === modal && _mdt === modal) modal.remove();
+    _mdt = null;
+  });
+
+  document.body.appendChild(modal);
+}
+
+function saveRappel(existingId, linkedType, linkedId, linkedName) {
+  var subject = document.getElementById('rappel-subject').value.trim();
+  var date = document.getElementById('rappel-date').value;
+  var time = document.getElementById('rappel-time').value;
+  var type = document.getElementById('rappel-type').value;
+  var comment = document.getElementById('rappel-comment').value;
+
+  if (!subject || !date || !time) {
+    alert('Sujet, date et heure sont obligatoires.');
+    return;
+  }
+
+  var rappels = getRappels();
+  var datetime = date + 'T' + time;
+
+  if (existingId) {
+    var idx = rappels.findIndex(function(r){ return r.id == existingId; });
+    if (idx >= 0) {
+      rappels[idx].subject = subject;
+      rappels[idx].datetime = datetime;
+      rappels[idx].type = type;
+      rappels[idx].comment = comment;
+      rappels[idx].updated = new Date().toISOString();
+    }
+  } else {
+    var myName = getCommercialData().nom || '';
+    rappels.push({
+      id: 'RP-' + Date.now() + '-' + Math.floor(Math.random()*1000),
+      subject: subject,
+      datetime: datetime,
+      type: type,
+      comment: comment,
+      commercial: myName,
+      linked_type: linkedType || '',
+      linked_id: linkedId || '',
+      linked_name: linkedName || '',
+      created: new Date().toISOString(),
+      updated: new Date().toISOString(),
+      done: false
+    });
+  }
+
+  saveRappels(rappels);
+  var m = document.getElementById('modal-rappel');
+  if (m) m.remove();
+
+  // Rafraîchir la vue
+  if (document.getElementById('tab-taches') && document.getElementById('tab-taches').style.display !== 'none') {
+    renderCalendar();
+  }
+  // Rafraîchir fiche candidat/manager si ouverte
+  var candModal = document.getElementById('modal-cand-fiche');
+  if (candModal) {
+    var candId = candModal.querySelector('[data-cid]');
+    if (candId) {
+      var id = parseInt(candId.dataset.cid);
+      var cont = document.getElementById('ct-content-' + id);
+      var activeBtn = candModal.querySelector('.ct-btn-rappels');
+      if (activeBtn) switchCandTab(id, 'rappels');
+    }
+  }
+  var mgrModal = document.getElementById('modal-manager-fiche');
+  if (mgrModal) {
+    var activeBtn = mgrModal.querySelector('[data-mgrid]');
+    if (activeBtn) {
+      var mgrId = activeBtn.dataset.mgrid;
+      if (mgrId) switchMgrTab(mgrId, 'rappels');
+    }
+  }
+}
+
+function deleteRappel(id) {
+  if (!confirm('Supprimer ce rappel ?')) return;
+  var rappels = getRappels().filter(function(r){ return r.id != id; });
+  saveRappels(rappels);
+  var m = document.getElementById('modal-rappel');
+  if (m) m.remove();
+  renderCalendar();
+}
+
+// ── Onglet Rappels dans fiche Candidat ──
+function buildCandRappelsHTML(cand) {
+  var rappels = getRappels().filter(function(r){
+    return r.linked_type === 'candidat' && r.linked_id == cand.id;
+  });
+  rappels.sort(function(a,b){ return b.datetime.localeCompare(a.datetime); });
+
+  var html = '<div style="margin-bottom:12px;">'
+    + '<button onclick="openRappelPopup(null,null,\'candidat\',\'' + cand.id + '\',\'' + ((cand.prenom||'')+' '+(cand.nom||'')).replace(/\'/g,'') + '\')" style="padding:6px 14px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;">+ Nouveau rappel</button>'
+    + '</div>';
+
+  if (!rappels.length) {
+    return html + '<div style="color:#C0B8E0;font-size:12px;padding:20px 0;">Aucun rappel pour ce candidat.</div>';
+  }
+
+  rappels.forEach(function(r){
+    var color = getRappelColor(r.type);
+    var date = r.datetime ? r.datetime.split('T')[0] : '';
+    var time = r.datetime && r.datetime.indexOf('T') > 0 ? r.datetime.split('T')[1].substring(0,5) : '';
+    var isPast = new Date(r.datetime) < new Date();
+    html += '<div onclick="openRappelPopup(\'' + r.id + '\')" style="background:#F5F3FF;border-left:4px solid ' + color + ';border-radius:6px;padding:8px 12px;margin-bottom:6px;cursor:pointer;opacity:' + (isPast ? '0.65' : '1') + ';">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;">';
+    html += '<div><div style="font-size:12px;font-weight:700;color:#1A1033;">' + (r.subject||'') + '</div>';
+    html += '<div style="font-size:11px;color:#6B5E9C;">' + date + ' à ' + time + ' · ' + (r.type||'') + '</div></div>';
+    html += '<div style="font-size:10px;background:' + color + ';color:#fff;padding:2px 8px;border-radius:10px;">' + (isPast ? 'Passé' : 'À venir') + '</div>';
+    html += '</div>';
+    if (r.comment) html += '<div style="font-size:11px;color:#6B5E9C;margin-top:4px;">' + r.comment + '</div>';
+    html += '</div>';
+  });
+
+  return html;
+}
+
+// ── Onglet Rappels dans fiche Manager ──
+function buildMgrRappelsHTML(clid, mgridx, mgr) {
+  var rappels = getRappels().filter(function(r){
+    return r.linked_type === 'manager' && r.linked_id == (clid + '-' + mgridx);
+  });
+  rappels.sort(function(a,b){ return b.datetime.localeCompare(a.datetime); });
+
+  var html = '<div style="margin-bottom:12px;">'
+    + '<button onclick="openRappelPopup(null,null,\'manager\',\'' + clid + '-' + mgridx + '\',\'' + (mgr.name||'').replace(/\'/g,'') + '\')" style="padding:6px 14px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;">+ Nouveau rappel</button>'
+    + '</div>';
+
+  if (!rappels.length) {
+    return html + '<div style="color:#C0B8E0;font-size:12px;padding:20px 0;">Aucun rappel pour ce manager.</div>';
+  }
+
+  rappels.forEach(function(r){
+    var color = getRappelColor(r.type);
+    var date = r.datetime ? r.datetime.split('T')[0] : '';
+    var time = r.datetime && r.datetime.indexOf('T') > 0 ? r.datetime.split('T')[1].substring(0,5) : '';
+    var isPast = new Date(r.datetime) < new Date();
+    html += '<div onclick="openRappelPopup(\'' + r.id + '\')" style="background:#F5F3FF;border-left:4px solid ' + color + ';border-radius:6px;padding:8px 12px;margin-bottom:6px;cursor:pointer;opacity:' + (isPast ? '0.65' : '1') + ';">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;">';
+    html += '<div><div style="font-size:12px;font-weight:700;color:#1A1033;">' + (r.subject||'') + '</div>';
+    html += '<div style="font-size:11px;color:#6B5E9C;">' + date + ' à ' + time + ' · ' + (r.type||'') + '</div></div>';
+    html += '<div style="font-size:10px;background:' + color + ';color:#fff;padding:2px 8px;border-radius:10px;">' + (isPast ? 'Passé' : 'À venir') + '</div>';
+    html += '</div>';
+    if (r.comment) html += '<div style="font-size:11px;color:#6B5E9C;margin-top:4px;">' + r.comment + '</div>';
+    html += '</div>';
+  });
+
+  return html;
+}
+
+// ── Paramétrage types de rappel ──
+function renderRappelTypesParams() {
+  var el = document.getElementById('rappel-types-container');
+  if (!el) return;
+  var types = getRappelTypes();
+  el.innerHTML = types.map(function(t, i) {
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+      + '<input type="color" value="' + t.color + '" onchange="updateRappelTypeColor(' + i + ',this.value)" style="width:32px;height:28px;border:1px solid #E4E0FA;border-radius:5px;cursor:pointer;">'
+      + '<input type="text" value="' + t.label + '" onchange="updateRappelTypeLabel(' + i + ',this.value)" style="flex:1;padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;">'
+      + '<button onclick="removeRappelType(' + i + ')" style="padding:4px 9px;background:#FFF5F5;color:#E24B4A;border:1px solid #FECACA;border-radius:5px;font-size:11px;cursor:pointer;">&#215;</button>'
+      + '</div>';
+  }).join('');
+  el.innerHTML += '<div style="display:flex;gap:6px;margin-top:10px;">'
+    + '<input id="new-rappel-type-label" placeholder="Nouveau type..." style="flex:1;padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;">'
+    + '<input id="new-rappel-type-color" type="color" value="#7343EE" style="width:32px;height:28px;border:1px solid #E4E0FA;border-radius:5px;cursor:pointer;">'
+    + '<button onclick="addRappelType()" style="padding:5px 12px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:11px;cursor:pointer;">+</button>'
+    + '</div>';
+}
+
+function updateRappelTypeColor(i, color) {
+  var types = getRappelTypes();
+  if (types[i]) { types[i].color = color; saveRappelTypes(types); }
+}
+function updateRappelTypeLabel(i, label) {
+  var types = getRappelTypes();
+  if (types[i]) { types[i].label = label; saveRappelTypes(types); }
+}
+function removeRappelType(i) {
+  if (!confirm('Supprimer ce type ?')) return;
+  var types = getRappelTypes();
+  types.splice(i, 1);
+  saveRappelTypes(types);
+  renderRappelTypesParams();
+}
+function addRappelType() {
+  var label = (document.getElementById('new-rappel-type-label')||{}).value || '';
+  var color = (document.getElementById('new-rappel-type-color')||{}).value || '#7343EE';
+  if (!label.trim()) return;
+  var types = getRappelTypes();
+  types.push({ label: label.trim(), color: color });
+  saveRappelTypes(types);
+  renderRappelTypesParams();
+}
 </script>
 <!-- ═══ MODAL ENVOI ═══ -->
 <div id="modal-envoi" style="display:none;position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:2000;align-items:center;justify-content:center;">
