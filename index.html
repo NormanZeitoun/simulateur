@@ -713,6 +713,18 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       <div style="font-size:10px;color:#9E9E9E;margin-top:6px;">Définissez les types de rappel et leur couleur affichée dans le calendrier.</div>
     </div>
   </div>
+
+  <!-- Section Emails internes pour notifications -->
+  <div style="margin-top:16px;">
+    <div class="params-section" style="border-radius:6px 6px 0 0;margin-bottom:0;">&#9993;&#65039; Emails internes (notifications placements)</div>
+    <div style="border:1px solid #E4E0FA;border-top:none;border-radius:0 0 8px 8px;padding:12px;">
+      <div id="internal-emails-container"></div>
+      <div style="font-size:10px;color:#9E9E9E;margin-top:8px;line-height:1.5;">R&egrave;gle d'envoi automatique &agrave; la cr&eacute;ation d'un placement :<br>
+        &#8226; Nom candidat <strong>A &agrave; H</strong> &rarr; Cl&eacute;mence + ADV<br>
+        &#8226; Nom candidat <strong>I &agrave; Z</strong> &rarr; Marie + ADV
+      </div>
+    </div>
+  </div>
   </div><!-- /tab-params -->
 
   <!-- TAB CANDIDATS -->
@@ -875,6 +887,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         </select>
         <select id="deal-filter-comm" onchange="dealFilterComm=this.value;renderDeals();" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;color:#1A1033;background:#fff;cursor:pointer;">
           <option value="__all__">Tous commerciaux</option>
+        </select>
+        <select id="deal-filter-etranger" onchange="dealFilterEtranger=this.value;renderDeals();" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;color:#1A1033;background:#fff;cursor:pointer;">
+          <option value="__all__">&Eacute;tranger : Les deux</option>
+          <option value="oui">&Eacute;tranger : Oui</option>
+          <option value="non">&Eacute;tranger : Non</option>
         </select>
         <select id="deal-view-select" onchange="applyDealView(this.value)" style="padding:6px 10px;border:1.5px solid #7343EE;border-radius:8px;font-size:12px;color:#7343EE;background:#F5F3FF;cursor:pointer;font-weight:600;">
           <option value="__all__">Vue par défaut</option>
@@ -3798,6 +3815,7 @@ var DEALS_KEY = 'sp_deals_v1';
 var currentPlacementTs = null;
 var dealFilterEtat = '__all__';
 var dealFilterComm = '__all__';
+var dealFilterEtranger = '__all__';
 var dealFilterPeriod = '__all__';
 
 function getDeals() {
@@ -3842,6 +3860,11 @@ function openPlacementPopup(ts) {
   document.getElementById('pl-date-entree').value = '';
   document.getElementById('pl-commentaire').value = '';
   document.getElementById('pl-connait-tjm').value = 'Non';
+  var se = document.getElementById('pl-salarie-etranger'); if (se) se.checked = false;
+  ['pl-type-sejour','pl-mail-verif-titre','pl-demande-autorisation','pl-decision-favorable'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.value = '';
+  });
+  toggleSalarieEtrangerFields();
   document.getElementById('pl-type-contrat-client').value = 'Seven';
   document.getElementById('pl-tacite').value = 'Non';
 
@@ -3910,6 +3933,12 @@ function openPlacementPopup(ts) {
     document.getElementById('pl-date-entree').value = existing.date_entree || '';
     document.getElementById('pl-commentaire').value = existing.commentaire || '';
     document.getElementById('pl-connait-tjm').value = existing.connait_tjm || 'Non';
+    var se2 = document.getElementById('pl-salarie-etranger'); if (se2) se2.checked = !!existing.salarie_etranger;
+    var ts2 = document.getElementById('pl-type-sejour'); if (ts2) ts2.value = existing.type_sejour || '';
+    var mv2 = document.getElementById('pl-mail-verif-titre'); if (mv2) mv2.value = existing.mail_verif_titre || '';
+    var da2 = document.getElementById('pl-demande-autorisation'); if (da2) da2.value = existing.demande_autorisation || '';
+    var df2 = document.getElementById('pl-decision-favorable'); if (df2) df2.value = existing.decision_favorable || '';
+    toggleSalarieEtrangerFields();
     document.getElementById('pl-date-deal').value = existing.date_deal || new Date().toISOString().split('T')[0];
   }
 
@@ -4018,6 +4047,13 @@ function onManagerSelect() {
   if (sigField && !sigField.value) sigField.value = mgr.name || '';
 }
 
+function toggleSalarieEtrangerFields() {
+  var cb = document.getElementById('pl-salarie-etranger');
+  var container = document.getElementById('pl-etranger-fields');
+  if (!cb || !container) return;
+  container.style.display = cb.checked ? 'grid' : 'none';
+}
+
 function updateTaciteField() {
   var tc = document.getElementById('pl-type-contrat-client');
   var tacite = document.getElementById('pl-tacite');
@@ -4051,6 +4087,11 @@ function savePlacement() {
     poste: document.getElementById('pl-poste').value,
     secteur: document.getElementById('pl-secteur').value,
     connait_tjm: document.getElementById('pl-connait-tjm').value,
+    salarie_etranger: (function(){ var el=document.getElementById('pl-salarie-etranger'); return el ? el.checked : false; })(),
+    type_sejour: (function(){ var el=document.getElementById('pl-type-sejour'); return el ? el.value : ''; })(),
+    mail_verif_titre: (function(){ var el=document.getElementById('pl-mail-verif-titre'); return el ? el.value : ''; })(),
+    demande_autorisation: (function(){ var el=document.getElementById('pl-demande-autorisation'); return el ? el.value : ''; })(),
+    decision_favorable: (function(){ var el=document.getElementById('pl-decision-favorable'); return el ? el.value : ''; })(),
     // Client
     entreprise: document.getElementById('pl-entreprise').value,
     tel_client: document.getElementById('pl-tel-client').value,
@@ -4102,8 +4143,14 @@ function savePlacement() {
     date_created: idx >= 0 ? deals[idx].date_created : new Date().toLocaleDateString('fr-FR')
   };
 
+  var isNewDeal = (idx < 0);
   if (idx >= 0) deals[idx] = deal; else deals.unshift(deal);
   saveDeals(deals);
+
+  // Envoi automatique de notification interne uniquement pour nouveau placement
+  if (isNewDeal) {
+    try { sendPlacementNotificationEmail(deal); } catch(e) { console.error('[Notif] Exception:', e); }
+  }
 
   // Mettre à jour les infos de la fiche candidat à partir du placement
   updateCandidatFromDeal(deal);
@@ -4185,6 +4232,8 @@ function renderDeals() {
   // Filtres
   if (dealFilterEtat !== '__all__') deals = deals.filter(function(d) { return d.etat === dealFilterEtat; });
   if (dealFilterComm !== '__all__') deals = deals.filter(function(d) { return (d.commercial||'') === dealFilterComm; });
+  if (dealFilterEtranger === 'oui') deals = deals.filter(function(d) { return d.salarie_etranger === true; });
+  if (dealFilterEtranger === 'non') deals = deals.filter(function(d) { return d.salarie_etranger !== true; });
 
   var listEl = document.getElementById('deals-list');
   if (!listEl) return;
@@ -4228,7 +4277,8 @@ function renderDeals() {
 
   deals.forEach(function(d){
     var color = ECOLORS[d.etat]||'#6B5E9C';
-    html += '<tr style="border-left:3px solid '+color+';">';
+    var rowBg = d.salarie_etranger ? 'background:#FFF8E6;' : '';
+    html += '<tr style="border-left:3px solid '+color+';'+rowBg+'">';
     visColDefs.forEach(function(col){
       var fc = col.freeze==='f1' ? ' class="col-freeze"' : col.freeze==='f2' ? ' class="col-freeze2"' : '';
       html += '<td'+fc+'>'+getCellValue(d,col.key)+'</td>';
@@ -4290,6 +4340,12 @@ var DEAL_ALL_COLS = [
   {key:'my_silae',                 label:'My SILAE'},
   {key:'mutuelle_envoi_lien',      label:'Mutuelle (lien)'},
   {key:'envoi_carte_swile',        label:'Envoi carte Swile'},
+  // ── Salarié étranger ──
+  {key:'salarie_etranger',         label:'Salarié étranger'},
+  {key:'type_sejour',              label:'Type de séjour'},
+  {key:'mail_verif_titre',         label:'Mail vérif. titre'},
+  {key:'demande_autorisation',     label:'Demande autorisation'},
+  {key:'decision_favorable',       label:'Décision favorable'},
   {key:'actions',     label:'Actions'}
 ];
 
@@ -4308,7 +4364,11 @@ var DEAL_ONBOARDING_OPTIONS = {
   mail_bienvenue:           ['','Oui','Non'],
   my_silae:                 ['','Oui','Non'],
   mutuelle_envoi_lien:      ['','Oui','Non'],
-  envoi_carte_swile:        ['','Oui','Non']
+  envoi_carte_swile:        ['','Oui','Non'],
+  type_sejour:              ['','Non','Carte Temporaire','Carte Annuelle','Carte Resident','Récépissé','Autorisation provisoire','Autres'],
+  mail_verif_titre:         ['','Oui','Non'],
+  demande_autorisation:     ['','Non','Carte Temporaire','Carte Annuelle','Carte Resident','Récépissé','Autorisation provisoire','Autres'],
+  decision_favorable:       ['','Non','Carte Temporaire','Carte Annuelle','Carte Resident','Récépissé','Autorisation provisoire','Autres']
 };
 var DEAL_DEFAULT_COLS = ['etat','candidat','poste','tjm','nb_jours','commercial','date_deal','date_entree','actions'];
 var dealVisibleCols = (function(){ try { var s=JSON.parse(localStorage.getItem('sp_deal_cols')||'null'); return s||DEAL_DEFAULT_COLS.slice(); } catch(e){ return DEAL_DEFAULT_COLS.slice(); } })();
@@ -4407,11 +4467,12 @@ function renderDealViewSelect(){
 }
 
 function resetDealFilters(){
-  dealFilterEtat='__all__'; dealFilterComm='__all__';
+  dealFilterEtat='__all__'; dealFilterComm='__all__'; dealFilterEtranger='__all__';
   dealVisibleCols=DEAL_DEFAULT_COLS.slice();
   localStorage.setItem('sp_deal_cols',JSON.stringify(dealVisibleCols));
   var se=document.getElementById('deal-filter-etat'); if(se) se.value='__all__';
   var sc=document.getElementById('deal-filter-comm'); if(sc) sc.value='__all__';
+  var se3=document.getElementById('deal-filter-etranger'); if(se3) se3.value='__all__';
   var sv=document.getElementById('deal-view-select'); if(sv) sv.value='__all__';
   renderDeals();
 }
@@ -4466,7 +4527,13 @@ function getCellValue(d, key){
     case 'my_silae':
     case 'mutuelle_envoi_lien':
     case 'envoi_carte_swile':
+    case 'type_sejour':
+    case 'mail_verif_titre':
+    case 'demande_autorisation':
+    case 'decision_favorable':
       return renderOnboardingSelect(d, key);
+    case 'salarie_etranger':
+      return '<input type="checkbox" ' + (d.salarie_etranger ? 'checked' : '') + ' onchange="updateDealField(' + d.id + ',\'salarie_etranger\',this.checked);event.stopPropagation();" onclick="event.stopPropagation();" style="accent-color:#F0A500;cursor:pointer;">';
     case 'actions':
       return '<button onclick="openPlacementPopup('+d.sim_ts+')" title="Modifier" style="padding:3px 7px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#9998;</button>'
            + '<button onclick="openSortiePopup('+d.sim_ts+')" title="Sortie" style="padding:3px 7px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#128683;</button>'
@@ -5354,6 +5421,7 @@ function mergeParams(remote) {
     if (typeof renderCustomLists === 'function') renderCustomLists();
     if (typeof refreshCustomSelectOptions === 'function') refreshCustomSelectOptions();
     if (typeof renderRappelTypesParams === 'function') renderRappelTypesParams();
+    if (typeof renderInternalEmailsParams === 'function') renderInternalEmailsParams();
   }
   if (remote.deal_views && Array.isArray(remote.deal_views)) {
     var local = JSON.parse(localStorage.getItem('sp_deal_views_v1') || '[]');
@@ -5997,6 +6065,132 @@ function buildCandPlacementsHTML(cand) {
       + '</div>'
       + '</div>';
   }).join('');
+}
+
+// Emails internes (notifications placements)
+var INTERNAL_EMAILS_KEY = 'sp_internal_emails_v1';
+var DEFAULT_INTERNAL_EMAILS = {
+  clemence: 'norman@seven-portage.fr',
+  marie: 'norman@seven-portage.fr',
+  adv: 'norman@seven-portage.fr'
+};
+
+function getInternalEmails() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(INTERNAL_EMAILS_KEY) || 'null');
+    return saved || JSON.parse(JSON.stringify(DEFAULT_INTERNAL_EMAILS));
+  } catch(e) { return JSON.parse(JSON.stringify(DEFAULT_INTERNAL_EMAILS)); }
+}
+
+function saveInternalEmails(obj) {
+  localStorage.setItem(INTERNAL_EMAILS_KEY, JSON.stringify(obj));
+}
+
+function updateInternalEmail(key, val) {
+  var e = getInternalEmails();
+  e[key] = val;
+  saveInternalEmails(e);
+}
+
+// Règle alphabétique A-H -> Clémence+ADV / I-Z -> Marie+ADV
+function getPlacementRecipients(nomCandidat) {
+  var emails = getInternalEmails();
+  var firstLetter = (nomCandidat||'').trim().charAt(0).toUpperCase();
+  var isAH = firstLetter >= 'A' && firstLetter <= 'H';
+  if (isAH) {
+    return [emails.clemence, emails.adv].filter(Boolean);
+  } else {
+    return [emails.marie, emails.adv].filter(Boolean);
+  }
+}
+
+// Envoi automatique via Microsoft Graph
+function sendPlacementNotificationEmail(deal) {
+  if (!odToken) {
+    console.warn('[Notification] OneDrive non connecté, mail non envoyé');
+    showNotifToast('OneDrive non connecté - notification non envoyée', true);
+    return;
+  }
+  if (!deal) return;
+
+  var recipients = getPlacementRecipients(deal.nom || '');
+  if (!recipients.length) {
+    console.warn('[Notification] Aucun destinataire');
+    return;
+  }
+
+  var subject = 'Nouveau placement - ' + (deal.prenom||'') + ' ' + (deal.nom||'')
+    + (deal.entreprise ? ' (' + deal.entreprise + ')' : '')
+    + (deal.commercial ? ' · ' + deal.commercial : '');
+
+  var salaireAn = deal.salaire_annuel ? parseInt(deal.salaire_annuel).toLocaleString('fr-FR') + ' €' : '—';
+  var lienDeals = 'https://normanzeitoun.github.io/simulateur/#deals';
+
+  var htmlBody = ''
+    + '<div style="font-family:Arial,sans-serif;color:#1A1033;max-width:600px;">'
+    + '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;padding:16px 20px;border-radius:8px 8px 0 0;">'
+    +   '<div style="font-size:16px;font-weight:700;">Nouveau placement créé</div>'
+    +   '<div style="font-size:12px;opacity:0.9;margin-top:4px;">' + (deal.prenom||'') + ' ' + (deal.nom||'') + '</div>'
+    + '</div>'
+    + '<div style="background:#fff;border:1px solid #E4E0FA;border-top:none;padding:18px 20px;border-radius:0 0 8px 8px;">'
+    +   '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+    +   '<tr><td style="padding:6px 0;color:#6B5E9C;width:40%;">Candidat</td><td style="padding:6px 0;font-weight:600;">' + (deal.prenom||'') + ' ' + (deal.nom||'') + '</td></tr>'
+    +   (deal.poste ? '<tr><td style="padding:6px 0;color:#6B5E9C;">Poste</td><td style="padding:6px 0;">' + deal.poste + '</td></tr>' : '')
+    +   '<tr><td style="padding:6px 0;color:#6B5E9C;">Entreprise</td><td style="padding:6px 0;font-weight:600;">' + (deal.entreprise||'—') + '</td></tr>'
+    +   '<tr><td style="padding:6px 0;color:#6B5E9C;">TJM</td><td style="padding:6px 0;">' + (deal.tjm ? deal.tjm + ' €/j' : '—') + '</td></tr>'
+    +   '<tr><td style="padding:6px 0;color:#6B5E9C;">Salaire annuel</td><td style="padding:6px 0;">' + salaireAn + '</td></tr>'
+    +   (deal.date_entree ? '<tr><td style="padding:6px 0;color:#6B5E9C;">Date d\'entrée</td><td style="padding:6px 0;font-weight:600;">' + deal.date_entree + '</td></tr>' : '')
+    +   '<tr><td style="padding:6px 0;color:#6B5E9C;">Commercial</td><td style="padding:6px 0;">' + (deal.commercial||'—') + '</td></tr>'
+    +   (deal.salarie_etranger ? '<tr><td style="padding:6px 0;color:#B26A00;font-weight:700;">Salarié étranger</td><td style="padding:6px 0;color:#B26A00;font-weight:600;">Oui' + (deal.type_sejour ? ' - ' + deal.type_sejour : '') + '</td></tr>' : '')
+    +   '</table>'
+    +   '<div style="margin-top:18px;text-align:center;">'
+    +     '<a href="' + lienDeals + '" style="display:inline-block;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;padding:10px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:13px;">Voir le tableau des deals</a>'
+    +   '</div>'
+    +   '<div style="margin-top:16px;padding-top:12px;border-top:1px solid #E4E0FA;font-size:11px;color:#9E9E9E;">Notification automatique - Seven Portage Simulateur</div>'
+    + '</div>'
+    + '</div>';
+
+  var toRecipients = recipients.map(function(e){ return { emailAddress: { address: e } }; });
+
+  var payload = {
+    message: {
+      subject: subject,
+      body: { contentType: 'HTML', content: htmlBody },
+      toRecipients: toRecipients
+    },
+    saveToSentItems: true
+  };
+
+  fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + odToken,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  }).then(function(r){
+    if (r.ok || r.status === 202) {
+      console.log('[Notification] Mail envoyé à', recipients.join(', '));
+      showNotifToast('Notification envoyée à ' + recipients.join(', '));
+    } else {
+      r.text().then(function(txt){ console.error('[Notification] Échec:', r.status, txt); });
+      showNotifToast('Échec envoi notification (status ' + r.status + ')', true);
+    }
+  }).catch(function(err){
+    console.error('[Notification] Erreur:', err);
+    showNotifToast('Erreur réseau notification', true);
+  });
+}
+
+function showNotifToast(msg, isError) {
+  var t = document.createElement('div');
+  t.style.cssText = 'position:fixed;bottom:20px;right:20px;background:' + (isError ? '#E24B4A' : '#1D9E75') + ';color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,0.2);z-index:10000;transition:opacity 0.3s;max-width:320px;';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(function(){
+    t.style.opacity = '0';
+    setTimeout(function(){ try { t.remove(); } catch(_){} }, 400);
+  }, 4000);
 }
 
 // ── Listes personnalisables ──
@@ -6996,6 +7190,24 @@ function buildMgrRappelsHTML(clid, mgridx, mgr) {
 }
 
 // ── Paramétrage types de rappel ──
+function renderInternalEmailsParams() {
+  var el = document.getElementById('internal-emails-container');
+  if (!el) return;
+  var e = getInternalEmails();
+  el.innerHTML = '<div style="display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:center;margin-bottom:6px;">'
+    + '<label style="font-size:11px;font-weight:700;color:#6B5E9C;">Clémence :</label>'
+    + '<input type="email" value="' + e.clemence + '" onchange="updateInternalEmail(\'clemence\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;">'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:center;margin-bottom:6px;">'
+    + '<label style="font-size:11px;font-weight:700;color:#6B5E9C;">Marie :</label>'
+    + '<input type="email" value="' + e.marie + '" onchange="updateInternalEmail(\'marie\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;">'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:center;">'
+    + '<label style="font-size:11px;font-weight:700;color:#6B5E9C;">ADV :</label>'
+    + '<input type="email" value="' + e.adv + '" onchange="updateInternalEmail(\'adv\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;">'
+    + '</div>';
+}
+
 function renderRappelTypesParams() {
   var el = document.getElementById('rappel-types-container');
   if (!el) return;
@@ -7103,6 +7315,37 @@ function addRappelType() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Poste</label><input id="pl-poste" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Secteur d'activité</label><select id="pl-secteur" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option value="">-- Sélectionner --</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Connait son TJM ?</label><select id="pl-connait-tjm" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Non</option><option>Oui</option></select></div>
+        <div style="grid-column:1/-1;padding:10px 12px;background:#FFF8E6;border-radius:8px;border-left:4px solid #F0A500;">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:12px;font-weight:700;color:#B26A00;">
+            <input type="checkbox" id="pl-salarie-etranger" onchange="toggleSalarieEtrangerFields()" style="accent-color:#F0A500;width:16px;height:16px;cursor:pointer;">
+            Salari&eacute; &eacute;tranger (titre de s&eacute;jour requis)
+          </label>
+          <div id="pl-etranger-fields" style="display:none;margin-top:10px;grid-template-columns:repeat(2,1fr);gap:10px;">
+            <div><label style="font-size:10px;color:#B26A00;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Type de s&eacute;jour</label>
+              <select id="pl-type-sejour" style="width:100%;padding:7px 10px;border:1.5px solid #F0A500;border-radius:7px;font-size:12px;background:#fff;box-sizing:border-box;">
+                <option value="">-- S&eacute;lectionner --</option>
+                <option>Non</option><option>Carte Temporaire</option><option>Carte Annuelle</option><option>Carte Resident</option><option>R&eacute;c&eacute;piss&eacute;</option><option>Autorisation provisoire</option><option>Autres</option>
+              </select>
+            </div>
+            <div><label style="font-size:10px;color:#B26A00;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Mail v&eacute;rification titre</label>
+              <select id="pl-mail-verif-titre" style="width:100%;padding:7px 10px;border:1.5px solid #F0A500;border-radius:7px;font-size:12px;background:#fff;box-sizing:border-box;">
+                <option value="">-- S&eacute;lectionner --</option><option>Oui</option><option>Non</option>
+              </select>
+            </div>
+            <div><label style="font-size:10px;color:#B26A00;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Demande d'autorisation</label>
+              <select id="pl-demande-autorisation" style="width:100%;padding:7px 10px;border:1.5px solid #F0A500;border-radius:7px;font-size:12px;background:#fff;box-sizing:border-box;">
+                <option value="">-- S&eacute;lectionner --</option>
+                <option>Non</option><option>Carte Temporaire</option><option>Carte Annuelle</option><option>Carte Resident</option><option>R&eacute;c&eacute;piss&eacute;</option><option>Autorisation provisoire</option><option>Autres</option>
+              </select>
+            </div>
+            <div><label style="font-size:10px;color:#B26A00;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">D&eacute;cision favorable</label>
+              <select id="pl-decision-favorable" style="width:100%;padding:7px 10px;border:1.5px solid #F0A500;border-radius:7px;font-size:12px;background:#fff;box-sizing:border-box;">
+                <option value="">-- S&eacute;lectionner --</option>
+                <option>Non</option><option>Carte Temporaire</option><option>Carte Annuelle</option><option>Carte Resident</option><option>R&eacute;c&eacute;piss&eacute;</option><option>Autorisation provisoire</option><option>Autres</option>
+              </select>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- CLIENT -->
