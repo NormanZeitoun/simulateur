@@ -295,6 +295,16 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div class="field"><label>Téléphone candidat</label><input type="tel" id="tel" placeholder="06 XX XX XX XX" oninput="calc()"></div>
         <div class="field"><label>Poste</label><input type="text" id="poste" placeholder="Dev Senior, Chef de projet..." oninput="calc()"></div>
       </div>
+      <div class="field"><label>Source / Origine du deal</label>
+        <select id="source_origine" onchange="calc()">
+          <option value="">-- S&eacute;lectionner --</option>
+          <option value="R&eacute;seau">R&eacute;seau</option>
+          <option value="LinkedIn">LinkedIn</option>
+          <option value="Job board">Job board</option>
+          <option value="Recommandation">Recommandation</option>
+          <option value="Autre">Autre</option>
+        </select>
+      </div>
 
     </div>
 
@@ -1063,6 +1073,11 @@ function showTab(id) {
   // Afficher le tab demandé
   var el = document.getElementById(id);
   if (el) el.style.display = 'block';
+  // Si on ouvre Paramètres, re-render les sections dynamiques
+  if (id === 'tab-params') {
+    try { if (typeof renderRappelTypesParams === 'function') renderRappelTypesParams(); } catch(e){}
+    try { if (typeof renderInternalEmailsParams === 'function') renderInternalEmailsParams(); } catch(e){}
+  }
   // Gérer les boutons actifs des sous-tabs Mission/Frais/Cotisations/Param
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
   // Activer le bouton correspondant
@@ -2694,6 +2709,7 @@ function getSimData() {
       return (fr / nb).toFixed(2);
     })(),
     mutuelle:      window.state ? window.state.mutuelle : '',
+    source_origine: (function(){ var el=document.getElementById('source_origine'); return el ? el.value : ''; })(),
     cp:            window.state ? window.state.cp : '',
     rtt:           window.state ? (window.state.rtt || 0) : 0,
     repas:         window.state ? window.state.repas : '',
@@ -3442,6 +3458,7 @@ function saveHistorique(data, dest, email, consultantName) {
     taux_restitution: data.taux_restitution || '',
     taux_impot: data.taux_impot || '',
     mutuelle: data.mutuelle,
+    source_origine: data.source_origine || '',
     cp: data.cp,
     rtt: data.rtt || 0,
     repas: data.repas || '',
@@ -3474,7 +3491,7 @@ function saveHistorique(data, dest, email, consultantName) {
 
 function captureSnapshotForHistory() {
   // Champs texte/number à capturer par valeur
-  var textIds = ['prenom','nom','email','email_client','entreprise','manager','poste','tel',
+  var textIds = ['prenom','nom','email','email_client','entreprise','manager','poste','tel','source_origine',
     'tjm','nb_jours','marge','brut','brut_annuel','taux_impot',
     'km_aller','puissance_fiscale','jours_presentiels',
     'swile_val','abo_transport','abo_tel','abo_internet','abo_telnet',
@@ -3942,7 +3959,7 @@ function openPlacementPopup(ts) {
   // ── Deal ──
   document.getElementById('pl-commercial').value = sim.commercial || '';
   document.getElementById('pl-date-deal').value = new Date().toISOString().split('T')[0];
-  document.getElementById('pl-origine').value = '';
+  document.getElementById('pl-origine').value = sim.source_origine || '';
   document.getElementById('pl-etat').value = 'Nouveau placement';
   document.getElementById('pl-contrat').value = '';
   document.getElementById('pl-date-entree').value = '';
@@ -4954,14 +4971,21 @@ function renderCandidats() {
 
 
     html += '<div style="position:absolute;top:0;left:0;right:0;height:4px;background:' + scfg.color + ';border-radius:12px 12px 0 0;"></div>';
-    // Appliquer le style de fond sur la carte active uniquement (via marqueur unique)
+    // Appliquer le style de fond sur la carte active (injection d'un style inline via class spécifique)
     var cardMarker = 'data-candid="' + cand.id + '"';
+    var bgStyle = '';
     if (statut === 'Porté') {
-      html = html.replace(cardMarker + ' onclick=', cardMarker + ' onclick= style="border-color:#1D9E75;background:#F0FDF4;" ');
+      bgStyle = 'border-color:#1D9E75 !important;background:#F0FDF4 !important;';
     } else if (statut === 'Prospect chaud') {
-      html = html.replace(cardMarker + ' onclick=', cardMarker + ' onclick= style="border-color:#F0A500;background:#FFF8E6;" ');
+      bgStyle = 'border-color:#F0A500 !important;background:#FFF8E6 !important;';
     } else if (statut === 'Ancien porté') {
-      html = html.replace(cardMarker + ' onclick=', cardMarker + ' onclick= style="border-color:#E24B4A;background:#FFF5F5;" ');
+      bgStyle = 'border-color:#E24B4A !important;background:#FFF5F5 !important;';
+    }
+    if (bgStyle) {
+      // Injecter le style inline à la bonne position : APRÈS class="cand-card"
+      var searchStr = cardMarker + ' onclick="openCandidatFiche(parseInt(this.dataset.candid))" class="cand-card"';
+      var replaceStr = cardMarker + ' onclick="openCandidatFiche(parseInt(this.dataset.candid))" class="cand-card" style="' + bgStyle + '"';
+      html = html.replace(searchStr, replaceStr);
     }
     html += '<div style="display:flex;align-items:flex-start;gap:10px;margin-top:6px;">';
     html += '<div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">' + initials + '</div>';
@@ -6261,7 +6285,14 @@ var INTERNAL_EMAILS_KEY = 'sp_internal_emails_v1';
 var DEFAULT_INTERNAL_EMAILS = {
   clemence: 'norman@seven-portage.fr',
   marie: 'norman@seven-portage.fr',
-  adv: 'norman@seven-portage.fr'
+  adv: 'norman@seven-portage.fr',
+  norman: 'norman@seven-portage.fr',
+  david: 'norman@seven-portage.fr',
+  rayan: 'norman@seven-portage.fr',
+  esteban: 'norman@seven-portage.fr',
+  sacha: 'norman@seven-portage.fr',
+  farah: 'norman@seven-portage.fr',
+  joanne: 'norman@seven-portage.fr'
 };
 
 function getInternalEmails() {
@@ -6307,6 +6338,13 @@ function sendPlacementNotificationEmail(deal) {
     console.warn('[Notification] Aucun destinataire');
     return;
   }
+  // Commercial en copie (CC)
+  var ccRecipients = [];
+  var commercialKey = (deal.commercial || '').trim().toLowerCase();
+  if (commercialKey) {
+    var emails = getInternalEmails();
+    if (emails[commercialKey]) ccRecipients.push(emails[commercialKey]);
+  }
 
   var subject = 'Nouveau placement - ' + (deal.prenom||'') + ' ' + (deal.nom||'')
     + (deal.entreprise ? ' (' + deal.entreprise + ')' : '')
@@ -6341,11 +6379,13 @@ function sendPlacementNotificationEmail(deal) {
 
   var toRecipients = recipients.map(function(e){ return { emailAddress: { address: e } }; });
 
+  var toCc = ccRecipients.map(function(e){ return { emailAddress: { address: e } }; });
   var payload = {
     message: {
       subject: subject,
       body: { contentType: 'HTML', content: htmlBody },
-      toRecipients: toRecipients
+      toRecipients: toRecipients,
+      ccRecipients: toCc
     },
     saveToSentItems: true
   };
@@ -6455,6 +6495,7 @@ function refreshCustomSelectOptions() {
   var map = {
     'pl-secteur': ['-- Sélectionner --'].concat(lists.secteurs),
     'pl-origine': ['-- Sélectionner --'].concat(lists.origines),
+    'pl-commercial': ['-- Sélectionner --'].concat(lists.commerciaux || ['Norman','David','Rayan','Esteban','Sacha','Farah','Joanne']),
     'pl-contrat': ['-- Sélectionner --'].concat(lists.types_contrat),
     'pl-delai-paiement': ['-- Sélectionner --'].concat(lists.delais_paiement),
     'pl-banque': [''].concat(lists.banques)
@@ -7397,17 +7438,22 @@ function renderInternalEmailsParams() {
   var el = document.getElementById('internal-emails-container');
   if (!el) return;
   var e = getInternalEmails();
-  el.innerHTML = '<div style="display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:center;margin-bottom:6px;">'
-    + '<label style="font-size:11px;font-weight:700;color:#6B5E9C;">Clémence :</label>'
-    + '<input type="email" value="' + e.clemence + '" onchange="updateInternalEmail(\'clemence\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;">'
-    + '</div>'
-    + '<div style="display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:center;margin-bottom:6px;">'
-    + '<label style="font-size:11px;font-weight:700;color:#6B5E9C;">Marie :</label>'
-    + '<input type="email" value="' + e.marie + '" onchange="updateInternalEmail(\'marie\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;">'
-    + '</div>'
-    + '<div style="display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:center;">'
-    + '<label style="font-size:11px;font-weight:700;color:#6B5E9C;">ADV :</label>'
-    + '<input type="email" value="' + e.adv + '" onchange="updateInternalEmail(\'adv\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;">'
+  var rowStyle = 'display:grid;grid-template-columns:180px 1fr;gap:8px;align-items:center;margin-bottom:6px;';
+  var labelStyle = 'font-size:11px;font-weight:700;color:#6B5E9C;';
+  var inputStyle = 'padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;';
+  el.innerHTML = ''
+    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Clémence (A-H) :</label><input type="email" value="' + (e.clemence||'') + '" onchange="updateInternalEmail(\'clemence\',this.value)" style="' + inputStyle + '"></div>'
+    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Marie (I-Z) :</label><input type="email" value="' + (e.marie||'') + '" onchange="updateInternalEmail(\'marie\',this.value)" style="' + inputStyle + '"></div>'
+    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">ADV (dans les 2 cas) :</label><input type="email" value="' + (e.adv||'') + '" onchange="updateInternalEmail(\'adv\',this.value)" style="' + inputStyle + '"></div>'
+    + '<div style="border-top:1px solid #E4E0FA;margin-top:10px;padding-top:10px;">'
+    + '<div style="font-size:11px;font-weight:700;color:#7343EE;margin-bottom:6px;">Commerciaux (en copie selon qui crée le deal)</div>'
+    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Norman :</label><input type="email" value="' + (e.norman||'') + '" onchange="updateInternalEmail(\'norman\',this.value)" style="' + inputStyle + '"></div>'
+    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">David :</label><input type="email" value="' + (e.david||'') + '" onchange="updateInternalEmail(\'david\',this.value)" style="' + inputStyle + '"></div>'
+    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Rayan :</label><input type="email" value="' + (e.rayan||'') + '" onchange="updateInternalEmail(\'rayan\',this.value)" style="' + inputStyle + '"></div>'
+    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Esteban :</label><input type="email" value="' + (e.esteban||'') + '" onchange="updateInternalEmail(\'esteban\',this.value)" style="' + inputStyle + '"></div>'
+    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Sacha :</label><input type="email" value="' + (e.sacha||'') + '" onchange="updateInternalEmail(\'sacha\',this.value)" style="' + inputStyle + '"></div>'
+    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Farah :</label><input type="email" value="' + (e.farah||'') + '" onchange="updateInternalEmail(\'farah\',this.value)" style="' + inputStyle + '"></div>'
+    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Joanne :</label><input type="email" value="' + (e.joanne||'') + '" onchange="updateInternalEmail(\'joanne\',this.value)" style="' + inputStyle + '"></div>'
     + '</div>';
 }
 
@@ -7559,7 +7605,7 @@ function addRappelType() {
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;color:#1D9E75;">&#128203; Informations deal</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Date deal</label><input id="pl-date-deal" type="date" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
-        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Commercial</label><input id="pl-commercial" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Commercial</label><select id="pl-commercial" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option value="">-- Sélectionner --</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Origine deal</label><select id="pl-origine" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>Réseau</option><option>LinkedIn</option><option>Job board</option><option>Recommandation</option><option>Autre</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">État dossier</label><select id="pl-etat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Nouveau placement</option><option>En cours</option><option>Signé</option><option>Annulé</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Type de contrat</label><select id="pl-contrat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>CDI</option><option>CDD</option><option>Portage</option></select></div>
