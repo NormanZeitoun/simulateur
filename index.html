@@ -3858,7 +3858,107 @@ function openPlacementPopup(ts) {
 
   // Gérer tacite selon contrat client
   updateTaciteField();
+  refreshCustomSelectOptions();
+  refreshClientDatalist();
   openModal('modal-placement');
+}
+
+function refreshClientDatalist() {
+  var clients = getClients();
+  var dl = document.getElementById('pl-entreprise-datalist');
+  if (dl) {
+    dl.innerHTML = clients.map(function(cl){
+      return '<option value="' + (cl.name||'').replace(/"/g,'&quot;') + '"></option>';
+    }).join('');
+  }
+  // Si l'entreprise est déjà saisie, recharger la logique
+  onEntrepriseChange();
+}
+
+function onEntrepriseChange() {
+  var ent = document.getElementById('pl-entreprise');
+  var info = document.getElementById('pl-client-info');
+  var mgrSel = document.getElementById('pl-manager-existing');
+  if (!ent) return;
+  var name = ent.value.trim().toLowerCase();
+  var clients = getClients();
+  var cl = clients.find(function(c){ return (c.name||'').toLowerCase() === name; });
+
+  if (cl) {
+    // Client existant : pré-remplir les infos générales
+    if (info) {
+      info.style.display = 'block';
+      info.style.background = '#E6F9F0';
+      info.style.color = '#1D9E75';
+      info.innerHTML = '&#9989; Client existant (' + (cl.sp_id||'') + ') · <strong>' + (cl.managers||[]).length + ' manager(s)</strong>';
+    }
+    // Pré-remplir les champs si vides
+    setIfEmpty('pl-tel-client', cl.tel);
+    setIfEmpty('pl-email-client', cl.email);
+    setIfEmpty('pl-adresse-exec', cl.adresse);
+    setIfEmpty('pl-secteur', cl.secteur);
+    setIfEmpty('pl-delai-paiement', cl.delai_paiement);
+    setIfEmpty('pl-banque', cl.banque);
+
+    // Remplir le sélecteur de managers
+    if (mgrSel) {
+      var currentMgr = document.getElementById('pl-manager').value || '';
+      var opts = '<option value="">-- Sélectionner --</option>';
+      (cl.managers||[]).forEach(function(m, idx) {
+        var sel = (currentMgr && currentMgr.toLowerCase() === (m.name||'').toLowerCase()) ? ' selected' : '';
+        opts += '<option value="' + idx + '"' + sel + '>&#128101; ' + (m.name||'') + '</option>';
+      });
+      opts += '<option value="__new__">&#10133; Nouveau manager</option>';
+      mgrSel.innerHTML = opts;
+    }
+  } else {
+    // Nouveau client : afficher message informatif
+    if (info) {
+      info.style.display = 'block';
+      info.style.background = '#F5F3FF';
+      info.style.color = '#7343EE';
+      info.innerHTML = name ? '&#128396; Nouveau client — sera cr\u00e9\u00e9 \u00e0 l\'enregistrement' : '&#9888; Renseignez un nom d\'entreprise';
+    }
+    // Reset sélecteur manager
+    if (mgrSel) {
+      mgrSel.innerHTML = '<option value="">-- Manager --</option><option value="__new__">&#10133; Nouveau manager</option>';
+    }
+  }
+}
+
+function setIfEmpty(id, val) {
+  var el = document.getElementById(id);
+  if (el && (!el.value || el.value.trim() === '') && val) el.value = val;
+}
+
+function onManagerSelect() {
+  var mgrSel = document.getElementById('pl-manager-existing');
+  if (!mgrSel) return;
+  var val = mgrSel.value;
+  if (val === '' || val === '__new__') {
+    // Nouveau manager : vider les champs manager/signataire
+    if (val === '__new__') {
+      document.getElementById('pl-manager').value = '';
+      document.getElementById('pl-nom-signataire').value = '';
+      document.getElementById('pl-tel-signataire').value = '';
+      document.getElementById('pl-email-signataire').value = '';
+      document.getElementById('pl-manager').focus();
+    }
+    return;
+  }
+  // Manager existant sélectionné
+  var ent = document.getElementById('pl-entreprise').value.trim().toLowerCase();
+  var cl = getClients().find(function(c){ return (c.name||'').toLowerCase() === ent; });
+  if (!cl) return;
+  var mgr = cl.managers[parseInt(val)];
+  if (!mgr) return;
+  // Charger les infos du manager
+  document.getElementById('pl-manager').value = mgr.name || '';
+  document.getElementById('pl-tel-signataire').value = mgr.tel || '';
+  document.getElementById('pl-email-signataire').value = mgr.email || '';
+  // Le nom signataire = manager par défaut si vide
+  var sigField = document.getElementById('pl-nom-signataire');
+  if (sigField && !sigField.value) sigField.value = mgr.name || '';
 }
 
 function updateTaciteField() {
@@ -4223,7 +4323,7 @@ function getCellValue(d, key){
   var fmt=function(v){ return (v===null||v===undefined||v==='') ? '—' : String(v); };
   switch(key){
     case 'etat': var co=ETAT_COLORS[d.etat]||'#6B5E9C'; return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:'+co+';white-space:nowrap;">'+(d.etat||'—')+'</span>';
-    case 'candidat': return '<span style="font-weight:600;color:#1A1033;">'+(d.prenom||'')+' '+(d.nom||'')+'</span>';
+    case 'candidat': return '<span onclick="event.stopPropagation();openCandidatByEmail(\''+(d.email||'')+'\')" style="font-weight:600;color:#7343EE;cursor:pointer;text-decoration:underline;" title="Voir la fiche candidat">'+(d.prenom||'')+' '+(d.nom||'')+'</span>';
     case 'email': return fmt(d.email);
     case 'tel': return fmt(d.tel);
     case 'poste': return fmt(d.poste);
@@ -4491,14 +4591,19 @@ function renderCandidats() {
 }
 
 function mainNavTo(section) {
-  ['mission','historique','deals','candidats'].forEach(function(s) {
+  // Mettre à jour tous les boutons de navigation
+  ['mission','historique','deals','candidats','clients','taches'].forEach(function(s) {
     var btn = document.getElementById('mainnav-' + s);
     if (btn) btn.classList.toggle('active', s === section);
   });
+  // Fermer toutes les popups éventuellement ouvertes
+  ['modal-cand-fiche','modal-manager-fiche','modal-client-fiche','modal-rappel'].forEach(function(mid){
+    var m = document.getElementById(mid); if (m) m.remove();
+  });
+  // Afficher la section demandée
   if (section === 'mission') {
     showTab('tab-mission');
   } else if (section === 'historique') {
-    showTab('tab-mission');
     showHistorique();
   } else if (section === 'deals') {
     showDealsTab();
@@ -4656,7 +4761,7 @@ function switchCandTab(id, tab) {
   if (!cont) return;
   if (tab === 'simulations') cont.innerHTML = buildCandSimsHTML(cand);
   else if (tab === 'placements') cont.innerHTML = buildCandPlacementsHTML(cand);
-  else if (tab === 'documents') cont.innerHTML = buildCandDocsHTML(cand);
+  else if (tab === 'documents') { cont.innerHTML = buildCandDocsHTML(cand); setupCandDocsDragDrop(cand); }
   else if (tab === 'rappels') cont.innerHTML = buildCandRappelsHTML(cand);
   else if (tab === 'commentaires') cont.innerHTML = buildCandCommsHTML(cand);
 }
@@ -4701,6 +4806,12 @@ function buildCandDocsHTML(cand) {
     + (connected ? '' : ' <span style="color:#E24B4A;">— Connectez-vous OneDrive pour uploader</span>')
     + '</div>';
 
+  if (connected) {
+    html += '<div id="doc-dropzone-' + cand.id + '" class="doc-dropzone" data-candid="' + cand.id + '" style="border:2px dashed #E4E0FA;border-radius:10px;padding:14px;margin-bottom:12px;text-align:center;background:#FAFAFA;transition:all 0.2s;color:#9E9E9E;font-size:12px;">'
+      + '&#128228; Glissez-déposez vos documents ici<br>'
+      + '<span style="font-size:10px;color:#C0B8E0;">Le type sera détecté automatiquement selon le nom du fichier (CV, CNI, RIB, etc.)</span>'
+      + '</div>';
+  }
   html += '<table style="width:100%;border-collapse:collapse;">';
   html += '<thead><tr style="background:#7343EE;color:#fff;font-size:10px;font-weight:700;">'
     + '<th style="padding:6px 10px;text-align:left;">Document</th>'
@@ -4712,7 +4823,7 @@ function buildCandDocsHTML(cand) {
     var doc = docs[dt.key] || {};
     var hasFile = doc.od_path ? true : false;
     var rowBg = i % 2 === 0 ? '#fff' : '#FAFAFA';
-    html += '<tr style="border-bottom:1px solid #F0EDF9;background:' + rowBg + ';">';
+    html += '<tr class="doc-row" data-candid="' + cand.id + '" data-dockey="' + dt.key + '" data-doclabel="' + dt.label + '" style="border-bottom:1px solid #F0EDF9;background:' + rowBg + ';transition:all 0.15s;">';
     html += '<td style="padding:8px 10px;font-size:12px;font-weight:600;color:#1A1033;">' + dt.label + '</td>';
     // Statut
     if (hasFile) {
@@ -5193,6 +5304,8 @@ function saveClientFromDeal(deal) {
     clients[idx].tel = deal.tel_client || clients[idx].tel || '';
     clients[idx].email = deal.email_client || clients[idx].email || '';
     clients[idx].adresse = deal.adresse_exec || clients[idx].adresse || '';
+    clients[idx].delai_paiement = deal.delai_paiement || clients[idx].delai_paiement || '';
+    clients[idx].banque = deal.banque || clients[idx].banque || '';
     clients[idx].updated = new Date().toLocaleDateString('fr-FR');
     if (!clients[idx].managers) clients[idx].managers = [];
     // Trouver ou créer le manager
@@ -5222,6 +5335,8 @@ function saveClientFromDeal(deal) {
       email: deal.email_client||'',
       adresse: deal.adresse_exec||'',
       secteur: deal.secteur||'',
+      delai_paiement: deal.delai_paiement||'',
+      banque: deal.banque||'',
       commentaire: '',
       created: new Date().toLocaleDateString('fr-FR'),
       updated: new Date().toLocaleDateString('fr-FR'),
@@ -5766,10 +5881,10 @@ function removeCustomListItem(key, idx) {
 function refreshCustomSelectOptions() {
   var lists = getCustomLists();
   var map = {
-    'pl-secteur': lists.secteurs,
+    'pl-secteur': ['-- Sélectionner --'].concat(lists.secteurs),
     'pl-origine': ['-- Sélectionner --'].concat(lists.origines),
     'pl-contrat': ['-- Sélectionner --'].concat(lists.types_contrat),
-    'pl-delai-paiement': [''].concat(lists.delais_paiement),
+    'pl-delai-paiement': ['-- Sélectionner --'].concat(lists.delais_paiement),
     'pl-banque': [''].concat(lists.banques)
   };
   Object.keys(map).forEach(function(id) {
@@ -6018,6 +6133,87 @@ function deleteCandDoc(candId, docKey) {
   });
 }
 
+function setupCandDocsDragDrop(cand) {
+  // Zone drop globale
+  var dropzone = document.getElementById('doc-dropzone-' + cand.id);
+  if (dropzone) {
+    dropzone.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      dropzone.style.borderColor = '#7343EE';
+      dropzone.style.background = '#F5F3FF';
+      dropzone.style.color = '#7343EE';
+    });
+    dropzone.addEventListener('dragleave', function(e) {
+      e.preventDefault();
+      dropzone.style.borderColor = '#E4E0FA';
+      dropzone.style.background = '#FAFAFA';
+      dropzone.style.color = '#9E9E9E';
+    });
+    dropzone.addEventListener('drop', function(e) {
+      e.preventDefault();
+      dropzone.style.borderColor = '#E4E0FA';
+      dropzone.style.background = '#FAFAFA';
+      dropzone.style.color = '#9E9E9E';
+      var files = e.dataTransfer.files;
+      if (!files || !files.length) return;
+      // Pour chaque fichier, deviner le type et uploader
+      for (var i = 0; i < files.length; i++) {
+        var file = files[i];
+        var detectedKey = detectDocType(file.name);
+        uploadCandDocFromFile(cand.id, detectedKey, detectedKey, file);
+      }
+    });
+  }
+
+  // Zones drop par ligne (pour chaque type précis)
+  document.querySelectorAll('.doc-row').forEach(function(row) {
+    if (row.dataset.candid != cand.id) return;
+    row.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      row.style.background = '#F5F3FF';
+      row.style.boxShadow = 'inset 0 0 0 2px #7343EE';
+    });
+    row.addEventListener('dragleave', function(e) {
+      e.preventDefault();
+      row.style.background = '';
+      row.style.boxShadow = '';
+    });
+    row.addEventListener('drop', function(e) {
+      e.preventDefault();
+      row.style.background = '';
+      row.style.boxShadow = '';
+      var files = e.dataTransfer.files;
+      if (!files || !files.length) return;
+      var dockey = row.dataset.dockey;
+      var doclabel = row.dataset.doclabel;
+      uploadCandDocFromFile(cand.id, dockey, doclabel, files[0]);
+    });
+  });
+}
+
+function detectDocType(filename) {
+  var name = filename.toLowerCase();
+  if (name.indexOf('cv') >= 0 || name.indexOf('resume') >= 0) return 'cv';
+  if (name.indexOf('cni') >= 0 || name.indexOf('passeport') >= 0 || name.indexOf('passport') >= 0 || name.indexOf('identite') >= 0) return 'cni';
+  if (name.indexOf('vitale') >= 0 || name.indexOf('carte_vitale') >= 0) return 'carte_vitale';
+  if (name.indexOf('rib') >= 0 || name.indexOf('iban') >= 0) return 'rib';
+  if (name.indexOf('justif') >= 0 || name.indexOf('domicile') >= 0 || name.indexOf('edf') >= 0 || name.indexOf('orange') >= 0) return 'justif_domicile';
+  if (name.indexOf('bulletin') >= 0 || name.indexOf('paie') >= 0 || name.indexOf('salaire') >= 0) return 'bulletin';
+  return 'cv'; // Par défaut
+}
+
+function uploadCandDocFromFile(candId, docKey, docLabel, file) {
+  // Créer un input factice et appeler uploadCandDoc
+  if (!file) return;
+  if (!odToken) { alert('Connectez-vous OneDrive.'); return; }
+  // Simuler un input compatible avec uploadCandDoc
+  var fakeInput = {
+    dataset: { candid: candId, dockey: docKey, doclabel: docLabel || docKey },
+    files: [file]
+  };
+  uploadCandDoc(fakeInput);
+}
+
 function toggleDocRecu(input) {
   var candId = parseInt(input.dataset.candid);
   var docKey = input.dataset.dockey;
@@ -6201,7 +6397,7 @@ function renderMonthView(date) {
     dayRappels.slice(0,3).forEach(function(r){
       var color = getRappelColor(r.type);
       var time = r.datetime && r.datetime.indexOf('T') > 0 ? r.datetime.split('T')[1].substring(0,5) : '';
-      html += '<div onclick="event.stopPropagation();openRappelPopup(\'' + r.id + '\')" style="background:' + color + ';color:#fff;font-size:10px;padding:1px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;">' + time + ' ' + (r.subject||r.type||'Rappel') + '</div>';
+      html += '<div onclick="event.stopPropagation();openRappelPopup(\'' + r.id + '\')" title="' + (r.linked_name||'Sans lien') + ' · ' + (r.type||'') + ' · ' + (r.subject||'') + '" style="background:' + color + ';color:#fff;font-size:10px;padding:2px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;line-height:1.3;">' + time + ' <strong>' + (r.linked_name||'Sans lien') + '</strong> · ' + (r.subject||r.type||'Rappel') + '</div>';
     });
     if (dayRappels.length > 3) {
       html += '<div style="font-size:9px;color:#6B5E9C;font-weight:600;">+' + (dayRappels.length - 3) + ' autres</div>';
@@ -6242,7 +6438,7 @@ function renderWeekView(start) {
       dayRappels.forEach(function(r){
         var color = getRappelColor(r.type);
         var time = r.datetime.split('T')[1].substring(0,5);
-        html += '<div onclick="event.stopPropagation();openRappelPopup(\'' + r.id + '\')" style="background:' + color + ';color:#fff;font-size:10px;padding:2px 5px;border-radius:3px;margin-bottom:2px;cursor:pointer;overflow:hidden;">' + time + ' ' + (r.subject||r.type||'Rappel') + '</div>';
+        html += '<div onclick="event.stopPropagation();openRappelPopup(\'' + r.id + '\')" title="' + (r.linked_name||'Sans lien') + ' · ' + (r.type||'') + ' · ' + (r.subject||'') + '" style="background:' + color + ';color:#fff;font-size:10px;padding:3px 5px;border-radius:3px;margin-bottom:2px;cursor:pointer;overflow:hidden;line-height:1.3;"><div style="font-weight:700;">' + (r.linked_name||'Sans lien') + '</div><div>' + time + ' · ' + (r.subject||r.type||'Rappel') + '</div></div>';
       });
       html += '</div>';
     }
@@ -6693,14 +6889,24 @@ function addRappelType() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Email</label><input id="pl-email" type="email" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Téléphone</label><input id="pl-tel" type="tel" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Poste</label><input id="pl-poste" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
-        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Secteur d'activité</label><input id="pl-secteur" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Secteur d'activité</label><select id="pl-secteur" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option value="">-- Sélectionner --</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Connait son TJM ?</label><select id="pl-connait-tjm" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Non</option><option>Oui</option></select></div>
       </div>
 
       <!-- CLIENT -->
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;color:#4B36EC;">&#127970; Informations client</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
-        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Entreprise</label><input id="pl-entreprise" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
+        <div style="grid-column:1/-1;">
+          <label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Entreprise cliente</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <input id="pl-entreprise" type="text" list="pl-entreprise-datalist" oninput="onEntrepriseChange()" placeholder="Tapez pour rechercher ou créer un client..." style="flex:2;min-width:200px;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;">
+            <datalist id="pl-entreprise-datalist"></datalist>
+            <select id="pl-manager-existing" onchange="onManagerSelect()" style="flex:1;min-width:180px;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;">
+              <option value="">-- Manager --</option>
+            </select>
+          </div>
+          <div id="pl-client-info" style="display:none;margin-top:6px;padding:6px 10px;background:#E6F9F0;border-radius:6px;font-size:11px;color:#1D9E75;"></div>
+        </div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Téléphone client</label><input id="pl-tel-client" type="tel" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Email client</label><input id="pl-email-client" type="email" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Manager / Contact</label><input id="pl-manager" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
@@ -6711,7 +6917,7 @@ function addRappelType() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Nom signataire</label><input id="pl-nom-signataire" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Tél. signataire</label><input id="pl-tel-signataire" type="tel" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Email signataire</label><input id="pl-email-signataire" type="email" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
-        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Délai de paiement</label><input id="pl-delai-paiement" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Délai de paiement</label><select id="pl-delai-paiement" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option value="">-- Sélectionner --</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Banque Seven</label><select id="pl-banque" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option></option><option>CIC</option><option>CIC F</option><option>BRED</option><option>ABN</option></select></div>
       </div>
 
