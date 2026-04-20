@@ -223,6 +223,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .deals-table tr:hover td { background:#F5F3FF !important; }
 .deals-table td.col-freeze, .deals-table tr:nth-child(even) td.col-freeze { background:#f8f6ff; }
 .deals-table td.col-freeze2, .deals-table tr:nth-child(even) td.col-freeze2 { background:#f8f6ff; }
+/* Salarié étranger — ligne jaune pâle (doit passer par !important pour écraser les nth-child) */
+.deals-table tr.row-etranger td { background:#FFF3CD !important; }
+.deals-table tr.row-etranger td.col-freeze,
+.deals-table tr.row-etranger td.col-freeze2 { background:#FCE8A6 !important; }
+.deals-table tr.row-etranger:hover td { background:#FFE8B0 !important; }
 .hist-finale-badge { display:inline-flex; align-items:center; gap:4px; background:#FFF3CD; color:#B8860B; border:1.5px solid #F0C040; border-radius:20px; font-size:11px; font-weight:700; padding:2px 10px; }
 .hist-finale-check { display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; color:#6B5E9C; font-weight:500; user-select:none; }
 .hist-finale-check input[type=checkbox] { accent-color:#F0A500; width:14px; height:14px; cursor:pointer; }
@@ -2414,17 +2419,9 @@ function calc() {
     ca_info.textContent = `Facturation ${fmt(facturation,2)} · CA dispo ${fmt(ca_dispo,2)} · Frais gestion ${fmt(frais_gestion,2)}${jours_txt}`;
   }
 
-  // Update commercial badge (affiche le commercial, pas le candidat)
-  const nomCommercial = s('nom_commercial');
-  if (nomCommercial) {
-    document.getElementById('badge-commercial').textContent = nomCommercial;
-  } else {
-    const prenom = s('prenom');
-    const nom = s('nom');
-    if (prenom || nom) {
-      document.getElementById('badge-commercial').textContent = (prenom + ' ' + nom).trim();
-    }
-  }
+  // Mise à jour du badge commercial (lit p_commercial_nom depuis onglet Paramètres ou localStorage).
+  // Ancien code bugué : lisait 'nom_commercial' (inexistant) puis écrasait avec prenom+nom candidat.
+  if (typeof updateBadgeCommercial === 'function') updateBadgeCommercial();
 }
 
 // ============================================
@@ -2680,6 +2677,7 @@ function getSimData() {
   return {
     consultant:    (document.getElementById('prenom') ? document.getElementById('prenom').value : '') + ' ' +
                    (document.getElementById('nom')    ? document.getElementById('nom').value    : ''),
+    tel:           document.getElementById('tel') ? document.getElementById('tel').value : '',
     commercial:    getCommercialData().nom,
     commercial_tel:   getCommercialData().tel,
     commercial_email: getCommercialData().email,
@@ -3957,7 +3955,8 @@ function openPlacementPopup(ts) {
   document.getElementById('pl-prenom').value = parts[0] || '';
   document.getElementById('pl-nom').value = parts.slice(1).join(' ') || '';
   document.getElementById('pl-email').value = sim.email || '';
-  document.getElementById('pl-tel').value = '';
+  // Tel candidat : top-level prioritaire, fallback sur snapshot (anciennes simus)
+  document.getElementById('pl-tel').value = sim.tel || (sim.snapshot && sim.snapshot.tel) || '';
   document.getElementById('pl-poste').value = sim.poste || '';
   document.getElementById('pl-secteur').value = '';
 
@@ -4471,8 +4470,8 @@ function renderDeals() {
 
   deals.forEach(function(d){
     var color = ECOLORS[d.etat]||'#6B5E9C';
-    var rowBg = d.salarie_etranger ? 'background:#FFE8B0;' : '';
-    html += '<tr style="border-left:3px solid '+color+';'+rowBg+'">';
+    var rowClass = d.salarie_etranger ? ' class="row-etranger"' : '';
+    html += '<tr' + rowClass + ' style="border-left:3px solid '+color+';">';
     visColDefs.forEach(function(col){
       var fc = col.freeze==='f1' ? ' class="col-freeze"' : col.freeze==='f2' ? ' class="col-freeze2"' : '';
       html += '<td'+fc+'>'+getCellValue(d,col.key)+'</td>';
@@ -4705,7 +4704,9 @@ function getCellValue(d, key){
       var mutLabels = { 'isolee':'Isol\u00e9e', 'famille':'Famille', 'isolee_seven':'Isol\u00e9e (Seven)', 'renoncement':'Non', 'non':'Non' };
       return d.mutuelle ? (mutLabels[d.mutuelle] || d.mutuelle) : '\u2014';
     case 'repas':
-      var repasLabels = { 'Forfait':'Swile (Forfait)', 'Reel':'Swile (R\u00e9el)', 'forfait':'Swile (Forfait)', 'reel':'Swile (R\u00e9el)' };
+      var repasLabels = { 'Forfait':'Swile (Forfait)', 'Reel':'Swile (R\u00e9el)', 'forfait':'Swile (Forfait)', 'reel':'Swile (R\u00e9el)', 'Swile':'Swile (TR)', 'swile':'Swile (TR)' };
+      // GD n'est PAS Swile/TR → renvoyer un tiret dans cette colonne
+      if (d.repas === 'GD' || d.repas === 'gd') return '\u2014';
       return (d.repas && d.repas!=='Non') ? (repasLabels[d.repas] || d.repas) : '\u2014';
     case 'forfait_repas': return d.repas==='Forfait' ? 'Oui' : '—';
     case 'km_aller': return (d.km_aller && parseFloat(d.km_aller)>0) ? d.km_aller+' km' : '—';
@@ -4714,7 +4715,19 @@ function getCellValue(d, key){
     case 'telnet': 
       var totalTelnet = (parseFloat(d.abo_tel)||0) + (parseFloat(d.abo_internet)||0);
       return totalTelnet > 0 ? totalTelnet.toLocaleString('fr-FR') + ' €' : '—';
-    case 'grand_dep': return (d.repas === 'GD' || d.gd_lieu) ? ('Oui' + (d.gd_lieu ? ' (' + d.gd_lieu + ')' : '')) : '\u2014';
+    case 'grand_dep':
+      // Seulement si repas === 'GD' — on affiche le montant mensuel (taux × nb_jours)
+      if (d.repas !== 'GD' && d.repas !== 'gd') return '\u2014';
+      var gdIdfEl = document.getElementById('p_gd_idf');
+      var gdAutreEl = document.getElementById('p_gd_autre');
+      var _tauxIdf   = gdIdfEl   ? (parseFloat(gdIdfEl.value)   || 98.46) : 98.46;
+      var _tauxAutre = gdAutreEl ? (parseFloat(gdAutreEl.value) || 82.86) : 82.86;
+      var _lieu = (d.gd_lieu || 'IDF').toString();
+      var _taux = _lieu === 'IDF' ? _tauxIdf : _tauxAutre;
+      var _nbJ = parseFloat(d.nb_jours) || 0;
+      var _totalGd = Math.round(_taux * _nbJ);
+      if (_totalGd <= 0) return '\u2014';
+      return _totalGd.toLocaleString('fr-FR') + ' €/mois (' + _lieu + ')';
     case 'frais_formation': 
       var formVal = parseFloat(d.frais_formation)||0;
       return formVal > 0 ? formVal.toLocaleString('fr-FR') + ' €' : '\u2014';
@@ -5824,6 +5837,10 @@ function saveClientFromDeal(deal) {
     clients[idx].adresse = deal.adresse_exec || clients[idx].adresse || '';
     clients[idx].delai_paiement = deal.delai_paiement || clients[idx].delai_paiement || '';
     clients[idx].banque = deal.banque || clients[idx].banque || '';
+    // Signataires : stockés au niveau client (celui qui signe les contrats pour cette entreprise)
+    clients[idx].nom_signataire = deal.nom_signataire || clients[idx].nom_signataire || '';
+    clients[idx].tel_signataire = deal.tel_signataire || clients[idx].tel_signataire || '';
+    clients[idx].email_signataire = deal.email_signataire || clients[idx].email_signataire || '';
     clients[idx].updated = new Date().toLocaleDateString('fr-FR');
     if (!clients[idx].managers) clients[idx].managers = [];
     // Trouver ou créer le manager
@@ -5960,6 +5977,27 @@ function buildClientPageHTML(cl) {
     + fld('Adresse',cl.adresse,'adresse')
     + fld("Secteur",cl.secteur,'secteur')
     + '</div></div>'
+    // Informations contractuelles
+    + '<div style="background:#fff;border:1.5px solid #E4E0FA;border-radius:10px;padding:14px 18px;margin-bottom:14px;">'
+    + '<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#4B36EC;margin-bottom:10px;">&#128196; Informations contractuelles</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">'
+    + fld('D\u00e9lai de paiement', cl.delai_paiement, 'delai_paiement')
+    + fld('Banque Seven', cl.banque, 'banque')
+    + '</div>'
+    + '<div style="margin-top:10px;">'
+    + '<label style="'+LB+'">Commentaire</label>'
+    + '<textarea data-field="commentaire" data-clid="'+cl.id+'" onchange="updateClientField(this)" rows="2" style="'+IS+';resize:vertical;min-height:48px;font-family:inherit;">'+((cl.commentaire||'')+'').replace(/</g,'&lt;')+'</textarea>'
+    + '</div>'
+    + '</div>'
+    // Signataire
+    + '<div style="background:#fff;border:1.5px solid #E4E0FA;border-radius:10px;padding:14px 18px;margin-bottom:14px;">'
+    + '<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#4B36EC;margin-bottom:10px;">&#9997; Signataire</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">'
+    + fld('Nom signataire', cl.nom_signataire, 'nom_signataire')
+    + fld('T\u00e9l. signataire', cl.tel_signataire, 'tel_signataire')
+    + fld('Email signataire', cl.email_signataire, 'email_signataire')
+    + '</div>'
+    + '</div>'
     // Managers
     + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
     + '<div style="font-size:13px;font-weight:700;color:#1A1033;">&#128101; Managers</div>'
