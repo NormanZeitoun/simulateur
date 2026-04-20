@@ -3896,6 +3896,9 @@ function savePlacement() {
   if (idx >= 0) deals[idx] = deal; else deals.unshift(deal);
   saveDeals(deals);
 
+  // Mettre à jour les infos de la fiche candidat à partir du placement
+  updateCandidatFromDeal(deal);
+
   // Sauvegarder / mettre à jour l'entreprise cliente
   saveClientFromDeal(deal);
 
@@ -4657,7 +4660,7 @@ function buildCandDocsHTML(cand) {
 
   var spId = getOrCreateSpId(cand);
   var html = '<div style="margin-bottom:8px;background:#F5F3FF;border-radius:8px;padding:8px 12px;font-size:11px;color:#7343EE;">'
-    + '&#128196; Dossier SharePoint : <strong>Dossier RH/' + spId + '_' + (cand.prenom||'') + '_' + (cand.nom||'') + '</strong>'
+    + '&#128196; Dossier SharePoint : <strong>Seven Portage Simlateur/Dossier RH/' + spId + '_' + (cand.prenom||'') + '_' + (cand.nom||'') + '</strong>'
     + (connected ? '' : ' <span style="color:#E24B4A;">— Connectez-vous OneDrive pour uploader</span>')
     + '</div>';
 
@@ -5096,6 +5099,41 @@ function saveClientsArr(arr) { localStorage.setItem(CLIENTS_KEY, JSON.stringify(
 function closeClientFiche() {
   var m = document.getElementById('modal-client-fiche');
   if (m) m.remove();
+}
+
+function updateCandidatFromDeal(deal) {
+  var email = (deal.email || '').trim().toLowerCase();
+  if (!email) return;
+  var cands = getCandidats();
+  var idx = cands.findIndex(function(c) { return (c.email||'').trim().toLowerCase() === email; });
+  if (idx < 0) return;
+
+  // Mettre à jour si la valeur locale est vide/absente ou si le deal a une valeur
+  var fieldsMap = {
+    prenom: deal.prenom,
+    nom: deal.nom,
+    tel: deal.tel,
+    poste: deal.poste,
+    profil: deal.profil,
+    techno: deal.techno,
+    ville: deal.ville,
+    linkedin: deal.linkedin,
+    tjm_actuel: deal.tjm,
+    entreprise: deal.entreprise,
+    commercial: deal.commercial,
+    statut_portage: deal.statut_portage,
+    secteur: deal.secteur
+  };
+
+  Object.keys(fieldsMap).forEach(function(key) {
+    var newVal = fieldsMap[key];
+    if (newVal && newVal.toString().trim() !== '') {
+      cands[idx][key] = newVal;
+    }
+  });
+
+  cands[idx].updated = new Date().toLocaleDateString('fr-FR');
+  saveCandidatsArr(cands);
 }
 
 function saveClientFromDeal(deal) {
@@ -5703,7 +5741,7 @@ function refreshCustomSelectOptions() {
 // ═══════════════════════════════════════════════════════════
 // GESTION DOCUMENTS CANDIDATS — SharePoint / Dossier RH
 // ═══════════════════════════════════════════════════════════
-var OD_RH_PATH = '/General/Dossier RH';
+var OD_RH_PATH = '/General/Seven Portage Simlateur/Dossier RH';
 
 function uploadCandDoc(input) {
   var candId = parseInt(input.dataset.candid);
