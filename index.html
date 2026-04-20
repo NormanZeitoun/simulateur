@@ -1014,18 +1014,23 @@ function p(id) { return f(id) / 100; }
 // TABS
 // ============================================
 function showTab(id) {
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-historique','tab-taches','tab-clients','tab-historique'].forEach(t => {
-    document.getElementById(t).style.display = t === id ? 'block' : 'none';
+  // Masquer tous les tabs
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches'].forEach(function(t){
+    var el = document.getElementById(t); if (el) el.style.display = 'none';
   });
-  document.querySelectorAll('.tab-btn').forEach((b,i) => {
-    const tabs = ['tab-mission','tab-frais','tab-cotisations','tab-params'];
-    b.classList.toggle('active', tabs[i] === id);
-  });
-  // Restaurer panel-right et layout normal
-  var pr = document.querySelector('.panel-right');
-  if (pr) pr.style.display = '';
-  var app = document.querySelector('.app');
-  if (app) app.style.gridTemplateColumns = '';
+  // Afficher le tab demandé
+  var el = document.getElementById(id);
+  if (el) el.style.display = 'block';
+  // Gérer les boutons actifs des sous-tabs Mission/Frais/Cotisations/Param
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  // Activer le bouton correspondant
+  var btnMap = { 'tab-mission':0, 'tab-frais':1, 'tab-cotisations':2, 'tab-params':3 };
+  var btns = document.querySelectorAll('.tabs .tab-btn');
+  if (btnMap[id] !== undefined && btns[btnMap[id]]) btns[btnMap[id]].classList.add('active');
+  // Restaurer layout normal
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = '';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = '';
 }
 
 // ============================================
@@ -3202,13 +3207,11 @@ function buildDashboard(all) {
 function showHistorique() {
   var currentMonth = String(new Date().getMonth() + 1);
   histPeriod = currentMonth;
-  // Par défaut : filtrer sur le commercial de la session
   var myName = getCommercialData().nom;
   if (myName) histFilterCommercial = myName;
 
-  // Masquer les autres tabs
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-taches'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-historique');
@@ -3990,18 +3993,15 @@ function saveSortie() {
 
 // ── Onglet Tableau Deals ──
 function showDealsTab() {
-  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
-  var btn = document.getElementById('btn-tab-deals');
-  if (btn) btn.classList.add('active');
-  ['tab-mission','tab-frais','tab-cotisations','tab-params'].forEach(function(id) {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-deals');
   if (tab) tab.style.display = 'block';
-  var pr = document.querySelector('.panel-right');
-  if (pr) pr.style.display = 'none';
-  var app = document.querySelector('.app');
-  if (app) app.style.gridTemplateColumns = '1fr';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
   renderDeals();
 }
 
@@ -4408,17 +4408,15 @@ function saveCandidatFromEntry(entry) {
 }
 
 function showCandidatsTab() {
-  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
-  var btn = document.getElementById('btn-tab-candidats');
-  if (btn) btn.classList.add('active');
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-clients','tab-historique','tab-taches'].forEach(function(id) {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-candidats');
   if (tab) tab.style.display = 'block';
-  var tabs = document.querySelector('.tabs'); if(tabs) tabs.style.display='none';
-  var pr = document.querySelector('.panel-right'); if(pr) pr.style.display='none';
-  var app = document.querySelector('.app'); if(app) app.style.gridTemplateColumns='1fr';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
   renderCandidats();
 }
 
@@ -5235,14 +5233,14 @@ function saveClientFromDeal(deal) {
 
 function showClientsTab() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats'].forEach(function(id){
-    var el=document.getElementById(id); if(el) el.style.display='none';
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-clients');
-  if (tab) { tab.style.display = 'block'; }
-  var tabs = document.querySelector('.tabs'); if(tabs) tabs.style.display='none';
-  var pr = document.querySelector('.panel-right'); if(pr) pr.style.display='none';
-  var app = document.querySelector('.app'); if(app) app.style.gridTemplateColumns='1fr';
+  if (tab) tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
   renderClients();
 }
 
@@ -6083,7 +6081,7 @@ function getMyRappels() {
 // ── Vue calendrier ──
 function showTachesTab() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-taches');
@@ -6294,11 +6292,35 @@ function openRappelPopup(rappelId, prefillDate, linkedType, linkedId, linkedName
   var ex = document.getElementById('modal-rappel');
   if (ex) ex.remove();
 
+  // Si c'est un rappel existant, récupérer ses infos de lien
+  var finalLinkedType = existing ? (existing.linked_type || '') : (linkedType || '');
+  var finalLinkedId = existing ? (existing.linked_id || '') : (linkedId || '');
+  var finalLinkedName = existing ? (existing.linked_name || '') : (linkedName || '');
+
+  // Récupérer les infos complémentaires selon le type
+  var linkedSubtitle = '';
+  var linkedSpId = '';
+  if (finalLinkedType === 'candidat' && finalLinkedId) {
+    var cand = getCandidats().find(function(c){ return c.id == finalLinkedId; });
+    if (cand) {
+      linkedSubtitle = (cand.poste || 'Candidat') + (cand.entreprise ? ' \u00b7 ' + cand.entreprise : '');
+      linkedSpId = cand.sp_id || '';
+    }
+  } else if (finalLinkedType === 'manager' && finalLinkedId) {
+    var parts = finalLinkedId.split('-');
+    var cl = getClients().find(function(c){ return c.id == parts[0]; });
+    if (cl && cl.managers && cl.managers[parseInt(parts[1])]) {
+      var mgr = cl.managers[parseInt(parts[1])];
+      linkedSubtitle = (mgr.poste || 'Manager') + ' \u00b7 ' + cl.name;
+      linkedSpId = mgr.sp_id || '';
+    }
+  }
+
   var types = getRappelTypes();
   var modal = document.createElement('div');
   modal.id = 'modal-rappel';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:5000;display:flex;align-items:center;justify-content:center;';
-  
+
   var now = new Date();
   var defaultDate = prefillDate || (existing ? existing.datetime.split('T')[0] : isoDate(now));
   var defaultTime = existing && existing.datetime.indexOf('T') > 0 ? existing.datetime.split('T')[1].substring(0,5) : (String(now.getHours()+1).padStart(2,'0') + ':00');
@@ -6311,43 +6333,70 @@ function openRappelPopup(rappelId, prefillDate, linkedType, linkedId, linkedName
   var IS = 'width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;';
   var LB = 'font-size:10px;font-weight:700;color:#9E9E9E;text-transform:uppercase;display:block;margin-bottom:4px;';
 
+  // Header enrichi si lien existant
+  var headerContent;
+  if (finalLinkedName) {
+    var icon = finalLinkedType === 'candidat' ? '&#128100;' : '&#128101;';
+    var initials = finalLinkedName.split(' ').map(function(w){return w[0]||'';}).slice(0,2).join('').toUpperCase();
+    headerContent = '<div style="display:flex;align-items:center;gap:10px;flex:1;">'
+      + '<div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,0.2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">' + initials + '</div>'
+      + '<div style="flex:1;min-width:0;">'
+      + '<div style="font-size:14px;font-weight:800;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;text-decoration:underline;" onclick="navigateToLinked(\'' + finalLinkedType + '\',\'' + finalLinkedId + '\')">' + icon + ' ' + finalLinkedName + '</div>'
+      + '<div style="font-size:10px;color:rgba(255,255,255,0.75);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + linkedSubtitle + (linkedSpId ? ' \u00b7 ' + linkedSpId : '') + '</div>'
+      + '</div></div>';
+  } else {
+    headerContent = '<div style="font-size:15px;font-weight:700;color:#fff;">&#128276; ' + (existing ? 'Modifier le rappel' : 'Nouveau rappel') + '</div>';
+  }
+
   var inner = '<div style="background:#fff;border-radius:14px;width:92%;max-width:520px;box-shadow:0 8px 40px rgba(115,67,238,0.25);">'
-    + '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);padding:16px 22px;border-radius:14px 14px 0 0;display:flex;align-items:center;justify-content:space-between;">'
-    + '<div style="font-size:15px;font-weight:700;color:#fff;">&#128276; ' + (existing ? 'Modifier le rappel' : 'Nouveau rappel') + '</div>'
-    + '<button onclick="document.getElementById(\'modal-rappel\').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#fff;">&#215;</button>'
+    + '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);padding:14px 20px;border-radius:14px 14px 0 0;display:flex;align-items:center;justify-content:space-between;gap:10px;">'
+    + headerContent
+    + '<button onclick="document.getElementById(\'modal-rappel\').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#fff;flex-shrink:0;">&#215;</button>'
     + '</div>'
-    + '<div style="padding:18px 22px;">'
-    + '<div style="margin-bottom:12px;"><label style="' + LB + '">Sujet *</label><input id="rappel-subject" type="text" value="' + (existing ? (existing.subject||'').replace(/"/g,'&quot;') : '') + '" placeholder="Ex: Relancer Josi pour son CV" style="' + IS + '"></div>'
+    + '<div style="padding:18px 22px;">';
+
+  if (finalLinkedName) {
+    inner += '<div style="font-size:11px;color:#9E9E9E;margin-bottom:12px;font-style:italic;">&#128276; ' + (existing ? 'Rappel li\u00e9 \u00e0' : 'Nouveau rappel pour') + ' ce ' + (finalLinkedType === 'candidat' ? 'candidat' : 'manager') + '</div>';
+  }
+
+  inner += '<div style="margin-bottom:12px;"><label style="' + LB + '">Sujet *</label><input id="rappel-subject" type="text" value="' + (existing ? (existing.subject||'').replace(/"/g,'&quot;') : '') + '" placeholder="Ex: Relancer pour le CV" style="' + IS + '"></div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
     + '<div><label style="' + LB + '">Date *</label><input id="rappel-date" type="date" value="' + defaultDate + '" style="' + IS + '"></div>'
     + '<div><label style="' + LB + '">Heure *</label><input id="rappel-time" type="time" value="' + defaultTime + '" style="' + IS + '"></div>'
     + '</div>'
-    + '<div style="margin-bottom:12px;"><label style="' + LB + '">Type</label><select id="rappel-type" style="' + IS + '">' + typeOptions + '</select></div>'
-    + '<div style="margin-bottom:14px;"><label style="' + LB + '">Commentaire</label><textarea id="rappel-comment" rows="3" style="' + IS + 'resize:vertical;">' + (existing ? (existing.comment||'') : '') + '</textarea></div>';
+    + '<div style="margin-bottom:12px;"><label style="' + LB + '">Type</label><select id="rappel-type" style="' + IS + '">' + typeOptions + '</select></div>';
 
-  // Lien vers candidat/manager
-  var linkLabel = '';
-  if (existing && existing.linked_type) {
-    linkLabel = existing.linked_type === 'candidat' ? '&#128100; Candidat : ' + (existing.linked_name||'')
-              : existing.linked_type === 'manager' ? '&#128101; Manager : ' + (existing.linked_name||'')
-              : '';
-  } else if (linkedType) {
-    linkLabel = linkedType === 'candidat' ? '&#128100; Candidat : ' + (linkedName||'')
-              : linkedType === 'manager' ? '&#128101; Manager : ' + (linkedName||'')
-              : '';
-  }
-  if (linkLabel) {
-    inner += '<div style="background:#F5F3FF;padding:8px 12px;border-radius:7px;font-size:11px;color:#7343EE;margin-bottom:14px;">' + linkLabel + '</div>';
+  // Sélecteur de lien si aucun lien forcé
+  if (!finalLinkedType) {
+    var cands = getCandidats();
+    var clients = getClients();
+    var optsCand = cands.map(function(cd){
+      return '<option value="candidat:' + cd.id + '" data-name="' + ((cd.prenom||'') + ' ' + (cd.nom||'')).trim() + '">&#128100; ' + (cd.prenom||'') + ' ' + (cd.nom||'') + (cd.sp_id ? ' \u00b7 ' + cd.sp_id : '') + '</option>';
+    }).join('');
+    var optsMgr = [];
+    clients.forEach(function(cl){
+      (cl.managers||[]).forEach(function(mg, idx){
+        optsMgr.push('<option value="manager:' + cl.id + '-' + idx + '" data-name="' + (mg.name||'') + '">&#128101; ' + (mg.name||'') + ' (' + cl.name + ')</option>');
+      });
+    });
+    inner += '<div style="margin-bottom:12px;"><label style="' + LB + '">Associer \u00e0 (optionnel)</label>'
+      + '<select id="rappel-link" style="' + IS + '">'
+      + '<option value="">\u2014 Aucun \u2014</option>'
+      + (optsCand ? '<optgroup label="Candidats">' + optsCand + '</optgroup>' : '')
+      + (optsMgr.length ? '<optgroup label="Managers">' + optsMgr.join('') + '</optgroup>' : '')
+      + '</select></div>';
   }
 
-  inner += '<div style="display:flex;gap:8px;justify-content:flex-end;">';
+  inner += '<div style="margin-bottom:14px;"><label style="' + LB + '">Commentaire</label><textarea id="rappel-comment" rows="3" style="' + IS + 'resize:vertical;">' + (existing ? (existing.comment||'') : '') + '</textarea></div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;">';
+
   if (existing) {
     inner += '<button onclick="deleteRappel(\'' + existing.id + '\')" style="padding:9px 14px;background:#fff;color:#E24B4A;border:1px solid #FECACA;border-radius:7px;font-size:12px;cursor:pointer;">&#128465; Supprimer</button>';
   }
   inner += '<button onclick="document.getElementById(\'modal-rappel\').remove()" style="padding:9px 18px;border:1px solid #E4E0FA;border-radius:7px;background:#fff;font-size:12px;cursor:pointer;">Annuler</button>';
-  inner += '<button onclick="saveRappel(\'' + (existing ? existing.id : '') + '\',\'' + (linkedType||'') + '\',\'' + (linkedId||'') + '\',\'' + (linkedName||'').replace(/\'/g,'') + '\')" style="padding:9px 22px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">&#10003; Enregistrer</button>';
-  inner += '</div>';
-  inner += '</div></div>';
+  var safeLinkedName = (finalLinkedName || '').replace(/\'/g, '').replace(/"/g, '');
+  inner += '<button onclick="saveRappel(\'' + (existing ? existing.id : '') + '\',\'' + finalLinkedType + '\',\'' + finalLinkedId + '\',\'' + safeLinkedName + '\')" style="padding:9px 22px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">&#10003; Enregistrer</button>';
+  inner += '</div></div></div>';
 
   modal.innerHTML = inner;
 
@@ -6362,12 +6411,42 @@ function openRappelPopup(rappelId, prefillDate, linkedType, linkedId, linkedName
   document.body.appendChild(modal);
 }
 
+// Navigation vers la fiche liée depuis le popup rappel
+function navigateToLinked(type, id) {
+  if (!type || !id) return;
+  var m = document.getElementById('modal-rappel');
+  if (m) m.remove();
+  if (type === 'candidat') {
+    mainNavTo('candidats');
+    setTimeout(function(){ openCandidatFiche(parseInt(id)); }, 200);
+  } else if (type === 'manager') {
+    var parts = id.split('-');
+    var clid = parseInt(parts[0]);
+    var mgridx = parseInt(parts[1]);
+    mainNavTo('clients');
+    setTimeout(function(){
+      openClientPage(clid);
+      setTimeout(function(){ openManagerFiche(clid, mgridx); }, 300);
+    }, 200);
+  }
+}
+
 function saveRappel(existingId, linkedType, linkedId, linkedName) {
   var subject = document.getElementById('rappel-subject').value.trim();
   var date = document.getElementById('rappel-date').value;
   var time = document.getElementById('rappel-time').value;
   var type = document.getElementById('rappel-type').value;
   var comment = document.getElementById('rappel-comment').value;
+
+  // Si sélecteur de lien présent (rappel créé sans lien forcé), le lire
+  var linkSelect = document.getElementById('rappel-link');
+  if (linkSelect && linkSelect.value) {
+    var parts = linkSelect.value.split(':');
+    linkedType = parts[0];
+    linkedId = parts[1];
+    var opt = linkSelect.options[linkSelect.selectedIndex];
+    linkedName = opt ? (opt.dataset.name || opt.textContent.replace(/[^a-zA-Z0-9À-ž \-]/g,'').trim()) : '';
+  }
 
   if (!subject || !date || !time) {
     alert('Sujet, date et heure sont obligatoires.');
