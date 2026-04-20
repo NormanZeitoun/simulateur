@@ -45,7 +45,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 /* FORM ELEMENTS */
 .field { margin-bottom: 12px; }
 .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
-.field input[type=number], .field input[type=text], .field select {
+.field input[type=number], .field input[type=text], .field input[type=tel], .field input[type=email], .field input[type=date], .field select {
   width: 100%; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 7px;
   font-size: 13px; background: #FAFAFA; color: var(--text); outline: none; transition: border-color 0.2s;
 }
@@ -3876,8 +3876,6 @@ function openPlacementPopup(ts) {
   document.getElementById('pl-tacite').value = 'Non';
 
   // ── Simulation lecture seule (affichage enrichi) ──
-  // Log des données sim disponibles pour debug
-  console.log('[Placement] Sim data:', sim);
   document.getElementById('pl-tjm').value = sim.tjm ? sim.tjm + ' €/j' : '—';
   document.getElementById('pl-nb-jours').value = sim.nb_jours ? sim.nb_jours + 'j' : '—';
   // Salaire annuel sur contrat = brut mensuel × 12 (base 21j)
@@ -3918,6 +3916,31 @@ function openPlacementPopup(ts) {
     document.getElementById('pl-tt').value = details;
   } else {
     document.getElementById('pl-tt').value = 'Non';
+  }
+
+  // Forfait mobile & internet (total)
+  var totalTelnet = tel + net;
+  var plTelnet = document.getElementById('pl-telnet');
+  if (plTelnet) plTelnet.value = totalTelnet > 0 ? (totalTelnet + ' €/mois') : '—';
+
+  // Formation
+  var formationVal = parseFloat((sim.frais_formation||'').toString().replace(',','.')) || 0;
+  var plForm = document.getElementById('pl-formation');
+  if (plForm) plForm.value = formationVal > 0 ? (sim.frais_formation + ' €') : '—';
+
+  // Matériel pro
+  var materielVal = parseFloat((sim.frais_materiel||'').toString().replace(',','.')) || 0;
+  var plMat = document.getElementById('pl-materiel');
+  if (plMat) plMat.value = materielVal > 0 ? (sim.frais_materiel + ' €') : '—';
+
+  // Grand déplacement
+  var plGd = document.getElementById('pl-gd');
+  if (plGd) {
+    if (sim.repas === 'GD' || sim.gd_lieu) {
+      plGd.value = 'Oui' + (sim.gd_lieu ? ' (' + sim.gd_lieu + ')' : '');
+    } else {
+      plGd.value = '—';
+    }
   }
 
   // Vérifier deal existant et pré-remplir
@@ -4503,14 +4526,18 @@ function getCellValue(d, key){
     case 'contrat': return fmt(d.contrat);
     case 'date_entree': return fmt(d.date_entree);
     case 'frais_gestion': return d.frais_gestion ? d.frais_gestion+'%' : '—';
-    case 'mutuelle': return fmt(d.mutuelle);
-    case 'repas': return (d.repas && d.repas!=='Non') ? fmt(d.repas) : '—';
+    case 'mutuelle': 
+      var mutLabels = { 'isolee':'Isol\u00e9e', 'famille':'Famille', 'isolee_seven':'Isol\u00e9e (Seven)', 'renoncement':'Non', 'non':'Non' };
+      return d.mutuelle ? (mutLabels[d.mutuelle] || d.mutuelle) : '\u2014';
+    case 'repas':
+      var repasLabels = { 'Forfait':'Swile (Forfait)', 'Reel':'Swile (R\u00e9el)', 'forfait':'Swile (Forfait)', 'reel':'Swile (R\u00e9el)' };
+      return (d.repas && d.repas!=='Non') ? (repasLabels[d.repas] || d.repas) : '\u2014';
     case 'forfait_repas': return d.repas==='Forfait' ? 'Oui' : '—';
     case 'km_aller': return (d.km_aller && parseFloat(d.km_aller)>0) ? d.km_aller+' km' : '—';
     case 'abo_transport': return (d.abo_transport && parseFloat(d.abo_transport)>0) ? d.abo_transport+' €' : '—';
     case 'tt': return fmt(d.tt);
     case 'telnet': return ((d.abo_tel && parseFloat(d.abo_tel)>0)||(d.abo_internet && parseFloat(d.abo_internet)>0)) ? 'Oui' : '—';
-    case 'grand_dep': return '—';
+    case 'grand_dep': return (d.repas === 'GD' || d.gd_lieu) ? ('Oui' + (d.gd_lieu ? ' (' + d.gd_lieu + ')' : '')) : '\u2014';
     case 'connait_tjm': return fmt(d.connait_tjm);
     case 'commentaire': return '<span title="'+(d.commentaire||'')+'" style="display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;">'+(d.commentaire||'—')+'</span>';
     // ── Colonnes Onboarding (select éditable) ──
@@ -7405,6 +7432,10 @@ function addRappelType() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">IK (km)</label><input id="pl-ik" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Transport</label><input id="pl-transport" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Télétravail</label><input id="pl-tt" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Forfait mobile &amp; internet</label><input id="pl-telnet" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Formation</label><input id="pl-formation" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Matériel pro</label><input id="pl-materiel" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Grand déplacement</label><input id="pl-gd" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
       </div>
 
       <!-- COMMENTAIRE -->
