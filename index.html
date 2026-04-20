@@ -6554,10 +6554,10 @@ function uploadCandDoc(input) {
     var arrayBuffer = e.target.result;
     var encodedPath = encodeURIComponent(filePath);
     // Créer le dossier d'abord, puis uploader
-    ensureOdFolder(folderPath, function(ok) {
+    ensureOdFolder(folderPath, function(ok, errDetails) {
       if (!ok) {
         if (cont) cont.innerHTML = buildCandDocsHTML(cand);
-        alert('Erreur lors de la création du dossier SharePoint.');
+        alert('Erreur création dossier SharePoint.\n\nChemin tenté: ' + folderPath + '\n\n' + (errDetails || ''));
         return;
       }
       // Encoder chaque segment du chemin séparément (garder les / littéraux)
@@ -6601,11 +6601,11 @@ function uploadCandDoc(input) {
 function ensureOdFolder(folderPath, cb) {
   // Création récursive du dossier et de tous ses parents
   var parts = folderPath.split('/').filter(Boolean);
-  if (parts.length === 0) { cb(true); return; }
+  if (parts.length === 0) { cb(true, ''); return; }
 
   var idx = 0;
   function createNext() {
-    if (idx >= parts.length) { cb(true); return; }
+    if (idx >= parts.length) { cb(true, ''); return; }
     var parentParts = parts.slice(0, idx);
     var folderName = parts[idx];
     idx++;
@@ -6630,14 +6630,14 @@ function ensureOdFolder(folderPath, cb) {
       } else {
         return r.text().then(function(txt) {
           console.warn('[ensureOdFolder] Échec niveau', folderName, 'status', r.status, 'body:', txt);
-          // status 409 = existe déjà, on continue
           if (r.status === 409) { createNext(); return; }
-          cb(false);
+          var errMsg = 'Niveau: ' + folderName + '\nStatus: ' + r.status + '\nParent: ' + parentPath + '\nBody: ' + txt.substring(0, 500);
+          cb(false, errMsg);
         });
       }
     }).catch(function(err) {
       console.error('[ensureOdFolder] Erreur réseau', err);
-      cb(false);
+      cb(false, 'Erreur réseau: ' + (err.message || err));
     });
   }
   createNext();
