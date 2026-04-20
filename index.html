@@ -3500,7 +3500,24 @@ function captureSnapshotForHistory() {
 
 function restoreSnapshot(snap) {
   if (!snap) return;
-  // 1. Restaurer tous les champs texte/number
+
+  // Désactiver temporairement les solveurs pour éviter les écrasements pendant la restauration
+  var _isRestoring = true;
+  window._isRestoring = true;
+
+  // 1. D'ABORD : restaurer l'état (boutons toggle) car leurs setters
+  //    peuvent écraser des valeurs (ex: setTT remet abo_tel/abo_internet à 0)
+  if (snap._state) {
+    try { if (typeof setMutuelle === 'function') setMutuelle(snap._state.mutuelle || 'renoncement'); } catch(e){}
+    try { if (typeof setCP       === 'function') setCP(snap._state.cp || 'Non'); } catch(e){}
+    try { if (typeof setRepas    === 'function') setRepas(snap._state.repas || 'Non'); } catch(e){}
+    try { if (typeof setTT       === 'function') setTT(snap._state.tt || false); } catch(e){}
+    try { if (typeof setGDLieu   === 'function') setGDLieu(snap._state.gd_lieu || 'IDF'); } catch(e){}
+    try { if (typeof setIK1ere   === 'function') setIK1ere(snap._state.ik_1ere || false); } catch(e){}
+    try { if (typeof setRTT      === 'function') setRTT(typeof snap._state.rtt === 'number' ? snap._state.rtt : 0); } catch(e){}
+  }
+
+  // 2. PUIS : restaurer tous les champs texte/number (par-dessus les écrasements des setters)
   Object.keys(snap).forEach(function(id) {
     if (id === '_state' || id === '_checkboxes') return;
     var el = document.getElementById(id);
@@ -3508,24 +3525,20 @@ function restoreSnapshot(snap) {
       el.value = snap[id];
     }
   });
-  // 2. Restaurer les checkboxes
+
+  // 3. Restaurer les checkboxes
   if (snap._checkboxes) {
     Object.keys(snap._checkboxes).forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.checked = !!snap._checkboxes[id];
     });
   }
-  // 3. Restaurer l'état (boutons toggle)
-  if (snap._state) {
-    if (typeof setMutuelle === 'function') setMutuelle(snap._state.mutuelle || 'renoncement');
-    if (typeof setCP       === 'function') setCP(snap._state.cp || 'Non');
-    if (typeof setRepas    === 'function') setRepas(snap._state.repas || 'Non');
-    if (typeof setTT       === 'function') setTT(snap._state.tt || false);
-    if (typeof setGDLieu   === 'function') setGDLieu(snap._state.gd_lieu || 'IDF');
-    if (typeof setIK1ere   === 'function') setIK1ere(snap._state.ik_1ere || false);
-    if (typeof setRTT      === 'function') setRTT(typeof snap._state.rtt === 'number' ? snap._state.rtt : 0);
-  }
-  setTimeout(function() { if (typeof calc === 'function') calc(); }, 100);
+
+  // 4. Recalculer tout — mais SANS que solveur ne modifie brut/tjm (on garde les valeurs restaurées)
+  window._isRestoring = false;
+  setTimeout(function() {
+    if (typeof calc === 'function') calc();
+  }, 150);
 }
 
 function reopenSim(ts) {
@@ -4376,7 +4389,7 @@ function renderDeals() {
 
   deals.forEach(function(d){
     var color = ECOLORS[d.etat]||'#6B5E9C';
-    var rowBg = d.salarie_etranger ? 'background:#FFF8E6;' : '';
+    var rowBg = d.salarie_etranger ? 'background:#FFE8B0;' : '';
     html += '<tr style="border-left:3px solid '+color+';'+rowBg+'">';
     visColDefs.forEach(function(col){
       var fc = col.freeze==='f1' ? ' class="col-freeze"' : col.freeze==='f2' ? ' class="col-freeze2"' : '';
@@ -4439,6 +4452,11 @@ var DEAL_ALL_COLS = [
   {key:'my_silae',                 label:'My SILAE'},
   {key:'mutuelle_envoi_lien',      label:'Mutuelle (lien)'},
   {key:'envoi_carte_swile',        label:'Envoi carte Swile'},
+  // ── Frais simulation (montants) ──
+  {key:'frais_formation',          label:'Formation'},
+  {key:'frais_materiel',           label:'Matériel pro'},
+  {key:'cp',                       label:'CP'},
+  {key:'rtt',                      label:'RTT'},
   // ── Salarié étranger ──
   {key:'salarie_etranger',         label:'Salarié étranger'},
   {key:'type_sejour',              label:'Type de séjour'},
@@ -4611,8 +4629,25 @@ function getCellValue(d, key){
     case 'km_aller': return (d.km_aller && parseFloat(d.km_aller)>0) ? d.km_aller+' km' : '—';
     case 'abo_transport': return (d.abo_transport && parseFloat(d.abo_transport)>0) ? d.abo_transport+' €' : '—';
     case 'tt': return fmt(d.tt);
-    case 'telnet': return ((d.abo_tel && parseFloat(d.abo_tel)>0)||(d.abo_internet && parseFloat(d.abo_internet)>0)) ? 'Oui' : '—';
+    case 'telnet': 
+      var totalTelnet = (parseFloat(d.abo_tel)||0) + (parseFloat(d.abo_internet)||0);
+      return totalTelnet > 0 ? totalTelnet.toLocaleString('fr-FR') + ' €' : '—';
     case 'grand_dep': return (d.repas === 'GD' || d.gd_lieu) ? ('Oui' + (d.gd_lieu ? ' (' + d.gd_lieu + ')' : '')) : '\u2014';
+    case 'frais_formation': 
+      var formVal = parseFloat(d.frais_formation)||0;
+      return formVal > 0 ? formVal.toLocaleString('fr-FR') + ' €' : '\u2014';
+    case 'frais_materiel': 
+      var matVal = parseFloat(d.frais_materiel)||0;
+      return matVal > 0 ? matVal.toLocaleString('fr-FR') + ' €' : '\u2014';
+    case 'cp':
+      var cpVal = (d.cp || '').toString().toLowerCase();
+      if (cpVal === 'cp' || cpVal === 'provisionnes' || cpVal === 'provisionnés' || cpVal === 'oui') return '<span style="color:#1D9E75;font-weight:600;">Oui</span>';
+      if (!cpVal || cpVal === 'non') return '<span style="color:#9E9E9E;">Non</span>';
+      return d.cp;
+    case 'rtt':
+      var rttVal = parseInt(d.rtt)||0;
+      if (rttVal > 0) return '<span style="color:#1D9E75;font-weight:600;">Oui (' + rttVal + 'j)</span>';
+      return '<span style="color:#9E9E9E;">Non</span>';
     case 'connait_tjm': return fmt(d.connait_tjm);
     case 'commentaire': return '<span title="'+(d.commentaire||'')+'" style="display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;">'+(d.commentaire||'—')+'</span>';
     // ── Colonnes Onboarding (select éditable) ──
