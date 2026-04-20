@@ -272,7 +272,13 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   <div id="tab-mission">
 
     <div class="section">
-      <div class="section-title">Identification</div>
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Identification</span>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:var(--muted);font-weight:500;">
+          <input type="checkbox" id="sim-connait-tjm" checked style="accent-color:#7343EE;width:13px;height:13px;">
+          Connaît son TJM
+        </label>
+      </div>
       <div class="field-row">
         <div class="field"><label>Prénom candidat</label><input type="text" id="prenom" placeholder="Laurent" oninput="calc()"></div>
         <div class="field"><label>Nom candidat</label><input type="text" id="nom" placeholder="Devoulon" oninput="calc()"></div>
@@ -285,6 +291,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div class="field"><label>Email candidat</label><input type="text" id="email" placeholder="candidat@domaine.fr" oninput="calc()"></div>
         <div class="field"><label>Email client</label><input type="text" id="email_client" placeholder="contact@entreprise.fr" oninput="calc()"></div>
       </div>
+      <div class="field"><label>Téléphone candidat</label><input type="tel" id="tel" placeholder="06 XX XX XX XX" oninput="calc()"></div>
       <div class="field"><label>Poste</label><input type="text" id="poste" placeholder="Dev Senior, Chef de projet..." oninput="calc()"></div>
 
     </div>
@@ -3861,10 +3868,6 @@ function openPlacementPopup(ts) {
   document.getElementById('pl-commentaire').value = '';
   document.getElementById('pl-connait-tjm').value = 'Non';
   var se = document.getElementById('pl-salarie-etranger'); if (se) se.checked = false;
-  ['pl-type-sejour','pl-mail-verif-titre','pl-demande-autorisation','pl-decision-favorable'].forEach(function(id){
-    var el = document.getElementById(id); if (el) el.value = '';
-  });
-  toggleSalarieEtrangerFields();
   document.getElementById('pl-type-contrat-client').value = 'Seven';
   document.getElementById('pl-tacite').value = 'Non';
 
@@ -3934,11 +3937,6 @@ function openPlacementPopup(ts) {
     document.getElementById('pl-commentaire').value = existing.commentaire || '';
     document.getElementById('pl-connait-tjm').value = existing.connait_tjm || 'Non';
     var se2 = document.getElementById('pl-salarie-etranger'); if (se2) se2.checked = !!existing.salarie_etranger;
-    var ts2 = document.getElementById('pl-type-sejour'); if (ts2) ts2.value = existing.type_sejour || '';
-    var mv2 = document.getElementById('pl-mail-verif-titre'); if (mv2) mv2.value = existing.mail_verif_titre || '';
-    var da2 = document.getElementById('pl-demande-autorisation'); if (da2) da2.value = existing.demande_autorisation || '';
-    var df2 = document.getElementById('pl-decision-favorable'); if (df2) df2.value = existing.decision_favorable || '';
-    toggleSalarieEtrangerFields();
     document.getElementById('pl-date-deal').value = existing.date_deal || new Date().toISOString().split('T')[0];
   }
 
@@ -4048,10 +4046,7 @@ function onManagerSelect() {
 }
 
 function toggleSalarieEtrangerFields() {
-  var cb = document.getElementById('pl-salarie-etranger');
-  var container = document.getElementById('pl-etranger-fields');
-  if (!cb || !container) return;
-  container.style.display = cb.checked ? 'grid' : 'none';
+  // Déprécié : les détails du titre de séjour se gèrent maintenant dans le tableau Deals
 }
 
 function updateTaciteField() {
@@ -4088,10 +4083,10 @@ function savePlacement() {
     secteur: document.getElementById('pl-secteur').value,
     connait_tjm: document.getElementById('pl-connait-tjm').value,
     salarie_etranger: (function(){ var el=document.getElementById('pl-salarie-etranger'); return el ? el.checked : false; })(),
-    type_sejour: (function(){ var el=document.getElementById('pl-type-sejour'); return el ? el.value : ''; })(),
-    mail_verif_titre: (function(){ var el=document.getElementById('pl-mail-verif-titre'); return el ? el.value : ''; })(),
-    demande_autorisation: (function(){ var el=document.getElementById('pl-demande-autorisation'); return el ? el.value : ''; })(),
-    decision_favorable: (function(){ var el=document.getElementById('pl-decision-favorable'); return el ? el.value : ''; })(),
+    type_sejour: (idx >= 0 ? (deals[idx].type_sejour || '') : ''),
+    mail_verif_titre: (idx >= 0 ? (deals[idx].mail_verif_titre || '') : ''),
+    demande_autorisation: (idx >= 0 ? (deals[idx].demande_autorisation || '') : ''),
+    decision_favorable: (idx >= 0 ? (deals[idx].decision_favorable || '') : ''),
     // Client
     entreprise: document.getElementById('pl-entreprise').value,
     tel_client: document.getElementById('pl-tel-client').value,
@@ -5514,7 +5509,17 @@ function updateCandidatFromDeal(deal) {
   var idx = cands.findIndex(function(c) { return (c.email||'').trim().toLowerCase() === email; });
   if (idx < 0) return;
 
-  // Mettre à jour si la valeur locale est vide/absente ou si le deal a une valeur
+  // Déduire le statut portage automatiquement selon l'état du deal
+  var derivedStatut = '';
+  var etat = (deal.etat || '').toLowerCase();
+  if (etat === 'sorti des effectifs') {
+    derivedStatut = 'Ancien porté';
+  } else if (etat === 'annulé' || etat === 'annule') {
+    derivedStatut = 'Prospect'; // retour au statut initial si annulé
+  } else if (etat === 'nouveau placement' || etat === 'en cours' || etat === 'signé' || etat === 'signe') {
+    derivedStatut = 'Porté';
+  }
+
   var fieldsMap = {
     prenom: deal.prenom,
     nom: deal.nom,
@@ -5527,7 +5532,7 @@ function updateCandidatFromDeal(deal) {
     tjm_actuel: deal.tjm,
     entreprise: deal.entreprise,
     commercial: deal.commercial,
-    statut_portage: deal.statut_portage,
+    statut_portage: derivedStatut,
     secteur: deal.secteur
   };
 
@@ -7317,34 +7322,10 @@ function addRappelType() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Connait son TJM ?</label><select id="pl-connait-tjm" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Non</option><option>Oui</option></select></div>
         <div style="grid-column:1/-1;padding:10px 12px;background:#FFF8E6;border-radius:8px;border-left:4px solid #F0A500;">
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:12px;font-weight:700;color:#B26A00;">
-            <input type="checkbox" id="pl-salarie-etranger" onchange="toggleSalarieEtrangerFields()" style="accent-color:#F0A500;width:16px;height:16px;cursor:pointer;">
+            <input type="checkbox" id="pl-salarie-etranger" style="accent-color:#F0A500;width:16px;height:16px;cursor:pointer;">
             Salari&eacute; &eacute;tranger (titre de s&eacute;jour requis)
           </label>
-          <div id="pl-etranger-fields" style="display:none;margin-top:10px;grid-template-columns:repeat(2,1fr);gap:10px;">
-            <div><label style="font-size:10px;color:#B26A00;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Type de s&eacute;jour</label>
-              <select id="pl-type-sejour" style="width:100%;padding:7px 10px;border:1.5px solid #F0A500;border-radius:7px;font-size:12px;background:#fff;box-sizing:border-box;">
-                <option value="">-- S&eacute;lectionner --</option>
-                <option>Non</option><option>Carte Temporaire</option><option>Carte Annuelle</option><option>Carte Resident</option><option>R&eacute;c&eacute;piss&eacute;</option><option>Autorisation provisoire</option><option>Autres</option>
-              </select>
-            </div>
-            <div><label style="font-size:10px;color:#B26A00;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Mail v&eacute;rification titre</label>
-              <select id="pl-mail-verif-titre" style="width:100%;padding:7px 10px;border:1.5px solid #F0A500;border-radius:7px;font-size:12px;background:#fff;box-sizing:border-box;">
-                <option value="">-- S&eacute;lectionner --</option><option>Oui</option><option>Non</option>
-              </select>
-            </div>
-            <div><label style="font-size:10px;color:#B26A00;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Demande d'autorisation</label>
-              <select id="pl-demande-autorisation" style="width:100%;padding:7px 10px;border:1.5px solid #F0A500;border-radius:7px;font-size:12px;background:#fff;box-sizing:border-box;">
-                <option value="">-- S&eacute;lectionner --</option>
-                <option>Non</option><option>Carte Temporaire</option><option>Carte Annuelle</option><option>Carte Resident</option><option>R&eacute;c&eacute;piss&eacute;</option><option>Autorisation provisoire</option><option>Autres</option>
-              </select>
-            </div>
-            <div><label style="font-size:10px;color:#B26A00;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">D&eacute;cision favorable</label>
-              <select id="pl-decision-favorable" style="width:100%;padding:7px 10px;border:1.5px solid #F0A500;border-radius:7px;font-size:12px;background:#fff;box-sizing:border-box;">
-                <option value="">-- S&eacute;lectionner --</option>
-                <option>Non</option><option>Carte Temporaire</option><option>Carte Annuelle</option><option>Carte Resident</option><option>R&eacute;c&eacute;piss&eacute;</option><option>Autorisation provisoire</option><option>Autres</option>
-              </select>
-            </div>
-          </div>
+          <div style="font-size:10px;color:#9E9E9E;margin-top:4px;margin-left:26px;font-style:italic;">Les d&eacute;tails du titre de s&eacute;jour se renseignent dans le tableau Deals apr&egrave;s cr&eacute;ation du placement.</div>
         </div>
       </div>
 
