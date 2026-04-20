@@ -4805,7 +4805,16 @@ function setSyncProgress(msg, done) {
 }
 
 function runFullSync(btn) {
-  if (!odToken) return;
+  console.log('[runFullSync] Début - odToken:', odToken ? 'présent' : 'NULL');
+  if (btn) {
+    console.log('[runFullSync] Bouton trouvé:', btn);
+  } else {
+    console.log('[runFullSync] Pas de bouton passé');
+  }
+  if (!odToken) {
+    alert('OneDrive non connecté. Allez dans Paramètres pour vous connecter.');
+    return;
+  }
   if (btn) { btn.disabled = true; }
   var loadSteps = [
     { label: '↓ Historique...', path: OD_FILE_PATH, key: 'simulations', merge: mergeHistorique },
