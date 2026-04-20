@@ -3985,6 +3985,20 @@ function openPlacementPopup(ts) {
   document.getElementById('pl-tacite').value = 'Non';
 
   // ── Simulation lecture seule (affichage enrichi) ──
+  // Résolution tolérante : top-level d'abord, sinon fallback sur snapshot._state
+  // (certaines anciennes simus n'ont pas les champs top-level remplis).
+  function _resolve(key) {
+    if (sim && sim[key] !== undefined && sim[key] !== null && sim[key] !== '') return sim[key];
+    if (sim && sim.snapshot && sim.snapshot._state && sim.snapshot._state[key] !== undefined && sim.snapshot._state[key] !== null && sim.snapshot._state[key] !== '') return sim.snapshot._state[key];
+    return '';
+  }
+  var _mutuelle = _resolve('mutuelle');
+  var _repas    = _resolve('repas');
+  var _cp       = _resolve('cp');
+  var _gdLieu   = _resolve('gd_lieu');
+  var _tt       = (sim.tt !== undefined && sim.tt !== null && sim.tt !== '') ? sim.tt : (sim.snapshot && sim.snapshot._state ? sim.snapshot._state.tt : false);
+  console.log('[Placement readonly] Résolution état:', { mutuelle: _mutuelle, repas: _repas, cp: _cp, gd_lieu: _gdLieu, tt: _tt });
+
   document.getElementById('pl-tjm').value = sim.tjm ? sim.tjm + ' €/j' : '—';
   document.getElementById('pl-nb-jours').value = sim.nb_jours ? sim.nb_jours + 'j' : '—';
   // Salaire annuel sur contrat = brut mensuel × 12 (base 21j)
@@ -3993,14 +4007,28 @@ function openPlacementPopup(ts) {
   document.getElementById('pl-salaire-contrat').value = brutContratAnnuel;
   document.getElementById('pl-frais-gest').value = sim.marge ? sim.marge + '%' : '—';
 
-  // Mutuelle : afficher le choix même si 'Non' (labels insensibles à la casse)
-  var mutuelleLabels = { 'isolee':'Isolée', 'famille':'Famille', 'isolee_seven':'Isolée (prise par Seven)', 'renoncement':'Renoncement', 'non':'Non', '':'—' };
-  var mutVal = (sim.mutuelle || '').toString().toLowerCase();
-  document.getElementById('pl-mutuelle').value = mutuelleLabels[mutVal] || (sim.mutuelle || '—');
+  // Mutuelle : afficher le choix même si 'Non' (labels insensibles à la casse + accents)
+  var mutuelleLabels = {
+    'isolee':'Isolée', 'isolée':'Isolée',
+    'famille':'Famille',
+    'isolee_seven':'Isolée (prise par Seven)', 'isolée_seven':'Isolée (prise par Seven)',
+    'renoncement':'Renoncement',
+    'non':'Non',
+    '':'—'
+  };
+  var mutVal = (_mutuelle || '').toString().toLowerCase();
+  document.getElementById('pl-mutuelle').value = mutuelleLabels[mutVal] || (_mutuelle || '—');
 
-  // Swile/Repas : afficher le type
-  var repasLabels = { 'Forfait':'Swile (Forfait)', 'Reel':'Swile (Réel)', 'forfait':'Swile (Forfait)', 'reel':'Swile (Réel)', 'Non':'Non', '':'—' };
-  document.getElementById('pl-swile').value = repasLabels[sim.repas] || (sim.repas || '—');
+  // Swile / Repas : afficher le type (inclut GD et Swile simple)
+  var repasLabels = {
+    'Non':'Non', 'non':'Non',
+    'Swile':'Swile (Titres-resto)', 'swile':'Swile (Titres-resto)',
+    'Forfait':'Swile (Forfait)', 'forfait':'Swile (Forfait)',
+    'Reel':'Swile (Réel)', 'reel':'Swile (Réel)',
+    'GD':'Grand déplacement', 'gd':'Grand déplacement',
+    '':'—'
+  };
+  document.getElementById('pl-swile').value = repasLabels[_repas] || (_repas || '—');
 
   // IK (km aller)
   var kmVal = parseFloat((sim.km_aller||'').toString().replace(',','.')) || 0;
@@ -4013,7 +4041,7 @@ function openPlacementPopup(ts) {
   // Télétravail (abo internet + tel)
   var tel = parseFloat((sim.abo_tel||'').toString().replace(',','.')) || 0;
   var net = parseFloat((sim.abo_internet||'').toString().replace(',','.')) || 0;
-  if (sim.tt) {
+  if (_tt) {
     var details = 'Oui';
     if (tel > 0 || net > 0) {
       details += ' (';
@@ -4042,11 +4070,11 @@ function openPlacementPopup(ts) {
   var plMat = document.getElementById('pl-materiel');
   if (plMat) plMat.value = materielVal > 0 ? (sim.frais_materiel + ' €') : '—';
 
-  // Grand déplacement
+  // Grand déplacement — SEULEMENT si repas === 'GD' (gd_lieu a 'IDF' par défaut, ne sert pas de signal)
   var plGd = document.getElementById('pl-gd');
   if (plGd) {
-    if (sim.repas === 'GD' || sim.gd_lieu) {
-      plGd.value = 'Oui' + (sim.gd_lieu ? ' (' + sim.gd_lieu + ')' : '');
+    if ((_repas || '').toString().toUpperCase() === 'GD') {
+      plGd.value = 'Oui' + (_gdLieu ? ' (' + _gdLieu + ')' : '');
     } else {
       plGd.value = '—';
     }
@@ -4055,13 +4083,15 @@ function openPlacementPopup(ts) {
   // Congés payés
   var plCp = document.getElementById('pl-cp');
   if (plCp) {
-    var cpVal = (sim.cp || '').toString().toLowerCase();
-    if (cpVal === 'provisionnes' || cpVal === 'provisionnés' || cpVal === 'provisionne') {
+    var cpVal = (_cp || '').toString().toLowerCase();
+    if (cpVal === 'cp' || cpVal === 'provisionnes' || cpVal === 'provisionnés' || cpVal === 'provisionne') {
       plCp.value = 'Provisionnés';
     } else if (cpVal === 'non_provisionnes' || cpVal === 'non' || cpVal === 'non_provisionne') {
       plCp.value = 'Non provisionnés';
+    } else if (_cp) {
+      plCp.value = _cp;
     } else {
-      plCp.value = sim.cp || '—';
+      plCp.value = '—';
     }
   }
 
