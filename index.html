@@ -3495,11 +3495,16 @@ function captureSnapshotForHistory() {
   });
   // Capturer aussi l'état global (mutuelle/cp/repas/tt/gd_lieu/ik_1ere/rtt)
   snap._state = window.state ? JSON.parse(JSON.stringify(window.state)) : {};
+  console.log('[CAPTURE] Snapshot complet:', JSON.parse(JSON.stringify(snap)));
+  console.log('[CAPTURE] State capturé:', JSON.parse(JSON.stringify(snap._state)));
   return snap;
 }
 
 function restoreSnapshot(snap) {
   if (!snap) return;
+
+  console.log('[RESTORE] Snapshot reçu:', JSON.parse(JSON.stringify(snap)));
+  console.log('[RESTORE] State à restaurer:', snap._state ? JSON.parse(JSON.stringify(snap._state)) : 'AUCUN');
 
   // Désactiver temporairement les solveurs pour éviter les écrasements pendant la restauration
   var _isRestoring = true;
@@ -3508,6 +3513,12 @@ function restoreSnapshot(snap) {
   // 1. D'ABORD : restaurer l'état (boutons toggle) car leurs setters
   //    peuvent écraser des valeurs (ex: setTT remet abo_tel/abo_internet à 0)
   if (snap._state) {
+    console.log('[RESTORE] Appel setMutuelle(' + (snap._state.mutuelle || 'renoncement') + ')');
+    console.log('[RESTORE] Appel setCP(' + (snap._state.cp || 'Non') + ')');
+    console.log('[RESTORE] Appel setRepas(' + (snap._state.repas || 'Non') + ')');
+    console.log('[RESTORE] Appel setTT(' + (snap._state.tt || false) + ')');
+    console.log('[RESTORE] Appel setGDLieu(' + (snap._state.gd_lieu || 'IDF') + ')');
+    console.log('[RESTORE] Appel setRTT(' + (snap._state.rtt || 0) + ')');
     try { if (typeof setMutuelle === 'function') setMutuelle(snap._state.mutuelle || 'renoncement'); } catch(e){}
     try { if (typeof setCP       === 'function') setCP(snap._state.cp || 'Non'); } catch(e){}
     try { if (typeof setRepas    === 'function') setRepas(snap._state.repas || 'Non'); } catch(e){}
@@ -3537,6 +3548,12 @@ function restoreSnapshot(snap) {
   // 4. Recalculer tout — mais SANS que solveur ne modifie brut/tjm (on garde les valeurs restaurées)
   window._isRestoring = false;
   setTimeout(function() {
+    console.log('[RESTORE] État FINAL juste avant calc :', JSON.parse(JSON.stringify(window.state || {})));
+    console.log('[RESTORE] Valeurs champs finaux:');
+    ['brut','tjm','abo_tel','abo_internet','jours_tt','frais_formation','frais_materiel','km_aller','abo_transport','swile_val'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) console.log('  ' + id + ' = ' + el.value);
+    });
     if (typeof calc === 'function') calc();
   }, 150);
 }
@@ -6502,7 +6519,11 @@ function uploadCandDoc(input) {
         alert('Erreur lors de la création du dossier SharePoint.');
         return;
       }
-      fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodedPath + ':/content', {
+      // Encoder chaque segment du chemin séparément (garder les / littéraux)
+      var filePathSegments = filePath.split('/').filter(Boolean).map(function(p){return encodeURIComponent(p);}).join('/');
+      var putUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:/' + filePathSegments + ':/content';
+      console.log('[Upload PUT] URL:', putUrl);
+      fetch(putUrl, {
         method: 'PUT',
         headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': file.type || 'application/octet-stream' },
         body: arrayBuffer
@@ -6547,28 +6568,34 @@ function ensureOdFolder(folderPath, cb) {
     var parentParts = parts.slice(0, idx);
     var folderName = parts[idx];
     idx++;
-    var parentPath = parentParts.length ? '/' + parentParts.join('/') : '/';
-    // URL différente selon qu'on est à la racine ou non
+    // Encoder chaque segment séparément, garder les / littéraux
+    var parentPath = parentParts.length ? '/' + parentParts.map(function(p){return encodeURIComponent(p);}).join('/') : '/';
     var url;
     if (parentPath === '/') {
       url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root/children';
     } else {
-      url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(parentPath) + ':/children';
+      url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + parentPath + ':/children';
     }
+    console.log('[ensureOdFolder] Création de:', folderName, 'dans parent:', parentPath);
+    console.log('[ensureOdFolder] URL:', url);
     fetch(url, {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: folderName, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' })
+      body: JSON.stringify({ name: folderName, folder: {}, '@microsoft.graph.conflictBehavior': 'replace' })
     }).then(function(r) {
-      // 201 = créé, 409 = existe déjà (ok)
-      if (r.ok || r.status === 409) {
+      if (r.ok) {
+        console.log('[ensureOdFolder] OK:', folderName);
         createNext();
       } else {
-        console.warn('[ensureOdFolder] Échec niveau', folderName, 'status', r.status);
-        cb(false);
+        return r.text().then(function(txt) {
+          console.warn('[ensureOdFolder] Échec niveau', folderName, 'status', r.status, 'body:', txt);
+          // status 409 = existe déjà, on continue
+          if (r.status === 409) { createNext(); return; }
+          cb(false);
+        });
       }
     }).catch(function(err) {
-      console.error('[ensureOdFolder] Erreur', err);
+      console.error('[ensureOdFolder] Erreur réseau', err);
       cb(false);
     });
   }
@@ -6586,7 +6613,11 @@ function viewCandDoc(candId, docKey) {
 
   var encodedPath = encodeURIComponent(doc.od_path);
   // Télécharger le fichier comme blob pour l'afficher inline (évite les blocages CORS/Content-Security)
-  fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodedPath + ':/content', {
+  // Encoder chaque segment du chemin séparément (garder les / littéraux)
+      var filePathSegments = filePath.split('/').filter(Boolean).map(function(p){return encodeURIComponent(p);}).join('/');
+      var putUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:/' + filePathSegments + ':/content';
+      console.log('[Upload PUT] URL:', putUrl);
+      fetch(putUrl, {
     headers: { 'Authorization': 'Bearer ' + odToken }
   }).then(function(r) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
