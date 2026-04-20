@@ -480,9 +480,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       </div>
       <div id="telnet-fields">
         <div class="field-row">
-          <div class="field"><label>Forfait mobile (€/mois)</label><input type="number" id="abo_tel" value="0" oninput="onContextChange()"></div>
-          <div class="field"><label>Forfait internet (€/mois)</label><input type="number" id="abo_internet" value="0" oninput="onContextChange()"></div>
+          <div class="field" style="flex:1;"><label>Forfait mobile &amp; Internet (€/mois)</label><input type="number" id="abo_telnet" value="0" oninput="syncTelnetField();onContextChange();"></div>
         </div>
+        <!-- Champs legacy pour compat calcul (un seul montant partagé) -->
+        <input type="hidden" id="abo_tel" value="0">
+        <input type="hidden" id="abo_internet" value="0">
       </div>
     </div>
 
@@ -787,10 +789,24 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div style="display:flex;align-items:center;gap:8px;"><button class="back-btn" onclick="mainNavTo('mission')">&#8592; Retour</button><div style="font-size:13px;font-weight:700;color:#1A1033;">&#128100; Candidats</div></div>
         <span id="cand-count" style="font-size:11px;color:#6B5E9C;"></span>
       </div>
-      <!-- Barre recherche -->
-      <div style="position:relative;margin-bottom:12px;">
-        <input id="cand-search" type="text" placeholder="Rechercher par nom, email, entreprise..." oninput="renderCandidats()" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
-        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>
+      <!-- Barre recherche + filtres -->
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <div style="position:relative;flex:1;min-width:200px;">
+          <input id="cand-search" type="text" placeholder="Rechercher par nom, email, entreprise..." oninput="renderCandidats()" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>
+        </div>
+        <select id="cand-filter-statut" onchange="renderCandidats()" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;background:#fff;cursor:pointer;">
+          <option value="">Tous statuts</option>
+          <option value="Prospect">Prospect</option>
+          <option value="Prospect chaud">Prospect chaud</option>
+          <option value="Porté">Porté</option>
+          <option value="Ancien porté">Ancien porté</option>
+        </select>
+        <select id="cand-filter-date" onchange="renderCandidats()" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;background:#fff;cursor:pointer;">
+          <option value="">Toutes dates</option>
+          <option value="week">Cette semaine</option>
+          <option value="month">Ce mois</option>
+        </select>
       </div>
       <div id="candidats-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,190px));gap:12px;"></div>
     </div>
@@ -1134,6 +1150,7 @@ function setTT(v) {
     telWarn.style.display = 'block';
     document.getElementById('abo_tel').value = 0;
     document.getElementById('abo_internet').value = 0;
+    var atn = document.getElementById('abo_telnet'); if (atn) atn.value = 0;
   } else {
     elJT.value = 0;
     telFields.style.opacity = '1';
@@ -1269,6 +1286,17 @@ function updateProrata() {
   if (elJT && state.tt) {
     elJT.value = jours_calc;
   }
+}
+
+function syncTelnetField() {
+  var main = document.getElementById('abo_telnet');
+  var tel = document.getElementById('abo_tel');
+  var net = document.getElementById('abo_internet');
+  if (!main || !tel || !net) return;
+  var val = parseFloat((main.value||'0').toString().replace(',','.')) || 0;
+  // Mettre tout le montant dans abo_tel, 0 dans abo_internet pour éviter le double comptage
+  tel.value = val;
+  net.value = 0;
 }
 
 function onContextChange() {
@@ -3817,7 +3845,7 @@ function openPlacementPopup(ts) {
   document.getElementById('pl-type-contrat-client').value = 'Seven';
   document.getElementById('pl-tacite').value = 'Non';
 
-  // ── Simulation lecture seule ──
+  // ── Simulation lecture seule (affichage enrichi) ──
   document.getElementById('pl-tjm').value = sim.tjm ? sim.tjm + ' €/j' : '—';
   document.getElementById('pl-nb-jours').value = sim.nb_jours ? sim.nb_jours + 'j' : '—';
   // Salaire annuel sur contrat = brut mensuel × 12 (base 21j)
@@ -3825,11 +3853,40 @@ function openPlacementPopup(ts) {
   var brutContratAnnuel = brutMens > 0 ? Math.round(brutMens * 12).toLocaleString('fr-FR') + ' €' : '—';
   document.getElementById('pl-salaire-contrat').value = brutContratAnnuel;
   document.getElementById('pl-frais-gest').value = sim.marge ? sim.marge + '%' : '—';
-  document.getElementById('pl-mutuelle').value = sim.mutuelle || '—';
-  document.getElementById('pl-swile').value = sim.repas && sim.repas !== 'Non' ? sim.repas : '—';
-  document.getElementById('pl-ik').value = sim.km_aller && parseFloat(sim.km_aller) > 0 ? sim.km_aller + ' km' : '—';
-  document.getElementById('pl-transport').value = sim.abo_transport && parseFloat(sim.abo_transport) > 0 ? sim.abo_transport + ' €' : '—';
-  document.getElementById('pl-tt').value = sim.tt ? 'Oui' : 'Non';
+
+  // Mutuelle : afficher le choix même si 'Non'
+  var mutuelleLabels = { 'isolee':'Isolée', 'famille':'Famille', 'isolee_seven':'Isolée (prise par Seven)', 'renoncement':'Non', 'non':'Non', '':'—' };
+  var mutVal = sim.mutuelle || '';
+  document.getElementById('pl-mutuelle').value = mutuelleLabels[mutVal] || (mutVal || '—');
+
+  // Swile/Repas : afficher le type
+  var repasLabels = { 'Forfait':'Swile (Forfait)', 'Reel':'Swile (Réel)', 'forfait':'Swile (Forfait)', 'reel':'Swile (Réel)', 'Non':'Non', '':'—' };
+  document.getElementById('pl-swile').value = repasLabels[sim.repas] || (sim.repas || '—');
+
+  // IK (km aller)
+  var kmVal = parseFloat((sim.km_aller||'').toString().replace(',','.')) || 0;
+  document.getElementById('pl-ik').value = kmVal > 0 ? (sim.km_aller + ' km aller') : '—';
+
+  // Transport
+  var trVal = parseFloat((sim.abo_transport||'').toString().replace(',','.')) || 0;
+  document.getElementById('pl-transport').value = trVal > 0 ? (sim.abo_transport + ' €/mois') : '—';
+
+  // Télétravail (abo internet + tel)
+  var tel = parseFloat((sim.abo_tel||'').toString().replace(',','.')) || 0;
+  var net = parseFloat((sim.abo_internet||'').toString().replace(',','.')) || 0;
+  if (sim.tt) {
+    var details = 'Oui';
+    if (tel > 0 || net > 0) {
+      details += ' (';
+      if (tel > 0) details += 'tel ' + sim.abo_tel + '€';
+      if (tel > 0 && net > 0) details += ' + ';
+      if (net > 0) details += 'net ' + sim.abo_internet + '€';
+      details += ')';
+    }
+    document.getElementById('pl-tt').value = details;
+  } else {
+    document.getElementById('pl-tt').value = 'Non';
+  }
 
   // Vérifier deal existant et pré-remplir
   var deals = getDeals();
@@ -4016,18 +4073,32 @@ function savePlacement() {
     contrat: document.getElementById('pl-contrat').value,
     date_entree: document.getElementById('pl-date-entree').value,
     commentaire: document.getElementById('pl-commentaire').value,
-    // Simulation
+    // Simulation — TOUS les champs transférés intégralement
     tjm: sim ? sim.tjm : '',
     nb_jours: sim ? sim.nb_jours : '',
     salaire_annuel: brutMens > 0 ? String(Math.round(brutMens * 12)) : '',
+    brut: sim ? sim.brut : '',
+    net_payer: sim ? sim.net_payer : '',
+    net_avant: sim ? sim.net_avant : '',
+    cout_global: sim ? sim.cout_global : '',
+    taux_restitution: sim ? sim.taux_restitution : '',
     frais_gestion: sim ? (sim.marge || '') : '',
     mutuelle: sim ? (sim.mutuelle || '') : '',
+    cp: sim ? (sim.cp || '') : '',
+    rtt: sim ? (sim.rtt || 0) : 0,
     repas: sim ? (sim.repas || '') : '',
-    km_aller: sim ? (sim.km_aller || '') : '',
-    abo_transport: sim ? (sim.abo_transport || '') : '',
     tt: sim ? (sim.tt ? 'Oui' : 'Non') : '',
+    gd_lieu: sim ? (sim.gd_lieu || '') : '',
+    ik_1ere: sim ? (sim.ik_1ere ? 'Oui' : 'Non') : '',
+    km_aller: sim ? (sim.km_aller || '') : '',
+    puissance_fiscale: sim ? (sim.puissance || '') : '',
+    abo_transport: sim ? (sim.abo_transport || '') : '',
     abo_tel: sim ? (sim.abo_tel || '') : '',
     abo_internet: sim ? (sim.abo_internet || '') : '',
+    frais_formation: sim ? (sim.frais_formation || '') : '',
+    frais_materiel: sim ? (sim.frais_materiel || '') : '',
+    taux_impot: sim ? (sim.taux_impot || '') : '',
+    frais_jour: sim ? (sim.frais_jour || '') : '',
     date_created: idx >= 0 ? deals[idx].date_created : new Date().toLocaleDateString('fr-FR')
   };
 
@@ -4204,8 +4275,41 @@ var DEAL_ALL_COLS = [
   {key:'grand_dep',   label:'Grand dépl.'},
   {key:'connait_tjm', label:'Connait TJM'},
   {key:'commentaire', label:'Commentaire'},
+  // ── Suivi Onboarding CDPS/CDT ──
+  {key:'etat_cdps',                label:'État CDPS'},
+  {key:'etat_cdt',                 label:'État CDT'},
+  {key:'signature_cdps',           label:'Signature CDPS'},
+  {key:'signature_contrat_travail',label:'Signature Contrat travail'},
+  {key:'cooptation',               label:'Cooptation'},
+  {key:'creation_laya',            label:'Création LAYA'},
+  {key:'contrat_consultant',       label:'Contrat consultant'},
+  {key:'contrat_client',           label:'Contrat client'},
+  {key:'creation_silae',           label:'Création fiche SILAE'},
+  {key:'dpae',                     label:'DPAE'},
+  {key:'mail_bienvenue',           label:'Mail bienvenue'},
+  {key:'my_silae',                 label:'My SILAE'},
+  {key:'mutuelle_envoi_lien',      label:'Mutuelle (lien)'},
+  {key:'envoi_carte_swile',        label:'Envoi carte Swile'},
   {key:'actions',     label:'Actions'}
 ];
+
+// Options des menus déroulants pour l'onboarding
+var DEAL_ONBOARDING_OPTIONS = {
+  etat_cdps:     ['','Reçu','Envoyé','En attente'],
+  etat_cdt:      ['','Envoyé','En attente'],
+  signature_cdps:           ['','Oui','Non'],
+  signature_contrat_travail:['','Oui','Non'],
+  cooptation:               ['','Oui','Non'],
+  creation_laya:            ['','Oui','Non'],
+  contrat_consultant:       ['','Oui','Non'],
+  contrat_client:           ['','Oui','Non'],
+  creation_silae:           ['','Oui','Non'],
+  dpae:                     ['','Oui','Non'],
+  mail_bienvenue:           ['','Oui','Non'],
+  my_silae:                 ['','Oui','Non'],
+  mutuelle_envoi_lien:      ['','Oui','Non'],
+  envoi_carte_swile:        ['','Oui','Non']
+};
 var DEAL_DEFAULT_COLS = ['etat','candidat','poste','tjm','nb_jours','commercial','date_deal','date_entree','actions'];
 var dealVisibleCols = (function(){ try { var s=JSON.parse(localStorage.getItem('sp_deal_cols')||'null'); return s||DEAL_DEFAULT_COLS.slice(); } catch(e){ return DEAL_DEFAULT_COLS.slice(); } })();
 var DEAL_VIEWS_KEY = 'sp_deal_views_v1';
@@ -4347,6 +4451,22 @@ function getCellValue(d, key){
     case 'grand_dep': return '—';
     case 'connait_tjm': return fmt(d.connait_tjm);
     case 'commentaire': return '<span title="'+(d.commentaire||'')+'" style="display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;">'+(d.commentaire||'—')+'</span>';
+    // ── Colonnes Onboarding (select éditable) ──
+    case 'etat_cdps':
+    case 'etat_cdt':
+    case 'signature_cdps':
+    case 'signature_contrat_travail':
+    case 'cooptation':
+    case 'creation_laya':
+    case 'contrat_consultant':
+    case 'contrat_client':
+    case 'creation_silae':
+    case 'dpae':
+    case 'mail_bienvenue':
+    case 'my_silae':
+    case 'mutuelle_envoi_lien':
+    case 'envoi_carte_swile':
+      return renderOnboardingSelect(d, key);
     case 'actions':
       return '<button onclick="openPlacementPopup('+d.sim_ts+')" title="Modifier" style="padding:3px 7px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#9998;</button>'
            + '<button onclick="openSortiePopup('+d.sim_ts+')" title="Sortie" style="padding:3px 7px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#128683;</button>'
@@ -4354,6 +4474,35 @@ function getCellValue(d, key){
            + '<button onclick="deleteDeal('+d.id+')" title="Supprimer" style="padding:3px 7px;background:#fff;color:#9E9E9E;border:1.5px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;">&#128465;</button>';
     default: return '—';
   }
+}
+
+function renderOnboardingSelect(d, key) {
+  var options = DEAL_ONBOARDING_OPTIONS[key] || ['','Oui','Non'];
+  var current = d[key] || '';
+  var colors = {
+    'Oui': '#1D9E75',
+    'Reçu': '#1D9E75',
+    'Envoyé': '#0078D4',
+    'Non': '#E24B4A',
+    'En attente': '#F0A500'
+  };
+  var bg = colors[current] ? colors[current] : '#9E9E9E';
+  var fg = current ? '#fff' : '#6B5E9C';
+  var bgStyle = current ? bg : '#F5F3FF';
+  var opts = options.map(function(o){
+    return '<option value="' + o + '"' + (o===current?' selected':'') + '>' + (o || '—') + '</option>';
+  }).join('');
+  return '<select onchange="updateDealField(' + d.id + ',\'' + key + '\',this.value);event.stopPropagation();" onclick="event.stopPropagation();" style="padding:2px 6px;border-radius:5px;border:1px solid #E4E0FA;font-size:10px;font-weight:700;background:' + bgStyle + ';color:' + fg + ';cursor:pointer;">' + opts + '</select>';
+}
+
+function updateDealField(dealId, key, value) {
+  var deals = getDeals();
+  var idx = deals.findIndex(function(d){ return d.id === dealId; });
+  if (idx < 0) return;
+  deals[idx][key] = value;
+  deals[idx].updated = new Date().toISOString();
+  saveDeals(deals);
+  renderDeals();
 }
 
 function exportDealsExcel() {
@@ -4535,15 +4684,32 @@ function renderCandidats() {
   if (filtStatut) {
     cands = cands.filter(function(cand) { return (cand.statut_portage||'Prospect') === filtStatut; });
   }
+  var filtDate = document.getElementById('cand-filter-date') ? document.getElementById('cand-filter-date').value : '';
+  if (filtDate) {
+    var now = new Date();
+    var cutoff;
+    if (filtDate === 'week') { cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - 7); }
+    else if (filtDate === 'month') { cutoff = new Date(now); cutoff.setMonth(cutoff.getMonth() - 1); }
+    if (cutoff) {
+      cands = cands.filter(function(cand) {
+        if (!cand.created) return false;
+        var parts = (cand.created||'').split('/');
+        if (parts.length !== 3) return true;
+        var d = new Date(parseInt(parts[2]), parseInt(parts[1])-1, parseInt(parts[0]));
+        return d >= cutoff;
+      });
+    }
+  }
   if (countEl) countEl.textContent = cands.length + ' candidat' + (cands.length > 1 ? 's' : '');
   if (!cands.length) {
     el.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:#9E9E9E;font-size:13px;">Aucun candidat trouvé.</div>';
     return;
   }
   var statutCfg = {
-    'Prospect':     { color:'#F0A500', bg:'#FFF8E6' },
-    'Porté':        { color:'#1D9E75', bg:'#F0FDF4' },
-    'Ancien porté': { color:'#6B5E9C', bg:'#F5F3FF' }
+    'Prospect':        { color:'#9AA0A6', bg:'#F5F5F5' },
+    'Prospect chaud':  { color:'#F0A500', bg:'#FFF8E6' },
+    'Porté':           { color:'#1D9E75', bg:'#F0FDF4' },
+    'Ancien porté':    { color:'#E24B4A', bg:'#FFE8E8' }
   };
   var html = '';
   cands.forEach(function(cand) {
@@ -4566,6 +4732,9 @@ function renderCandidats() {
 
 
     html += '<div style="position:absolute;top:0;left:0;right:0;height:4px;background:' + scfg.color + ';border-radius:12px 12px 0 0;"></div>';
+    if (statut === 'Porté') {
+      html = html.replace(/class="cand-card"/, 'class="cand-card" style="border-color:#1D9E75;background:#F0FDF4;"');
+    }
     html += '<div style="display:flex;align-items:flex-start;gap:10px;margin-top:6px;">';
     html += '<div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">' + initials + '</div>';
     html += '<div style="flex:1;min-width:0;">';
@@ -4663,10 +4832,17 @@ function buildCandFicheHTML(cand) {
       + '</div>';
   }).join('') || '<div style="color:#C0B8E0;font-size:12px;padding:10px 0;">Aucun commentaire.</div>';
 
-  return '<div style="background:#fff;border-radius:14px;width:98%;max-width:950px;margin:auto;box-shadow:0 8px 40px rgba(115,67,238,0.2);">'
+  // Couleur du header selon statut portage
+  var isPlace = (cand.statut_portage === 'Porté');
+  var headerGradient = isPlace
+    ? 'linear-gradient(135deg,#0E7550,#1D9E75)'
+    : 'linear-gradient(135deg,#372EB6,#7343EE)';
+  var shadowColor = isPlace ? 'rgba(29,158,117,0.25)' : 'rgba(115,67,238,0.2)';
+
+  return '<div style="background:#fff;border-radius:14px;width:98%;max-width:950px;margin:auto;box-shadow:0 8px 40px ' + shadowColor + ';">'
 
     // ── Header ──
-    + '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);padding:16px 22px;border-radius:14px 14px 0 0;">'
+    + '<div style="background:' + headerGradient + ';padding:16px 22px;border-radius:14px 14px 0 0;">'
     + '<div style="display:flex;align-items:center;gap:12px;">'
     + '<div style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;flex-shrink:0;">' + initials + '</div>'
     + '<div style="flex:1;">'
@@ -4693,9 +4869,9 @@ function buildCandFicheHTML(cand) {
     + sel('Profil', cand.profil||'', 'profil', ['','Consultant','Manager','Expert','Architecte','Chef de projet','Autre'])
     + fld('TJM actuel (€/j)', cand.tjm_actuel, 'tjm_actuel')
     + fld('Disponibilité', cand.disponibilite, 'disponibilite', 'date')
-    + fld('Techno', cand.techno, 'techno')
+    + fld('Anniversaire', cand.anniversaire, 'anniversaire', 'date')
     + sel('Statut', cand.statut||'', 'statut', ['','Freelance','Salarié','En poste','Disponible','En recherche'])
-    + sel('Statut portage', cand.statut_portage||'Prospect', 'statut_portage', ['Prospect','Porté','Ancien porté'])
+    + sel('Statut portage', cand.statut_portage||'Prospect', 'statut_portage', ['Prospect','Prospect chaud','Porté','Ancien porté'])
     + fld('Ville', cand.ville, 'ville')
     + fld('LinkedIn', cand.linkedin, 'linkedin')
     + '</div>'
@@ -4807,9 +4983,22 @@ function buildCandDocsHTML(cand) {
     + '</div>';
 
   if (connected) {
-    html += '<div id="doc-dropzone-' + cand.id + '" class="doc-dropzone" data-candid="' + cand.id + '" style="border:2px dashed #E4E0FA;border-radius:10px;padding:14px;margin-bottom:12px;text-align:center;background:#FAFAFA;transition:all 0.2s;color:#9E9E9E;font-size:12px;">'
-      + '&#128228; Glissez-déposez vos documents ici<br>'
-      + '<span style="font-size:10px;color:#C0B8E0;">Le type sera détecté automatiquement selon le nom du fichier (CV, CNI, RIB, etc.)</span>'
+    var docTypeOptions = DOC_TYPES.map(function(dt){
+      return '<option value="' + dt.key + '">' + dt.label + '</option>';
+    }).join('');
+    html += '<div style="margin-bottom:12px;">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+      +   '<label style="font-size:11px;font-weight:700;color:#6B5E9C;white-space:nowrap;">Type du document :</label>'
+      +   '<select id="doc-drop-type-' + cand.id + '" style="flex:1;padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;">'
+      +     '<option value="__auto__">&#128269; Détection automatique (selon le nom)</option>'
+      +     docTypeOptions
+      +   '</select>'
+      + '</div>'
+      + '<div id="doc-dropzone-' + cand.id + '" class="doc-dropzone" data-candid="' + cand.id + '" style="border:2px dashed #E4E0FA;border-radius:10px;padding:16px;text-align:center;background:#FAFAFA;transition:all 0.2s;color:#9E9E9E;font-size:12px;">'
+      +   '&#128228; Glissez-déposez vos documents ici<br>'
+      +   '<span style="font-size:10px;color:#C0B8E0;">Vous pouvez aussi cliquer pour sélectionner plusieurs fichiers</span>'
+      +   '<input type="file" id="doc-drop-input-' + cand.id + '" accept=".pdf,.jpg,.jpeg,.png" multiple data-candid="' + cand.id + '" onchange="handleDropzoneFiles(this.dataset.candid,this.files)" style="display:none;">'
+      + '</div>'
       + '</div>';
   }
   html += '<table style="width:100%;border-collapse:collapse;">';
@@ -6156,12 +6345,12 @@ function setupCandDocsDragDrop(cand) {
       dropzone.style.color = '#9E9E9E';
       var files = e.dataTransfer.files;
       if (!files || !files.length) return;
-      // Pour chaque fichier, deviner le type et uploader
-      for (var i = 0; i < files.length; i++) {
-        var file = files[i];
-        var detectedKey = detectDocType(file.name);
-        uploadCandDocFromFile(cand.id, detectedKey, detectedKey, file);
-      }
+      handleDropzoneFiles(cand.id, files);
+    });
+    // Clic sur la zone pour ouvrir le sélecteur de fichier
+    dropzone.addEventListener('click', function(e) {
+      var input = document.getElementById('doc-drop-input-' + cand.id);
+      if (input) input.click();
     });
   }
 
@@ -6189,6 +6378,29 @@ function setupCandDocsDragDrop(cand) {
       uploadCandDocFromFile(cand.id, dockey, doclabel, files[0]);
     });
   });
+}
+
+function handleDropzoneFiles(candId, files) {
+  if (!files || !files.length) return;
+  var typeSelect = document.getElementById('doc-drop-type-' + candId);
+  var forcedType = typeSelect ? typeSelect.value : '__auto__';
+
+  // Labels par type
+  var typeLabels = {
+    cv: 'CV',
+    cni: 'CNI / Passeport',
+    carte_vitale: 'Carte Vitale',
+    rib: 'RIB',
+    justif_domicile: 'Justificatif domicile',
+    bulletin: 'Dernier bulletin de salaire'
+  };
+
+  for (var i = 0; i < files.length; i++) {
+    var file = files[i];
+    var typeKey = (forcedType && forcedType !== '__auto__') ? forcedType : detectDocType(file.name);
+    var typeLabel = typeLabels[typeKey] || typeKey;
+    uploadCandDocFromFile(candId, typeKey, typeLabel, file);
+  }
 }
 
 function detectDocType(filename) {
