@@ -306,6 +306,322 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   color: #ffffff;
 }
 .hist-finale-badge { display:inline-flex; align-items:center; gap:4px; background:#FFF3CD; color:#B8860B; border:1.5px solid #F0C040; border-radius:20px; font-size:11px; font-weight:700; padding:2px 10px; }
+
+/* ===== SUB-NAVIGATION SUIVI RH ===== */
+.rh-subnav {
+  display: flex;
+  gap: 4px;
+  background: #fff;
+  border: 1px solid #EAE6F8;
+  border-radius: 12px;
+  padding: 5px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(75,54,236,0.04);
+  overflow-x: auto;
+}
+.rh-subnav-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #6B5E9C;
+  cursor: pointer;
+  border-radius: 9px;
+  transition: background .15s ease, color .15s ease, box-shadow .2s ease, transform .12s ease;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+  font-family: inherit;
+}
+.rh-subnav-btn:hover {
+  background: rgba(115,67,238,0.08);
+  color: #4B36EC;
+}
+.rh-subnav-btn:active {
+  transform: translateY(1px);
+}
+.rh-subnav-btn--active {
+  background: linear-gradient(135deg, #7343EE 0%, #4B36EC 100%);
+  color: #fff !important;
+  box-shadow: 0 3px 12px rgba(75,54,236,0.28), inset 0 1px 0 rgba(255,255,255,0.22);
+}
+.rh-subnav-btn--active:hover {
+  background: linear-gradient(135deg, #7F4FF3 0%, #5241EE 100%);
+}
+.rh-subnav-icon { font-size: 14px; line-height: 1; }
+.rh-subnav-soon {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  padding: 2px 7px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9E94C4;
+  background: #F5F3FF;
+  border: 1px solid #E4E0FA;
+  border-radius: 10px;
+  line-height: 1.2;
+}
+.rh-subnav-btn--active .rh-subnav-soon {
+  color: #fff;
+  background: rgba(255,255,255,0.2);
+  border-color: rgba(255,255,255,0.28);
+}
+
+/* ===== PLACEHOLDER MODULES RH (Avenants, Sortants, Avances, Cooptation) ===== */
+.rh-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+  padding: 40px 20px;
+}
+.rh-placeholder-inner {
+  text-align: center;
+  max-width: 440px;
+  background: linear-gradient(135deg, #FAF8FF 0%, #F5F3FF 100%);
+  border: 1.5px dashed #E4E0FA;
+  border-radius: 16px;
+  padding: 40px 32px;
+}
+.rh-placeholder-icon {
+  font-size: 48px;
+  margin-bottom: 14px;
+  filter: drop-shadow(0 4px 12px rgba(75,54,236,0.18));
+}
+.rh-placeholder-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #1A1033;
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+.rh-placeholder-sub {
+  font-size: 13px;
+  color: #6B5E9C;
+  line-height: 1.55;
+  margin-bottom: 20px;
+}
+.rh-placeholder-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  background: #fff;
+  color: #4B36EC;
+  border: 1.5px solid #E4E0FA;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  font-family: inherit;
+}
+.rh-placeholder-back:hover {
+  background: #F5F3FF;
+  border-color: #7343EE;
+  color: #7343EE;
+}
+
+/* ===== MODULE COMMISSIONS ===== */
+.comm-hero {
+  position: relative;
+  background: linear-gradient(135deg, #0F5132 0%, #1D7F4F 50%, #2AA36B 100%);
+  border-radius: 14px;
+  padding: 18px 22px;
+  margin-bottom: 14px;
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgba(29,127,79,0.22);
+  color: #fff;
+}
+.comm-hero::before {
+  content: '';
+  position: absolute;
+  top: -30px; right: -30px;
+  width: 160px; height: 160px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+.comm-hero-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.comm-hero-sub {
+  font-size: 12px;
+  color: rgba(255,255,255,0.82);
+  margin-top: 4px;
+}
+.comm-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.18);
+}
+.comm-stat-label {
+  font-size: 9.5px;
+  color: rgba(255,255,255,0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+.comm-stat-val {
+  font-size: 20px;
+  font-weight: 800;
+  color: #fff;
+  margin-top: 3px;
+  line-height: 1;
+}
+.comm-stat-sub {
+  font-size: 10px;
+  color: rgba(255,255,255,0.65);
+  margin-top: 3px;
+}
+.comm-card {
+  background: #fff;
+  border: 1px solid #EAE6F8;
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin-bottom: 14px;
+  box-shadow: 0 1px 3px rgba(75,54,236,0.04);
+}
+.comm-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #0F5132;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #E8F5EE;
+}
+.comm-card-title-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #1D7F4F;
+  box-shadow: 0 0 0 3px rgba(29,127,79,0.18);
+}
+.comm-palier-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+.comm-palier-row:last-child { margin-bottom: 0; }
+.comm-palier-label {
+  font-size: 12px;
+  color: #1A1033;
+  font-weight: 600;
+}
+.comm-palier-input,
+.comm-param-input {
+  width: 100%;
+  padding: 8px 11px;
+  border: 1.5px solid #E4E0FA;
+  border-radius: 8px;
+  font-size: 12.5px;
+  box-sizing: border-box;
+  font-family: inherit;
+  color: #1A1033;
+  transition: border-color .15s, box-shadow .15s;
+}
+.comm-palier-input:focus,
+.comm-param-input:focus {
+  outline: none;
+  border-color: #1D7F4F;
+  box-shadow: 0 0 0 3px rgba(29,127,79,0.12);
+}
+.comm-deals-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.comm-deals-table th {
+  background: #F5F3FF;
+  color: #4B36EC;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 9px 11px;
+  text-align: left;
+  border-bottom: 1.5px solid #E4E0FA;
+}
+.comm-deals-table td {
+  padding: 10px 11px;
+  border-bottom: 1px solid #F5F3FF;
+  vertical-align: middle;
+  color: #1A1033;
+}
+.comm-deals-table tr:hover td { background: #FAF8FF; }
+.comm-deals-table tr.row-excluded td {
+  color: #B8AEDB;
+  background: #FAFAFA;
+  text-decoration: line-through;
+}
+.comm-deals-table tr.row-excluded td.col-commentaire { text-decoration: none; }
+.comm-deals-table .deal-excl-chk { accent-color: #1D7F4F; cursor: pointer; width: 15px; height: 15px; }
+.comm-badge-montant {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #E8F5EE;
+  color: #0F5132;
+  border-radius: 14px;
+  border: 1px solid #9FDBB8;
+}
+.comm-empty {
+  text-align: center;
+  padding: 36px 20px;
+  color: #9E94C4;
+  font-size: 13px;
+  background: #FAF8FF;
+  border: 1.5px dashed #E4E0FA;
+  border-radius: 12px;
+}
+.comm-period-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #F5F3FF;
+  border: 1px solid #E4E0FA;
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+.comm-period-picker select {
+  background: #fff;
+  border: 1px solid #E4E0FA;
+  border-radius: 7px;
+  padding: 6px 28px 6px 10px;
+  font-size: 12px;
+  color: #1A1033;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path fill="%236B5E9C" d="M6 8L2 4h8z"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 10px;
+}
 .hist-finale-check { display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; color:#6B5E9C; font-weight:500; user-select:none; }
 .hist-finale-check input[type=checkbox] { accent-color:#F0A500; width:14px; height:14px; cursor:pointer; }
 </style>
@@ -329,10 +645,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 <div class="main-nav">
   <button class="main-nav-btn active" id="mainnav-mission" onclick="mainNavTo('mission')">&#127959;&#65039; Simulateur</button>
   <button class="main-nav-btn" id="mainnav-historique" onclick="mainNavTo('historique')">&#128200; Historique</button>
-  <button class="main-nav-btn" id="mainnav-deals" onclick="mainNavTo('deals')">&#128203; Deals</button>
+  <button class="main-nav-btn" id="mainnav-rh" onclick="mainNavTo('rh')">&#128188; Suivi RH</button>
   <button class="main-nav-btn" id="mainnav-candidats" onclick="mainNavTo('candidats')">&#128100; Candidats</button>
   <button class="main-nav-btn" id="mainnav-clients" onclick="mainNavTo('clients')">&#127970; Clients</button>
   <button class="main-nav-btn" id="mainnav-taches" onclick="mainNavTo('taches')">&#128197; Tâches</button>
+  <button class="main-nav-btn" id="mainnav-commissions" onclick="mainNavTo('commissions')">&#128176; Commissions</button>
 </div>
 
 <div class="app">
@@ -950,6 +1267,9 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
     </div>
   </div>
 
+  <!-- TAB COMMISSIONS -->
+  <div id="tab-commissions" style="display:none;"></div>
+
   <!-- TAB CLIENTS -->
   <div id="tab-clients" style="display:none;">
     <div style="padding:0 0 12px;">
@@ -1154,7 +1474,7 @@ function p(id) { return f(id) / 100; }
 // ============================================
 function showTab(id) {
   // Masquer tous les tabs
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches'].forEach(function(t){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(t){
     var el = document.getElementById(t); if (el) el.style.display = 'none';
   });
   // Afficher le tab demandé
@@ -3384,7 +3704,7 @@ function showHistorique() {
   if (myName) histFilterCommercial = myName;
 
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-historique');
@@ -4005,7 +4325,8 @@ function odSilentFullSync() {
       { path: OD_FILE_PATH,    key: 'simulations', merge: mergeHistorique, getData: function(){ return {version:1,updated:new Date().toISOString(),simulations:getHistory()}; } },
       { path: OD_CAND_PATH,    key: 'candidats',   merge: mergeCandidats,  getData: function(){ return {version:1,updated:new Date().toISOString(),candidats:getCandidats()}; } },
       { path: OD_DEALS_PATH,   key: 'deals',       merge: mergeDeals,      getData: function(){ return {version:1,updated:new Date().toISOString(),deals:getDeals()}; } },
-      { path: OD_CLIENTS_PATH, key: 'clients',     merge: mergeClients,    getData: function(){ return {version:1,updated:new Date().toISOString(),clients:getClients()}; } }
+      { path: OD_CLIENTS_PATH, key: 'clients',     merge: mergeClients,    getData: function(){ return {version:1,updated:new Date().toISOString(),clients:getClients()}; } },
+      { path: OD_COMM_HISTORY_PATH, key: 'commissions', merge: mergeCommHistory, getData: function(){ return {version:1,updated:new Date().toISOString(),commissions:getCommHistory()}; } }
     ];
 
     var errors = [];
@@ -4310,15 +4631,74 @@ function openPlacementPopup(ts) {
 }
 
 function refreshClientDatalist() {
-  var clients = getClients();
-  var dl = document.getElementById('pl-entreprise-datalist');
-  if (dl) {
-    dl.innerHTML = clients.map(function(cl){
-      return '<option value="' + (cl.name||'').replace(/"/g,'&quot;') + '"></option>';
-    }).join('');
-  }
-  // Si l'entreprise est déjà saisie, recharger la logique
+  // L'ancien datalist HTML a été remplacé par une combobox custom.
+  // On se contente de garder la compat — la recherche est pilotée par filterClientSearch()
   onEntrepriseChange();
+}
+
+// Combobox recherche client — filtre la dropdown en direct
+function filterClientSearch() {
+  var inp = document.getElementById('pl-entreprise');
+  var drop = document.getElementById('pl-entreprise-dropdown');
+  if (!inp || !drop) return;
+  var q = (inp.value || '').trim().toLowerCase();
+  var clients = (typeof getClients === 'function') ? getClients() : [];
+  // Tri alpha, avec les matches en premier
+  var matches = clients.filter(function(cl) {
+    return (cl.name || '').toLowerCase().indexOf(q) >= 0;
+  }).sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
+
+  if (matches.length === 0 && q) {
+    drop.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:#9E94C4;background:#FAF8FF;border-bottom:1px solid #F0EDF9;">Aucun client existant ne correspond à "' + q.replace(/</g,'&lt;') + '"</div>'
+      + '<div style="padding:10px 12px;font-size:11.5px;color:#4B36EC;display:flex;align-items:center;gap:6px;background:#F5F3FF;"><span style="font-size:14px;">➕</span><span>Un nouveau client sera créé si vous validez</span></div>';
+    drop.style.display = 'block';
+    return;
+  }
+  if (matches.length === 0) {
+    drop.style.display = 'none';
+    return;
+  }
+
+  var html = '';
+  matches.forEach(function(cl, i) {
+    var nbMgrs = (cl.managers || []).length;
+    var nbDeals = (cl.managers || []).reduce(function(acc, m){ return acc + ((m.deals || []).length); }, 0);
+    var initials = (cl.name || '').trim().split(/\s+/).filter(Boolean).map(function(w){ return w[0] || ''; }).slice(0, 2).join('').toUpperCase() || '?';
+    // Mise en surbrillance de la query
+    var displayName = cl.name || '';
+    if (q) {
+      var idx = displayName.toLowerCase().indexOf(q);
+      if (idx >= 0) {
+        displayName = displayName.substring(0, idx)
+          + '<mark style="background:#FFF3A0;color:inherit;padding:0;">' + displayName.substring(idx, idx + q.length) + '</mark>'
+          + displayName.substring(idx + q.length);
+      }
+    }
+    var escName = (cl.name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    html += '<div onmousedown="selectClientFromSearch(\'' + escName + '\')" style="padding:9px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid #F5F3FF;transition:background .1s;" onmouseover="this.style.background=\'#F5F3FF\'" onmouseout="this.style.background=\'#fff\'">'
+      + '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;flex-shrink:0;">' + initials + '</div>'
+      + '<div style="flex:1;min-width:0;">'
+      +   '<div style="font-size:12.5px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + displayName + '</div>'
+      +   '<div style="font-size:10.5px;color:#8378B8;">' + nbMgrs + ' manager' + (nbMgrs > 1 ? 's' : '') + ' · ' + nbDeals + ' placement' + (nbDeals > 1 ? 's' : '') + (cl.secteur ? ' · ' + cl.secteur : '') + '</div>'
+      + '</div>'
+      + '</div>';
+  });
+  drop.innerHTML = html;
+  drop.style.display = 'block';
+}
+
+function selectClientFromSearch(name) {
+  var inp = document.getElementById('pl-entreprise');
+  if (inp) {
+    inp.value = name;
+    onEntrepriseChange();  // Déclenche le remplissage auto des champs
+  }
+  hideClientSearch();
+}
+
+function hideClientSearch() {
+  var drop = document.getElementById('pl-entreprise-dropdown');
+  if (drop) drop.style.display = 'none';
 }
 
 function onEntrepriseChange() {
@@ -4571,7 +4951,7 @@ function saveSortie() {
 // ── Onglet Tableau Deals ──
 function showDealsTab() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-deals');
@@ -4579,6 +4959,13 @@ function showDealsTab() {
   var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
   var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
   var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+  // Restaurer la visibilité du contenu original (masqué par un placeholder précédent)
+  if (typeof setDealsOriginalVisible === 'function') setDealsOriginalVisible(true);
+  // Injecter / réactualiser la barre de sous-onglets RH
+  if (typeof injectRHSubNav === 'function') {
+    currentRHSubTab = 'deals';
+    injectRHSubNav();
+  }
   renderDeals();
 }
 
@@ -5210,7 +5597,7 @@ function saveCandidatFromEntry(entry) {
 
 function showCandidatsTab() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-candidats');
@@ -5326,7 +5713,7 @@ function renderCandidats() {
 
 function mainNavTo(section) {
   // Mettre à jour tous les boutons de navigation
-  ['mission','historique','deals','candidats','clients','taches'].forEach(function(s) {
+  ['mission','historique','rh','candidats','clients','taches','commissions'].forEach(function(s) {
     var btn = document.getElementById('mainnav-' + s);
     if (btn) btn.classList.toggle('active', s === section);
   });
@@ -5339,14 +5726,109 @@ function mainNavTo(section) {
     showTab('tab-mission');
   } else if (section === 'historique') {
     showHistorique();
-  } else if (section === 'deals') {
-    showDealsTab();
+  } else if (section === 'rh') {
+    showRHSection(currentRHSubTab || 'deals');
   } else if (section === 'candidats') {
     showCandidatsTab();
   } else if (section === 'clients') {
     showClientsTab();
   } else if (section === 'taches') {
     showTachesTab();
+  } else if (section === 'commissions') {
+    showCommissionsSection(currentCommSubTab || 'current');
+  }
+}
+
+// ── Suivi RH : hub avec sous-onglets (Tableau deals, Avenants, Sortants, Avances, Cooptation) ──
+var currentRHSubTab = 'deals';
+var RH_SUBTABS = [
+  { key: 'deals',      label: 'Tableau des deals', icon: '\u{1F4CB}', ready: true  },
+  { key: 'avenants',   label: 'Avenants',          icon: '\u{1F4DD}', ready: false },
+  { key: 'sortants',   label: 'Sortants',          icon: '\u{1F6AA}', ready: false },
+  { key: 'avances',    label: 'Avances',           icon: '\u{1F4B6}', ready: false },
+  { key: 'cooptation', label: 'Cooptation',        icon: '\u{1F91D}', ready: false }
+];
+
+function showRHSection(subtab) {
+  currentRHSubTab = subtab || 'deals';
+  if (subtab === 'deals') {
+    // Afficher le tab-deals existant, avec la barre de sous-onglets injectée au-dessus
+    showDealsTab();
+    injectRHSubNav();
+  } else {
+    // Placeholder pour les sous-sections non encore implémentées
+    showRHPlaceholder(subtab);
+  }
+}
+
+function injectRHSubNav() {
+  // Construit/remplace la barre de sous-onglets à l'intérieur de tab-deals
+  var tab = document.getElementById('tab-deals');
+  if (!tab) return;
+  var existing = document.getElementById('rh-subnav');
+  if (existing) existing.remove();
+  var nav = document.createElement('div');
+  nav.id = 'rh-subnav';
+  nav.className = 'rh-subnav';
+  nav.innerHTML = RH_SUBTABS.map(function(t) {
+    var active = (t.key === currentRHSubTab) ? ' rh-subnav-btn--active' : '';
+    var soon = !t.ready ? '<span class="rh-subnav-soon">bientôt</span>' : '';
+    return '<button class="rh-subnav-btn' + active + '" onclick="showRHSection(\'' + t.key + '\')">'
+      + '<span class="rh-subnav-icon">' + t.icon + '</span>'
+      + '<span>' + t.label + '</span>'
+      + soon
+      + '</button>';
+  }).join('');
+  // Insérer en premier dans tab-deals
+  tab.insertBefore(nav, tab.firstChild);
+}
+
+function showRHPlaceholder(subtab) {
+  // Afficher le conteneur tab-deals (même emplacement page)
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-deals');
+  if (!tab) return;
+  tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+  // Masquer le contenu original (mais ne pas le supprimer — on y reviendra)
+  setDealsOriginalVisible(false);
+  // (Re)construire la barre de sous-nav
+  injectRHSubNav();
+  // Injecter / mettre à jour le placeholder
+  var info = RH_SUBTABS.find(function(t){ return t.key === subtab; }) || { label: subtab, icon: '' };
+  var ph = document.getElementById('rh-placeholder');
+  if (!ph) {
+    ph = document.createElement('div');
+    ph.id = 'rh-placeholder';
+    ph.className = 'rh-placeholder';
+    tab.appendChild(ph);
+  }
+  ph.style.display = 'block';
+  ph.innerHTML = '<div class="rh-placeholder-inner">'
+    + '<div class="rh-placeholder-icon">' + info.icon + '</div>'
+    + '<div class="rh-placeholder-title">Module ' + info.label + '</div>'
+    + '<div class="rh-placeholder-sub">En cours de construction — ce module sera disponible prochainement.</div>'
+    + '<button class="rh-placeholder-back" onclick="showRHSection(\'deals\')">← Retour au tableau des deals</button>'
+    + '</div>';
+}
+
+// Masque ou réaffiche le contenu original de tab-deals (le tableau + ses contrôles)
+function setDealsOriginalVisible(visible) {
+  var tab = document.getElementById('tab-deals');
+  if (!tab) return;
+  // Tous les enfants directs qui ne sont ni la sub-nav ni le placeholder
+  Array.prototype.forEach.call(tab.children, function(child) {
+    if (child.id === 'rh-subnav' || child.id === 'rh-placeholder') return;
+    child.style.display = visible ? '' : 'none';
+  });
+  if (visible) {
+    var ph = document.getElementById('rh-placeholder');
+    if (ph) ph.style.display = 'none';
   }
 }
 
@@ -6135,7 +6617,7 @@ function saveClientFromDeal(deal) {
 
 function showClientsTab() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-clients');
@@ -6194,15 +6676,27 @@ function buildClientPageHTML(cl) {
   // Helpers locaux de style
   var IS = 'width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:13px;box-sizing:border-box;background:#fff;transition:border-color .15s, box-shadow .15s;font-family:inherit;color:#1A1033;';
   var IS_FOCUS = 'onfocus="this.style.borderColor=\'#7343EE\';this.style.boxShadow=\'0 0 0 3px rgba(115,67,238,0.12)\'" onblur="this.style.borderColor=\'#E4E0FA\';this.style.boxShadow=\'none\'"';
+  var IS_FOCUS_GOLD = 'onfocus="this.style.borderColor=\'#D69300\';this.style.boxShadow=\'0 0 0 3px rgba(240,165,0,0.16)\'" onblur="this.style.borderColor=\'#E4E0FA\';this.style.boxShadow=\'none\'"';
   var LB = 'font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;';
 
-  // Input texte
+  // Input texte standard
   function fld(lbl, val, fid, placeholder) {
     var ph = placeholder ? ' placeholder="' + placeholder + '"' : '';
     return '<div><label style="' + LB + '">' + lbl + '</label>'
       + '<input value="' + ((val || '') + '').replace(/"/g, '&quot;') + '"'
       + ' data-field="' + fid + '" data-clid="' + cl.id + '"'
       + ' onchange="updateClientField(this)" ' + IS_FOCUS
+      + ' style="' + IS + '"' + ph + '></div>';
+  }
+
+  // Input texte signataire (accent or/ambre)
+  function fldGold(lbl, val, fid, placeholder) {
+    var ph = placeholder ? ' placeholder="' + placeholder + '"' : '';
+    var goldLB = 'font-size:10px;font-weight:700;color:#8A5F00;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;';
+    return '<div><label style="' + goldLB + '">' + lbl + '</label>'
+      + '<input value="' + ((val || '') + '').replace(/"/g, '&quot;') + '"'
+      + ' data-field="' + fid + '" data-clid="' + cl.id + '"'
+      + ' onchange="updateClientField(this)" ' + IS_FOCUS_GOLD
       + ' style="' + IS + '"' + ph + '></div>';
   }
 
@@ -6224,9 +6718,13 @@ function buildClientPageHTML(cl) {
       + '</select></div>';
   }
 
-  // Initiales entreprise
+  // Initiales helper
+  function initialsOf(name) {
+    return (name || '').trim().split(/\s+/).filter(Boolean).map(function (w) { return w[0] || ''; }).slice(0, 2).join('').toUpperCase() || '?';
+  }
+
   var cleanName = (cl.name || '').trim();
-  var initials = cleanName.split(/\s+/).filter(Boolean).map(function (w) { return w[0] || ''; }).slice(0, 2).join('').toUpperCase() || '?';
+  var initials = initialsOf(cleanName);
 
   // Stats rapides
   var nbMgrs = (cl.managers || []).length;
@@ -6236,7 +6734,7 @@ function buildClientPageHTML(cl) {
   // Cartes managers
   var mgrsHtml = nbMgrs ? (cl.managers || []).map(function (m, i) {
     var nbD = (m.deals || []).length;
-    var mInit = (m.name || '').split(/\s+/).filter(Boolean).map(function (w) { return w[0] || ''; }).slice(0, 2).join('').toUpperCase() || '?';
+    var mInit = initialsOf(m.name);
     return '<div data-mgridx="' + i + '" data-clid="' + cl.id + '"'
       + ' onclick="openManagerFiche(parseInt(this.dataset.clid),parseInt(this.dataset.mgridx))"'
       + ' style="background:#fff;border:1.5px solid #E4E0FA;border-radius:12px;padding:16px;cursor:pointer;position:relative;overflow:hidden;transition:transform .15s ease, box-shadow .2s ease, border-color .15s ease;"'
@@ -6255,18 +6753,42 @@ function buildClientPageHTML(cl) {
       +   '<span style="font-size:13px;font-weight:800;color:#4B36EC;">' + nbD + '</span>'
       + '</div>'
       + '</div>';
-  }).join('') : '<div style="grid-column:1/-1;text-align:center;padding:28px;color:#9E94C4;font-size:13px;background:#FAF8FF;border:1.5px dashed #E4E0FA;border-radius:12px;">Aucun manager enregistré.<div style="font-size:11px;color:#B8AEDB;margin-top:4px;">Ils apparaîtront ici lors du premier placement.</div></div>';
+  }).join('') : '<div style="grid-column:1/-1;text-align:center;padding:24px;color:#9E94C4;font-size:12px;background:#FAF8FF;border:1.5px dashed #E4E0FA;border-radius:12px;">Aucun manager enregistré.<div style="font-size:10.5px;color:#B8AEDB;margin-top:3px;">Ils apparaîtront ici lors du premier placement.</div></div>';
+
+  // Carte signataire (style "manager" avec accent or/ambre)
+  var sigInit = initialsOf(cl.nom_signataire);
+  var hasSig = !!(cl.nom_signataire || cl.tel_signataire || cl.email_signataire);
+
+  // Carte Signataire façon "manager" — même taille, mais accent or/ambré
+  // S'affichera en tête de la grille managers, avant les vrais managers
+  var sigManagerCardHtml = '<div onclick="openSignataireEditor(' + cl.id + ')"'
+    + ' style="background:#fff;border:1.5px solid #F0D98A;border-radius:12px;padding:16px;cursor:pointer;position:relative;overflow:hidden;transition:transform .15s ease, box-shadow .2s ease, border-color .15s ease;"'
+    + ' onmouseover="this.style.borderColor=\'#D69300\';this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 8px 24px rgba(240,165,0,0.2)\'"'
+    + ' onmouseout="this.style.borderColor=\'#F0D98A\';this.style.transform=\'translateY(0)\';this.style.boxShadow=\'none\'">'
+    + '<div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#F0A500 0%, #D69300 100%);"></div>'
+    + '<div style="display:flex;align-items:center;gap:11px;">'
+    +   '<div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#F0A500,#D69300);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex-shrink:0;letter-spacing:-0.02em;box-shadow:0 4px 12px rgba(240,165,0,0.3);">' + (hasSig ? sigInit : '✍') + '</div>'
+    +   '<div style="flex:1;min-width:0;">'
+    +     '<div style="font-size:13.5px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (cl.nom_signataire || '— Signataire —') + '</div>'
+    +     '<div style="font-size:11.5px;color:#A07700;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + ((cl.tel_signataire || '') + (cl.email_signataire ? ' · ' + cl.email_signataire : '') || 'À compléter') + '</div>'
+    +   '</div>'
+    + '</div>'
+    + '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed #F5E4B0;display:flex;align-items:center;justify-content:space-between;">'
+    +   '<span style="font-size:10px;color:#A07700;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">Signataire contrats</span>'
+    +   '<span style="font-size:10.5px;color:#8A5F00;font-weight:700;">✍</span>'
+    + '</div>'
+    + '</div>';
 
   // Style section-card
-  var CARD = 'background:#fff;border:1px solid #EAE6F8;border-radius:14px;padding:20px 22px;margin-bottom:16px;box-shadow:0 1px 3px rgba(75,54,236,0.04);';
-  var H = 'display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:#4B36EC;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #F0EDF9;';
+  var CARD = 'background:#fff;border:1px solid #EAE6F8;border-radius:14px;padding:18px 20px;margin-bottom:14px;box-shadow:0 1px 3px rgba(75,54,236,0.04);';
+  var H = 'display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:#4B36EC;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #F0EDF9;';
   var DOT = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#7343EE;box-shadow:0 0 0 3px rgba(115,67,238,0.18);"></span>';
 
   // ── Rendu ──
   return '<div style="padding:4px 0 24px;max-width:1200px;">'
     // Breadcrumb + retour
-    + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">'
-    +   '<button class="back-btn" onclick="showClientsTab()" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:#fff;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;" onmouseover="this.style.background=\'#F5F3FF\';this.style.borderColor=\'#7343EE\'" onmouseout="this.style.background=\'#fff\';this.style.borderColor=\'#E4E0FA\'">← Retour</button>'
+    + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">'
+    +   '<button class="back-btn" onclick="showClientsTab()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#fff;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;" onmouseover="this.style.background=\'#F5F3FF\';this.style.borderColor=\'#7343EE\'" onmouseout="this.style.background=\'#fff\';this.style.borderColor=\'#E4E0FA\'">← Retour</button>'
     +   '<div style="flex:1;display:flex;align-items:center;gap:6px;font-size:12px;">'
     +     '<button onclick="showClientsTab()" style="background:none;border:none;color:#7343EE;font-size:12px;font-weight:600;cursor:pointer;padding:0;">Clients</button>'
     +     '<span style="color:#C0B8E0;">›</span>'
@@ -6274,40 +6796,29 @@ function buildClientPageHTML(cl) {
     +   '</div>'
     + '</div>'
 
-    // Hero
-    + '<div style="position:relative;background:linear-gradient(135deg,#2A1E82 0%, #4B36EC 45%, #7343EE 100%);border-radius:16px;padding:26px 28px;margin-bottom:20px;overflow:hidden;box-shadow:0 10px 32px rgba(75,54,236,0.28);">'
-    +   '<div style="position:absolute;top:-40px;right:-40px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);pointer-events:none;"></div>'
-    +   '<div style="position:absolute;bottom:-60px;left:30%;width:240px;height:240px;border-radius:50%;background:radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);pointer-events:none;"></div>'
-    +   '<div style="position:relative;display:flex;align-items:center;gap:18px;">'
-    +     '<div style="width:68px;height:68px;border-radius:16px;background:rgba(255,255,255,0.16);backdrop-filter:blur(10px);border:1.5px solid rgba(255,255,255,0.28);color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;flex-shrink:0;letter-spacing:-0.03em;box-shadow:0 6px 18px rgba(0,0,0,0.15);">' + initials + '</div>'
+    // Hero compact (réduit en hauteur)
+    + '<div style="position:relative;background:linear-gradient(135deg,#2A1E82 0%, #4B36EC 50%, #7343EE 100%);border-radius:14px;padding:16px 20px;margin-bottom:14px;overflow:hidden;box-shadow:0 6px 20px rgba(75,54,236,0.22);">'
+    +   '<div style="position:absolute;top:-30px;right:-30px;width:140px;height:140px;border-radius:50%;background:radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);pointer-events:none;"></div>'
+    +   '<div style="position:relative;display:flex;align-items:center;gap:14px;">'
+    +     '<div style="width:48px;height:48px;border-radius:12px;background:rgba(255,255,255,0.16);backdrop-filter:blur(8px);border:1.5px solid rgba(255,255,255,0.28);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;flex-shrink:0;letter-spacing:-0.03em;box-shadow:0 4px 12px rgba(0,0,0,0.15);">' + initials + '</div>'
     +     '<div style="flex:1;min-width:0;">'
-    +       '<div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.01em;line-height:1.15;">' + cleanName + '</div>'
-    +       (cl.secteur ? '<div style="display:inline-flex;align-items:center;gap:4px;margin-top:8px;padding:3px 10px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.24);border-radius:20px;font-size:11px;font-weight:600;color:#fff;">' + cl.secteur + '</div>' : '')
+    +       '<div style="font-size:17px;font-weight:800;color:#fff;letter-spacing:-0.01em;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + cleanName + '</div>'
+    +       (cl.secteur ? '<div style="display:inline-flex;align-items:center;gap:4px;margin-top:5px;padding:2px 9px;background:rgba(255,255,255,0.16);border:1px solid rgba(255,255,255,0.22);border-radius:16px;font-size:10.5px;font-weight:600;color:#fff;">' + cl.secteur + '</div>' : '')
+    +     '</div>'
+    // Stats en ligne (à droite du hero, compactes)
+    +     '<div style="display:flex;gap:18px;flex-shrink:0;">'
+    +       '<div style="text-align:center;"><div style="font-size:9.5px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;">Managers</div><div style="font-size:18px;font-weight:800;color:#fff;margin-top:1px;line-height:1;">' + nbMgrs + '</div></div>'
+    +       '<div style="text-align:center;"><div style="font-size:9.5px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;">Placements</div><div style="font-size:18px;font-weight:800;color:#fff;margin-top:1px;line-height:1;">' + nbDeals + '</div></div>'
     +     '</div>'
     +   '</div>'
-    // Stats
-    +   '<div style="position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px;padding-top:18px;border-top:1px solid rgba(255,255,255,0.15);">'
-    +     '<div><div style="font-size:10px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Managers</div><div style="font-size:22px;font-weight:800;color:#fff;margin-top:2px;">' + nbMgrs + '</div></div>'
-    +     '<div><div style="font-size:10px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Placements</div><div style="font-size:22px;font-weight:800;color:#fff;margin-top:2px;">' + nbDeals + '</div></div>'
-    +     '<div><div style="font-size:10px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Mise à jour</div><div style="font-size:13px;font-weight:700;color:#fff;margin-top:6px;">' + (lastUpdate || '—') + '</div></div>'
-    +   '</div>'
     + '</div>'
 
-    // Section : Contact & adresse
+    // Section fusionnée : Adresse & informations contractuelles
     + '<div style="' + CARD + '">'
-    +   '<div style="' + H + '">' + DOT + '<span>Contact & adresse</span></div>'
+    +   '<div style="' + H + '">' + DOT + '<span>Adresse & informations contractuelles</span></div>'
     +   '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;">'
-    +     fld('Téléphone', cl.tel, 'tel', '+33 …')
-    +     fld('Email', cl.email, 'email', 'contact@…')
     +     fld('Adresse', cl.adresse, 'adresse', 'Rue, ville, code postal')
     +     fld('Secteur', cl.secteur, 'secteur', 'IT / Finance …')
-    +   '</div>'
-    + '</div>'
-
-    // Section : Informations contractuelles
-    + '<div style="' + CARD + '">'
-    +   '<div style="' + H + '">' + DOT + '<span>Informations contractuelles</span></div>'
-    +   '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;">'
     +     fldSelect('Délai de paiement', cl.delai_paiement, 'delai_paiement', 'delais_paiement')
     +     fldSelect('Banque Seven', cl.banque, 'banque', 'banques')
     +   '</div>'
@@ -6321,20 +6832,10 @@ function buildClientPageHTML(cl) {
     +   '</div>'
     + '</div>'
 
-    // Section : Signataire
-    + '<div style="' + CARD + '">'
-    +   '<div style="' + H + '">' + DOT + '<span>Signataire des contrats</span></div>'
-    +   '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;">'
-    +     fld('Nom signataire', cl.nom_signataire, 'nom_signataire', 'Prénom Nom')
-    +     fld('Tél. signataire', cl.tel_signataire, 'tel_signataire', '+33 …')
-    +     fld('Email signataire', cl.email_signataire, 'email_signataire', 'nom@…')
-    +   '</div>'
-    + '</div>'
-
-    // Section : Managers
+    // Section : Managers + Signataire fusionnés
     + '<div style="' + CARD + '">'
     +   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #F0EDF9;">'
-    +     '<div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:#4B36EC;">' + DOT + '<span>Managers</span><span style="margin-left:4px;padding:2px 8px;background:#F5F3FF;border-radius:10px;color:#7343EE;font-size:10px;font-weight:700;">' + nbMgrs + '</span></div>'
+    +     '<div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:#4B36EC;">' + DOT + '<span>Managers & Signataire</span><span style="margin-left:4px;padding:2px 8px;background:#F5F3FF;border-radius:10px;color:#7343EE;font-size:10px;font-weight:700;">' + nbMgrs + '</span></div>'
     +     '<button data-clid="' + cl.id + '" onclick="showAddManagerForm(parseInt(this.dataset.clid))" style="display:inline-flex;align-items:center;gap:5px;padding:7px 14px;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border:none;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 3px 10px rgba(75,54,236,0.24);transition:transform .12s, box-shadow .2s;" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 5px 14px rgba(75,54,236,0.32)\'" onmouseout="this.style.transform=\'translateY(0)\';this.style.boxShadow=\'0 3px 10px rgba(75,54,236,0.24)\'">+ Ajouter un manager</button>'
     +   '</div>'
     +   '<div id="add-manager-form-' + cl.id + '" style="display:none;background:linear-gradient(135deg,#FAF8FF 0%,#F5F3FF 100%);border:1.5px solid #E4E0FA;border-radius:12px;padding:16px;margin-bottom:14px;">'
@@ -6348,7 +6849,7 @@ function buildClientPageHTML(cl) {
     +       '<button data-clid="' + cl.id + '" onclick="document.getElementById(\'add-manager-form-' + cl.id + '\').style.display=\'none\'" style="padding:8px 18px;background:#fff;color:#6B5E9C;border:1px solid #E4E0FA;border-radius:9px;font-size:12px;cursor:pointer;">Annuler</button>'
     +     '</div>'
     +   '</div>'
-    +   '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;">' + mgrsHtml + '</div>'
+    +   '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;">' + sigManagerCardHtml + mgrsHtml + '</div>'
     + '</div>'
   + '</div>';
 }
@@ -6356,6 +6857,63 @@ function buildClientPageHTML(cl) {
 function showAddManagerForm(clid) {
   var f = document.getElementById('add-manager-form-'+clid);
   if (f) f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+
+// ── Éditeur signataire (modal) ──
+function openSignataireEditor(clid) {
+  var clients = getClients();
+  var cl = clients.find(function(c){ return c.id === clid; });
+  if (!cl) return;
+  var ex = document.getElementById('modal-signataire-editor');
+  if (ex) ex.remove();
+  var modal = document.createElement('div');
+  modal.id = 'modal-signataire-editor';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3100;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+  var sigInit = (cl.nom_signataire || '').trim().split(/\s+/).filter(Boolean).map(function(w){ return w[0] || ''; }).slice(0, 2).join('').toUpperCase() || '✍';
+  var IS_GOLD = 'width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:13px;box-sizing:border-box;background:#fff;transition:border-color .15s, box-shadow .15s;font-family:inherit;color:#1A1033;';
+  var FOCUS_GOLD = 'onfocus="this.style.borderColor=\'#D69300\';this.style.boxShadow=\'0 0 0 3px rgba(240,165,0,0.16)\'" onblur="this.style.borderColor=\'#E4E0FA\';this.style.boxShadow=\'none\'"';
+
+  modal.innerHTML = '<div style="background:#fff;border-radius:14px;width:100%;max-width:480px;overflow:hidden;box-shadow:0 20px 60px rgba(240,165,0,0.25);">'
+    // Header doré
+    + '<div style="background:linear-gradient(135deg,#F0A500,#D69300);padding:18px 22px;display:flex;align-items:center;gap:14px;">'
+    +   '<div style="width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,0.2);backdrop-filter:blur(8px);border:1.5px solid rgba(255,255,255,0.35);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;flex-shrink:0;">' + sigInit + '</div>'
+    +   '<div style="flex:1;">'
+    +     '<div style="font-size:15px;font-weight:800;color:#fff;">Signataire des contrats</div>'
+    +     '<div style="font-size:11px;color:rgba(255,255,255,0.82);">' + cl.name + '</div>'
+    +   '</div>'
+    +   '<button onclick="document.getElementById(\'modal-signataire-editor\').remove()" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.35);color:#fff;width:32px;height:32px;border-radius:8px;font-size:18px;cursor:pointer;">×</button>'
+    + '</div>'
+    // Corps
+    + '<div style="padding:20px 22px;">'
+    +   '<div style="margin-bottom:14px;"><label style="font-size:10px;font-weight:700;color:#8A5F00;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Nom du signataire</label>'
+    +     '<input value="' + ((cl.nom_signataire || '') + '').replace(/"/g, '&quot;') + '" data-field="nom_signataire" data-clid="' + cl.id + '" onchange="updateClientField(this);refreshSignataireCardAfterEdit(' + cl.id + ')" ' + FOCUS_GOLD + ' style="' + IS_GOLD + '" placeholder="Prénom Nom">'
+    +   '</div>'
+    +   '<div style="margin-bottom:14px;"><label style="font-size:10px;font-weight:700;color:#8A5F00;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Téléphone</label>'
+    +     '<input value="' + ((cl.tel_signataire || '') + '').replace(/"/g, '&quot;') + '" data-field="tel_signataire" data-clid="' + cl.id + '" onchange="updateClientField(this);refreshSignataireCardAfterEdit(' + cl.id + ')" ' + FOCUS_GOLD + ' style="' + IS_GOLD + '" placeholder="+33 …">'
+    +   '</div>'
+    +   '<div style="margin-bottom:0;"><label style="font-size:10px;font-weight:700;color:#8A5F00;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Email</label>'
+    +     '<input value="' + ((cl.email_signataire || '') + '').replace(/"/g, '&quot;') + '" data-field="email_signataire" data-clid="' + cl.id + '" onchange="updateClientField(this);refreshSignataireCardAfterEdit(' + cl.id + ')" ' + FOCUS_GOLD + ' style="' + IS_GOLD + '" placeholder="nom@…">'
+    +   '</div>'
+    + '</div>'
+    // Footer
+    + '<div style="padding:12px 22px 18px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid #F0EDF9;">'
+    +   '<button onclick="document.getElementById(\'modal-signataire-editor\').remove()" style="padding:9px 20px;background:linear-gradient(135deg,#F0A500,#D69300);color:#fff;border:none;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Fermer</button>'
+    + '</div>'
+    + '</div>';
+
+  // Fermeture clic fond
+  modal.addEventListener('click', function(e){ if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+// Après modification d'un champ signataire, re-render la fiche client (pour que la carte se mette à jour)
+function refreshSignataireCardAfterEdit(clid) {
+  // On attend un tick pour laisser updateClientField terminer son save
+  setTimeout(function() {
+    // Re-render la fiche client en arrière-plan (la modale signataire reste ouverte devant)
+    if (typeof openClientPage === 'function') openClientPage(clid);
+  }, 50);
 }
 
 // ── Fiche manager (modal) ──
@@ -7384,7 +7942,7 @@ function getMyRappels() {
 // ── Vue calendrier ──
 function showTachesTab() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-taches');
@@ -7956,6 +8514,1712 @@ function addRappelType() {
   saveRappelTypes(types);
   renderRappelTypesParams();
 }
+
+// ═══════════════════════════════════════════════════════════
+// MODULE COMMISSIONS — Session 1
+// Barème mensuel progressif (0-5: 300 / 6-10: 350 / 11-15: 400 / 15+: 500)
+// Les 15 premiers deals au tarif de leur palier atteint ; les 16+ à 500 € chacun.
+// Un deal compte si : frais_gestion ≥ 4%, pas exclu manuellement, non annulé.
+// Date de référence = date du premier document uploadé sur le candidat.
+// ═══════════════════════════════════════════════════════════
+
+var COMM_PARAMS_KEY = 'sp_commission_params_v1';
+var COMM_EXCLUSIONS_KEY = 'sp_commission_exclusions_v1';
+var currentCommSubTab = 'current';
+var currentCommCommercial = '';
+var currentCommYear = new Date().getFullYear();
+var currentCommMonth = new Date().getMonth(); // 0-11
+
+var COMM_SUBTABS = [
+  { key: 'current',    label: 'Commission mensuelle', icon: '\u{1F4B0}' },
+  { key: 'annuelle',   label: 'Commission annuelle',  icon: '\u{1F3C6}' },
+  { key: 'historique', label: 'Historique validé',    icon: '\u{1F4DA}' },
+  { key: 'params',     label: 'Paramètres',           icon: '\u2699\uFE0F' }
+];
+
+function getCommParams() {
+  var defaults = {
+    // Barème mensuel — tarif à l'intérieur de chaque tranche
+    palier1_max: 5,  palier1_tarif: 300,   // 0-5 deals
+    palier2_max: 10, palier2_tarif: 350,   // 6-10 deals
+    palier3_max: 15, palier3_tarif: 400,   // 11-15 deals
+    palier4_tarif: 500,                    // 16+ (au-delà de palier3_max)
+    // Seuil minimal pour qu'un deal compte
+    seuil_frais_gestion_min: 4,            // %
+    // Paramètres annuels — placeholder pour Session 2
+    annuel_objectif_moy_frais: 5,          // %
+    annuel_prime_moy: 50,                  // €/deal
+    annuel_objectif_portes: 100,           // nb de portés
+    annuel_prime_portes: 75,               // €/deal
+    // Mot de passe admin pour validation — à modifier
+    admin_password: 'seven2026'
+  };
+  try {
+    var saved = JSON.parse(localStorage.getItem(COMM_PARAMS_KEY) || '{}');
+    return Object.assign({}, defaults, saved);
+  } catch(e) { return defaults; }
+}
+function saveCommParams(p) {
+  localStorage.setItem(COMM_PARAMS_KEY, JSON.stringify(p));
+}
+
+// Exclusions : { "dealId": { excluded: true, comment: "..." } }
+function getCommExclusions() {
+  try { return JSON.parse(localStorage.getItem(COMM_EXCLUSIONS_KEY) || '{}'); }
+  catch(e) { return {}; }
+}
+function saveCommExclusions(obj) {
+  localStorage.setItem(COMM_EXCLUSIONS_KEY, JSON.stringify(obj));
+}
+
+// Détermine la date de référence d'un deal (1er document uploadé sur le candidat, sinon fallback)
+function getDealReferenceDate(deal) {
+  // Chercher le candidat lié par email
+  var email = (deal.email || '').trim().toLowerCase();
+  if (email && typeof getCandidats === 'function') {
+    var cands = getCandidats();
+    var cand = cands.find(function(c){ return (c.email || '').trim().toLowerCase() === email; });
+    if (cand && cand.documents) {
+      var dates = [];
+      Object.keys(cand.documents).forEach(function(k) {
+        var doc = cand.documents[k];
+        if (doc && doc.uploaded) {
+          // Format "DD/MM/YYYY" attendu → parser
+          var parts = (doc.uploaded || '').split('/');
+          if (parts.length === 3) {
+            var d = new Date(parseInt(parts[2]), parseInt(parts[1])-1, parseInt(parts[0]));
+            if (!isNaN(d.getTime())) dates.push(d);
+          }
+        }
+      });
+      if (dates.length) {
+        dates.sort(function(a,b){ return a - b; });
+        return dates[0];
+      }
+    }
+  }
+  // Fallback : date_deal (format "YYYY-MM-DD") ou date_created ("DD/MM/YYYY")
+  if (deal.date_deal) {
+    var d = new Date(deal.date_deal);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (deal.date_created) {
+    var parts = deal.date_created.split('/');
+    if (parts.length === 3) {
+      var dd = new Date(parseInt(parts[2]), parseInt(parts[1])-1, parseInt(parts[0]));
+      if (!isNaN(dd.getTime())) return dd;
+    }
+  }
+  return null;
+}
+
+// Filtre les deals éligibles pour un commercial + période (année+mois éventuel)
+function getCommDealsForPeriod(commercial, year, month /* 0-11, null = toute l'année */) {
+  var params = getCommParams();
+  var seuilFG = params.seuil_frais_gestion_min;
+  var all = (typeof getDeals === 'function') ? getDeals() : [];
+
+  return all.filter(function(d) {
+    // Commercial match (insensible à la casse + espaces)
+    var dealComm = (d.commercial || '').trim().toLowerCase();
+    var wanted = (commercial || '').trim().toLowerCase();
+    if (wanted && dealComm !== wanted) return false;
+    // État annulé exclu
+    if (d.etat === 'Annulé') return false;
+    // Frais de gestion ≥ seuil
+    var fg = parseFloat(d.frais_gestion) || 0;
+    if (fg < seuilFG) return false;
+    // Date de référence
+    var ref = getDealReferenceDate(d);
+    if (!ref) return false;
+    if (ref.getFullYear() !== year) return false;
+    if (month !== null && month !== undefined && ref.getMonth() !== month) return false;
+    // Attacher la date pour tri
+    d._commRefDate = ref;
+    return true;
+  }).sort(function(a,b){ return a._commRefDate - b._commRefDate; });
+}
+
+// Calcule la commission mensuelle d'un commercial pour un mois donné
+// Règles :
+//   - deals_comptes = deals éligibles non exclus manuellement
+//   - nb = deals_comptes.length
+//   - palier de base atteint : 1 si nb ≤ P1_max, 2 si ≤ P2_max, 3 si ≤ P3_max
+//   - Les 15 premiers deals (ou les P3_max premiers) → tarif du palier atteint
+//   - Les suivants (16+) → tarif palier 4 (500 €)
+function computeMonthlyCommission(commercial, year, month) {
+  var params = getCommParams();
+  var deals = getCommDealsForPeriod(commercial, year, month);
+  var exclusions = getCommExclusions();
+  var counted = deals.filter(function(d){
+    var ex = exclusions[d.id];
+    return !(ex && ex.excluded);
+  });
+
+  var nb = counted.length;
+  var p1max = params.palier1_max, p2max = params.palier2_max, p3max = params.palier3_max;
+  var base;
+  if (nb <= 0) base = 0;
+  else if (nb <= p1max) base = params.palier1_tarif;
+  else if (nb <= p2max) base = params.palier2_tarif;
+  else base = params.palier3_tarif;
+
+  var baseDealsCount = Math.min(nb, p3max);
+  var bonusDealsCount = Math.max(0, nb - p3max);
+  var montantBase = baseDealsCount * base;
+  var montantBonus = bonusDealsCount * params.palier4_tarif;
+  var total = montantBase + montantBonus;
+
+  return {
+    deals: deals,
+    counted: counted,
+    excluded: deals.filter(function(d){ var ex = exclusions[d.id]; return ex && ex.excluded; }),
+    nb: nb,
+    base_tarif: base,
+    base_deals_count: baseDealsCount,
+    bonus_deals_count: bonusDealsCount,
+    montant_base: montantBase,
+    montant_bonus: montantBonus,
+    total: total
+  };
+}
+
+// ── Rendering ──
+
+function showCommissionsSection(subtab) {
+  currentCommSubTab = subtab || 'current';
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-commissions');
+  if (!tab) return;
+  tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+
+  if (subtab === 'params') renderCommParamsView();
+  else if (subtab === 'annuelle') renderCommAnnuelleView();
+  else if (subtab === 'historique') renderCommHistoriqueView();
+  else renderCommCurrentView();
+}
+
+function buildCommSubNav() {
+  return '<div class="rh-subnav" style="margin-bottom:16px;">'
+    + COMM_SUBTABS.map(function(t) {
+        var active = (t.key === currentCommSubTab) ? ' rh-subnav-btn--active' : '';
+        return '<button class="rh-subnav-btn' + active + '" onclick="showCommissionsSection(\'' + t.key + '\')">'
+          + '<span class="rh-subnav-icon">' + t.icon + '</span>'
+          + '<span>' + t.label + '</span>'
+          + '</button>';
+      }).join('')
+    + '</div>';
+}
+
+function getAllCommercialsFromDeals() {
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var set = {};
+  deals.forEach(function(d){ if (d.commercial) set[d.commercial.trim()] = 1; });
+  return Object.keys(set).sort();
+}
+
+// Vue principale : commission en cours (mois sélectionné pour un commercial)
+function renderCommCurrentView() {
+  var tab = document.getElementById('tab-commissions');
+  if (!tab) return;
+
+  // Initialiser le commercial à celui du user connecté si pas défini
+  if (!currentCommCommercial) {
+    var myName = (typeof getCommercialData === 'function') ? (getCommercialData().nom || '') : '';
+    currentCommCommercial = myName;
+  }
+
+  var commercials = getAllCommercialsFromDeals();
+  // Inclure l'utilisateur courant s'il n'a pas encore de deal (pour qu'il apparaisse dans la liste)
+  if (currentCommCommercial && commercials.indexOf(currentCommCommercial) < 0) {
+    commercials.unshift(currentCommCommercial);
+  }
+
+  var months = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  var years = [];
+  var ty = new Date().getFullYear();
+  for (var y = ty - 2; y <= ty + 1; y++) years.push(y);
+
+  var commOptions = '<option value="">— Sélectionner un commercial —</option>'
+    + commercials.map(function(c){
+        var sel = c === currentCommCommercial ? ' selected' : '';
+        return '<option value="' + c.replace(/"/g,'&quot;') + '"' + sel + '>' + c + '</option>';
+      }).join('');
+  var monthOptions = months.map(function(m,i){
+    var sel = i === currentCommMonth ? ' selected' : '';
+    return '<option value="' + i + '"' + sel + '>' + m + '</option>';
+  }).join('');
+  var yearOptions = years.map(function(y){
+    var sel = y === currentCommYear ? ' selected' : '';
+    return '<option value="' + y + '"' + sel + '>' + y + '</option>';
+  }).join('');
+
+  var hasCommercial = !!currentCommCommercial;
+  var result = hasCommercial ? computeMonthlyCommission(currentCommCommercial, currentCommYear, currentCommMonth) : null;
+
+  var html = '<div style="padding:4px 0 24px;max-width:1200px;">';
+
+  // Breadcrumb + titre
+  html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">'
+    + '<button class="back-btn" onclick="mainNavTo(\'mission\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#fff;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;">← Retour</button>'
+    + '<div style="font-size:13px;font-weight:700;color:#1A1033;">💰 Commissions</div>'
+    + '</div>';
+
+  // Sub-nav
+  html += buildCommSubNav();
+
+  // Sélecteurs commercial / mois / année
+  html += '<div class="comm-card" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">'
+    + '<div style="flex:1;min-width:220px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Commercial</label>'
+    +   '<select class="comm-param-input" onchange="currentCommCommercial=this.value;renderCommCurrentView();" style="cursor:pointer;">' + commOptions + '</select>'
+    + '</div>'
+    + '<div style="min-width:140px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Mois</label>'
+    +   '<select class="comm-param-input" onchange="currentCommMonth=parseInt(this.value);renderCommCurrentView();" style="cursor:pointer;">' + monthOptions + '</select>'
+    + '</div>'
+    + '<div style="min-width:110px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Année</label>'
+    +   '<select class="comm-param-input" onchange="currentCommYear=parseInt(this.value);renderCommCurrentView();" style="cursor:pointer;">' + yearOptions + '</select>'
+    + '</div>'
+    + '</div>';
+
+  if (!hasCommercial) {
+    html += '<div class="comm-empty">Sélectionnez un commercial pour afficher sa commission du mois.</div></div>';
+    tab.innerHTML = html;
+    return;
+  }
+
+  // Hero vert (récap mensuel)
+  var tarifLabel = result.nb === 0 ? '—' : (result.base_tarif + ' €/deal');
+  html += '<div class="comm-hero">'
+    + '<div class="comm-hero-title">🏆 ' + currentCommCommercial + ' — ' + months[currentCommMonth] + ' ' + currentCommYear + '</div>'
+    + '<div class="comm-hero-sub">' + result.counted.length + ' deal' + (result.counted.length>1?'s':'') + ' comptabilisé' + (result.counted.length>1?'s':'')
+    + (result.excluded.length ? ' · ' + result.excluded.length + ' exclu' + (result.excluded.length>1?'s':'') : '') + '</div>'
+    + '<div class="comm-stats">'
+    +   '<div><div class="comm-stat-label">Total commission</div><div class="comm-stat-val">' + result.total.toLocaleString('fr-FR') + ' €</div><div class="comm-stat-sub">brut</div></div>'
+    +   '<div><div class="comm-stat-label">Palier atteint</div><div class="comm-stat-val" style="font-size:15px;">' + tarifLabel + '</div><div class="comm-stat-sub">' + result.base_deals_count + ' deal' + (result.base_deals_count>1?'s':'') + ' au tarif de base</div></div>'
+    +   '<div><div class="comm-stat-label">Deals bonus 15+</div><div class="comm-stat-val">' + result.bonus_deals_count + '</div><div class="comm-stat-sub">à ' + getCommParams().palier4_tarif + ' €/deal</div></div>'
+    +   '<div><div class="comm-stat-label">Prime bonus</div><div class="comm-stat-val">' + result.montant_bonus.toLocaleString('fr-FR') + ' €</div><div class="comm-stat-sub">montant cumulé</div></div>'
+    + '</div>'
+    + '</div>';
+
+  // Tableau des deals
+  html += '<div class="comm-card">'
+    + '<div class="comm-card-title"><span class="comm-card-title-dot"></span><span>Détail des deals du mois</span>'
+    + '<span style="margin-left:auto;font-size:10px;color:#6B5E9C;text-transform:none;letter-spacing:0;font-weight:500;">Seuil frais gestion : ≥ ' + getCommParams().seuil_frais_gestion_min + '% · Annulés exclus</span>'
+    + '</div>';
+
+  if (result.deals.length === 0) {
+    html += '<div class="comm-empty">Aucun deal éligible pour cette période.<div style="font-size:11px;color:#B8AEDB;margin-top:4px;">Un deal compte dès que son 1<sup>er</sup> document est uploadé sur le candidat et que les frais de gestion sont ≥ ' + getCommParams().seuil_frais_gestion_min + '%.</div></div>';
+  } else {
+    var exclusions = getCommExclusions();
+    html += '<div style="overflow-x:auto;"><table class="comm-deals-table">'
+      + '<thead><tr>'
+      +   '<th style="width:32px;"></th>'
+      +   '<th>#</th>'
+      +   '<th>Date réf.</th>'
+      +   '<th>Candidat</th>'
+      +   '<th>Entreprise</th>'
+      +   '<th>TJM</th>'
+      +   '<th>Frais gest.</th>'
+      +   '<th>Tarif</th>'
+      +   '<th>Commentaire (si exclu)</th>'
+      + '</tr></thead><tbody>';
+    var countedIdx = 0;
+    result.deals.forEach(function(d){
+      var ex = exclusions[d.id] || {};
+      var excluded = !!ex.excluded;
+      var tarifApplied = '';
+      if (!excluded) {
+        countedIdx++;
+        tarifApplied = (countedIdx <= getCommParams().palier3_max ? result.base_tarif : getCommParams().palier4_tarif) + ' €';
+      }
+      var dateStr = d._commRefDate ? d._commRefDate.toLocaleDateString('fr-FR') : '—';
+      var rowCls = excluded ? ' class="row-excluded"' : '';
+      html += '<tr' + rowCls + '>'
+        + '<td><input type="checkbox" class="deal-excl-chk" ' + (excluded?'checked':'') + ' onchange="toggleCommExclusion(' + d.id + ', this.checked)" title="Exclure ce deal du calcul"></td>'
+        + '<td>' + (excluded ? '—' : countedIdx) + '</td>'
+        + '<td>' + dateStr + '</td>'
+        + '<td style="font-weight:600;">' + ((d.prenom||'') + ' ' + (d.nom||'')).trim() + '</td>'
+        + '<td>' + (d.entreprise || '—') + '</td>'
+        + '<td>' + (d.tjm ? d.tjm + ' €/j' : '—') + '</td>'
+        + '<td>' + (d.frais_gestion ? d.frais_gestion + '%' : '—') + '</td>'
+        + '<td>' + (excluded ? '<span style="color:#9E94C4;">exclu</span>' : '<span class="comm-badge-montant">' + tarifApplied + '</span>') + '</td>'
+        + '<td class="col-commentaire">'
+        +   '<input type="text" value="' + (ex.comment||'').replace(/"/g,'&quot;') + '" placeholder="' + (excluded?'Raison (obligatoire)':'—') + '"'
+        +   ' ' + (excluded?'':'disabled')
+        +   ' onchange="updateCommExclusionComment(' + d.id + ', this.value)"'
+        +   ' style="width:100%;padding:5px 8px;border:1px solid ' + (excluded?'#E4E0FA':'#F5F3FF') + ';border-radius:6px;font-size:11.5px;' + (excluded?'':'background:#FAFAFA;color:#C0B8E0;') + '">'
+        + '</td>'
+        + '</tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  html += '</div>';
+
+  // Résumé du calcul
+  if (result.nb > 0) {
+    var p = getCommParams();
+    html += '<div class="comm-card" style="background:#FAFFF7;border-color:#D4EEDE;">'
+      + '<div class="comm-card-title"><span class="comm-card-title-dot"></span><span>Calcul détaillé</span></div>'
+      + '<div style="font-family:monospace;font-size:12.5px;color:#1A1033;line-height:1.8;">'
+      +   '<div>Nombre de deals comptés : <strong>' + result.nb + '</strong></div>'
+      +   '<div>Palier atteint : <strong>' + (result.base_tarif) + ' €/deal</strong> (tranche ' + (result.base_tarif === p.palier1_tarif ? '0-' + p.palier1_max : result.base_tarif === p.palier2_tarif ? (p.palier1_max+1) + '-' + p.palier2_max : (p.palier2_max+1) + '-' + p.palier3_max) + ')</div>'
+      +   '<div>' + result.base_deals_count + ' × ' + result.base_tarif + ' € = <strong>' + result.montant_base.toLocaleString('fr-FR') + ' €</strong></div>'
+      +   (result.bonus_deals_count > 0 ? '<div>' + result.bonus_deals_count + ' × ' + p.palier4_tarif + ' € (deals 16+) = <strong>' + result.montant_bonus.toLocaleString('fr-FR') + ' €</strong></div>' : '')
+      +   '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #D4EEDE;font-size:14px;color:#0F5132;">Total commission : <strong>' + result.total.toLocaleString('fr-FR') + ' €</strong></div>'
+      + '</div>'
+      + '</div>';
+  }
+
+  // Bouton Valider la commission mensuelle
+  var existingMens = findCommHistEntry('monthly', currentCommCommercial, currentCommYear, currentCommMonth);
+  if (existingMens) {
+    var monthLabels2 = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+    html += '<div class="comm-card" style="background:linear-gradient(135deg,#E8F5EE 0%,#D4F0DE 100%);border-color:#9FDBB8;">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">'
+      +   '<div style="display:flex;align-items:center;gap:12px;">'
+      +     '<div style="width:44px;height:44px;border-radius:12px;background:#1D7F4F;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;box-shadow:0 4px 12px rgba(29,127,79,0.3);">✓</div>'
+      +     '<div><div style="font-size:14px;font-weight:800;color:#0F5132;">Commission déjà validée</div>'
+      +     '<div style="font-size:11.5px;color:#1D7F4F;margin-top:2px;">' + monthLabels2[currentCommMonth] + ' ' + currentCommYear + ' · ' + existingMens.total.toLocaleString('fr-FR') + ' € · validée le ' + existingMens.validated_date + '</div></div>'
+      +   '</div>'
+      +   '<button onclick="showCommissionsSection(\'historique\')" style="padding:9px 18px;background:#fff;color:#0F5132;border:1.5px solid #9FDBB8;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Voir dans l\'historique →</button>'
+      + '</div>'
+      + '</div>';
+  } else if (result.nb > 0) {
+    html += '<div class="comm-card" style="background:linear-gradient(135deg,#FAFFF7 0%, #E8F5EE 100%);border-color:#9FDBB8;">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">'
+      +   '<div style="flex:1;min-width:200px;">'
+      +     '<div style="font-size:13px;font-weight:800;color:#1A1033;margin-bottom:4px;">✓ Valider cette commission mensuelle</div>'
+      +     '<div style="font-size:11.5px;color:#6B5E9C;line-height:1.5;">'
+      +       'Une fois validée, les ' + result.nb + ' deals et le total de <strong>' + result.total.toLocaleString('fr-FR') + ' €</strong> seront <strong>figés</strong> dans l\'historique. '
+      +       'La commission ne pourra plus être modifiée sans annulation admin préalable.'
+      +     '</div>'
+      +   '</div>'
+      +   '<button onclick="validateMonthlyCommission(\'' + currentCommCommercial.replace(/'/g, "\\'") + '\',' + currentCommYear + ',' + currentCommMonth + ')" style="display:inline-flex;align-items:center;gap:8px;padding:12px 24px;background:linear-gradient(135deg,#1D7F4F,#0F5132);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 5px 14px rgba(29,127,79,0.3);font-family:inherit;">🔒 Valider la commission</button>'
+      + '</div>'
+      + '</div>';
+  }
+
+  html += '</div>';
+  tab.innerHTML = html;
+}
+
+// Vue Paramètres
+function renderCommParamsView() {
+  var tab = document.getElementById('tab-commissions');
+  if (!tab) return;
+
+  var html = '<div style="padding:4px 0 24px;max-width:900px;">';
+
+  // Breadcrumb
+  html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">'
+    + '<button class="back-btn" onclick="mainNavTo(\'mission\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#fff;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;">← Retour</button>'
+    + '<div style="font-size:13px;font-weight:700;color:#1A1033;">💰 Commissions · Paramètres</div>'
+    + '</div>';
+
+  html += buildCommSubNav();
+
+  // ── Écran verrouillé : prompt mot de passe ──
+  if (!window._commAdminUnlocked) {
+    html += '<div class="comm-card" style="text-align:center;padding:40px 24px;">'
+      + '<div style="font-size:48px;margin-bottom:14px;filter:drop-shadow(0 4px 12px rgba(115,67,238,0.25));">🔒</div>'
+      + '<div style="font-size:17px;font-weight:800;color:#1A1033;margin-bottom:8px;">Accès administrateur requis</div>'
+      + '<div style="font-size:13px;color:#6B5E9C;line-height:1.55;margin-bottom:22px;max-width:460px;margin-left:auto;margin-right:auto;">'
+      +   'Les paramètres de commission sont protégés. '
+      +   'Saisissez le mot de passe administrateur pour les consulter et les modifier.'
+      + '</div>'
+      + '<button onclick="commPromptAdminPassword(function(){ renderCommParamsView(); })" style="display:inline-flex;align-items:center;gap:8px;padding:11px 22px;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(75,54,236,0.28);font-family:inherit;">🔓 Déverrouiller</button>'
+      + '</div>';
+    html += '</div>';
+    tab.innerHTML = html;
+    return;
+  }
+
+  // ── Écran déverrouillé ──
+  var p = getCommParams();
+
+  // Bandeau admin + bouton verrouiller
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#FAF8FF 0%,#F5F3FF 100%);border:1px solid #E4E0FA;border-radius:10px;padding:10px 14px;margin-bottom:14px;">'
+    + '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#4B36EC;font-weight:600;">🔓 Accès administrateur actif</div>'
+    + '<button onclick="commLockAdmin()" style="padding:5px 12px;background:#fff;color:#6B5E9C;border:1px solid #E4E0FA;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Verrouiller</button>'
+    + '</div>';
+
+  // Barème mensuel
+  html += '<div class="comm-card">'
+    + '<div class="comm-card-title"><span class="comm-card-title-dot"></span><span>Barème commission mensuelle</span></div>'
+    + '<div style="font-size:11.5px;color:#6B5E9C;margin-bottom:12px;line-height:1.55;">'
+    +   'Seuils progressifs : les 15 premiers deals (ou le maximum du palier 3) sont payés au tarif du palier atteint. '
+    +   'Au-delà, chaque deal supplémentaire est payé au tarif bonus.'
+    + '</div>'
+    + '<div class="comm-palier-row" style="grid-template-columns:1.5fr 1fr 1fr;margin-bottom:6px;"><div style="font-size:10px;color:#9E94C4;text-transform:uppercase;font-weight:700;letter-spacing:0.04em;">Tranche</div><div style="font-size:10px;color:#9E94C4;text-transform:uppercase;font-weight:700;letter-spacing:0.04em;">Max deals</div><div style="font-size:10px;color:#9E94C4;text-transform:uppercase;font-weight:700;letter-spacing:0.04em;">Tarif €/deal</div></div>'
+    + '<div class="comm-palier-row"><div class="comm-palier-label">Palier 1 · De 0 à …</div>'
+    +   '<input class="comm-palier-input" type="number" min="1" value="' + p.palier1_max + '" onchange="updateCommParam(\'palier1_max\', parseInt(this.value)||0)">'
+    +   '<input class="comm-palier-input" type="number" min="0" value="' + p.palier1_tarif + '" onchange="updateCommParam(\'palier1_tarif\', parseFloat(this.value)||0)">'
+    + '</div>'
+    + '<div class="comm-palier-row"><div class="comm-palier-label">Palier 2 · De ' + (p.palier1_max+1) + ' à …</div>'
+    +   '<input class="comm-palier-input" type="number" min="1" value="' + p.palier2_max + '" onchange="updateCommParam(\'palier2_max\', parseInt(this.value)||0)">'
+    +   '<input class="comm-palier-input" type="number" min="0" value="' + p.palier2_tarif + '" onchange="updateCommParam(\'palier2_tarif\', parseFloat(this.value)||0)">'
+    + '</div>'
+    + '<div class="comm-palier-row"><div class="comm-palier-label">Palier 3 · De ' + (p.palier2_max+1) + ' à …</div>'
+    +   '<input class="comm-palier-input" type="number" min="1" value="' + p.palier3_max + '" onchange="updateCommParam(\'palier3_max\', parseInt(this.value)||0)">'
+    +   '<input class="comm-palier-input" type="number" min="0" value="' + p.palier3_tarif + '" onchange="updateCommParam(\'palier3_tarif\', parseFloat(this.value)||0)">'
+    + '</div>'
+    + '<div class="comm-palier-row"><div class="comm-palier-label">Palier 4 · Au-delà de ' + p.palier3_max + '</div>'
+    +   '<div style="text-align:center;color:#9E94C4;font-size:12px;">illimité</div>'
+    +   '<input class="comm-palier-input" type="number" min="0" value="' + p.palier4_tarif + '" onchange="updateCommParam(\'palier4_tarif\', parseFloat(this.value)||0)">'
+    + '</div>'
+    + '</div>';
+
+  // Éligibilité deal
+  html += '<div class="comm-card">'
+    + '<div class="comm-card-title"><span class="comm-card-title-dot"></span><span>Éligibilité d\'un deal</span></div>'
+    + '<div style="font-size:11.5px;color:#6B5E9C;margin-bottom:12px;line-height:1.55;">'
+    +   'Un deal est comptabilisé dans la commission si son taux de frais de gestion est supérieur ou égal à ce seuil, '
+    +   'qu\'il n\'est pas annulé, et qu\'il n\'est pas exclu manuellement avec commentaire.'
+    + '</div>'
+    + '<div class="comm-palier-row" style="grid-template-columns:1.5fr 1fr;">'
+    +   '<div class="comm-palier-label">Seuil minimum frais de gestion (%)</div>'
+    +   '<input class="comm-palier-input" type="number" min="0" step="0.1" value="' + p.seuil_frais_gestion_min + '" onchange="updateCommParam(\'seuil_frais_gestion_min\', parseFloat(this.value)||0)">'
+    + '</div>'
+    + '</div>';
+
+  // Annuel — défauts
+  html += '<div class="comm-card">'
+    + '<div class="comm-card-title"><span class="comm-card-title-dot"></span><span>Barème commission annuelle · Valeurs par défaut</span></div>'
+    + '<div style="font-size:11.5px;color:#6B5E9C;margin-bottom:12px;line-height:1.55;">'
+    +   'La commission annuelle est composée de 3 primes. Les primes 1 et 2 se déclenchent si un objectif est atteint. '
+    +   'Le montant est alors appliqué à chaque deal compté sur l\'année. Les objectifs ci-dessous sont les <strong>valeurs par défaut</strong> '
+    +   'appliquées aux commerciaux qui n\'ont pas d\'objectif personnalisé ci-dessous.'
+    + '</div>'
+    + '<div class="comm-palier-row" style="grid-template-columns:1.5fr 1fr 1fr;"><div style="font-size:10px;color:#9E94C4;text-transform:uppercase;font-weight:700;">Prime</div><div style="font-size:10px;color:#9E94C4;text-transform:uppercase;font-weight:700;">Objectif par défaut</div><div style="font-size:10px;color:#9E94C4;text-transform:uppercase;font-weight:700;">€/deal si atteint</div></div>'
+    + '<div class="comm-palier-row"><div class="comm-palier-label">Moyenne frais gestion (%)</div>'
+    +   '<input class="comm-palier-input" type="number" step="0.1" value="' + p.annuel_objectif_moy_frais + '" onchange="updateCommParam(\'annuel_objectif_moy_frais\', parseFloat(this.value)||0)">'
+    +   '<input class="comm-palier-input" type="number" value="' + p.annuel_prime_moy + '" onchange="updateCommParam(\'annuel_prime_moy\', parseFloat(this.value)||0)">'
+    + '</div>'
+    + '<div class="comm-palier-row"><div class="comm-palier-label">Portés actifs en décembre</div>'
+    +   '<input class="comm-palier-input" type="number" value="' + p.annuel_objectif_portes + '" onchange="updateCommParam(\'annuel_objectif_portes\', parseInt(this.value)||0)">'
+    +   '<input class="comm-palier-input" type="number" value="' + p.annuel_prime_portes + '" onchange="updateCommParam(\'annuel_prime_portes\', parseFloat(this.value)||0)">'
+    + '</div>'
+    + '</div>';
+
+  // Objectifs par commercial × année
+  html += renderCommGoalsTable();
+
+  // Mot de passe admin
+  html += '<div class="comm-card">'
+    + '<div class="comm-card-title"><span class="comm-card-title-dot"></span><span>Sécurité validation</span></div>'
+    + '<div style="font-size:11.5px;color:#6B5E9C;margin-bottom:12px;line-height:1.55;">'
+    +   'Mot de passe demandé pour accéder à ces paramètres et pour valider une commission. '
+    +   'Ne le partagez qu\'aux administrateurs habilités.'
+    + '</div>'
+    + '<div class="comm-palier-row" style="grid-template-columns:1.5fr 1fr;">'
+    +   '<div class="comm-palier-label">Mot de passe admin</div>'
+    +   '<input class="comm-palier-input" type="password" value="' + (p.admin_password || '').replace(/"/g,'&quot;') + '" onchange="updateCommParam(\'admin_password\', this.value)">'
+    + '</div>'
+    + '</div>';
+
+  html += '</div>';
+  tab.innerHTML = html;
+}
+
+// Tableau "Objectifs par commercial × année"
+function renderCommGoalsTable() {
+  var defaults = getCommParams();
+  var commercials = getAllCommercialsFromDeals();
+  var all = getCommGoals();
+
+  // Année sélectionnée pour l'édition (variable locale à l'écran params)
+  if (!window._commGoalsYear) window._commGoalsYear = new Date().getFullYear();
+  var selYear = window._commGoalsYear;
+  var years = [];
+  var ty = new Date().getFullYear();
+  for (var y = ty - 2; y <= ty + 1; y++) years.push(y);
+  var yearOptions = years.map(function(yy){
+    var sel = yy === selYear ? ' selected' : '';
+    return '<option value="' + yy + '"' + sel + '>' + yy + '</option>';
+  }).join('');
+
+  var html = '<div class="comm-card">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #F0EDF9;flex-wrap:wrap;gap:10px;">'
+    +   '<div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:#0F5132;">'
+    +     '<span class="comm-card-title-dot"></span><span>Objectifs par commercial</span>'
+    +   '</div>'
+    +   '<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:#6B5E9C;">'
+    +     '<span>Année :</span>'
+    +     '<select class="comm-param-input" style="width:auto;padding:5px 26px 5px 10px;font-size:12px;cursor:pointer;appearance:none;background-image:url(\'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 12 12%22><path fill=%22%236B5E9C%22 d=%22M6 8L2 4h8z%22/></svg>\');background-repeat:no-repeat;background-position:right 8px center;background-size:10px;"'
+    +     ' onchange="window._commGoalsYear=parseInt(this.value);renderCommParamsView();">' + yearOptions + '</select>'
+    +   '</div>'
+    + '</div>'
+    + '<div style="font-size:11.5px;color:#6B5E9C;margin-bottom:14px;line-height:1.55;">'
+    +   'Définissez les 3 primes par commercial pour l\'année sélectionnée. '
+    +   'Les cases <strong>Prime 1</strong> et <strong>Prime 2</strong> vides utilisent les <strong>valeurs par défaut</strong>. '
+    +   'La <strong>Prime 3</strong> est 100 % personnalisée (libellé + objectif + tarif) et doit être <strong>validée manuellement</strong> depuis la vue annuelle. '
+    +   'Les objectifs sont propres à chaque année.'
+    + '</div>';
+
+  if (commercials.length === 0) {
+    html += '<div class="comm-empty">Aucun commercial détecté dans les deals.<div style="font-size:11px;color:#B8AEDB;margin-top:4px;">Les commerciaux apparaîtront ici dès qu\'ils auront au moins un placement.</div></div>';
+    html += '</div>';
+    return html;
+  }
+
+  // Une carte repliable par commercial
+  commercials.forEach(function(c) {
+    var key = c + '|' + selYear;
+    var custom = all[key] || {};
+    var moyVal = (custom.moy_frais_gestion !== undefined && custom.moy_frais_gestion !== null) ? custom.moy_frais_gestion : '';
+    var portesVal = (custom.portes_actifs !== undefined && custom.portes_actifs !== null) ? custom.portes_actifs : '';
+    var p3Label = custom.prime3_label || '';
+    var p3Obj = custom.prime3_objectif || '';
+    var p3Tarif = (custom.prime3_tarif !== undefined && custom.prime3_tarif !== null) ? custom.prime3_tarif : '';
+    var p3Validated = !!custom.prime3_validated;
+    var hasP3 = !!(p3Label || p3Obj || p3Tarif);
+    var hasAnyCustom = moyVal !== '' || portesVal !== '' || hasP3;
+
+    var initials = c.split(/\s+/).filter(Boolean).map(function(w){return w[0]||'';}).slice(0,2).join('').toUpperCase() || '?';
+    var escC = c.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+    html += '<div style="background:#fff;border:1.5px solid ' + (hasAnyCustom ? '#C8B8FF' : '#E4E0FA') + ';border-radius:12px;padding:16px 18px;margin-bottom:12px;">'
+      // Entête commercial
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:10px;border-bottom:1px dashed #F0EDF9;">'
+      +   '<div style="display:flex;align-items:center;gap:11px;">'
+      +     '<div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;letter-spacing:-0.02em;box-shadow:0 3px 10px rgba(75,54,236,0.25);">' + initials + '</div>'
+      +     '<div><div style="font-size:14px;font-weight:800;color:#1A1033;">' + c + '</div>'
+      +     '<div style="font-size:11px;color:#6B5E9C;">Année ' + selYear + (hasAnyCustom ? ' · <span style="color:#7343EE;font-weight:700;">objectifs personnalisés</span>' : ' · objectifs par défaut') + '</div></div>'
+      +   '</div>'
+      +   (hasAnyCustom
+          ? '<button onclick="resetCommGoal(\'' + escC + '\',' + selYear + ')" title="Réinitialiser aux valeurs par défaut" style="padding:6px 12px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Reset</button>'
+          : '')
+      + '</div>'
+      // Primes 1 & 2 en ligne
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">'
+      +   '<div>'
+      +     '<div style="display:flex;align-items:center;gap:6px;font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:5px;">'
+      +       '<span style="display:inline-block;width:18px;height:18px;border-radius:5px;background:#1D7F4F;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">1</span>'
+      +       '<span>Moyenne frais gestion (%)</span>'
+      +     '</div>'
+      +     '<input type="number" step="0.1" min="0" value="' + moyVal + '" placeholder="défaut : ' + defaults.annuel_objectif_moy_frais + '%"'
+      +     ' onchange="updateCommGoal(\'' + escC + '\',' + selYear + ',\'moy_frais_gestion\',this.value)"'
+      +     ' style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;color:#1A1033;box-sizing:border-box;">'
+      +   '</div>'
+      +   '<div>'
+      +     '<div style="display:flex;align-items:center;gap:6px;font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:5px;">'
+      +       '<span style="display:inline-block;width:18px;height:18px;border-radius:5px;background:#1D7F4F;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">2</span>'
+      +       '<span>Portés actifs en décembre</span>'
+      +     '</div>'
+      +     '<input type="number" step="1" min="0" value="' + portesVal + '" placeholder="défaut : ' + defaults.annuel_objectif_portes + '"'
+      +     ' onchange="updateCommGoal(\'' + escC + '\',' + selYear + ',\'portes_actifs\',this.value)"'
+      +     ' style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;color:#1A1033;box-sizing:border-box;">'
+      +   '</div>'
+      + '</div>'
+      // Prime 3 — bloc distinct
+      + '<div style="background:' + (p3Validated ? '#E8F5EE' : (hasP3 ? '#FFF8E1' : '#FAFAFA')) + ';border:1.5px solid ' + (p3Validated ? '#9FDBB8' : (hasP3 ? '#F0D98A' : '#E4E0FA')) + ';border-radius:10px;padding:14px;">'
+      +   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">'
+      +     '<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;color:#1A1033;text-transform:uppercase;letter-spacing:0.06em;">'
+      +       '<span style="display:inline-block;width:18px;height:18px;border-radius:5px;background:' + (p3Validated ? '#1D7F4F' : '#B8860B') + ';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">3</span>'
+      +       '<span>Prime personnelle</span>'
+      +     '</div>'
+      +     (hasP3
+          ? (p3Validated
+            ? '<span style="padding:3px 10px;background:#1D7F4F;color:#fff;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">✓ validée</span>'
+            : '<span style="padding:3px 10px;background:#F0D98A;color:#8A6500;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">⏳ en attente</span>')
+          : '<span style="padding:3px 10px;background:#F5F3FF;color:#9E94C4;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;font-style:italic;">non configurée</span>')
+      +   '</div>'
+      +   '<div style="display:grid;grid-template-columns:2fr 1.5fr 1fr;gap:10px;">'
+      +     '<div>'
+      +       '<label style="font-size:9.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:4px;letter-spacing:0.05em;">Libellé / Nom de l\'objectif</label>'
+      +       '<input type="text" value="' + p3Label.replace(/"/g,'&quot;') + '" placeholder="ex: Satisfaction clients"'
+      +       ' onchange="updateCommGoalText(\'' + escC + '\',' + selYear + ',\'prime3_label\',this.value)"'
+      +       ' style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;color:#1A1033;box-sizing:border-box;">'
+      +     '</div>'
+      +     '<div>'
+      +       '<label style="font-size:9.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:4px;letter-spacing:0.05em;">Objectif visé</label>'
+      +       '<input type="text" value="' + p3Obj.replace(/"/g,'&quot;') + '" placeholder="ex: 5 clients, score ≥ 4/5"'
+      +       ' onchange="updateCommGoalText(\'' + escC + '\',' + selYear + ',\'prime3_objectif\',this.value)"'
+      +       ' style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;color:#1A1033;box-sizing:border-box;">'
+      +     '</div>'
+      +     '<div>'
+      +       '<label style="font-size:9.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:4px;letter-spacing:0.05em;">Tarif (€/deal)</label>'
+      +       '<input type="number" step="0.01" min="0" value="' + p3Tarif + '" placeholder="0"'
+      +       ' onchange="updateCommGoal(\'' + escC + '\',' + selYear + ',\'prime3_tarif\',this.value)"'
+      +       ' style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;color:#1A1033;box-sizing:border-box;">'
+      +     '</div>'
+      +   '</div>'
+      +   (hasP3
+          ? '<div style="margin-top:10px;font-size:11px;color:#6B5E9C;line-height:1.5;">'
+            + '↪ La validation (ou dévalidation) de cette prime se fait depuis <strong>Commissions · Annuelle</strong>, '
+            + 'avec le mot de passe administrateur.'
+            + '</div>'
+          : '')
+      + '</div>'
+      + '</div>';
+  });
+
+  html += '</div>';
+  return html;
+}
+
+function updateCommGoal(commercial, year, field, value) {
+  // Valeur vide → utiliser le défaut
+  if (value === '' || value === null) {
+    setGoalFor(commercial, year, field, null);
+  } else {
+    var num = parseFloat(value);
+    if (isNaN(num)) return;
+    setGoalFor(commercial, year, field, num);
+  }
+  // Re-render pour rafraîchir badges / état "perso vs défaut"
+  renderCommParamsView();
+}
+
+// Variante pour les champs texte (libellé, objectif Prime 3) — pas de parseFloat
+function updateCommGoalText(commercial, year, field, value) {
+  var trimmed = (value || '').trim();
+  setGoalFor(commercial, year, field, trimmed || null);
+  renderCommParamsView();
+}
+
+function resetCommGoal(commercial, year) {
+  if (!confirm('Réinitialiser tous les objectifs de ' + commercial + ' pour ' + year + ' (Primes 1, 2, 3) ?')) return;
+  setGoalFor(commercial, year, 'moy_frais_gestion', null);
+  setGoalFor(commercial, year, 'portes_actifs', null);
+  setGoalFor(commercial, year, 'prime3_label', null);
+  setGoalFor(commercial, year, 'prime3_objectif', null);
+  setGoalFor(commercial, year, 'prime3_tarif', null);
+  setGoalFor(commercial, year, 'prime3_validated', null);
+  renderCommParamsView();
+}
+
+
+function updateCommParam(key, value) {
+  var p = getCommParams();
+  p[key] = value;
+  saveCommParams(p);
+  // Pas de re-render auto — on attend que l'utilisateur termine sa saisie
+}
+
+// ── OBJECTIFS PAR COMMERCIAL × ANNÉE ──────────────────────────
+// Stockage : { "Commercial|Year" : { moy_frais_gestion: N, portes_actifs: M } }
+// Fallback si non défini : valeurs par défaut dans sp_commission_params_v1
+var COMM_GOALS_KEY = 'sp_commission_goals_v1';
+
+function getCommGoals() {
+  try { return JSON.parse(localStorage.getItem(COMM_GOALS_KEY) || '{}'); }
+  catch(e) { return {}; }
+}
+function saveCommGoals(obj) {
+  localStorage.setItem(COMM_GOALS_KEY, JSON.stringify(obj));
+}
+// Retourne les objectifs appliqués à (commercial, year), avec fallback sur défaut global
+function getGoalsFor(commercial, year) {
+  var all = getCommGoals();
+  var defaults = getCommParams();
+  var key = commercial + '|' + year;
+  var custom = all[key] || {};
+  return {
+    moy_frais_gestion: (custom.moy_frais_gestion !== undefined && custom.moy_frais_gestion !== null && custom.moy_frais_gestion !== '')
+      ? parseFloat(custom.moy_frais_gestion)
+      : parseFloat(defaults.annuel_objectif_moy_frais),
+    portes_actifs: (custom.portes_actifs !== undefined && custom.portes_actifs !== null && custom.portes_actifs !== '')
+      ? parseInt(custom.portes_actifs)
+      : parseInt(defaults.annuel_objectif_portes),
+    // ── Prime 3 : objectif personnel à validation manuelle ──
+    // Pas de fallback sur un défaut global — la Prime 3 est 100 % custom commercial×année
+    prime3_label: custom.prime3_label || '',                     // ex: "Nb nouveaux clients"
+    prime3_objectif: (custom.prime3_objectif !== undefined && custom.prime3_objectif !== null && custom.prime3_objectif !== '')
+      ? custom.prime3_objectif : '',                              // ex: "5 clients" (texte libre)
+    prime3_tarif: (custom.prime3_tarif !== undefined && custom.prime3_tarif !== null && custom.prime3_tarif !== '')
+      ? parseFloat(custom.prime3_tarif) : 0,                      // €/deal si atteint
+    prime3_validated: !!custom.prime3_validated,                  // toggle admin
+    // Métadonnées : est-ce custom ?
+    _custom_moy: (custom.moy_frais_gestion !== undefined && custom.moy_frais_gestion !== null && custom.moy_frais_gestion !== ''),
+    _custom_portes: (custom.portes_actifs !== undefined && custom.portes_actifs !== null && custom.portes_actifs !== ''),
+    _has_prime3: !!(custom.prime3_label || custom.prime3_tarif || custom.prime3_objectif)
+  };
+}
+function setGoalFor(commercial, year, field, value) {
+  var all = getCommGoals();
+  var key = commercial + '|' + year;
+  all[key] = all[key] || {};
+  if (value === '' || value === null || value === undefined) {
+    delete all[key][field];
+    // Si plus aucun override sur ce commercial × année, on retire l'entrée
+    if (Object.keys(all[key]).length === 0) delete all[key];
+  } else {
+    all[key][field] = value;
+  }
+  saveCommGoals(all);
+}
+
+// ── VERROUILLAGE ADMIN ────────────────────────────────────────
+// Le déverrouillage reste le temps de la session de navigation (pas persisté)
+window._commAdminUnlocked = window._commAdminUnlocked || false;
+
+function commPromptAdminPassword(onSuccess) {
+  var input = prompt('Mot de passe administrateur :');
+  if (input === null) return false;  // Annulation
+  var p = getCommParams();
+  if (input === p.admin_password) {
+    window._commAdminUnlocked = true;
+    if (typeof onSuccess === 'function') onSuccess();
+    return true;
+  }
+  alert('Mot de passe incorrect.');
+  return false;
+}
+
+function commLockAdmin() {
+  window._commAdminUnlocked = false;
+  renderCommParamsView();
+}
+
+function toggleCommExclusion(dealId, excluded) {
+  var ex = getCommExclusions();
+  if (excluded) {
+    ex[dealId] = ex[dealId] || {};
+    ex[dealId].excluded = true;
+    ex[dealId].comment = ex[dealId].comment || '';
+  } else {
+    delete ex[dealId];
+  }
+  saveCommExclusions(ex);
+  renderCommCurrentView();
+}
+
+function updateCommExclusionComment(dealId, comment) {
+  var ex = getCommExclusions();
+  if (ex[dealId] && ex[dealId].excluded) {
+    ex[dealId].comment = comment;
+    saveCommExclusions(ex);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// MODULE COMMISSIONS — Session 2 : Annuelle (3 primes)
+// Prime 1 : si moyenne frais_gestion ≥ seuil → montant × nb_deals_annuel
+// Prime 2 : si nb portés actifs en décembre ≥ seuil → montant × nb_deals_annuel
+// Prime 3 : saisie manuelle avec commentaire (stockée par commercial × année)
+// "Porté actif en décembre" : deal avec état ≠ 'Annulé', date_entree ≤ 31/12 de l'année,
+//    et (date_sortie vide OU date_sortie ≥ 01/12 de l'année)
+// ═══════════════════════════════════════════════════════════
+
+var COMM_MANUAL_KEY = 'sp_commission_manual_prime_v1';
+
+// Stockage : { "Commercial|Year" : { amount: 500, comment: "..." } }
+function getCommManualPrimes() {
+  try { return JSON.parse(localStorage.getItem(COMM_MANUAL_KEY) || '{}'); }
+  catch(e) { return {}; }
+}
+function saveCommManualPrimes(obj) {
+  localStorage.setItem(COMM_MANUAL_KEY, JSON.stringify(obj));
+}
+function getManualPrime(commercial, year) {
+  var key = commercial + '|' + year;
+  var all = getCommManualPrimes();
+  return all[key] || { amount: 0, comment: '' };
+}
+function saveManualPrime(commercial, year, amount, comment) {
+  var key = commercial + '|' + year;
+  var all = getCommManualPrimes();
+  all[key] = { amount: parseFloat(amount) || 0, comment: (comment || '').trim() };
+  saveCommManualPrimes(all);
+}
+
+// Parser une date au format "YYYY-MM-DD" (date_entree / date_sortie)
+function parseIsoDate(s) {
+  if (!s) return null;
+  var d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Compte les portés actifs en décembre de l'année pour un commercial
+// "Actif en décembre" = date_entree ≤ 31/12/year ET (date_sortie vide OU date_sortie ≥ 01/12/year)
+// ET état ≠ 'Annulé'
+function countActiveConsultantsInDecember(commercial, year) {
+  var all = (typeof getDeals === 'function') ? getDeals() : [];
+  var wanted = (commercial || '').trim().toLowerCase();
+  var decStart = new Date(year, 11, 1);    // 01/12
+  var yearEnd  = new Date(year, 11, 31);   // 31/12
+
+  return all.filter(function(d) {
+    var dealComm = (d.commercial || '').trim().toLowerCase();
+    if (wanted && dealComm !== wanted) return false;
+    if (d.etat === 'Annulé') return false;
+    var entree = parseIsoDate(d.date_entree);
+    if (!entree) return false;  // Sans date d'entrée, impossible de savoir
+    if (entree > yearEnd) return false;  // Pas encore arrivé fin année
+    var sortie = parseIsoDate(d.date_sortie);
+    if (sortie && sortie < decStart) return false;  // Déjà parti avant décembre
+    return true;
+  }).length;
+}
+
+// Calcule la commission annuelle complète pour un commercial × année
+function computeAnnualCommission(commercial, year) {
+  var params = getCommParams();
+  // Objectifs effectifs : custom si définis pour (commercial, year), sinon défaut global
+  var goals = getGoalsFor(commercial, year);
+  // Récupère tous les deals comptés sur l'année (mois=null → année entière)
+  var yearResult = computeYearlyDealsAggregate(commercial, year);
+
+  // Prime 1 : moyenne frais de gestion
+  var moyFG = yearResult.moy_frais_gestion;
+  var prime1_atteinte = moyFG >= goals.moy_frais_gestion;
+  var prime1_montant = prime1_atteinte ? (params.annuel_prime_moy * yearResult.nb) : 0;
+
+  // Prime 2 : portés actifs en décembre
+  var portesActifs = countActiveConsultantsInDecember(commercial, year);
+  var prime2_atteinte = portesActifs >= goals.portes_actifs;
+  var prime2_montant = prime2_atteinte ? (params.annuel_prime_portes * yearResult.nb) : 0;
+
+  // Prime 3 : objectif personnel avec validation manuelle admin
+  // Configuré par commercial × année : libellé, objectif, tarif €/deal
+  // Déclenche si _validated=true (toggle admin avec mdp)
+  var prime3_configured = goals._has_prime3;
+  var prime3_tarif = goals.prime3_tarif;
+  var prime3_atteinte = goals.prime3_validated;
+  var prime3_montant = (prime3_atteinte && prime3_tarif > 0) ? (prime3_tarif * yearResult.nb) : 0;
+
+  var total = prime1_montant + prime2_montant + prime3_montant;
+
+  return {
+    year_result: yearResult,
+    moy_frais_gestion: moyFG,
+    goals_custom: (goals._custom_moy || goals._custom_portes || goals._has_prime3),
+    prime1: {
+      atteinte: prime1_atteinte,
+      seuil: goals.moy_frais_gestion,
+      seuil_custom: goals._custom_moy,
+      valeur_actuelle: moyFG,
+      tarif: params.annuel_prime_moy,
+      nb_deals: yearResult.nb,
+      montant: prime1_montant
+    },
+    prime2: {
+      atteinte: prime2_atteinte,
+      seuil: goals.portes_actifs,
+      seuil_custom: goals._custom_portes,
+      valeur_actuelle: portesActifs,
+      tarif: params.annuel_prime_portes,
+      nb_deals: yearResult.nb,
+      montant: prime2_montant
+    },
+    prime3: {
+      configured: prime3_configured,
+      atteinte: prime3_atteinte,
+      label: goals.prime3_label || 'Objectif personnel',
+      objectif_txt: goals.prime3_objectif || '',
+      tarif: prime3_tarif,
+      nb_deals: yearResult.nb,
+      montant: prime3_montant
+    },
+    total: total
+  };
+}
+
+// Agrège tous les deals d'une année : nb comptés + moyenne frais gestion
+function computeYearlyDealsAggregate(commercial, year) {
+  var deals = getCommDealsForPeriod(commercial, year, null);
+  var exclusions = getCommExclusions();
+  var counted = deals.filter(function(d){
+    var ex = exclusions[d.id];
+    return !(ex && ex.excluded);
+  });
+  var nb = counted.length;
+  var sumFG = 0;
+  counted.forEach(function(d) { sumFG += parseFloat(d.frais_gestion) || 0; });
+  var moy = nb > 0 ? (sumFG / nb) : 0;
+  // Répartition par mois (pour affichage)
+  var byMonth = {};
+  counted.forEach(function(d) {
+    var m = d._commRefDate.getMonth();
+    byMonth[m] = (byMonth[m] || 0) + 1;
+  });
+  return {
+    deals: deals,
+    counted: counted,
+    nb: nb,
+    moy_frais_gestion: moy,
+    by_month: byMonth
+  };
+}
+
+// Vue annuelle
+function renderCommAnnuelleView() {
+  var tab = document.getElementById('tab-commissions');
+  if (!tab) return;
+
+  // Initialiser commercial sur user connecté si vide
+  if (!currentCommCommercial) {
+    var myName = (typeof getCommercialData === 'function') ? (getCommercialData().nom || '') : '';
+    currentCommCommercial = myName;
+  }
+
+  var commercials = getAllCommercialsFromDeals();
+  if (currentCommCommercial && commercials.indexOf(currentCommCommercial) < 0) {
+    commercials.unshift(currentCommCommercial);
+  }
+
+  var years = [];
+  var ty = new Date().getFullYear();
+  for (var y = ty - 2; y <= ty + 1; y++) years.push(y);
+
+  var commOptions = '<option value="">— Sélectionner un commercial —</option>'
+    + commercials.map(function(c){
+        var sel = c === currentCommCommercial ? ' selected' : '';
+        return '<option value="' + c.replace(/"/g,'&quot;') + '"' + sel + '>' + c + '</option>';
+      }).join('');
+  var yearOptions = years.map(function(y){
+    var sel = y === currentCommYear ? ' selected' : '';
+    return '<option value="' + y + '"' + sel + '>' + y + '</option>';
+  }).join('');
+
+  var hasCommercial = !!currentCommCommercial;
+
+  var html = '<div style="padding:4px 0 24px;max-width:1200px;">';
+
+  // Breadcrumb
+  html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">'
+    + '<button class="back-btn" onclick="mainNavTo(\'mission\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#fff;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;">← Retour</button>'
+    + '<div style="font-size:13px;font-weight:700;color:#1A1033;">🏆 Commissions · Annuelle</div>'
+    + '</div>';
+
+  html += buildCommSubNav();
+
+  // Sélecteurs
+  html += '<div class="comm-card" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">'
+    + '<div style="flex:1;min-width:220px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Commercial</label>'
+    +   '<select class="comm-param-input" onchange="currentCommCommercial=this.value;renderCommAnnuelleView();" style="cursor:pointer;">' + commOptions + '</select>'
+    + '</div>'
+    + '<div style="min-width:110px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Année</label>'
+    +   '<select class="comm-param-input" onchange="currentCommYear=parseInt(this.value);renderCommAnnuelleView();" style="cursor:pointer;">' + yearOptions + '</select>'
+    + '</div>'
+    + '</div>';
+
+  if (!hasCommercial) {
+    html += '<div class="comm-empty">Sélectionnez un commercial pour afficher sa commission annuelle.</div></div>';
+    tab.innerHTML = html;
+    return;
+  }
+
+  var result = computeAnnualCommission(currentCommCommercial, currentCommYear);
+  var yr = result.year_result;
+
+  // Hero or/doré (annuel)
+  html += '<div class="comm-hero" style="background:linear-gradient(135deg,#8B6508 0%, #C89000 50%, #F0A500 100%);box-shadow:0 6px 20px rgba(240,165,0,0.25);">'
+    + '<div class="comm-hero-title">🏆 ' + currentCommCommercial + ' — Bilan annuel ' + currentCommYear + '</div>'
+    + '<div class="comm-hero-sub">' + yr.nb + ' deal' + (yr.nb>1?'s':'') + ' comptabilisé' + (yr.nb>1?'s':'') + ' sur l\'année · moyenne frais gestion : ' + yr.moy_frais_gestion.toFixed(2) + '%</div>'
+    + '<div class="comm-stats" style="grid-template-columns:repeat(4,1fr);">'
+    +   '<div><div class="comm-stat-label">Total annuel</div><div class="comm-stat-val">' + result.total.toLocaleString('fr-FR') + ' €</div><div class="comm-stat-sub">3 primes cumulées</div></div>'
+    +   '<div><div class="comm-stat-label">Prime 1 · Frais gestion</div><div class="comm-stat-val">' + result.prime1.montant.toLocaleString('fr-FR') + ' €</div><div class="comm-stat-sub">' + (result.prime1.atteinte ? '✓ Objectif atteint' : '✗ Non atteint') + '</div></div>'
+    +   '<div><div class="comm-stat-label">Prime 2 · Portés actifs</div><div class="comm-stat-val">' + result.prime2.montant.toLocaleString('fr-FR') + ' €</div><div class="comm-stat-sub">' + (result.prime2.atteinte ? '✓ Objectif atteint' : '✗ Non atteint') + '</div></div>'
+    +   '<div><div class="comm-stat-label">Prime 3 · ' + (result.prime3.configured ? (result.prime3.label.length > 18 ? result.prime3.label.substring(0,18) + '…' : result.prime3.label) : 'Personnel') + '</div><div class="comm-stat-val">' + result.prime3.montant.toLocaleString('fr-FR') + ' €</div><div class="comm-stat-sub">' + (result.prime3.configured ? (result.prime3.atteinte ? '✓ Validée par admin' : '⏳ En attente') : 'Non configurée') + '</div></div>'
+    + '</div>'
+    + '</div>';
+
+  // Détail Prime 1
+  var p1 = result.prime1;
+  var p1Color = p1.atteinte ? '#1D7F4F' : '#B8860B';
+  var p1Bg = p1.atteinte ? '#E8F5EE' : '#FFF8E1';
+  var p1Border = p1.atteinte ? '#9FDBB8' : '#F0D98A';
+  html += '<div class="comm-card" style="background:' + p1Bg + ';border-color:' + p1Border + ';">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid ' + p1Border + ';">'
+    +   '<div style="display:flex;align-items:center;gap:10px;">'
+    +     '<div style="width:32px;height:32px;border-radius:8px;background:' + p1Color + ';color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;">1</div>'
+    +     '<div><div style="font-size:13px;font-weight:800;color:#1A1033;">Prime moyenne frais de gestion</div>'
+    +     '<div style="font-size:11px;color:#6B5E9C;">Objectif : moyenne ≥ ' + p1.seuil + '% · ' + p1.tarif + ' €/deal si atteint'
+    +     (p1.seuil_custom ? ' <span style="display:inline-block;margin-left:6px;padding:1px 7px;background:#7343EE;color:#fff;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">objectif perso</span>' : '')
+    +     '</div></div>'
+    +   '</div>'
+    +   '<div style="font-size:22px;font-weight:800;color:' + p1Color + ';">' + p1.montant.toLocaleString('fr-FR') + ' €</div>'
+    + '</div>'
+    + '<div style="font-family:monospace;font-size:12px;color:#1A1033;line-height:1.8;">'
+    +   '<div>Moyenne frais gestion actuelle : <strong>' + p1.valeur_actuelle.toFixed(2) + '%</strong> ' + (p1.atteinte ? '✓' : '✗') + '</div>'
+    +   '<div>Seuil requis : <strong>' + p1.seuil + '%</strong></div>'
+    +   (p1.atteinte
+        ? '<div>Calcul : ' + p1.nb_deals + ' deals × ' + p1.tarif + ' € = <strong>' + p1.montant.toLocaleString('fr-FR') + ' €</strong></div>'
+        : '<div style="color:#8A6500;">Objectif non atteint — prime non versée</div>')
+    + '</div>'
+    + '</div>';
+
+  // Détail Prime 2
+  var p2 = result.prime2;
+  var p2Color = p2.atteinte ? '#1D7F4F' : '#B8860B';
+  var p2Bg = p2.atteinte ? '#E8F5EE' : '#FFF8E1';
+  var p2Border = p2.atteinte ? '#9FDBB8' : '#F0D98A';
+  html += '<div class="comm-card" style="background:' + p2Bg + ';border-color:' + p2Border + ';">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid ' + p2Border + ';">'
+    +   '<div style="display:flex;align-items:center;gap:10px;">'
+    +     '<div style="width:32px;height:32px;border-radius:8px;background:' + p2Color + ';color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;">2</div>'
+    +     '<div><div style="font-size:13px;font-weight:800;color:#1A1033;">Prime portés actifs en décembre</div>'
+    +     '<div style="font-size:11px;color:#6B5E9C;">Objectif : ≥ ' + p2.seuil + ' portés actifs · ' + p2.tarif + ' €/deal si atteint'
+    +     (p2.seuil_custom ? ' <span style="display:inline-block;margin-left:6px;padding:1px 7px;background:#7343EE;color:#fff;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">objectif perso</span>' : '')
+    +     '</div></div>'
+    +   '</div>'
+    +   '<div style="font-size:22px;font-weight:800;color:' + p2Color + ';">' + p2.montant.toLocaleString('fr-FR') + ' €</div>'
+    + '</div>'
+    + '<div style="font-family:monospace;font-size:12px;color:#1A1033;line-height:1.8;">'
+    +   '<div>Portés actifs en décembre ' + currentCommYear + ' : <strong>' + p2.valeur_actuelle + '</strong> ' + (p2.atteinte ? '✓' : '✗') + '</div>'
+    +   '<div>Seuil requis : <strong>' + p2.seuil + '</strong></div>'
+    +   (p2.atteinte
+        ? '<div>Calcul : ' + p2.nb_deals + ' deals × ' + p2.tarif + ' € = <strong>' + p2.montant.toLocaleString('fr-FR') + ' €</strong></div>'
+        : '<div style="color:#8A6500;">Objectif non atteint — prime non versée</div>')
+    + '</div>'
+    + '</div>';
+
+  // Prime 3 : objectif personnel à validation manuelle admin
+  var p3 = result.prime3;
+  var escCommForJs = currentCommCommercial.replace(/'/g, "\\'").replace(/\\/g, '\\\\');
+
+  // Couleurs selon état
+  var p3Color, p3Bg, p3Border, p3Status;
+  if (!p3.configured) {
+    p3Color = '#9E94C4'; p3Bg = '#FAFAFA'; p3Border = '#E4E0FA';
+    p3Status = '<span style="color:#9E94C4;font-style:italic;">Non configurée</span>';
+  } else if (p3.atteinte) {
+    p3Color = '#1D7F4F'; p3Bg = '#E8F5EE'; p3Border = '#9FDBB8';
+    p3Status = '<span style="color:#1D7F4F;font-weight:700;">✓ Validée par admin</span>';
+  } else {
+    p3Color = '#B8860B'; p3Bg = '#FFF8E1'; p3Border = '#F0D98A';
+    p3Status = '<span style="color:#B8860B;font-weight:700;">⏳ En attente de validation admin</span>';
+  }
+
+  html += '<div class="comm-card" style="background:' + p3Bg + ';border-color:' + p3Border + ';">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid ' + p3Border + ';">'
+    +   '<div style="display:flex;align-items:center;gap:10px;">'
+    +     '<div style="width:32px;height:32px;border-radius:8px;background:' + p3Color + ';color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;">3</div>'
+    +     '<div><div style="font-size:13px;font-weight:800;color:#1A1033;">' + (p3.configured ? p3.label : 'Objectif personnel (non configuré)') + '</div>'
+    +     '<div style="font-size:11px;color:#6B5E9C;">' + (p3.configured
+          ? 'Objectif : ' + (p3.objectif_txt || '—') + ' · ' + p3.tarif + ' €/deal si validé'
+          : 'Rendez-vous dans Paramètres · Objectifs par commercial pour le définir') + '</div></div>'
+    +   '</div>'
+    +   '<div style="font-size:22px;font-weight:800;color:' + p3Color + ';">' + p3.montant.toLocaleString('fr-FR') + ' €</div>'
+    + '</div>';
+
+  if (p3.configured) {
+    html += '<div style="font-family:monospace;font-size:12px;color:#1A1033;line-height:1.8;">'
+      +   '<div>Statut : ' + p3Status + '</div>'
+      +   '<div>Tarif configuré : <strong>' + p3.tarif + ' €/deal</strong></div>'
+      +   (p3.atteinte
+          ? '<div>Calcul : ' + p3.nb_deals + ' deals × ' + p3.tarif + ' € = <strong>' + p3.montant.toLocaleString('fr-FR') + ' €</strong></div>'
+          : '<div style="color:#8A6500;">Cette prime sera versée uniquement après validation admin.</div>')
+      + '</div>'
+      // Bouton de validation / dévalidation (admin)
+      + '<div style="margin-top:14px;padding-top:12px;border-top:1px dashed ' + p3Border + ';display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+      +   (p3.atteinte
+          ? '<button onclick="togglePrime3Validation(\'' + escCommForJs + '\',' + currentCommYear + ', false)" style="display:inline-flex;align-items:center;gap:6px;padding:9px 18px;background:#fff;color:#B8860B;border:1.5px solid #F0D98A;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;">↺ Dévalider cette prime</button>'
+          : '<button onclick="togglePrime3Validation(\'' + escCommForJs + '\',' + currentCommYear + ', true)" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:linear-gradient(135deg,#1D7F4F,#0F5132);color:#fff;border:none;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(29,127,79,0.25);">✓ Valider cette prime</button>')
+      +   '<span style="font-size:10.5px;color:#6B5E9C;">🔒 Mot de passe admin requis</span>'
+      + '</div>';
+  } else {
+    html += '<div style="padding:14px;background:#fff;border:1px dashed #E4E0FA;border-radius:10px;text-align:center;font-size:12px;color:#9E94C4;">'
+      +   'Pour configurer cette prime, allez dans <strong>Paramètres</strong> → <strong>Objectifs par commercial</strong> '
+      +   'et renseignez le libellé, l\'objectif et le tarif €/deal pour ' + currentCommCommercial + ' en ' + currentCommYear + '.'
+      + '</div>';
+  }
+
+  html += '</div>';
+
+  // Récap mensuel (mini tableau des 12 mois)
+  var monthLabels = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sept','Oct','Nov','Déc'];
+  html += '<div class="comm-card">'
+    + '<div class="comm-card-title"><span class="comm-card-title-dot"></span><span>Répartition mensuelle des deals</span></div>'
+    + '<div style="display:grid;grid-template-columns:repeat(12,1fr);gap:6px;">';
+  for (var mi = 0; mi < 12; mi++) {
+    var count = yr.by_month[mi] || 0;
+    var heightRatio = yr.nb > 0 ? Math.max(0.08, count / Math.max.apply(null, [1].concat(Object.values(yr.by_month)))) : 0;
+    html += '<div style="text-align:center;">'
+      + '<div style="height:60px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:4px;">'
+      +   '<div style="width:70%;height:' + (heightRatio * 100) + '%;background:linear-gradient(to top,#7343EE,#4B36EC);border-radius:4px 4px 0 0;' + (count === 0 ? 'background:#F5F3FF;' : '') + '"></div>'
+      + '</div>'
+      + '<div style="font-size:9.5px;color:#9E94C4;font-weight:700;">' + monthLabels[mi] + '</div>'
+      + '<div style="font-size:11.5px;color:#1A1033;font-weight:800;">' + count + '</div>'
+      + '</div>';
+  }
+  html += '</div></div>';
+
+  // Récap total
+  html += '<div class="comm-card" style="background:linear-gradient(135deg,#FAFFF7 0%, #E8F5EE 100%);border-color:#9FDBB8;">'
+    + '<div class="comm-card-title" style="color:#0F5132;"><span class="comm-card-title-dot" style="background:#0F5132;box-shadow:0 0 0 3px rgba(15,81,50,0.18);"></span><span>Total commission annuelle ' + currentCommYear + '</span></div>'
+    + '<div style="display:grid;grid-template-columns:repeat(4,auto);gap:18px;align-items:center;font-family:monospace;font-size:13px;">'
+    +   '<div><div style="font-size:10px;color:#6B5E9C;text-transform:uppercase;font-weight:700;letter-spacing:0.04em;">Prime 1</div><div style="font-size:16px;font-weight:800;color:#1A1033;">' + result.prime1.montant.toLocaleString('fr-FR') + ' €</div></div>'
+    +   '<div style="color:#9E94C4;">+</div>'
+    +   '<div><div style="font-size:10px;color:#6B5E9C;text-transform:uppercase;font-weight:700;letter-spacing:0.04em;">Prime 2</div><div style="font-size:16px;font-weight:800;color:#1A1033;">' + result.prime2.montant.toLocaleString('fr-FR') + ' €</div></div>'
+    +   '<div style="color:#9E94C4;">+</div>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(4,auto);gap:18px;align-items:center;font-family:monospace;font-size:13px;margin-top:8px;padding-top:8px;border-top:1px dashed #9FDBB8;">'
+    +   '<div><div style="font-size:10px;color:#6B5E9C;text-transform:uppercase;font-weight:700;letter-spacing:0.04em;">Prime 3</div><div style="font-size:16px;font-weight:800;color:#1A1033;">' + result.prime3.montant.toLocaleString('fr-FR') + ' €</div></div>'
+    +   '<div style="color:#9E94C4;">=</div>'
+    +   '<div><div style="font-size:10px;color:#0F5132;text-transform:uppercase;font-weight:700;letter-spacing:0.04em;">Total annuel</div><div style="font-size:22px;font-weight:800;color:#0F5132;">' + result.total.toLocaleString('fr-FR') + ' €</div></div>'
+    + '</div>'
+    + '</div>';
+
+  // Bouton Valider la commission annuelle
+  var existingAnn = findCommHistEntry('annual', currentCommCommercial, currentCommYear, null);
+  if (existingAnn) {
+    html += '<div class="comm-card" style="background:linear-gradient(135deg,#E8F5EE 0%,#D4F0DE 100%);border-color:#9FDBB8;">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">'
+      +   '<div style="display:flex;align-items:center;gap:12px;">'
+      +     '<div style="width:44px;height:44px;border-radius:12px;background:#1D7F4F;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;box-shadow:0 4px 12px rgba(29,127,79,0.3);">✓</div>'
+      +     '<div><div style="font-size:14px;font-weight:800;color:#0F5132;">Commission annuelle déjà validée</div>'
+      +     '<div style="font-size:11.5px;color:#1D7F4F;margin-top:2px;">Année ' + currentCommYear + ' · ' + existingAnn.total.toLocaleString('fr-FR') + ' € · validée le ' + existingAnn.validated_date + '</div></div>'
+      +   '</div>'
+      +   '<button onclick="showCommissionsSection(\'historique\')" style="padding:9px 18px;background:#fff;color:#0F5132;border:1.5px solid #9FDBB8;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Voir dans l\'historique →</button>'
+      + '</div>'
+      + '</div>';
+  } else if (yr.nb > 0) {
+    html += '<div class="comm-card" style="background:linear-gradient(135deg,#FAFFF7 0%, #E8F5EE 100%);border-color:#9FDBB8;">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">'
+      +   '<div style="flex:1;min-width:200px;">'
+      +     '<div style="font-size:13px;font-weight:800;color:#1A1033;margin-bottom:4px;">✓ Valider cette commission annuelle</div>'
+      +     '<div style="font-size:11.5px;color:#6B5E9C;line-height:1.5;">'
+      +       'Une fois validée, les 3 primes et le total de <strong>' + result.total.toLocaleString('fr-FR') + ' €</strong> seront <strong>figés</strong> dans l\'historique, avec les objectifs et seuils qui s\'appliquaient à la validation. '
+      +       'Ces chiffres resteront exacts même si les objectifs ou deals évoluent plus tard.'
+      +     '</div>'
+      +   '</div>'
+      +   '<button onclick="validateAnnualCommission(\'' + currentCommCommercial.replace(/'/g, "\\'") + '\',' + currentCommYear + ')" style="display:inline-flex;align-items:center;gap:8px;padding:12px 24px;background:linear-gradient(135deg,#1D7F4F,#0F5132);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 5px 14px rgba(29,127,79,0.3);font-family:inherit;">🔒 Valider la commission annuelle</button>'
+      + '</div>'
+      + '</div>';
+  }
+
+  html += '</div>';
+  tab.innerHTML = html;
+}
+
+// Toggle validation de la Prime 3 (admin only, mot de passe requis)
+function togglePrime3Validation(commercial, year, wantValidated) {
+  var params = getCommParams();
+  var input = prompt(wantValidated
+    ? 'Valider la Prime 3 pour ' + commercial + ' (' + year + ') ?\n\nMot de passe administrateur :'
+    : 'Dévalider la Prime 3 pour ' + commercial + ' (' + year + ') ?\n\nMot de passe administrateur :');
+  if (input === null) return;  // annulation
+  if (input !== params.admin_password) {
+    alert('Mot de passe incorrect.');
+    return;
+  }
+  // Persister le flag
+  setGoalFor(commercial, year, 'prime3_validated', wantValidated);
+  // Re-render pour refléter
+  renderCommAnnuelleView();
+}
+
+// ═══════════════════════════════════════════════════════════
+// MODULE COMMISSIONS — Session 3 : Validation + Historique
+// - Validation par mot de passe admin (mensuelle ou annuelle)
+// - Snapshot figé : au moment de la validation, on gèle toutes les données
+//   (deals, exclusions, primes, tarifs) dans un enregistrement indépendant
+// - Historique listant toutes les commissions validées, non modifiables
+// - Export CSV par période
+// - Sync SharePoint auto (via odAutoSync existant)
+// ═══════════════════════════════════════════════════════════
+
+var COMM_HISTORY_KEY = 'sp_commission_history_v1';
+var OD_COMM_HISTORY_PATH = '/General/Seven Portage Simlateur/SP_Commissions_Historique.json';
+
+function getCommHistory() {
+  try { return JSON.parse(localStorage.getItem(COMM_HISTORY_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+function saveCommHistory(arr) {
+  localStorage.setItem(COMM_HISTORY_KEY, JSON.stringify(arr));
+}
+
+// Fusion local ∪ remote : dé-doublonnage sur la clé unique (type+commercial+year+month)
+// En cas de conflit, on garde la version la plus récente (validated_ts le plus élevé)
+function mergeCommHistory(remote) {
+  if (!Array.isArray(remote)) return;
+  var local = getCommHistory();
+  var byKey = {};
+  // Local d'abord
+  local.forEach(function(e){ if (e && e.key) byKey[e.key] = e; });
+  // Remote : écrase si plus récent
+  remote.forEach(function(e) {
+    if (!e || !e.key) return;
+    var existing = byKey[e.key];
+    if (!existing || (e.validated_ts || 0) > (existing.validated_ts || 0)) {
+      byKey[e.key] = e;
+    }
+  });
+  var merged = Object.values(byKey).sort(function(a,b){ return (b.validated_ts || 0) - (a.validated_ts || 0); });
+  saveCommHistory(merged);
+}
+
+// Clé unique par validation (mensuelle ou annuelle)
+function commHistKey(type, commercial, year, month) {
+  return type + '|' + commercial + '|' + year + (type === 'monthly' ? '|' + month : '');
+}
+
+// Cherche une entrée validée pour (type, commercial, period)
+function findCommHistEntry(type, commercial, year, month) {
+  var key = commHistKey(type, commercial, year, month);
+  return getCommHistory().find(function(e){ return e.key === key; }) || null;
+}
+
+// Validation commune : ouvre le prompt mdp, exécute la fonction si OK
+function commRequireAdmin(promptLabel, onSuccess) {
+  var params = getCommParams();
+  var input = prompt(promptLabel + '\n\nMot de passe administrateur :');
+  if (input === null) return false;
+  if (input !== params.admin_password) {
+    alert('Mot de passe incorrect.');
+    return false;
+  }
+  try { onSuccess(); } catch(e) { console.error('[commRequireAdmin]', e); }
+  return true;
+}
+
+// ── Validation mensuelle ──
+function validateMonthlyCommission(commercial, year, month) {
+  var monthLabels = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  var existing = findCommHistEntry('monthly', commercial, year, month);
+  if (existing) {
+    alert('Cette commission est déjà validée (le ' + existing.validated_date + ').\n\nPour la recalculer, annulez d\'abord la validation depuis l\'Historique.');
+    return;
+  }
+  var result = computeMonthlyCommission(commercial, year, month);
+  if (result.nb === 0) {
+    alert('Aucun deal à valider pour ' + commercial + ' en ' + monthLabels[month] + ' ' + year + '.');
+    return;
+  }
+  if (!confirm('Valider la commission mensuelle de ' + commercial + ' pour ' + monthLabels[month] + ' ' + year + ' ?\n\n'
+      + 'Total : ' + result.total.toLocaleString('fr-FR') + ' €\n'
+      + 'Deals comptés : ' + result.nb + '\n\n'
+      + 'Une fois validée, cette commission sera figée et apparaîtra dans l\'Historique.')) {
+    return;
+  }
+  commRequireAdmin('Validation commission mensuelle\n\n' + commercial + ' · ' + monthLabels[month] + ' ' + year + '\nMontant : ' + result.total.toLocaleString('fr-FR') + ' €', function() {
+    var snapshot = buildMonthlySnapshot(commercial, year, month, result);
+    var hist = getCommHistory();
+    hist.unshift(snapshot);
+    saveCommHistory(hist);
+    // Sync auto
+    if (typeof odAutoSync === 'function') odAutoSync();
+    alert('✓ Commission validée et archivée.\n\n' + commercial + ' · ' + monthLabels[month] + ' ' + year + '\nTotal : ' + result.total.toLocaleString('fr-FR') + ' €');
+    renderCommCurrentView();
+  });
+}
+
+// ── Validation annuelle ──
+function validateAnnualCommission(commercial, year) {
+  var existing = findCommHistEntry('annual', commercial, year, null);
+  if (existing) {
+    alert('Cette commission annuelle est déjà validée (le ' + existing.validated_date + ').\n\nPour la recalculer, annulez d\'abord la validation depuis l\'Historique.');
+    return;
+  }
+  var result = computeAnnualCommission(commercial, year);
+  if (result.year_result.nb === 0) {
+    alert('Aucun deal à valider pour ' + commercial + ' en ' + year + '.');
+    return;
+  }
+  if (!confirm('Valider la commission annuelle de ' + commercial + ' pour ' + year + ' ?\n\n'
+      + 'Total : ' + result.total.toLocaleString('fr-FR') + ' €\n'
+      + 'Prime 1 : ' + result.prime1.montant.toLocaleString('fr-FR') + ' €\n'
+      + 'Prime 2 : ' + result.prime2.montant.toLocaleString('fr-FR') + ' €\n'
+      + 'Prime 3 : ' + result.prime3.montant.toLocaleString('fr-FR') + ' €\n'
+      + 'Deals comptés : ' + result.year_result.nb + '\n\n'
+      + 'Une fois validée, cette commission sera figée et apparaîtra dans l\'Historique.')) {
+    return;
+  }
+  commRequireAdmin('Validation commission annuelle\n\n' + commercial + ' · Année ' + year + '\nMontant : ' + result.total.toLocaleString('fr-FR') + ' €', function() {
+    var snapshot = buildAnnualSnapshot(commercial, year, result);
+    var hist = getCommHistory();
+    hist.unshift(snapshot);
+    saveCommHistory(hist);
+    if (typeof odAutoSync === 'function') odAutoSync();
+    alert('✓ Commission annuelle validée et archivée.\n\n' + commercial + ' · ' + year + '\nTotal : ' + result.total.toLocaleString('fr-FR') + ' €');
+    renderCommAnnuelleView();
+  });
+}
+
+// ── Construction des snapshots figés ──
+function buildMonthlySnapshot(commercial, year, month, result) {
+  var now = new Date();
+  var params = getCommParams();
+  return {
+    key: commHistKey('monthly', commercial, year, month),
+    type: 'monthly',
+    commercial: commercial,
+    year: year,
+    month: month,
+    validated_date: now.toLocaleDateString('fr-FR') + ' ' + now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}),
+    validated_ts: now.getTime(),
+    validated_by: (typeof getCommercialData === 'function') ? (getCommercialData().nom || 'admin') : 'admin',
+    // Figer les données de calcul
+    total: result.total,
+    nb_deals: result.nb,
+    base_tarif: result.base_tarif,
+    base_deals_count: result.base_deals_count,
+    bonus_deals_count: result.bonus_deals_count,
+    montant_base: result.montant_base,
+    montant_bonus: result.montant_bonus,
+    bareme_snapshot: {
+      palier1_max: params.palier1_max, palier1_tarif: params.palier1_tarif,
+      palier2_max: params.palier2_max, palier2_tarif: params.palier2_tarif,
+      palier3_max: params.palier3_max, palier3_tarif: params.palier3_tarif,
+      palier4_tarif: params.palier4_tarif,
+      seuil_frais_gestion_min: params.seuil_frais_gestion_min
+    },
+    // Figer le détail des deals comptés et exclus
+    deals_snapshot: (result.counted || []).map(function(d, i){
+      return {
+        id: d.id, prenom: d.prenom, nom: d.nom, entreprise: d.entreprise,
+        tjm: d.tjm, frais_gestion: d.frais_gestion,
+        date_ref: d._commRefDate ? d._commRefDate.toISOString() : null,
+        rang: i + 1,
+        tarif_applique: (i + 1) <= params.palier3_max ? result.base_tarif : params.palier4_tarif
+      };
+    }),
+    deals_excluded: (result.excluded || []).map(function(d){
+      var ex = getCommExclusions()[d.id] || {};
+      return {
+        id: d.id, prenom: d.prenom, nom: d.nom, entreprise: d.entreprise,
+        frais_gestion: d.frais_gestion, comment: ex.comment || ''
+      };
+    })
+  };
+}
+
+function buildAnnualSnapshot(commercial, year, result) {
+  var now = new Date();
+  var params = getCommParams();
+  var goals = getGoalsFor(commercial, year);
+  return {
+    key: commHistKey('annual', commercial, year, null),
+    type: 'annual',
+    commercial: commercial,
+    year: year,
+    validated_date: now.toLocaleDateString('fr-FR') + ' ' + now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}),
+    validated_ts: now.getTime(),
+    validated_by: (typeof getCommercialData === 'function') ? (getCommercialData().nom || 'admin') : 'admin',
+    total: result.total,
+    nb_deals: result.year_result.nb,
+    moy_frais_gestion: result.year_result.moy_frais_gestion,
+    prime1_snapshot: {
+      atteinte: result.prime1.atteinte,
+      seuil: result.prime1.seuil,
+      seuil_custom: result.prime1.seuil_custom,
+      valeur_actuelle: result.prime1.valeur_actuelle,
+      tarif: result.prime1.tarif,
+      nb_deals: result.prime1.nb_deals,
+      montant: result.prime1.montant
+    },
+    prime2_snapshot: {
+      atteinte: result.prime2.atteinte,
+      seuil: result.prime2.seuil,
+      seuil_custom: result.prime2.seuil_custom,
+      valeur_actuelle: result.prime2.valeur_actuelle,
+      tarif: result.prime2.tarif,
+      nb_deals: result.prime2.nb_deals,
+      montant: result.prime2.montant
+    },
+    prime3_snapshot: {
+      configured: result.prime3.configured,
+      atteinte: result.prime3.atteinte,
+      label: result.prime3.label,
+      objectif_txt: result.prime3.objectif_txt,
+      tarif: result.prime3.tarif,
+      nb_deals: result.prime3.nb_deals,
+      montant: result.prime3.montant
+    },
+    goals_snapshot: {
+      moy_frais_gestion: goals.moy_frais_gestion,
+      portes_actifs: goals.portes_actifs,
+      prime3_label: goals.prime3_label,
+      prime3_objectif: goals.prime3_objectif,
+      prime3_tarif: goals.prime3_tarif
+    }
+  };
+}
+
+// ── Annulation d'une validation (admin) ──
+function unvalidateCommHistory(key) {
+  var hist = getCommHistory();
+  var entry = hist.find(function(e){ return e.key === key; });
+  if (!entry) return;
+  var label = entry.type === 'monthly'
+    ? (entry.commercial + ' · mois ' + (entry.month + 1) + '/' + entry.year)
+    : (entry.commercial + ' · année ' + entry.year);
+  if (!confirm('Annuler la validation de cette commission ?\n\n' + label + '\n\nElle sera retirée de l\'historique et pourra être recalculée.')) return;
+  commRequireAdmin('Annulation de validation\n\n' + label, function() {
+    var hist = getCommHistory().filter(function(e){ return e.key !== key; });
+    saveCommHistory(hist);
+    if (typeof odAutoSync === 'function') odAutoSync();
+    renderCommHistoriqueView();
+  });
+}
+
+// ── Vue Historique ──
+function renderCommHistoriqueView() {
+  var tab = document.getElementById('tab-commissions');
+  if (!tab) return;
+  var hist = getCommHistory();
+  // Tri par date de validation décroissante
+  hist.sort(function(a,b){ return (b.validated_ts || 0) - (a.validated_ts || 0); });
+
+  var monthLabels = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  var html = '<div style="padding:4px 0 24px;max-width:1200px;">';
+
+  html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">'
+    + '<button class="back-btn" onclick="mainNavTo(\'mission\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#fff;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;">← Retour</button>'
+    + '<div style="font-size:13px;font-weight:700;color:#1A1033;">📚 Historique des commissions validées</div>'
+    + '</div>';
+
+  html += buildCommSubNav();
+
+  if (hist.length === 0) {
+    html += '<div class="comm-empty" style="padding:48px 24px;">'
+      + '<div style="font-size:40px;margin-bottom:12px;">📂</div>'
+      + '<div style="font-size:14px;color:#6B5E9C;font-weight:600;">Aucune commission validée pour le moment.</div>'
+      + '<div style="font-size:11.5px;color:#B8AEDB;margin-top:6px;">Les commissions validées depuis les vues Mensuelle ou Annuelle apparaîtront ici.</div>'
+      + '</div>';
+    html += '</div>';
+    tab.innerHTML = html;
+    return;
+  }
+
+  // Filtres
+  if (!window._commHistFilter) window._commHistFilter = { type: '__all__', commercial: '__all__', year: '__all__' };
+  var f = window._commHistFilter;
+
+  // Collecte valeurs uniques
+  var allComms = {}, allYears = {};
+  hist.forEach(function(e){ allComms[e.commercial] = 1; allYears[e.year] = 1; });
+  var commOptions = '<option value="__all__">Tous commerciaux</option>'
+    + Object.keys(allComms).sort().map(function(c){
+        return '<option value="' + c.replace(/"/g,'&quot;') + '"' + (f.commercial===c?' selected':'') + '>' + c + '</option>';
+      }).join('');
+  var yearOptions = '<option value="__all__">Toutes années</option>'
+    + Object.keys(allYears).sort(function(a,b){return parseInt(b)-parseInt(a);}).map(function(y){
+        return '<option value="' + y + '"' + (String(f.year)===String(y)?' selected':'') + '>' + y + '</option>';
+      }).join('');
+
+  // Filtrage
+  var filtered = hist.filter(function(e){
+    if (f.type !== '__all__' && e.type !== f.type) return false;
+    if (f.commercial !== '__all__' && e.commercial !== f.commercial) return false;
+    if (f.year !== '__all__' && String(e.year) !== String(f.year)) return false;
+    return true;
+  });
+
+  // Stats
+  var totalMontant = filtered.reduce(function(s,e){ return s + (e.total || 0); }, 0);
+  var nbMens = filtered.filter(function(e){ return e.type === 'monthly'; }).length;
+  var nbAnn  = filtered.filter(function(e){ return e.type === 'annual'; }).length;
+
+  html += '<div class="comm-card" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">'
+    + '<div style="flex:1;min-width:170px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Type</label>'
+    +   '<select class="comm-param-input" onchange="window._commHistFilter.type=this.value;renderCommHistoriqueView();" style="cursor:pointer;">'
+    +     '<option value="__all__"' + (f.type==='__all__'?' selected':'') + '>Mensuelles et annuelles</option>'
+    +     '<option value="monthly"' + (f.type==='monthly'?' selected':'') + '>Mensuelles seulement</option>'
+    +     '<option value="annual"' + (f.type==='annual'?' selected':'') + '>Annuelles seulement</option>'
+    +   '</select>'
+    + '</div>'
+    + '<div style="flex:1;min-width:170px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Commercial</label>'
+    +   '<select class="comm-param-input" onchange="window._commHistFilter.commercial=this.value;renderCommHistoriqueView();" style="cursor:pointer;">' + commOptions + '</select>'
+    + '</div>'
+    + '<div style="min-width:120px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Année</label>'
+    +   '<select class="comm-param-input" onchange="window._commHistFilter.year=this.value;renderCommHistoriqueView();" style="cursor:pointer;">' + yearOptions + '</select>'
+    + '</div>'
+    + '<div style="display:flex;gap:6px;align-items:center;">'
+    +   '<button onclick="exportCommHistCSV()" style="display:inline-flex;align-items:center;gap:6px;padding:9px 16px;background:#1D9E75;color:#fff;border:none;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">⬇ Export CSV</button>'
+    +   '<button onclick="window._commHistFilter={type:\'__all__\',commercial:\'__all__\',year:\'__all__\'};renderCommHistoriqueView();" style="padding:9px 16px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">Réinitialiser</button>'
+    + '</div>'
+    + '</div>';
+
+  // Hero récap
+  html += '<div class="comm-hero" style="background:linear-gradient(135deg,#3B2071 0%, #5B3BB8 50%, #7343EE 100%);box-shadow:0 6px 20px rgba(115,67,238,0.25);">'
+    + '<div class="comm-hero-title">📚 ' + filtered.length + ' commission' + (filtered.length>1?'s':'') + ' validée' + (filtered.length>1?'s':'') + '</div>'
+    + '<div class="comm-hero-sub">Total versé (sélection filtrée) · immuable après validation</div>'
+    + '<div class="comm-stats">'
+    +   '<div><div class="comm-stat-label">Total cumulé</div><div class="comm-stat-val">' + totalMontant.toLocaleString('fr-FR') + ' €</div><div class="comm-stat-sub">brut</div></div>'
+    +   '<div><div class="comm-stat-label">Mensuelles</div><div class="comm-stat-val">' + nbMens + '</div><div class="comm-stat-sub">validation' + (nbMens>1?'s':'') + '</div></div>'
+    +   '<div><div class="comm-stat-label">Annuelles</div><div class="comm-stat-val">' + nbAnn + '</div><div class="comm-stat-sub">validation' + (nbAnn>1?'s':'') + '</div></div>'
+    +   '<div><div class="comm-stat-label">Commerciaux</div><div class="comm-stat-val">' + Object.keys(allComms).filter(function(c){ return f.commercial === '__all__' || c === f.commercial; }).length + '</div><div class="comm-stat-sub">uniques</div></div>'
+    + '</div>'
+    + '</div>';
+
+  // Tableau
+  html += '<div class="comm-card">'
+    + '<div class="comm-card-title"><span class="comm-card-title-dot"></span><span>Commissions validées</span>'
+    + '<span style="margin-left:auto;font-size:10.5px;color:#6B5E9C;text-transform:none;letter-spacing:0;font-weight:500;">' + filtered.length + ' ligne' + (filtered.length>1?'s':'') + '</span>'
+    + '</div>';
+
+  if (filtered.length === 0) {
+    html += '<div class="comm-empty">Aucun résultat pour ces filtres.</div>';
+  } else {
+    html += '<div style="overflow-x:auto;"><table class="comm-deals-table">'
+      + '<thead><tr>'
+      +   '<th>Date validation</th>'
+      +   '<th>Type</th>'
+      +   '<th>Commercial</th>'
+      +   '<th>Période</th>'
+      +   '<th>Deals</th>'
+      +   '<th>Total</th>'
+      +   '<th>Validé par</th>'
+      +   '<th style="text-align:center;">Actions</th>'
+      + '</tr></thead><tbody>';
+
+    filtered.forEach(function(e){
+      var periodLabel = (e.type === 'monthly')
+        ? monthLabels[e.month] + ' ' + e.year
+        : 'Année ' + e.year;
+      var typeBadge = (e.type === 'monthly')
+        ? '<span style="display:inline-block;padding:3px 9px;background:#E8F5EE;color:#0F5132;border:1px solid #9FDBB8;border-radius:12px;font-size:10.5px;font-weight:700;">Mensuelle</span>'
+        : '<span style="display:inline-block;padding:3px 9px;background:#FFF8E1;color:#8A5F00;border:1px solid #F0D98A;border-radius:12px;font-size:10.5px;font-weight:700;">Annuelle</span>';
+
+      html += '<tr>'
+        + '<td>' + e.validated_date + '</td>'
+        + '<td>' + typeBadge + '</td>'
+        + '<td style="font-weight:700;">' + e.commercial + '</td>'
+        + '<td>' + periodLabel + '</td>'
+        + '<td>' + e.nb_deals + '</td>'
+        + '<td><span class="comm-badge-montant">' + (e.total || 0).toLocaleString('fr-FR') + ' €</span></td>'
+        + '<td style="font-size:11px;color:#6B5E9C;">' + (e.validated_by || '—') + '</td>'
+        + '<td style="text-align:center;white-space:nowrap;">'
+        +   '<button onclick="openCommHistDetail(\'' + e.key.replace(/'/g,"\\'") + '\')" style="padding:5px 10px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;margin-right:4px;font-family:inherit;">Détail</button>'
+        +   '<button onclick="unvalidateCommHistory(\'' + e.key.replace(/'/g,"\\'") + '\')" title="Annuler la validation" style="padding:5px 10px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Annuler</button>'
+        + '</td>'
+        + '</tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  html += '</div>';
+
+  html += '</div>';
+  tab.innerHTML = html;
+}
+
+// ── Détail d'une validation archivée (popup modale) ──
+function openCommHistDetail(key) {
+  var entry = getCommHistory().find(function(e){ return e.key === key; });
+  if (!entry) return;
+  var monthLabels = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+  // Retire un éventuel modal existant
+  var ex = document.getElementById('modal-comm-hist-detail');
+  if (ex) ex.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'modal-comm-hist-detail';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.6);z-index:3000;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+  var body = '';
+  if (entry.type === 'monthly') {
+    var bs = entry.bareme_snapshot || {};
+    body += '<div style="font-size:13px;color:#1A1033;line-height:1.7;font-family:monospace;">'
+      + '<div><strong>Période :</strong> ' + monthLabels[entry.month] + ' ' + entry.year + '</div>'
+      + '<div><strong>Commercial :</strong> ' + entry.commercial + '</div>'
+      + '<div><strong>Validé le :</strong> ' + entry.validated_date + ' par ' + (entry.validated_by || '—') + '</div>'
+      + '<hr style="border:none;border-top:1px dashed #E4E0FA;margin:10px 0;">'
+      + '<div><strong>Deals comptés :</strong> ' + entry.nb_deals + '</div>'
+      + '<div><strong>Palier atteint :</strong> ' + entry.base_tarif + ' €/deal</div>'
+      + '<div><strong>Calcul :</strong> ' + entry.base_deals_count + ' × ' + entry.base_tarif + ' € + ' + entry.bonus_deals_count + ' × ' + bs.palier4_tarif + ' €</div>'
+      + '<div style="font-size:16px;color:#0F5132;margin-top:10px;"><strong>TOTAL : ' + entry.total.toLocaleString('fr-FR') + ' €</strong></div>'
+      + '</div>';
+    if (entry.deals_snapshot && entry.deals_snapshot.length) {
+      body += '<div style="margin-top:16px;font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Détail des deals comptés</div>'
+        + '<div style="max-height:220px;overflow-y:auto;"><table class="comm-deals-table" style="font-size:11.5px;">'
+        + '<thead><tr><th>#</th><th>Candidat</th><th>Entreprise</th><th>TJM</th><th>Frais</th><th>Tarif</th></tr></thead><tbody>';
+      entry.deals_snapshot.forEach(function(d){
+        body += '<tr><td>' + d.rang + '</td><td style="font-weight:600;">' + ((d.prenom||'') + ' ' + (d.nom||'')).trim() + '</td><td>' + (d.entreprise||'—') + '</td><td>' + (d.tjm?d.tjm+' €/j':'—') + '</td><td>' + (d.frais_gestion?d.frais_gestion+'%':'—') + '</td><td>' + d.tarif_applique + ' €</td></tr>';
+      });
+      body += '</tbody></table></div>';
+    }
+    if (entry.deals_excluded && entry.deals_excluded.length) {
+      body += '<div style="margin-top:14px;font-size:11px;font-weight:700;color:#9E94C4;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Deals exclus manuellement</div>'
+        + '<div style="font-size:11px;color:#6B5E9C;">';
+      entry.deals_excluded.forEach(function(d){
+        body += '<div style="padding:4px 0;">• ' + ((d.prenom||'') + ' ' + (d.nom||'')).trim() + ' — <em>' + (d.comment || 'sans commentaire') + '</em></div>';
+      });
+      body += '</div>';
+    }
+  } else {
+    // Annuel
+    var p1 = entry.prime1_snapshot || {};
+    var p2 = entry.prime2_snapshot || {};
+    var p3 = entry.prime3_snapshot || {};
+    body += '<div style="font-size:13px;color:#1A1033;line-height:1.7;font-family:monospace;">'
+      + '<div><strong>Période :</strong> Année ' + entry.year + '</div>'
+      + '<div><strong>Commercial :</strong> ' + entry.commercial + '</div>'
+      + '<div><strong>Validé le :</strong> ' + entry.validated_date + ' par ' + (entry.validated_by || '—') + '</div>'
+      + '<hr style="border:none;border-top:1px dashed #E4E0FA;margin:10px 0;">'
+      + '<div><strong>Deals sur l\'année :</strong> ' + entry.nb_deals + '</div>'
+      + '<div><strong>Moyenne frais gestion :</strong> ' + (entry.moy_frais_gestion || 0).toFixed(2) + '%</div>'
+      + '<hr style="border:none;border-top:1px dashed #E4E0FA;margin:10px 0;">'
+      + '<div><strong>Prime 1 (frais gestion) :</strong> ' + p1.montant.toLocaleString('fr-FR') + ' €'
+      +   ' <span style="color:' + (p1.atteinte?'#1D7F4F':'#B8860B') + ';">(' + (p1.atteinte?'✓ atteinte':'✗ non atteinte') + ' · seuil ' + p1.seuil + '%)</span></div>'
+      + '<div><strong>Prime 2 (portés déc.) :</strong> ' + p2.montant.toLocaleString('fr-FR') + ' €'
+      +   ' <span style="color:' + (p2.atteinte?'#1D7F4F':'#B8860B') + ';">(' + (p2.atteinte?'✓ atteinte':'✗ non atteinte') + ' · seuil ' + p2.seuil + ')</span></div>'
+      + '<div><strong>Prime 3 (' + (p3.label || 'personnelle') + ') :</strong> ' + p3.montant.toLocaleString('fr-FR') + ' €'
+      +   ' <span style="color:' + (p3.atteinte?'#1D7F4F':'#9E94C4') + ';">(' + (p3.atteinte?'✓ validée':'non déclenchée') + ')</span></div>'
+      + '<div style="font-size:16px;color:#0F5132;margin-top:10px;"><strong>TOTAL : ' + entry.total.toLocaleString('fr-FR') + ' €</strong></div>'
+      + '</div>';
+  }
+
+  modal.innerHTML = '<div style="background:#fff;border-radius:14px;width:100%;max-width:720px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(75,54,236,0.3);">'
+    + '<div style="padding:18px 22px 14px;border-bottom:1px solid #E4E0FA;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#FAF8FF,#F5F3FF);border-radius:14px 14px 0 0;">'
+    +   '<span style="font-size:14px;font-weight:800;color:#1A1033;">📄 Détail de la commission</span>'
+    +   '<button onclick="document.getElementById(\'modal-comm-hist-detail\').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6B5E9C;">×</button>'
+    + '</div>'
+    + '<div style="padding:20px 22px;">' + body + '</div>'
+    + '</div>';
+
+  // Fermeture clic fond
+  modal.addEventListener('click', function(e){ if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+// ── Export CSV de l'historique filtré ──
+function exportCommHistCSV() {
+  var hist = getCommHistory();
+  var f = window._commHistFilter || { type: '__all__', commercial: '__all__', year: '__all__' };
+  var filtered = hist.filter(function(e){
+    if (f.type !== '__all__' && e.type !== f.type) return false;
+    if (f.commercial !== '__all__' && e.commercial !== f.commercial) return false;
+    if (f.year !== '__all__' && String(e.year) !== String(f.year)) return false;
+    return true;
+  });
+  if (filtered.length === 0) { alert('Aucune commission à exporter.'); return; }
+  var monthLabels = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+  var headers = ['Date validation','Type','Commercial','Année','Mois','Deals comptés','Total €','Prime 1 €','Prime 2 €','Prime 3 €','Validé par'];
+  var rows = filtered.map(function(e){
+    return [
+      e.validated_date || '',
+      e.type === 'monthly' ? 'Mensuelle' : 'Annuelle',
+      e.commercial || '',
+      e.year || '',
+      e.type === 'monthly' ? monthLabels[e.month] : '',
+      e.nb_deals || 0,
+      e.total || 0,
+      (e.prime1_snapshot && e.prime1_snapshot.montant) || '',
+      (e.prime2_snapshot && e.prime2_snapshot.montant) || '',
+      (e.prime3_snapshot && e.prime3_snapshot.montant) || '',
+      e.validated_by || ''
+    ];
+  });
+
+  var nl = String.fromCharCode(10);
+  var csv = [headers].concat(rows).map(function(row){
+    return row.map(function(v){ return '"' + String(v).replace(/"/g, '""') + '"'; }).join(';');
+  }).join(nl);
+  var BOM = '\uFEFF';
+  var blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'Commissions_Historique_' + new Date().toISOString().split('T')[0] + '.csv';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+
+
 </script>
 <!-- ═══ MODAL ENVOI ═══ -->
 <div id="modal-envoi" style="display:none;position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:2000;align-items:center;justify-content:center;">
@@ -8036,8 +10300,13 @@ function addRappelType() {
         <div style="grid-column:1/-1;">
           <label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Entreprise cliente</label>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <input id="pl-entreprise" type="text" list="pl-entreprise-datalist" oninput="onEntrepriseChange()" placeholder="Tapez pour rechercher ou créer un client..." style="flex:2;min-width:200px;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;">
-            <datalist id="pl-entreprise-datalist"></datalist>
+            <div style="flex:2;min-width:200px;position:relative;">
+              <div style="position:relative;">
+                <input id="pl-entreprise" type="text" autocomplete="off" oninput="onEntrepriseChange();filterClientSearch()" onfocus="filterClientSearch()" onblur="setTimeout(hideClientSearch, 200)" placeholder="🔎 Tapez pour rechercher ou créer un client..." style="width:100%;padding:8px 30px 8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;">
+                <span id="pl-entreprise-chevron" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:#9E94C4;font-size:10px;pointer-events:none;">▼</span>
+              </div>
+              <div id="pl-entreprise-dropdown" style="display:none;position:absolute;top:calc(100% + 3px);left:0;right:0;background:#fff;border:1.5px solid #7343EE;border-radius:8px;max-height:260px;overflow-y:auto;z-index:2100;box-shadow:0 8px 24px rgba(75,54,236,0.22);"></div>
+            </div>
             <select id="pl-manager-existing" onchange="onManagerSelect()" style="flex:1;min-width:180px;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;">
               <option value="">-- Manager --</option>
             </select>
