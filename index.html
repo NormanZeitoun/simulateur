@@ -12135,28 +12135,55 @@ function _findEmailByName(name) {
 }
 
 // Si l'URL contient ?validate=xxx, on ouvre le dashboard tâches au chargement
+// ET on déclenche une sync pour s'assurer de récupérer la dernière version de la demande
 (function checkValidateDeepLink(){
   try {
     var params = new URLSearchParams(window.location.search);
     var validateId = params.get('validate');
     if (!validateId) return;
+
+    // Fonction qui cherche la demande et réagit selon son statut
+    function findAndOpen() {
+      var d = getDemandes().find(function(x){ return x.id === validateId; });
+      if (!d) {
+        alert('⚠ Demande introuvable.\n\nElle n\'a peut-être pas encore été synchronisée depuis SharePoint. Cliquez sur le bouton "🔄 Sync OneDrive" en haut de l\'écran puis réessayez.');
+        return;
+      }
+      if (d.statut !== 'pending') {
+        alert('Cette demande a déjà été traitée par ' + (d.decision_par || '?') + ' (' + (d.statut === 'accorde' ? 'accordée' : 'refusée') + ').');
+        return;
+      }
+      // Scroll vers le dashboard tâches
+      var dash = document.getElementById('taches-dashboard');
+      if (dash && typeof dash.scrollIntoView === 'function') dash.scrollIntoView({ behavior:'smooth', block:'start' });
+    }
+
+    // Étape 1 : bascule vers l'onglet Tâches dès que possible
     setTimeout(function(){
       if (typeof mainNavTo === 'function') mainNavTo('taches');
-      setTimeout(function(){
-        var d = getDemandes().find(function(x){ return x.id === validateId; });
-        if (!d) {
-          alert('⚠ Demande introuvable. Elle a peut-être été synchronisée mais pas encore reçue. Faites une sync OneDrive et réessayez.');
-          return;
+
+      // Étape 2 : on attend que OneDrive soit connecté (token dispo) pour forcer une sync
+      //   Max 8 secondes d'attente pour laisser le temps au login silencieux ou popup MSAL
+      var waited = 0;
+      var maxWait = 8000;
+      var interval = setInterval(function(){
+        waited += 500;
+        if (typeof odToken !== 'undefined' && odToken) {
+          clearInterval(interval);
+          // Sync immédiate (pas le debounce de 1.2s de odAutoSync) pour récupérer la dernière version
+          if (typeof odSilentFullSync === 'function') {
+            try { odSilentFullSync(); } catch(e) { console.warn('[deeplink sync] error', e); }
+          }
+          // Après sync, on attend 2.5s que le MERGE ait eu lieu puis on cherche la demande
+          setTimeout(findAndOpen, 2500);
+        } else if (waited >= maxWait) {
+          clearInterval(interval);
+          // Pas connecté après 8s → on essaie quand même avec ce qu'on a en local
+          console.warn('[deeplink] OneDrive non connecté après attente, recherche en local');
+          findAndOpen();
         }
-        if (d.statut !== 'pending') {
-          alert('Cette demande a déjà été traitée par ' + (d.decision_par || '?') + ' (' + (d.statut === 'accorde' ? 'accordée' : 'refusée') + ').');
-          return;
-        }
-        // Scroll vers le dashboard tâches
-        var dash = document.getElementById('taches-dashboard');
-        if (dash && typeof dash.scrollIntoView === 'function') dash.scrollIntoView({ behavior:'smooth', block:'start' });
-      }, 800);
-    }, 1500);
+      }, 500);
+    }, 1000);
   } catch(e) { console.warn('[validate deeplink] error', e); }
 })();
 
