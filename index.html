@@ -225,6 +225,39 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .deals-table tr.row-etranger td.col-freeze,
 .deals-table tr.row-etranger td.col-freeze2 { background:#FCE8A6 !important; }
 .deals-table tr.row-etranger:hover td { background:#FFE8B0 !important; }
+
+/* Ligne deal annulé — rouge très pâle, barrée */
+.deals-table tr.row-cancelled td {
+  background: #FDECEC !important;
+  color: #9E4545 !important;
+  text-decoration: line-through;
+  text-decoration-color: rgba(194, 65, 65, 0.5);
+}
+.deals-table tr.row-cancelled td.col-freeze,
+.deals-table tr.row-cancelled td.col-freeze2 {
+  background: #F9DCDC !important;
+}
+.deals-table tr.row-cancelled:hover td {
+  background: #FBDEDE !important;
+}
+/* Les contrôles (boutons, selects, inputs) à l'intérieur d'une ligne annulée restent lisibles */
+.deals-table tr.row-cancelled td button,
+.deals-table tr.row-cancelled td select,
+.deals-table tr.row-cancelled td input {
+  text-decoration: none;
+  color: initial;
+}
+
+/* Simulation candidat liée à un deal annulé — fond rouge pâle, barrée */
+.sim-row-cancelled {
+  background: #FDECEC !important;
+  text-decoration: line-through;
+  text-decoration-color: rgba(194, 65, 65, 0.4);
+}
+.sim-row-cancelled button,
+.sim-row-cancelled .sim-cancelled-badge {
+  text-decoration: none;
+}
 /* Tooltip custom pour commentaire (position:fixed pour ne pas être clippé par overflow) */
 #cell-tooltip-bubble {
   position: fixed;
@@ -1750,542 +1783,24 @@ function syncTelnetField() {
   net.value = 0;
 }
 
-function onContextChange() {
-  // Si jours passe sous 21, on désactive les provisions CP
-  if (f('nb_jours') < 21 && state.cp === 'CP') {
-    state.cp = 'Non';
-    document.getElementById('btn-cp-non').classList.add('active');
-    document.getElementById('btn-cp-oui').classList.remove('active');
-  }
-  updateProrata();
-  if (lastEdited === 'tjm') solveBrutFromTJM();
-  else solveTJMFromBrut();
-}
 
 // Quand l'utilisateur touche BRUT → calcule le TJM minimum correspondant
-function onBRUTChange() {
-  // Si l'utilisateur modifie le brut mensuel manuellement, vider le brut annuel
-  var annuelEl = document.getElementById('brut_annuel');
-  if (annuelEl) annuelEl.value = '';
-  lastEdited = 'brut';
-  document.getElementById('brut-source-badge').textContent = '← saisi';
-  document.getElementById('brut').style.borderColor = 'var(--success)';
-  document.getElementById('tjm-source-badge').textContent = '← calculé';
-  solveTJMFromBrut();
-}
 
 // Calcule les frais mensuels (indépendants du BRUT)
 // Tous les frais sont à charge de l'employeur → déduire du CA avant solveur
-function calcFraisMensuels(nb_jours) {
-  // IK
-  const km_aller = f('km_aller');
-  const puissance = parseInt(document.getElementById('puissance_fiscale').value) || 8;
-  const jours_pres = f('jours_presentiels');
-  const ik = calcIK(km_aller, puissance, jours_pres, nb_jours, state.ik_1ere);
-  // Repas
-  let frais_repas = 0;
-  if (state.repas === 'Swile') {
-    frais_repas = f('swile_val') * nb_jours;
-  } else if (state.repas === 'Forfait') {
-    // Forfait repas = p_forfait_repas * (jours_présentiels/5) * nb_jours
-    // Bloqué si Swile ou Grand déplacement
-    frais_repas = f('p_forfait_repas') * (jours_pres / 5) * nb_jours;
-  } else if (state.repas === 'GD') {
-    const taux_gd = state.gd_lieu === 'IDF' ? f('p_gd_idf') : f('p_gd_autre');
-    frais_repas = taux_gd * (jours_pres / 5) * nb_jours;
-  }
-  // Transport
-  const frais_transport = f('abo_transport') * 0.75; // 75% pris en charge par l'employeur (config Seven Portage)
-  // Télétravail
-  let frais_tt = 0;
-  if (state.tt) {
-    const jours_tt = f('jours_tt');
-    frais_tt = calcTT(jours_tt, nb_jours);
-  }
-  // Tel/Internet (si pas télétravail)
-  let frais_telnet = 0;
-  if (!state.tt) {
-    const abo_tel = f('abo_tel');
-    const abo_int = f('abo_internet');
-    if (abo_tel > 0 || abo_int > 0) {
-      frais_telnet = ((abo_tel + abo_int) / 21) / 2 * nb_jours;
-    }
-  }
-  const frais_formation = f('frais_formation');
-  const frais_materiel  = f('frais_materiel');
-  return ik.mensuelle + frais_repas + frais_transport + frais_tt + frais_telnet + frais_formation + frais_materiel;
-}
 
 // TJM → BRUT max : solveur dichotomique BRUT + pat(BRUT) = CA_dispo
-function solveBrutFromTJM() {
-  const TJM = f('tjm');
-  const NB_JOURS = f('nb_jours');
-  const MARGE = p('marge');
-  if (TJM <= 0 || NB_JOURS <= 0) return;
-
-  const NB_JOURS_SAL = (state.rtt === 6 && NB_JOURS === 21) ? 20.5
-                     : (state.rtt === 12 && NB_JOURS === 21) ? 20 : NB_JOURS;
-  // Facturation sur NB_JOURS ; CA salarial sur NB_JOURS_SAL (apres RTT)
-  const ca_dispo = TJM * NB_JOURS_SAL * (1 - MARGE);
-
-  // Les frais pro sont 100% a charge de l'employeur -> deduits du CA avant solveur
-  const frais_solver = calcFraisMensuels(NB_JOURS); // frais toujours sur 21j
-  const cpMode = state.cp === 'CP' && NB_JOURS >= 21;
-
-  // Mutuelle patronale déduite du CA uniquement en mode CP
-  // Formule unifiée CP : target = (CA - mut_pat - frais) / 1.11
-  // Formule sans CP    : target = CA - frais  (solveur avec pat_avec_mut)
-  const PMSS_s = f('p_pmss');
-  const mut_pat_s = state.mutuelle === 'famille' ? PMSS_s * p('p_mut_fam')
-                  : state.mutuelle === 'isolée'  ? PMSS_s * p('p_mut_isol')
-                  : 0;
-  const ca_net = ca_dispo - frais_solver;
-  const target = cpMode ? (ca_net - mut_pat_s) / f('p_cp_diviseur') : ca_net;
-  let lo = 0, hi = target, brut = target / 1.47;
-  for (let i = 0; i < 80; i++) {
-    // CP: solveur sur pat_sans_mut (mut déjà déduite du target)
-    // Sans CP: solveur sur calcPat (avec mut)
-    const cost = cpMode ? brut + calcPatSansMut(brut) : brut + calcPat(brut);
-    if (Math.abs(cost - target) < 0.005) break;
-    if (cost < target) lo = brut; else hi = brut;
-    brut = (lo + hi) / 2;
-  }
-  // Arrondi à la dizaine supérieure (comportement Excel)
-  const brutArrondi = Math.ceil(brut / 10) * 10;
-  // Mettre à jour le champ BRUT sans déclencher onBRUTChange
-  const el = document.getElementById('brut');
-  el.value = brutArrondi;
-  el.style.borderColor = '';
-  document.getElementById('tjm-equiv-box').style.display = 'none';
-  // Mettre à jour le Brut annuel (brut mensuel × 12)
-  const elAnnuel = document.getElementById('brut_annuel');
-  if (elAnnuel) elAnnuel.value = brutArrondi > 0 ? brutArrondi * 12 : '';
-  calc();
-}
 
 // BRUT → TJM minimum
 // Intègre CP, mutuelle, frais — symétrique de solveBrutFromTJM
-function solveTJMFromBrut() {
-  const BRUT = f('brut');
-  const NB_JOURS = f('nb_jours');
-  const MARGE = p('marge');
-  if (BRUT <= 0 || NB_JOURS <= 0) return;
-
-  const NB_JOURS_SAL = (state.rtt === 6 && NB_JOURS === 21) ? 20.5
-                     : (state.rtt === 12 && NB_JOURS === 21) ? 20 : NB_JOURS;
-  const cpMode = state.cp === 'CP' && NB_JOURS >= 21;
-  const frais  = calcFraisMensuels(NB_JOURS); // frais toujours sur 21j
-
-  const PMSS_s = f('p_pmss');
-  const mut_pat_s = state.mutuelle === 'famille' ? PMSS_s * p('p_mut_fam')
-                  : state.mutuelle === 'isolée'  ? PMSS_s * p('p_mut_isol')
-                  : 0;
-
-  let ca_necessaire;
-  if (cpMode) {
-    // CA = (BRUT + pat_sans_mut) × diviseur_CP + mut_pat + frais
-    ca_necessaire = (BRUT + calcPatSansMut(BRUT)) * f('p_cp_diviseur') + mut_pat_s + frais;
-  } else {
-    // CA = BRUT + pat_avec_mut + frais
-    ca_necessaire = BRUT + calcPat(BRUT) + frais;
-  }
-
-  const tjm_min = ca_necessaire / (NB_JOURS_SAL * (1 - MARGE));
-  const tjm_arrondi = Math.ceil(tjm_min * 2) / 2;
-
-  // Mettre à jour le champ TJM sans déclencher onTJMChange
-  const el = document.getElementById('tjm');
-  el.value = tjm_arrondi.toFixed(2);
-
-  // Afficher la box "équivalence"
-  const box = document.getElementById('tjm-equiv-box');
-  box.style.display = 'block';
-  const frais_txt = frais > 0 ? ` · frais ${frais.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €` : '';
-  const cp_txt = cpMode ? ` · CP (÷${f('p_cp_diviseur')})` : '';
-  box.textContent = `TJM minimum : ${tjm_arrondi.toFixed(2)} €/j (CA nécessaire : ${ca_necessaire.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €${frais_txt}${cp_txt})`;
-  calc();
-}
 
 // Calcul des charges patronales SANS mutuelle (pour solveur CP)
 // Dans le solveur CP, mut_pat est déduit du target séparément → ne pas la compter deux fois
-function calcPatSansMut(brut) {
-  const PMSS = f('p_pmss');
-  const SMIC = f('p_smic');
-  const T_A = Math.min(brut, PMSS);
-  const T_B = Math.max(0, Math.min(brut, 8*PMSS) - PMSS);
-  const mal    = brut * p('p_mal') + (brut > 2.5*SMIC ? brut * p('p_mal_compl') : 0);
-  const at     = brut * p('p_at');
-  const prev_ta = T_A * p('p_prev_ta');
-  const prev_tb = T_B * p('p_prev_tb');
-  // PAS de mutuelle ici
-  const vp   = T_A  * p('p_vieux_plaf');
-  const vd   = brut * p('p_vieux_dep');
-  const r1   = T_A  * p('p_ret1');
-  const ceg1 = T_A  * p('p_ceg1');
-  const cet1 = (brut > PMSS ? PMSS : 0) * p('p_cet1');
-  const r2   = T_B > 0 ? T_B * p('p_ret2')  : 0;
-  const ceg2 = T_B > 0 ? T_B * p('p_ceg2')  : 0;
-  const cet2 = T_B > 0 ? T_B * p('p_cet2')  : 0;
-  const af   = brut * p('p_af');
-  const af_c = brut > 3.5*SMIC ? brut * p('p_af_compl') : 0;
-  const chom_a = Math.min(brut, PMSS)   * p('p_chom');
-  const chom_b = Math.min(T_B, 3*PMSS) * p('p_chom');
-  const ags    = Math.min(brut, 4*PMSS) * p('p_ags');
-  const apec   = brut * p('p_apec_pat');
-  const mob    = brut * p('p_mobilite');
-  const fnal   = T_A  * p('p_fnal');
-  const med    = T_A  * p('p_med');
-  const csa    = brut * p('p_csa');
-  const form   = brut * p('p_formation');
-  const par    = brut * p('p_parit');
-  const synd   = brut * p('p_synd');
-  return mal+at+prev_ta+prev_tb+vp+vd+r1+ceg1+cet1+r2+ceg2+cet2+af+af_c+chom_a+chom_b+ags+apec+mob+fnal+med+csa+form+par+synd;
-}
 
 // Calcul des charges patronales AVEC mutuelle (pour solveur sans CP et pour affichage)
 // REGLE UNIQUE: p(id) = valeur_parametre/100 → on N'ajoute JAMAIS /100 en plus
 // Ex: p_mal stocke 7 (pour 7%) → p('p_mal')=0.07 → brut*p('p_mal')=brut*0.07 ✓
-function calcPat(brut) {
-  const PMSS = f('p_pmss');
-  const SMIC = f('p_smic');
-  const MUTUELLE = state.mutuelle;
-  const T_A = Math.min(brut, PMSS);
-  const T_B = Math.max(0, Math.min(brut, 8*PMSS) - PMSS);
 
-  const mal    = brut * p('p_mal') + (brut > 2.5*SMIC ? brut * p('p_mal_compl') : 0);
-  const at     = brut * p('p_at');
-  const prev_ta = T_A * p('p_prev_ta');
-  const prev_tb = T_B * p('p_prev_tb');
-  let mut = 0;
-  if (MUTUELLE === 'isolée')       mut = PMSS * p('p_mut_isol');
-  else if (MUTUELLE === 'famille') mut = PMSS * p('p_mut_fam');
-  const vp   = T_A  * p('p_vieux_plaf');
-  const vd   = brut * p('p_vieux_dep');
-  const r1   = T_A  * p('p_ret1');
-  const ceg1 = T_A  * p('p_ceg1');
-  const cet1 = (brut > PMSS ? PMSS : 0) * p('p_cet1');
-  const r2   = T_B > 0 ? T_B * p('p_ret2')  : 0;
-  const ceg2 = T_B > 0 ? T_B * p('p_ceg2')  : 0;
-  const cet2 = T_B > 0 ? T_B * p('p_cet2')  : 0;
-  const af   = brut * p('p_af');
-  const af_c = brut > 3.5*SMIC ? brut * p('p_af_compl') : 0;
-  const chom_a = Math.min(brut, PMSS)   * p('p_chom');
-  const chom_b = Math.min(T_B, 3*PMSS) * p('p_chom');
-  const ags    = Math.min(brut, 4*PMSS) * p('p_ags');
-  const apec   = brut * p('p_apec_pat');
-  const mob    = brut * p('p_mobilite');
-  const fnal   = T_A  * p('p_fnal');
-  const med    = T_A  * p('p_med');
-  const csa    = brut * p('p_csa');
-  const form   = brut * p('p_formation');
-  const par    = brut * p('p_parit');
-  const synd   = brut * p('p_synd');
-  return mal+at+prev_ta+prev_tb+mut+vp+vd+r1+ceg1+cet1+r2+ceg2+cet2+af+af_c+chom_a+chom_b+ags+apec+mob+fnal+med+csa+form+par+synd;
-}
-
-
-function calc() {
-  // INPUTS
-  const PMSS = f('p_pmss');
-  const SMIC = f('p_smic');
-  const TJM = f('tjm');
-  const NB_JOURS = f('nb_jours');
-  const NB_JOURS_SALAIRE = (state.rtt === 6 && NB_JOURS === 21) ? 20.5
-                         : (state.rtt === 12 && NB_JOURS === 21) ? 20 : NB_JOURS;
-  const MARGE = p('marge');
-  const BRUT = f('brut');
-  const TAUX_IMPOT = p('taux_impot');
-  const MUTUELLE = state.mutuelle;
-  const CP = state.cp;
-
-  // DERIVED
-  const facturation = TJM * NB_JOURS;
-  const frais_gestion = facturation * MARGE;
-  const ca_dispo = facturation - frais_gestion;
-
-  // === COTISATIONS PATRONALES (détail pour affichage) ===
-  // Même règle: p(id) déjà /100, on ne redivise PAS
-  const T_A = Math.min(BRUT, PMSS);
-  const T_B = Math.max(0, Math.min(BRUT, 8*PMSS) - PMSS);
-  const mal_pat      = BRUT * p('p_mal') + (BRUT > 2.5*SMIC ? BRUT * p('p_mal_compl') : 0);
-  const at_pat       = BRUT * p('p_at');
-  const prev_ta_pat  = T_A  * p('p_prev_ta');
-  const prev_tb_pat  = T_B  * p('p_prev_tb');
-  let mut_pat = 0;
-  if (MUTUELLE === 'isolée')       mut_pat = PMSS * p('p_mut_isol');
-  else if (MUTUELLE === 'famille') mut_pat = PMSS * p('p_mut_fam');
-  const vieux_plaf_pat = T_A  * p('p_vieux_plaf');
-  const vieux_dep_pat  = BRUT * p('p_vieux_dep');
-  const ret1_pat  = T_A  * p('p_ret1');
-  const ceg1_pat  = T_A  * p('p_ceg1');
-  const cet1_pat  = (BRUT > PMSS ? PMSS : 0) * p('p_cet1');
-  const ret2_pat  = T_B > 0 ? T_B * p('p_ret2')  : 0;
-  const ceg2_pat  = T_B > 0 ? T_B * p('p_ceg2')  : 0;
-  const cet2_pat  = T_B > 0 ? T_B * p('p_cet2')  : 0;
-  const af_pat         = BRUT * p('p_af');
-  const af_compl_pat   = BRUT > 3.5*SMIC ? BRUT * p('p_af_compl') : 0;
-  const chom_ta_pat    = Math.min(BRUT, PMSS)   * p('p_chom');
-  const chom_tb_pat    = Math.min(T_B, 3*PMSS)  * p('p_chom');
-  const ags_pat        = Math.min(BRUT, 4*PMSS) * p('p_ags');
-  const apec_pat       = BRUT * p('p_apec_pat');
-  const mobilite_pat   = BRUT * p('p_mobilite');
-  const fnal_pat       = T_A  * p('p_fnal');
-  const med_pat        = T_A  * p('p_med');
-  const csa_pat        = BRUT * p('p_csa');
-  const formation_pat  = BRUT * p('p_formation');
-  const parit_pat      = BRUT * p('p_parit');
-  const synd_pat       = BRUT * p('p_synd');
-  const TOTAL_PAT = calcPat(BRUT);
-
-  // === COTISATIONS SALARIALES ===
-  // Même règle: p(id) déjà /100
-  const prev_ta_sal  = T_A  * p('p_prev_ta_sal');
-  const prev_tb_sal  = T_B  * p('p_prev_tb_sal');
-  let mut_sal = 0;
-  if (MUTUELLE === 'isolée')       mut_sal = PMSS * p('p_mut_isol_sal');
-  else if (MUTUELLE === 'famille') mut_sal = PMSS * p('p_mut_fam_sal');
-  const vieux_plaf_sal = T_A  * p('p_vieux_sal');
-  const vieux_dep_sal  = BRUT * p('p_vieux_dep_sal');
-  const ret1_sal  = T_A  * p('p_ret1_sal');
-  const ceg1_sal  = T_A  * p('p_ceg1_sal');
-  const cet1_sal  = (BRUT > PMSS ? PMSS : 0) * p('p_cet1_sal');
-  const ret2_sal  = T_B > 0 ? T_B * p('p_ret2_sal') : 0;
-  const ceg2_sal  = T_B > 0 ? T_B * p('p_ceg2_sal') : 0;
-  const cet2_sal  = T_B > 0 ? T_B * p('p_cet2_sal') : 0;
-  const apec_sal  = BRUT * p('p_apec_sal');
-  // CSG base = BRUT * 98.25% + prévoyance patronale + mutuelle patronale
-  const csg_base = BRUT * 0.9825 + prev_ta_pat + prev_tb_pat + mut_pat;
-  const csg_ded  = csg_base * p('p_csg_ded');
-  const crds     = csg_base * p('p_crds');
-
-  const TOTAL_SAL = prev_ta_sal + prev_tb_sal + mut_sal +
-    vieux_plaf_sal + vieux_dep_sal + ret1_sal + ceg1_sal + cet1_sal +
-    ret2_sal + ceg2_sal + cet2_sal + apec_sal + csg_ded + crds;
-
-  // === PROVISION CP (si activée) ===
-  const prov_cp = CP === 'CP' ? ((BRUT * 0.1) * 1.1) * (1 + TOTAL_PAT/BRUT) : 0;
-
-  // === FRAIS PRO ===
-  // IK
-  const km_aller = f('km_aller');
-  const puissance = parseInt(document.getElementById('puissance_fiscale').value) || 8;
-  const jours_pres = f('jours_presentiels');
-  const ik = calcIK(km_aller, puissance, jours_pres, NB_JOURS, state.ik_1ere);
-
-  // Repas
-  let frais_repas = 0;
-  if (state.repas === 'Swile') {
-    frais_repas = f('swile_val') * NB_JOURS;
-  } else if (state.repas === 'Forfait') {
-    frais_repas = f('p_forfait_repas') * (jours_pres / 5) * NB_JOURS;
-  } else if (state.repas === 'GD') {
-    const taux_gd = state.gd_lieu === 'IDF' ? f('p_gd_idf') : f('p_gd_autre');
-    frais_repas = taux_gd * (jours_pres / 5) * NB_JOURS;
-  }
-
-  // Transport
-  const frais_transport = f('abo_transport') * 0.75; // 75% pris en charge par l'employeur (config Seven Portage)
-
-  // Télétravail
-  let frais_tt = 0;
-  if (state.tt) {
-    const jours_tt = f('jours_tt');
-    frais_tt = calcTT(jours_tt, NB_JOURS);
-  }
-
-  // Tel/Internet (seulement si PAS de télétravail)
-  let frais_telnet = 0;
-  if (!state.tt) {
-    const abo_tel = f('abo_tel');
-    const abo_int = f('abo_internet');
-    frais_telnet = ((abo_tel + abo_int) / 21) / 2 * NB_JOURS;
-  }
-
-  const frais_formation = f('frais_formation');
-  const frais_materiel  = f('frais_materiel');
-  const TOTAL_FRAIS = ik.mensuelle + frais_repas + frais_transport + frais_tt + frais_telnet + frais_formation + frais_materiel;
-
-  // === PROVISION CP ===
-  // Avec CP provisionnés (uniquement si nb_jours >= 21):
-  // Le solveur utilise CA/1.11 → BRUT plus faible (provision financée dans le CA)
-  // L'ICP (10% du BRUT) est mise en PROVISION séparée — NON déduite du net versé
-  // net = BRUT - sal (identique à la formule sans CP)
-  // Coût provision = (BRUT + pat) * 0.11
-  const cpActif = CP === 'CP' && NB_JOURS >= 21;
-  const icp_provision = cpActif ? BRUT * 0.10 : 0;
-  const prov_cp_cout = cpActif ? (BRUT + TOTAL_PAT) * 0.11 : 0;
-  const jours_effectifs_cp = cpActif ? NB_JOURS / f('p_cp_diviseur') : NB_JOURS;
-
-  // === NET ===
-  // ICP non déduite du net : elle est financée via le BRUT réduit par le solveur
-  const net_avant_impot = Math.round((BRUT - TOTAL_SAL) * 100) / 100;
-  const impot = Math.round(net_avant_impot * TAUX_IMPOT * 100) / 100;
-  const net_apres_impot = net_avant_impot - impot;
-  const net_a_payer = Math.round((net_apres_impot + TOTAL_FRAIS) * 100) / 100;
-  const taux_restitution = facturation > 0 ? net_a_payer / facturation : 0;
-  const cout_global = BRUT + TOTAL_PAT;
-
-  // === SEUIL ALERTE ===
-  const seuilAlert = NB_JOURS < 22 && BRUT >= 4350 && BRUT <= 4500;
-  document.getElementById('seuil-warning').classList.toggle('show', seuilAlert);
-
-  // ============ UPDATE UI ============
-  const fmt = (n, dec=0) => n.toLocaleString('fr-FR', {minimumFractionDigits:dec, maximumFractionDigits:dec}) + ' €';
-  const pct = n => (n*100).toFixed(2) + '%';
-
-  document.getElementById('r-net-payer').textContent = fmt(net_a_payer, 2);
-  document.getElementById('r-taux-restitution').textContent = `Taux de restitution : ${pct(taux_restitution)}`;
-  document.getElementById('r-net-brut').textContent = fmt(net_avant_impot, 2);
-  document.getElementById('r-frais-total').textContent = fmt(TOTAL_FRAIS, 2);
-  document.getElementById('r-net-apres').textContent = fmt(net_apres_impot, 2);
-  document.getElementById('r-facturation').textContent = fmt(facturation, 2);
-  const tjm_hero = document.getElementById('r-tjm-hero');
-  if (tjm_hero) tjm_hero.textContent = f('tjm').toLocaleString('fr-FR', {minimumFractionDigits:0, maximumFractionDigits:2});
-
-  document.getElementById('r-brut').textContent = fmt(BRUT, 2);
-  document.getElementById('r-ca-dispo').textContent = fmt(ca_dispo, 2);
-  document.getElementById('r-marge-info').textContent = `Frais gestion : ${fmt(frais_gestion, 2)}`;
-  document.getElementById('r-pat').textContent = fmt(TOTAL_PAT, 2);
-  document.getElementById('r-pat-pct').textContent = `Taux ${pct(TOTAL_PAT/BRUT)}`;
-  document.getElementById('r-sal').textContent = fmt(TOTAL_SAL, 2);
-  document.getElementById('r-sal-pct').textContent = `Taux ${pct(TOTAL_SAL/BRUT)}`;
-  document.getElementById('r-brut-an').textContent = fmt(BRUT * 12);
-  // Salaire annuel brut contrat = BRUT recalculé sur 21j × 12
-  // Affiché uniquement si CP=Non ET RTT=0
-  var showContrat = (CP !== 'CP') && (state.rtt === 0);
-  var cardContrat = document.getElementById('card-brut-contrat');
-  var valContrat  = document.getElementById('r-brut-contrat');
-  if (cardContrat) {
-    if (showContrat) {
-      // Ramener le brut à une base 21j si nb_jours diffère
-      var brutBase21 = NB_JOURS > 0 && NB_JOURS !== 21 ? Math.round(BRUT * 21 / NB_JOURS) : BRUT;
-      cardContrat.style.display = 'block';
-      if (valContrat) valContrat.textContent = fmt(brutBase21 * 12);
-    } else {
-      cardContrat.style.display = 'none';
-    }
-  }
-  document.getElementById('r-cout-global').textContent = fmt(cout_global, 2);
-
-  // Provision CP
-  const cpBox = document.getElementById('cp-provision-box');
-  if (icp_provision > 0) {
-    cpBox.style.display = 'block';
-    document.getElementById('cp-icp-val').textContent = fmt(icp_provision, 2);
-    document.getElementById('cp-cout-val').textContent = fmt(prov_cp_cout, 2);
-    document.getElementById('cp-net-sans-val').textContent = fmt(Math.round((BRUT - TOTAL_SAL) * 100) / 100, 2) + ' (sans provision)';
-  } else {
-    cpBox.style.display = 'none';
-  }
-
-  // TOTAUX DÉTAIL
-  // r-pat-pct2 / r-pat2 / r-sal-pct2 / r-sal2 supprimés (cotisations dans onglet dédié)
-
-  // FRAIS
-  const showFrais = (id, idVal, val, label) => {
-    const row = document.getElementById(id);
-    const show = val > 0.01;
-    row.style.display = show ? 'flex' : 'none';
-    if (show) document.getElementById(idVal).textContent = fmt(val, 2);
-  };
-  showFrais('fr-ik', 'fr-ik-val', ik.mensuelle);
-  // Label dynamique selon le type de repas/GD
-  var repasLabelEl = document.querySelector('#fr-repas .label');
-  if (repasLabelEl) {
-    if (state.repas === 'Swile') repasLabelEl.textContent = 'Swile (TR)';
-    else if (state.repas === 'Forfait') repasLabelEl.textContent = 'Forfait repas';
-    else if (state.repas === 'GD') repasLabelEl.textContent = 'Grand déplacement';
-    else repasLabelEl.textContent = 'Repas';
-  }
-  showFrais('fr-repas', 'fr-repas-val', frais_repas);
-  showFrais('fr-tt', 'fr-tt-val', frais_tt);
-  showFrais('fr-transport', 'fr-transport-val', frais_transport);
-  showFrais('fr-telnet', 'fr-telnet-val', frais_telnet);
-  showFrais('fr-formation', 'fr-formation-val', frais_formation);
-  showFrais('fr-materiel', 'fr-materiel-val', frais_materiel);
-  document.getElementById('fr-total').textContent = fmt(TOTAL_FRAIS, 2);
-
-  // Warning si frais > net avant impôt
-  const warnFrais = document.getElementById('frais-over-net-warning');
-  if (warnFrais) warnFrais.style.display = (TOTAL_FRAIS > 0 && TOTAL_FRAIS > net_avant_impot) ? 'block' : 'none';
-  var heroWarn = document.getElementById('frais-hero-warning');
-  if (heroWarn) heroWarn.style.display = (TOTAL_FRAIS > 0 && TOTAL_FRAIS > net_avant_impot) ? 'flex' : 'none';
-
-  // BREAKDOWN PATRONAL
-  const patRows = [
-    ['Maladie régime général', BRUT, p('p_mal'), BRUT * p('p_mal')],
-    ['Complément maladie', BRUT, p('p_mal_compl'), BRUT > 2.5*SMIC ? BRUT * p('p_mal_compl') : 0],
-    ['AT/MP', BRUT, p('p_at')/100, at_pat],
-    ['Prévoyance cadre TA', T_A, p('p_prev_ta')/100, prev_ta_pat],
-    ['Prévoyance cadre TB', T_B, p('p_prev_tb')/100, prev_tb_pat],
-    MUTUELLE !== 'renoncement' ? ['Mutuelle patronale', PMSS, null, mut_pat] : null,
-    ['Vieillesse plafonnée', T_A, p('p_vieux_plaf')/100, vieux_plaf_pat],
-    ['Vieillesse déplafonnée', BRUT, p('p_vieux_dep')/100, vieux_dep_pat],
-    ['Retraite AGIRC-ARRCO T1', T_A, p('p_ret1')/100, ret1_pat],
-    ['CEG T1', T_A, p('p_ceg1')/100, ceg1_pat],
-    ['CET T1', PMSS, p('p_cet1')/100, cet1_pat],
-    T_B > 0 ? ['Retraite AGIRC-ARRCO T2', T_B, p('p_ret2')/100, ret2_pat] : null,
-    T_B > 0 ? ['CEG T2', T_B, p('p_ceg2')/100, ceg2_pat] : null,
-    T_B > 0 ? ['CET T2', T_B, p('p_cet2')/100, cet2_pat] : null,
-    ['Allocations familiales', BRUT, p('p_af')/100, af_pat],
-    BRUT > 3.5*SMIC ? ['Compl. alloc. familiales', BRUT, p('p_af_compl')/100, af_compl_pat] : null,
-    ['Chômage TA', T_A, p('p_chom')/100, chom_ta_pat],
-    T_B > 0 ? ['Chômage TB', T_B, p('p_chom')/100, chom_tb_pat] : null,
-    ['AGS', BRUT, p('p_ags')/100, ags_pat],
-    ['APEC', BRUT, p('p_apec_pat')/100, apec_pat],
-    ['Versement mobilité', BRUT, p('p_mobilite')/100, mobilite_pat],
-    ['FNAL', T_A, p('p_fnal')/100, fnal_pat],
-    ['Médecine du travail', T_A, p('p_med')/100, med_pat],
-    ['CSA', BRUT, p('p_csa')/100, csa_pat],
-    ['Formation / Taxe apprent.', BRUT, p('p_formation')/100, formation_pat],
-    ['Paritarisme', BRUT, p('p_parit')/100, parit_pat],
-    ['Contrib. syndicale', BRUT, p('p_synd')/100, synd_pat],
-  ].filter(Boolean);
-
-  const patHTML = patRows.map(([label, base, taux, mt]) =>
-    mt > 0.001 ? `<div class="breakdown-row"><span>${label}</span><span class="pct">${taux ? (taux*100).toFixed(3)+'%' : '—'}</span><span class="amt">${fmt(mt,2)}</span></div>` : ''
-  ).join('');
-  document.getElementById('breakdown-pat').innerHTML = patHTML;
-  // Copie dans onglet Cotisations
-  document.getElementById('cot-pat-panel').innerHTML = patHTML +
-    `<div class="breakdown-row total"><span>TOTAL PATRONAL</span><span class="pct">${pct(TOTAL_PAT/BRUT)}</span><span class="amt">${fmt(TOTAL_PAT,2)}</span></div>`;
-
-  // BREAKDOWN SALARIAL
-  const salRows = [
-    ['Prévoyance cadre TA', T_A, p('p_prev_ta_sal')/100, prev_ta_sal],
-    ['Prévoyance cadre TB', T_B, p('p_prev_tb_sal')/100, prev_tb_sal],
-    MUTUELLE !== 'renoncement' ? ['Mutuelle salariale', PMSS, null, mut_sal] : null,
-    ['Vieillesse plafonnée', T_A, p('p_vieux_sal')/100, vieux_plaf_sal],
-    ['Vieillesse déplafonnée', BRUT, p('p_vieux_dep_sal')/100, vieux_dep_sal],
-    ['Retraite AGIRC-ARRCO T1', T_A, p('p_ret1_sal')/100, ret1_sal],
-    ['CEG T1', T_A, p('p_ceg1_sal')/100, ceg1_sal],
-    ['CET T1', PMSS, p('p_cet1_sal')/100, cet1_sal],
-    T_B > 0 ? ['Retraite AGIRC-ARRCO T2', T_B, p('p_ret2_sal')/100, ret2_sal] : null,
-    T_B > 0 ? ['CEG T2', T_B, p('p_ceg2_sal')/100, ceg2_sal] : null,
-    T_B > 0 ? ['CET T2', T_B, p('p_cet2_sal')/100, cet2_sal] : null,
-    ['APEC', BRUT, p('p_apec_sal')/100, apec_sal],
-    ['CSG déductible', csg_base, p('p_csg_ded')/100, csg_ded],
-    ['CSG/CRDS non déductible', csg_base, p('p_crds')/100, crds],
-  ].filter(Boolean);
-
-  const salHTML = salRows.map(([label, base, taux, mt]) =>
-    mt > 0.001 ? `<div class="breakdown-row"><span>${label}</span><span class="pct">${taux ? (taux*100).toFixed(3)+'%' : '—'}</span><span class="amt">${fmt(mt,2)}</span></div>` : ''
-  ).join('');
-  document.getElementById('breakdown-sal').innerHTML = salHTML;
-  // Copie dans onglet Cotisations
-  document.getElementById('cot-sal-panel').innerHTML = salHTML +
-    `<div class="breakdown-row total"><span>TOTAL SALARIAL</span><span class="pct">${pct(TOTAL_SAL/BRUT)}</span><span class="amt">${fmt(TOTAL_SAL,2)}</span></div>`;
-
-  // CA info
-  const ca_info = document.getElementById('ca-info');
-  if (ca_info) {
-    const jours_txt = cpActif ? ` · Simulation sur ${jours_effectifs_cp.toFixed(2)}j effectifs (CP)` : '';
-    ca_info.textContent = `Facturation ${fmt(facturation,2)} · CA dispo ${fmt(ca_dispo,2)} · Frais gestion ${fmt(frais_gestion,2)}${jours_txt}`;
-  }
-
-  // Update commercial badge depuis les paramètres
-  updateBadgeCommercial();
-}
 
 // ============================================
 // INIT
@@ -2308,6 +1823,11 @@ function onContextChange() {
 
 // Quand l'utilisateur touche BRUT → calcule le TJM minimum correspondant
 function onBRUTChange() {
+  // Quand l'utilisateur édite le brut mensuel, vider le brut annuel pour éviter
+  // une incohérence (sinon le solveur peut donner un TJM basé sur le brut annuel périmé).
+  // Symétrique avec onTJMChange qui vide déjà brut_annuel.
+  var annuelEl = document.getElementById('brut_annuel');
+  if (annuelEl) annuelEl.value = '';
   lastEdited = 'brut';
   document.getElementById('brut-source-badge').textContent = '← saisi';
   document.getElementById('brut').style.borderColor = 'var(--success)';
@@ -3409,16 +2929,6 @@ function highlight(text, query) {
   return String(text).replace(new RegExp('(' + escaped + ')', 'gi'), '<span class="hist-highlight">$1</span>');
 }
 
-function makeFilterBtn(value, label, isActive, fn) {
-  var btn = document.createElement('button');
-  btn.className = 'hist-filter' + (isActive ? ' active' : '');
-  btn.innerHTML = label;
-  btn.onclick = function() { window[fn](value); };
-  // Return outerHTML
-  var tmp = document.createElement('div');
-  tmp.appendChild(btn);
-  return tmp.innerHTML;
-}
 
 
 function buildFolder(key, sims, q, isOpen) {
@@ -3833,10 +3343,6 @@ function clearHistSearch() {
   renderHistorique();
 }
 
-function setHistFilterDest(f) {
-  histFilterDest = f;
-  renderHistorique();
-}
 
 function saveHistorique(data, dest, email, consultantName) {
   var hist = getHistory();
@@ -4072,17 +3578,6 @@ function importHistorique(input) {
   reader.readAsText(file);
 }
 
-function checkBackupReminder() {
-  var last = parseInt(localStorage.getItem(BACKUP_KEY) || '0');
-  var daysSince = (Date.now() - last) / (24 * 3600 * 1000);
-  var banner = document.getElementById('hist-backup-banner');
-  if (!banner) return;
-  if (daysSince > 7 && getHistory().length > 0) {
-    banner.style.display = 'flex';
-  } else {
-    banner.style.display = 'none';
-  }
-}
 
 function hideBanner() {
   var b = document.getElementById('hist-backup-banner');
@@ -4132,12 +3627,6 @@ function toggleAcc(id) {
   if (arrow) arrow.classList.toggle('open', !isOpen);
 }
 
-function purgOldSimulations() {
-  var cutoff = Date.now() - RETENTION_DAYS * 24 * 3600 * 1000;
-  var hist = getHistory();
-  var purged = hist.filter(function(s) { return (s.timestamp || 0) >= cutoff; });
-  if (purged.length < hist.length) { saveHistoryArr(purged); }
-}
 
 // ═══════════════════════════════════════════════════════════
 // ONEDRIVE SYNC — MSAL loginPopup + SharePoint
@@ -4326,7 +3815,8 @@ function odSilentFullSync() {
       { path: OD_CAND_PATH,    key: 'candidats',   merge: mergeCandidats,  getData: function(){ return {version:1,updated:new Date().toISOString(),candidats:getCandidats()}; } },
       { path: OD_DEALS_PATH,   key: 'deals',       merge: mergeDeals,      getData: function(){ return {version:1,updated:new Date().toISOString(),deals:getDeals()}; } },
       { path: OD_CLIENTS_PATH, key: 'clients',     merge: mergeClients,    getData: function(){ return {version:1,updated:new Date().toISOString(),clients:getClients()}; } },
-      { path: OD_COMM_HISTORY_PATH, key: 'commissions', merge: mergeCommHistory, getData: function(){ return {version:1,updated:new Date().toISOString(),commissions:getCommHistory()}; } }
+      { path: OD_COMM_HISTORY_PATH, key: 'commissions', merge: mergeCommHistory, getData: function(){ return {version:1,updated:new Date().toISOString(),commissions:getCommHistory()}; } },
+      { path: OD_SORTANTS_PATH, key: 'sortants',   merge: mergeSortants,   getData: function(){ return {version:1,updated:new Date().toISOString(),sortants:getSortants()}; } }
     ];
 
     var errors = [];
@@ -4787,9 +4277,6 @@ function onManagerSelect() {
   if (sigField && !sigField.value) sigField.value = mgr.name || '';
 }
 
-function toggleSalarieEtrangerFields() {
-  // Déprécié : les détails du titre de séjour se gèrent maintenant dans le tableau Deals
-}
 
 function updateTaciteField() {
   var tc = document.getElementById('pl-type-contrat-client');
@@ -4902,50 +4389,482 @@ function savePlacement() {
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 
+// ═══════════════════════════════════════════════════════════
+// MODULE SORTANTS — popup + stockage + onglet RH
+// Champs saisis : date demande (auto), commercial/prénom/nom (auto depuis deal),
+// fin mission, fin contrat travail, date fin contrat, type fin contrat, raison, commentaires
+// Champs de suivi (modifiables dans le tableau) : doc fin envoyé, doc fin signé, laya, sdtc
+// ═══════════════════════════════════════════════════════════
+var SORTANTS_KEY = 'sp_sortants_v1';
+var SORTANTS_CONFIG_KEY = 'sp_sortants_config_v1';
+var OD_SORTANTS_PATH = '/General/Seven Portage Simlateur/SP_Sortants_Global.json';
+
+function getSortantsConfig() {
+  var defaults = {
+    mail_fixe: 'norman@seven-portage.fr',
+    commerciaux: []  // [{ nom: 'David', email: 'david@...' }, ...]
+  };
+  try {
+    var saved = JSON.parse(localStorage.getItem(SORTANTS_CONFIG_KEY) || '{}');
+    var merged = Object.assign({}, defaults, saved);
+    if (!Array.isArray(merged.commerciaux)) merged.commerciaux = [];
+    return merged;
+  } catch(e) { return defaults; }
+}
+function saveSortantsConfig(cfg) {
+  localStorage.setItem(SORTANTS_CONFIG_KEY, JSON.stringify(cfg));
+}
+function updateSortantsConfigField(field, value) {
+  var cfg = getSortantsConfig();
+  cfg[field] = value;
+  saveSortantsConfig(cfg);
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+// Trouve l'email d'un commercial dans l'annuaire (par nom, case/espace insensible)
+function findCommercialEmailByName(name) {
+  if (!name) return '';
+  var wanted = (name + '').trim().toLowerCase().replace(/\s+/g, ' ');
+  var cfg = getSortantsConfig();
+  var match = (cfg.commerciaux || []).find(function(c){
+    return (c.nom || '').trim().toLowerCase().replace(/\s+/g, ' ') === wanted;
+  });
+  return (match && match.email) ? match.email : '';
+}
+
+// Mutations de l'annuaire commerciaux
+function addCommercialToConfig() {
+  var cfg = getSortantsConfig();
+  cfg.commerciaux = cfg.commerciaux || [];
+  cfg.commerciaux.push({ nom: '', email: '' });
+  saveSortantsConfig(cfg);
+  renderSortants();
+}
+function updateCommercialInConfig(idx, field, value) {
+  var cfg = getSortantsConfig();
+  if (!cfg.commerciaux || !cfg.commerciaux[idx]) return;
+  cfg.commerciaux[idx][field] = (value || '').trim();
+  saveSortantsConfig(cfg);
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+function removeCommercialFromConfig(idx) {
+  var cfg = getSortantsConfig();
+  if (!cfg.commerciaux || !cfg.commerciaux[idx]) return;
+  var name = cfg.commerciaux[idx].nom || 'ce commercial';
+  if (!confirm('Retirer "' + name + '" de l\'annuaire ?')) return;
+  cfg.commerciaux.splice(idx, 1);
+  saveSortantsConfig(cfg);
+  renderSortants();
+}
+// Pré-remplit l'annuaire avec les noms des commerciaux détectés dans les deals
+function autofillCommerciauxFromDeals() {
+  var cfg = getSortantsConfig();
+  cfg.commerciaux = cfg.commerciaux || [];
+  var existingNames = {};
+  cfg.commerciaux.forEach(function(c){
+    if (c.nom) existingNames[(c.nom + '').trim().toLowerCase()] = 1;
+  });
+  var detected = (typeof getAllCommercialsFromDeals === 'function') ? getAllCommercialsFromDeals() : [];
+  var added = 0;
+  detected.forEach(function(name){
+    var k = (name + '').trim().toLowerCase();
+    if (k && !existingNames[k]) {
+      cfg.commerciaux.push({ nom: name, email: '' });
+      existingNames[k] = 1;
+      added++;
+    }
+  });
+  saveSortantsConfig(cfg);
+  renderSortants();
+  if (added === 0) alert('Tous les commerciaux détectés dans les deals sont déjà présents dans l\'annuaire.');
+  else alert('✓ ' + added + ' commercial' + (added > 1 ? 'iaux ajoutés' : ' ajouté') + ' à l\'annuaire. Il ne reste plus qu\'à renseigner leurs emails.');
+}
+
+function getSortants() {
+  try { return JSON.parse(localStorage.getItem(SORTANTS_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+function saveSortants(arr) {
+  localStorage.setItem(SORTANTS_KEY, JSON.stringify(arr));
+}
+
+// Fusion local ∪ remote : dé-doublonnage sur id, garde la version la plus récente (updated_ts)
+function mergeSortants(remote) {
+  if (!Array.isArray(remote)) return;
+  var local = getSortants();
+  var byId = {};
+  local.forEach(function(s){ if (s && s.id) byId[s.id] = s; });
+  remote.forEach(function(s){
+    if (!s || !s.id) return;
+    var existing = byId[s.id];
+    if (!existing || (s.updated_ts || 0) > (existing.updated_ts || 0)) {
+      byId[s.id] = s;
+    }
+  });
+  var merged = Object.values(byId).sort(function(a,b){
+    return (b.updated_ts || 0) - (a.updated_ts || 0);
+  });
+  saveSortants(merged);
+}
+function findSortantByDealId(dealId) {
+  if (!dealId) return null;
+  return getSortants().find(function(s){ return s.deal_id === dealId; }) || null;
+}
+
 function openSortiePopup(ts) {
+  // Récupérer le deal depuis le timestamp simulation
+  var deals = getDeals();
+  var deal = deals.find(function(d){ return d.sim_ts === ts; });
+  // Si pas de deal encore, tenter via l'historique (rare)
+  var fallback = null;
+  if (!deal) {
+    var hist = getHistory();
+    var sim = hist.find(function(s){ return s.timestamp === ts; });
+    if (sim) {
+      var parts = (sim.consultant || '').split(' ');
+      fallback = {
+        sim_ts: ts,
+        prenom: parts[0] || '',
+        nom: parts.slice(1).join(' ') || '',
+        commercial: sim.commercial || '',
+        email: sim.email || '',
+        entreprise: sim.entreprise || '',
+        poste: sim.poste || '',
+        tjm: sim.tjm || '',
+        nb_jours: sim.nb_jours || ''
+      };
+    }
+  }
+  var d = deal || fallback;
+  if (!d) { alert('Impossible de retrouver les informations de ce placement.'); return; }
+
+  // Pré-remplir depuis un sortant existant s'il y en a déjà un (mode édition)
+  var existing = deal ? findSortantByDealId(deal.id) : null;
+
   document.getElementById('sortie-sim-ts').value = ts;
-  document.getElementById('sortie-raison').value = '';
-  document.getElementById('sortie-date').value = new Date().toISOString().split('T')[0];
-  document.getElementById('sortie-commentaire').value = '';
+  document.getElementById('sortie-deal-id').value = deal ? deal.id : '';
+
+  // Infos auto (affichage lecture seule)
+  var today = new Date();
+  var todayStr = today.toLocaleDateString('fr-FR');
+  document.getElementById('sortie-info-date').textContent = existing ? (existing.date_demande || todayStr) : todayStr;
+  document.getElementById('sortie-info-commercial').textContent = d.commercial || '—';
+  document.getElementById('sortie-info-prenom').textContent = d.prenom || '—';
+  document.getElementById('sortie-info-nom').textContent = d.nom || '—';
+
+  // Sous-titre
+  var sub = document.getElementById('sortie-subtitle');
+  if (sub) {
+    var name = ((d.prenom || '') + ' ' + (d.nom || '')).trim() || '—';
+    sub.textContent = name + (d.entreprise ? ' · ' + d.entreprise : '') + (existing ? ' · ✎ modification' : '');
+  }
+
+  // Champs éditables (pré-remplis si existant)
+  document.getElementById('sortie-fin-mission').value = existing ? (existing.fin_mission || '') : (deal && deal.date_sortie ? deal.date_sortie : '');
+  document.getElementById('sortie-fin-contrat-travail').value = existing ? (existing.fin_contrat_travail || '') : '';
+  document.getElementById('sortie-date-fin-contrat').value = existing ? (existing.date_fin_contrat || '') : '';
+  document.getElementById('sortie-type-fin-contrat').value = existing ? (existing.type_fin_contrat || '') : '';
+  document.getElementById('sortie-raison').value = existing ? (existing.raison || '') : '';
+  document.getElementById('sortie-commentaire').value = existing ? (existing.commentaire || '') : (deal && deal.commentaire_sortie ? deal.commentaire_sortie : '');
+
+  toggleSortieContratFields();
   openModal('modal-sortie');
+}
+
+// Fonction conservée pour compatibilité — ne filtre plus rien (les 2 champs sont toujours visibles)
+function toggleSortieContratFields() {
+  // Intentionnellement vide : Date fin CDI et Type fin de contrat sont désormais
+  // toujours visibles, indépendamment du choix Oui/Non sur "Fin de contrat travail".
 }
 
 function saveSortie() {
   var ts = parseInt(document.getElementById('sortie-sim-ts').value);
+  var dealId = parseInt(document.getElementById('sortie-deal-id').value) || null;
+  var finMission = document.getElementById('sortie-fin-mission').value;
+  var finContratTrav = document.getElementById('sortie-fin-contrat-travail').value;
+  var dateFinContrat = document.getElementById('sortie-date-fin-contrat').value;
+  var typeFinContrat = document.getElementById('sortie-type-fin-contrat').value;
   var raison = document.getElementById('sortie-raison').value;
-  var date = document.getElementById('sortie-date').value;
   var commentaire = document.getElementById('sortie-commentaire').value;
-  if (!raison) { alert('Veuillez sélectionner une raison.'); return; }
 
+  if (!finMission) { alert('La date de fin de mission est obligatoire.'); return; }
+
+  // Retrouver / créer le deal
   var deals = getDeals();
-  var idx = deals.findIndex(function(d) { return d.sim_ts === ts; });
-  if (idx >= 0) {
-    deals[idx].etat = 'Sorti des effectifs';
-    deals[idx].date_sortie = date;
-    deals[idx].raison_sortie = raison;
-    deals[idx].commentaire_sortie = commentaire;
+  var dealIdx = dealId ? deals.findIndex(function(d){ return d.id === dealId; }) : -1;
+  if (dealIdx < 0 && ts) {
+    dealIdx = deals.findIndex(function(d){ return d.sim_ts === ts; });
+  }
+  var deal;
+  if (dealIdx >= 0) {
+    deal = deals[dealIdx];
   } else {
-    // Créer un deal sortie depuis l'historique
+    // Créer un deal minimal depuis l'historique
     var hist = getHistory();
-    var sim = hist.find(function(s) { return s.timestamp === ts; });
-    if (sim) {
-      var parts = (sim.consultant || '').split(' ');
-      deals.unshift({
-        id: Date.now(), sim_ts: ts,
-        prenom: parts[0] || '', nom: parts.slice(1).join(' ') || '',
-        email: sim.email || '', poste: sim.poste || '',
-        entreprise: sim.entreprise || '', commercial: sim.commercial || '',
-        etat: 'Sorti des effectifs', date_sortie: date,
-        raison_sortie: raison, commentaire_sortie: commentaire,
-        tjm: sim.tjm || '', nb_jours: sim.nb_jours || '',
-        date_created: new Date().toLocaleDateString('fr-FR')
-      });
+    var sim = hist.find(function(s){ return s.timestamp === ts; });
+    if (!sim) { alert('Impossible de retrouver la simulation.'); return; }
+    var parts = (sim.consultant || '').split(' ');
+    deal = {
+      id: Date.now(), sim_ts: ts,
+      prenom: parts[0] || '', nom: parts.slice(1).join(' ') || '',
+      email: sim.email || '', poste: sim.poste || '',
+      entreprise: sim.entreprise || '', commercial: sim.commercial || '',
+      tjm: sim.tjm || '', nb_jours: sim.nb_jours || '',
+      date_created: new Date().toLocaleDateString('fr-FR')
+    };
+    deals.unshift(deal);
+    dealIdx = 0;
+  }
+
+  // Mettre à jour le deal : état "Sorti des effectifs" + date_sortie = fin mission
+  deals[dealIdx].etat = 'Sorti des effectifs';
+  deals[dealIdx].date_sortie = finMission;
+  deals[dealIdx].raison_sortie = raison;
+  deals[dealIdx].commentaire_sortie = commentaire;
+  saveDeals(deals);
+
+  // Enregistrer / mettre à jour la fiche sortant
+  var sortants = getSortants();
+  var sortIdx = sortants.findIndex(function(s){ return s.deal_id === deal.id; });
+  var today = new Date();
+  var todayStr = today.toLocaleDateString('fr-FR');
+
+  var sortant = sortIdx >= 0 ? sortants[sortIdx] : {
+    id: 'sort_' + Date.now(),
+    deal_id: deal.id,
+    sim_ts: ts,
+    date_demande: todayStr,
+    date_demande_ts: today.getTime(),
+    // Champs de suivi par défaut à "Non"
+    doc_fin_envoye: 'Non',
+    doc_fin_signe: 'Non',
+    laya: 'Non',
+    sdtc: 'Non'
+  };
+
+  // Champs saisis dans le popup
+  sortant.commercial = deal.commercial || '';
+  sortant.prenom = deal.prenom || '';
+  sortant.nom = deal.nom || '';
+  sortant.entreprise = deal.entreprise || '';
+  sortant.fin_mission = finMission;
+  sortant.fin_contrat_travail = finContratTrav;
+  sortant.date_fin_contrat = dateFinContrat;
+  sortant.type_fin_contrat = typeFinContrat;
+  sortant.raison = raison;
+  sortant.commentaire = commentaire;
+  sortant.updated_ts = today.getTime();
+
+  if (sortIdx >= 0) sortants[sortIdx] = sortant;
+  else sortants.unshift(sortant);
+  saveSortants(sortants);
+
+  closeModal('modal-sortie');
+
+  // Rafraîchir les vues visibles
+  if (typeof renderDeals === 'function' && document.getElementById('tab-deals') && document.getElementById('tab-deals').style.display !== 'none') {
+    renderDeals();
+  }
+  if (typeof renderSortants === 'function' && currentRHSubTab === 'sortants') renderSortants();
+  refreshCandidatsIfVisible();
+
+  // Sync SharePoint auto
+  if (typeof odAutoSync === 'function') odAutoSync();
+
+  // Générer et ouvrir automatiquement le mail de notification
+  try {
+    sendSortantNotificationEmail(sortant, deal, sortIdx >= 0);
+  } catch (e) {
+    console.warn('Erreur envoi mail sortant:', e);
+  }
+
+  alert('✓ Sortie enregistrée pour ' + (deal.prenom || '') + ' ' + (deal.nom || '') + '.\n\nUn mail de notification est envoyé automatiquement à ' + (getSortantsConfig().mail_fixe || 'l\'adresse configurée') + '.');
+}
+
+// Envoie un mail de notification via Microsoft Graph (compte connecté OneDrive).
+// Envoi 100% automatique sans intervention utilisateur, avec fallback .eml si Graph indispo.
+function sendSortantNotificationEmail(sortant, deal, isEdit) {
+  var cfg = getSortantsConfig();
+  var mailFixe = (cfg.mail_fixe || '').trim();
+  if (!mailFixe) {
+    console.warn('[Sortant] Pas d\'adresse mail fixe configurée — mail non envoyé');
+    return;
+  }
+
+  // Email du commercial DU DEAL (pas celui connecté) depuis l'annuaire configuré
+  // Si aucun email n'est renseigné pour ce commercial, pas de CC
+  var commercialEmail = findCommercialEmailByName(deal.commercial || sortant.commercial || '');
+
+  var name = ((deal.prenom || '') + ' ' + (deal.nom || '')).trim() || '—';
+  var entreprise = deal.entreprise || '—';
+  var finMissionFR = sortant.fin_mission ? new Date(sortant.fin_mission).toLocaleDateString('fr-FR') : '—';
+  var dateFinContratFR = sortant.date_fin_contrat ? new Date(sortant.date_fin_contrat).toLocaleDateString('fr-FR') : '—';
+  var subject = (isEdit ? '[Modification] ' : '[Nouvelle sortie] ')
+    + name + ' — ' + entreprise + ' — Fin mission ' + finMissionFR;
+
+  var appUrl = (typeof window !== 'undefined' && window.location && window.location.href)
+    ? window.location.href.split('#')[0] + '#rh-sortants'
+    : '';
+
+  // Corps HTML du mail
+  var html = ''
+    + '<div style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#1a1a1a;max-width:640px;">'
+    +   '<div style="background:linear-gradient(135deg,#A8322A,#E24B4A);color:#fff;padding:18px 22px;border-radius:8px 8px 0 0;">'
+    +     '<div style="font-size:18px;font-weight:800;">🚪 ' + (isEdit ? 'Modification d\'une sortie' : 'Nouvelle sortie consultant') + '</div>'
+    +     '<div style="font-size:12px;opacity:0.88;margin-top:4px;">' + name + (entreprise !== '—' ? ' · ' + entreprise : '') + '</div>'
+    +   '</div>'
+    +   '<div style="border:1px solid #E4E0FA;border-top:0;padding:20px 22px;border-radius:0 0 8px 8px;background:#fff;">'
+    +     '<p style="margin:0 0 14px;">Bonjour,</p>'
+    +     '<p style="margin:0 0 14px;">'
+    +       (isEdit ? 'La fiche de sortie du consultant ci-dessous a été <strong>modifiée</strong>.' : 'Une <strong>nouvelle sortie</strong> vient d\'être déclarée pour le consultant ci-dessous.')
+    +     '</p>'
+    +     '<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:18px 0;border:1px solid #E4E0FA;border-radius:6px;overflow:hidden;">'
+    +       '<tr style="background:#FAF8FF;"><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;width:40%;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Date demande</td><td style="padding:10px 14px;color:#1a1a1a;">' + (sortant.date_demande || '—') + '</td></tr>'
+    +       '<tr><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Commercial</td><td style="padding:10px 14px;color:#1a1a1a;border-top:1px solid #F0EDF9;">' + (sortant.commercial || '—') + '</td></tr>'
+    +       '<tr style="background:#FAF8FF;"><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Consultant</td><td style="padding:10px 14px;color:#1a1a1a;border-top:1px solid #F0EDF9;">' + name + '</td></tr>'
+    +       '<tr><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Entreprise</td><td style="padding:10px 14px;color:#1a1a1a;border-top:1px solid #F0EDF9;">' + entreprise + '</td></tr>'
+    +       '<tr style="background:#FAF8FF;"><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Fin de mission</td><td style="padding:10px 14px;color:#A8322A;font-weight:700;border-top:1px solid #F0EDF9;">' + finMissionFR + '</td></tr>'
+    +       '<tr><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Fin de contrat de travail</td><td style="padding:10px 14px;color:#1a1a1a;border-top:1px solid #F0EDF9;">' + (sortant.fin_contrat_travail || '—') + '</td></tr>'
+    +       '<tr style="background:#FAF8FF;"><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Date fin de contrat</td><td style="padding:10px 14px;color:#1a1a1a;border-top:1px solid #F0EDF9;">' + dateFinContratFR + '</td></tr>'
+    +       '<tr><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Type fin de contrat</td><td style="padding:10px 14px;color:#1a1a1a;border-top:1px solid #F0EDF9;">' + (sortant.type_fin_contrat || '—') + '</td></tr>'
+    +       '<tr style="background:#FAF8FF;"><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Raison</td><td style="padding:10px 14px;color:#1a1a1a;border-top:1px solid #F0EDF9;">' + (sortant.raison || '—') + '</td></tr>'
+    + (sortant.commentaire
+        ? '<tr><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;vertical-align:top;">Commentaires</td><td style="padding:10px 14px;color:#1a1a1a;border-top:1px solid #F0EDF9;white-space:pre-line;">' + ((sortant.commentaire || '') + '').replace(/</g,'&lt;') + '</td></tr>'
+        : '')
+    +     '</table>'
+    +     '<div style="margin:20px 0;padding:12px 16px;background:#FAF8FF;border-left:3px solid #7343EE;border-radius:4px;">'
+    +       '<div style="font-size:12px;font-weight:700;color:#4B36EC;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">📋 Accès à la fiche</div>'
+    +       '<div style="font-size:13px;color:#1a1a1a;">Retrouvez cette sortie dans l\'onglet <strong>Suivi RH → Sortants</strong> du simulateur Seven Portage.</div>'
+    + (appUrl ? '<div style="font-size:11.5px;color:#6B5E9C;margin-top:6px;word-break:break-all;">' + appUrl + '</div>' : '')
+    +     '</div>'
+    +     '<p style="margin:16px 0 0;color:#6B5E9C;font-size:12px;">— Simulateur Seven Portage</p>'
+    +   '</div>'
+    + '</div>';
+
+  // Si on a un token Graph, envoi auto via sendMail
+  if (typeof odToken !== 'undefined' && odToken) {
+    var payload = {
+      message: {
+        subject: subject,
+        body: { contentType: 'HTML', content: html },
+        toRecipients: [{ emailAddress: { address: mailFixe } }],
+        ccRecipients: commercialEmail ? [{ emailAddress: { address: commercialEmail } }] : []
+      },
+      saveToSentItems: true
+    };
+    fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + odToken,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    }).then(function(r){
+      if (r.ok || r.status === 202) {
+        console.log('[Sortant] Mail envoyé automatiquement via Graph à', mailFixe, commercialEmail ? '(CC: ' + commercialEmail + ')' : '');
+        if (typeof showNotifToast === 'function') showNotifToast('✉ Mail de notification sortie envoyé');
+      } else {
+        r.text().then(function(txt){
+          console.error('[Sortant] Échec envoi Graph:', r.status, txt);
+        });
+        if (typeof showNotifToast === 'function') showNotifToast('Échec envoi mail (status ' + r.status + ') — génération .eml en fallback', true);
+        // Fallback .eml en cas d'échec
+        downloadSortantEml(mailFixe, commercialEmail, subject, html, sortant);
+      }
+    }).catch(function(err){
+      console.error('[Sortant] Erreur réseau Graph:', err);
+      if (typeof showNotifToast === 'function') showNotifToast('Erreur réseau — génération .eml en fallback', true);
+      downloadSortantEml(mailFixe, commercialEmail, subject, html, sortant);
+    });
+  } else {
+    // Pas connecté OneDrive → fallback .eml à télécharger
+    console.warn('[Sortant] Pas de token Graph — fallback .eml');
+    downloadSortantEml(mailFixe, commercialEmail, subject, html, sortant);
+  }
+}
+
+// Fallback : génère un .eml pour que l'utilisateur puisse l'envoyer manuellement via son client mail
+function downloadSortantEml(to, cc, subject, html, sortant) {
+  try {
+    var eml = buildEML(to, subject, html, [], 'SP_SORT_' + Date.now(), cc);
+    var blob = new Blob([eml], { type: 'message/rfc822' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'Sortie_' + ((sortant.nom || 'consultant') + '').replace(/[^a-zA-Z0-9]/g,'_') + '_' + (sortant.fin_mission || '') + '.eml';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+  } catch (e) {
+    console.error('[Sortant] Erreur génération .eml:', e);
+  }
+}
+
+// Mise à jour d'un champ de suivi directement depuis le tableau Sortants
+function updateSortantField(sortantId, field, value) {
+  var sortants = getSortants();
+  var idx = sortants.findIndex(function(s){ return s.id === sortantId; });
+  if (idx < 0) return;
+  sortants[idx][field] = value;
+  sortants[idx].updated_ts = Date.now();
+  saveSortants(sortants);
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+// Supprimer un sortant (réversible : ça ne remet pas l'état du deal, juste supprime la fiche)
+function deleteSortant(sortantId) {
+  var sortants = getSortants();
+  var s = sortants.find(function(x){ return x.id === sortantId; });
+  if (!s) return;
+  var name = ((s.prenom || '') + ' ' + (s.nom || '')).trim() || 'cette fiche';
+  if (!confirm('Supprimer la fiche sortant de ' + name + ' ?\n\nLe deal reste en l\'état. Cette action est irréversible sur la fiche sortant.')) return;
+  sortants = sortants.filter(function(x){ return x.id !== sortantId; });
+  saveSortants(sortants);
+  if (typeof renderSortants === 'function') renderSortants();
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+// Rafraîchit la liste des candidats si l'onglet est visible (pour que les statuts auto se mettent à jour)
+function refreshCandidatsIfVisible() {
+  var tab = document.getElementById('tab-candidats');
+  if (tab && tab.style.display !== 'none' && typeof renderCandidats === 'function') {
+    renderCandidats();
+  }
+}
+
+// Annuler la sortie complètement : supprime la fiche sortant ET remet le deal en "En cours"
+// (action logique quand un sortant a été saisi par erreur ou que le consultant reste finalement)
+function cancelSortie(sortantId) {
+  var sortants = getSortants();
+  var s = sortants.find(function(x){ return x.id === sortantId; });
+  if (!s) return;
+  var name = ((s.prenom || '') + ' ' + (s.nom || '')).trim() || 'cette sortie';
+  if (!confirm('Annuler la sortie de ' + name + ' ?\n\n→ La fiche sortant sera supprimée\n→ Le deal repassera en "En cours"\n→ Le consultant redeviendra actif\n\nCette action est irréversible (vous devrez re-saisir les informations si vous voulez le ressortir).')) return;
+
+  // Supprimer la fiche sortant
+  sortants = sortants.filter(function(x){ return x.id !== sortantId; });
+  saveSortants(sortants);
+
+  // Remettre le deal en "En cours" et nettoyer les champs de sortie
+  if (s.deal_id) {
+    var deals = getDeals();
+    var idx = deals.findIndex(function(d){ return d.id === s.deal_id; });
+    if (idx >= 0) {
+      deals[idx].etat = 'En cours';
+      delete deals[idx].date_sortie;
+      delete deals[idx].raison_sortie;
+      delete deals[idx].commentaire_sortie;
+      saveDeals(deals);
     }
   }
-  saveDeals(deals);
-  closeModal('modal-sortie');
-  alert('Sortie enregistrée.');
-  if (document.getElementById('tab-deals') && document.getElementById('tab-deals').style.display !== 'none') renderDeals();
+
+  // Rafraîchir les vues
+  if (typeof renderSortants === 'function' && currentRHSubTab === 'sortants') renderSortants();
+  if (typeof renderDeals === 'function' && document.getElementById('tab-deals') && document.getElementById('tab-deals').style.display !== 'none') renderDeals();
+  refreshCandidatsIfVisible();
+  if (typeof odAutoSync === 'function') odAutoSync();
+  alert('✓ Sortie annulée pour ' + name + '. Le consultant est remis en "En cours".');
 }
 
 // ── Onglet Tableau Deals ──
@@ -5023,7 +4942,10 @@ function renderDeals() {
 
   deals.forEach(function(d){
     var color = ECOLORS[d.etat]||'#6B5E9C';
-    var rowClass = d.salarie_etranger ? ' class="row-etranger"' : '';
+    var classList = [];
+    if (d.salarie_etranger) classList.push('row-etranger');
+    if (d.etat === 'Annulé') classList.push('row-cancelled');
+    var rowClass = classList.length ? ' class="' + classList.join(' ') + '"' : '';
     html += '<tr' + rowClass + ' style="border-left:3px solid '+color+';">';
     visColDefs.forEach(function(col){
       var fc = col.freeze==='f1' ? ' class="col-freeze"' : col.freeze==='f2' ? ' class="col-freeze2"' : '';
@@ -5086,6 +5008,65 @@ function deleteDeal(id) {
   var deals = getDeals().filter(function(d) { return d.id !== id; });
   saveDeals(deals);
   renderDeals();
+}
+
+// Annulation soft : conserve toutes les données mais passe l'état à "Annulé"
+// (utilisé dans le tableau deals et dans la fiche candidat)
+function cancelDeal(id) {
+  var deals = getDeals();
+  var d = deals.find(function(x){ return x.id === id; });
+  if (!d) return;
+  if (d.etat === 'Annulé') { alert('Ce placement est déjà annulé.'); return; }
+  var name = ((d.prenom || '') + ' ' + (d.nom || '')).trim() || 'ce placement';
+  if (!confirm('Annuler le placement de ' + name + ' chez ' + (d.entreprise || '—') + ' ?\n\nLes informations sont conservées. Vous pourrez restaurer le placement ultérieurement.')) return;
+  d.etat = 'Annulé';
+  d._cancelled_at = new Date().toISOString();
+  saveDeals(deals);
+  if (typeof renderDeals === 'function') renderDeals();
+  // Si la fiche candidat est ouverte, rafraîchir son onglet simulations pour afficher le badge
+  refreshCandFicheSimsIfOpen(d);
+  // Rafraîchir la liste candidats si visible (pour mettre à jour le statut auto)
+  if (typeof refreshCandidatsIfVisible === 'function') refreshCandidatsIfVisible();
+  // Sync auto
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+function restoreDeal(id) {
+  var deals = getDeals();
+  var d = deals.find(function(x){ return x.id === id; });
+  if (!d) return;
+  if (d.etat !== 'Annulé') return;
+  var name = ((d.prenom || '') + ' ' + (d.nom || '')).trim() || 'ce placement';
+  if (!confirm('Restaurer le placement de ' + name + ' ?\n\nL\'état sera remis à "En cours" et le deal recomptera dans les commissions.')) return;
+  d.etat = 'En cours';
+  delete d._cancelled_at;
+  saveDeals(deals);
+  if (typeof renderDeals === 'function') renderDeals();
+  refreshCandFicheSimsIfOpen(d);
+  if (typeof refreshCandidatsIfVisible === 'function') refreshCandidatsIfVisible();
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+// Rafraîchit l'onglet "Simulations" de la fiche candidat si elle est ouverte et
+// concerne le candidat du deal modifié (pour que le badge Annulé apparaisse/disparaisse)
+function refreshCandFicheSimsIfOpen(deal) {
+  var modal = document.getElementById('modal-cand-fiche');
+  if (!modal) return;
+  // Si c'est l'onglet simulations qui est actif, régénérer
+  var simBtn = document.getElementById('ct-btn-simulations');
+  if (simBtn && simBtn.style.color && simBtn.style.color.indexOf('115') < 0) {
+    // pas sur simulations, rien à faire
+    return;
+  }
+  // Retrouve l'id candidat depuis la modale
+  var candidats = (typeof getCandidats === 'function') ? getCandidats() : [];
+  var email = (deal.email || '').trim().toLowerCase();
+  var cand = candidats.find(function(c){ return (c.email || '').trim().toLowerCase() === email; });
+  if (!cand) return;
+  var cont = document.getElementById('ct-content-' + cand.id);
+  if (cont && typeof buildCandSimsHTML === 'function') {
+    cont.innerHTML = buildCandSimsHTML(cand);
+  }
 }
 
 // ════════════════════════════════════════════════════
@@ -5371,10 +5352,15 @@ function getCellValue(d, key){
     case 'salarie_etranger':
       return '<input type="checkbox" ' + (d.salarie_etranger ? 'checked' : '') + ' onchange="updateDealField(' + d.id + ',\'salarie_etranger\',this.checked);event.stopPropagation();" onclick="event.stopPropagation();" style="accent-color:#F0A500;cursor:pointer;">';
     case 'actions':
+      var isCancelled = (d.etat === 'Annulé');
+      var annulerBtn = isCancelled
+        ? '<button onclick="restoreDeal('+d.id+')" title="Restaurer (annuler l\'annulation)" style="padding:3px 7px;background:#F0FDF4;color:#1D9E75;border:1.5px solid #9FE1CB;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#8634;</button>'
+        : '<button onclick="cancelDeal('+d.id+')" title="Annuler le placement" style="padding:3px 7px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#10060;</button>';
       return '<button onclick="openPlacementPopup('+d.sim_ts+')" title="Modifier" style="padding:3px 7px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#9998;</button>'
            + '<button onclick="openSortiePopup('+d.sim_ts+')" title="Sortie" style="padding:3px 7px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#128683;</button>'
+           + annulerBtn
            + '<button onclick="openSimFromDeal('+d.sim_ts+')" title="Voir simulation" style="padding:3px 7px;background:#F0FDF4;color:#1D9E75;border:1.5px solid #9FE1CB;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#128200;</button>'
-           + '<button onclick="deleteDeal('+d.id+')" title="Supprimer" style="padding:3px 7px;background:#fff;color:#9E9E9E;border:1.5px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;">&#128465;</button>';
+           + '<button onclick="deleteDeal('+d.id+')" title="Supprimer d\u00e9finitivement" style="padding:3px 7px;background:#fff;color:#9E9E9E;border:1.5px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;">&#128465;</button>';
     default: return '—';
   }
 }
@@ -5608,6 +5594,66 @@ function showCandidatsTab() {
   renderCandidats();
 }
 
+// Calcule le statut portage effectif d'un candidat en croisant ses simulations et les deals.
+// Règles (priorité descendante) :
+// 1. Si le candidat a un deal actif (Signé ou En cours) dont date_entree ≤ aujourd'hui
+//    ET (pas de date_sortie OU date_sortie > aujourd'hui) → "Porté"
+// 2. Si le candidat a été Porté (au moins un deal avec état Sorti des effectifs OU
+//    deal avec date_sortie ≤ aujourd'hui) mais plus aucun deal actif → "Ancien porté"
+// 3. Sinon → statut manuel saisi (Prospect, Prospect chaud) ou "Prospect" par défaut
+function computeCandStatutAuto(cand) {
+  if (!cand) return 'Prospect';
+  var manualStatut = cand.statut_portage || 'Prospect';
+
+  // Récupérer les deals liés au candidat (par email, case-insensitive)
+  // Les deals annulés sont totalement ignorés : comme s'ils n'existaient pas.
+  var email = ((cand.email || '') + '').trim().toLowerCase();
+  if (!email) return manualStatut;
+  var allDeals = (typeof getDeals === 'function') ? getDeals() : [];
+  var dealsOfCand = allDeals.filter(function(d){
+    return (d.email || '').trim().toLowerCase() === email
+        && d.etat !== 'Annulé';
+  });
+  // Aucun deal → on garde le statut manuel (Prospect ou Prospect chaud)
+  if (dealsOfCand.length === 0) {
+    return (manualStatut === 'Prospect chaud') ? 'Prospect chaud' : 'Prospect';
+  }
+
+  var today = new Date();
+  today.setHours(23, 59, 59, 999);
+
+  var hasActive = false;  // au moins un deal en cours (date non échue)
+  var hasPast = false;    // au moins un deal terminé
+
+  dealsOfCand.forEach(function(d){
+    var dateSortie = d.date_sortie ? new Date(d.date_sortie) : null;
+    var dateFin = d.date_fin ? new Date(d.date_fin) : null;  // date de fin prévisionnelle
+
+    if (d.etat === 'Sorti des effectifs') {
+      // Sortie officielle enregistrée
+      if (dateSortie && dateSortie > today) {
+        // Sortie planifiée dans le futur → encore en portage
+        hasActive = true;
+      } else {
+        hasPast = true;
+      }
+    } else if (d.etat === 'Signé' || d.etat === 'En cours' || d.etat === 'Nouveau placement') {
+      // Deal en cours : on vérifie la date de fin prévisionnelle
+      // Si la mission est terminée sur le papier (date_fin < aujourd'hui), on le traite comme un ancien porté
+      if (dateFin && dateFin < today) {
+        hasPast = true;
+      } else {
+        hasActive = true;
+      }
+    }
+  });
+
+  if (hasActive) return 'Porté';
+  if (hasPast) return 'Ancien porté';
+  // Tous les deals sont dans un état non interprété → on garde le manuel
+  return (manualStatut === 'Prospect chaud') ? 'Prospect chaud' : 'Prospect';
+}
+
 function renderCandidats() {
   var el = document.getElementById('candidats-list');
   if (!el) return;
@@ -5621,7 +5667,7 @@ function renderCandidats() {
     });
   }
   if (filtStatut) {
-    cands = cands.filter(function(cand) { return (cand.statut_portage||'Prospect') === filtStatut; });
+    cands = cands.filter(function(cand) { return computeCandStatutAuto(cand) === filtStatut; });
   }
   var filtDate = document.getElementById('cand-filter-date') ? document.getElementById('cand-filter-date').value : '';
   if (filtDate) {
@@ -5655,7 +5701,7 @@ function renderCandidats() {
     var lastSim = (cand.simulations||[])[0];
     var nbSims = (cand.simulations||[]).length;
     var initials = ((cand.prenom||'').charAt(0)+(cand.nom||'').charAt(0)).toUpperCase();
-    var statut = cand.statut_portage || 'Prospect';
+    var statut = computeCandStatutAuto(cand);
     var scfg = statutCfg[statut] || statutCfg['Prospect'];
     var commercial = lastSim ? (lastSim.commercial||'') : '';
     var tjm = cand.tjm_actuel || (lastSim ? lastSim.tjm : '') || '';
@@ -5744,7 +5790,7 @@ var currentRHSubTab = 'deals';
 var RH_SUBTABS = [
   { key: 'deals',      label: 'Tableau des deals', icon: '\u{1F4CB}', ready: true  },
   { key: 'avenants',   label: 'Avenants',          icon: '\u{1F4DD}', ready: false },
-  { key: 'sortants',   label: 'Sortants',          icon: '\u{1F6AA}', ready: false },
+  { key: 'sortants',   label: 'Sortants',          icon: '\u{1F6AA}', ready: true  },
   { key: 'avances',    label: 'Avances',           icon: '\u{1F4B6}', ready: false },
   { key: 'cooptation', label: 'Cooptation',        icon: '\u{1F91D}', ready: false }
 ];
@@ -5755,10 +5801,372 @@ function showRHSection(subtab) {
     // Afficher le tab-deals existant, avec la barre de sous-onglets injectée au-dessus
     showDealsTab();
     injectRHSubNav();
+  } else if (subtab === 'sortants') {
+    showSortantsView();
   } else {
     // Placeholder pour les sous-sections non encore implémentées
     showRHPlaceholder(subtab);
   }
+}
+
+// Vue Sortants : utilise le conteneur tab-deals pour cohérence d'emplacement
+function showSortantsView() {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-deals');
+  if (!tab) return;
+  tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+  // Masquer le contenu original
+  setDealsOriginalVisible(false);
+  // Sub-nav
+  injectRHSubNav();
+  // Injecter le conteneur sortants
+  var container = document.getElementById('sortants-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'sortants-container';
+    tab.appendChild(container);
+  }
+  container.style.display = 'block';
+  // Masquer l'éventuel placeholder
+  var ph = document.getElementById('rh-placeholder');
+  if (ph) ph.style.display = 'none';
+  renderSortants();
+}
+
+function renderSortants() {
+  var container = document.getElementById('sortants-container');
+  if (!container) return;
+  var all = getSortants();
+
+  // Filtres (état local)
+  if (!window._sortantsFilter) window._sortantsFilter = { commercial: '__all__', raison: '__all__', type: '__all__', year: '__all__', month: '__all__', search: '' };
+  var f = window._sortantsFilter;
+  if (typeof f.month === 'undefined') f.month = '__all__';  // compat avec ancien state
+
+  // Valeurs distinctes
+  var comms = {}, raisons = {}, types = {}, years = {};
+  all.forEach(function(s){
+    if (s.commercial) comms[s.commercial] = 1;
+    if (s.raison) raisons[s.raison] = 1;
+    if (s.type_fin_contrat) types[s.type_fin_contrat] = 1;
+    // Année = année de fin_mission
+    if (s.fin_mission) {
+      var y = (s.fin_mission + '').slice(0, 4);
+      if (y) years[y] = 1;
+    }
+  });
+
+  // Filtrage
+  var filtered = all.filter(function(s){
+    if (f.commercial !== '__all__' && (s.commercial || '') !== f.commercial) return false;
+    if (f.raison !== '__all__' && (s.raison || '') !== f.raison) return false;
+    if (f.type !== '__all__' && (s.type_fin_contrat || '') !== f.type) return false;
+    if (f.year !== '__all__') {
+      var yr = (s.fin_mission || '').slice(0, 4);
+      if (yr !== f.year) return false;
+    }
+    if (f.month !== '__all__') {
+      // fin_mission au format YYYY-MM-DD → mois = caractères 5-6
+      var mo = (s.fin_mission || '').slice(5, 7);
+      if (mo !== f.month) return false;
+    }
+    if (f.search) {
+      var q = f.search.toLowerCase();
+      var hay = [(s.prenom||''), (s.nom||''), (s.entreprise||''), (s.commercial||'')].join(' ').toLowerCase();
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+
+  // Tri : fin de mission desc
+  filtered.sort(function(a,b){ return (b.fin_mission || '').localeCompare(a.fin_mission || ''); });
+
+  var commOpts = '<option value="__all__">Tous commerciaux</option>' + Object.keys(comms).sort().map(function(c){
+    return '<option value="' + c.replace(/"/g,'&quot;') + '"' + (f.commercial===c?' selected':'') + '>' + c + '</option>';
+  }).join('');
+  var raisonOpts = '<option value="__all__">Toutes raisons</option>' + Object.keys(raisons).sort().map(function(r){
+    return '<option value="' + r.replace(/"/g,'&quot;') + '"' + (f.raison===r?' selected':'') + '>' + r + '</option>';
+  }).join('');
+  var typeOpts = '<option value="__all__">Tous types</option>' + Object.keys(types).sort().map(function(t){
+    return '<option value="' + t.replace(/"/g,'&quot;') + '"' + (f.type===t?' selected':'') + '>' + t + '</option>';
+  }).join('');
+  var yearOpts = '<option value="__all__">Toutes années</option>' + Object.keys(years).sort().reverse().map(function(y){
+    return '<option value="' + y + '"' + (f.year===y?' selected':'') + '>' + y + '</option>';
+  }).join('');
+  var monthLabels = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  var monthOpts = '<option value="__all__">Tous mois</option>' + monthLabels.map(function(lbl, i){
+    var mm = (i < 9 ? '0' : '') + (i + 1);
+    return '<option value="' + mm + '"' + (f.month===mm?' selected':'') + '>' + lbl + '</option>';
+  }).join('');
+
+  // Stats
+  var nbTotal = filtered.length;
+  var nbAvecContrat = filtered.filter(function(s){ return s.fin_contrat_travail === 'Oui'; }).length;
+  var nbDocsEnvoyes = filtered.filter(function(s){ return s.doc_fin_envoye === 'Oui'; }).length;
+  var nbLaya = filtered.filter(function(s){ return s.laya === 'Oui'; }).length;
+
+  var html = '<div style="padding:4px 0 24px;">';
+
+  // Hero
+  html += '<div class="comm-hero" style="background:linear-gradient(135deg,#A8322A 0%, #C0392B 50%, #E24B4A 100%);box-shadow:0 6px 20px rgba(226,75,74,0.22);">'
+    + '<div class="comm-hero-title">🚪 Sortants</div>'
+    + '<div class="comm-hero-sub">' + nbTotal + ' fiche' + (nbTotal>1?'s':'') + ' de sortie · gestion fin de mission & fin de contrat</div>'
+    + '<div class="comm-stats">'
+    +   '<div><div class="comm-stat-label">Total</div><div class="comm-stat-val">' + nbTotal + '</div><div class="comm-stat-sub">sortie' + (nbTotal>1?'s':'') + '</div></div>'
+    +   '<div><div class="comm-stat-label">Fin de contrat</div><div class="comm-stat-val">' + nbAvecContrat + '</div><div class="comm-stat-sub">contrat CDI terminé</div></div>'
+    +   '<div><div class="comm-stat-label">Docs envoyés</div><div class="comm-stat-val">' + nbDocsEnvoyes + '</div><div class="comm-stat-sub">' + (nbTotal>0 ? Math.round(nbDocsEnvoyes*100/nbTotal) : 0) + '% du total</div></div>'
+    +   '<div><div class="comm-stat-label">Sur Laya</div><div class="comm-stat-val">' + nbLaya + '</div><div class="comm-stat-sub">enregistré' + (nbLaya>1?'s':'') + '</div></div>'
+    + '</div>'
+    + '</div>';
+
+  // Carte paramètres (pliable)
+  var cfg = getSortantsConfig();
+  var configOpen = window._sortantsConfigOpen || false;
+  var commerciauxList = cfg.commerciaux || [];
+
+  html += '<div class="comm-card" style="padding:14px 18px;">'
+    + '<div onclick="window._sortantsConfigOpen=!window._sortantsConfigOpen;renderSortants();" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;' + (configOpen ? 'margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #F0EDF9;' : '') + '">'
+    +   '<div style="display:flex;align-items:center;gap:10px;">'
+    +     '<span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;background:#FAF8FF;font-size:14px;">⚙️</span>'
+    +     '<div>'
+    +       '<div style="font-size:12.5px;font-weight:700;color:#1A1033;">Paramètres Sortants</div>'
+    +       '<div style="font-size:10.5px;color:#9E94C4;margin-top:2px;">Destinataire mail + annuaire commerciaux (CC)</div>'
+    +     '</div>'
+    +   '</div>'
+    +   '<span style="color:#9E94C4;font-size:11px;transform:rotate(' + (configOpen?'90':'0') + 'deg);transition:transform .2s;display:inline-block;">▶</span>'
+    + '</div>';
+
+  if (configOpen) {
+    // Email fixe
+    html += '<div style="margin-bottom:18px;">'
+      +   '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Email de notification (destinataire principal)</label>'
+      +   '<input type="email" value="' + (cfg.mail_fixe||'').replace(/"/g,'&quot;') + '" onchange="updateSortantsConfigField(\'mail_fixe\', this.value);renderSortants();" placeholder="ex: norman@seven-portage.fr" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+      +   '<div style="font-size:10.5px;color:#9E94C4;margin-top:5px;line-height:1.5;">Cette adresse reçoit chaque notification de sortie. Le commercial du deal est mis en copie si son email est dans l\'annuaire ci-dessous.</div>'
+      + '</div>';
+
+    // Annuaire commerciaux
+    html += '<div style="padding-top:14px;border-top:1px solid #F0EDF9;">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">'
+      +   '<div>'
+      +     '<div style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.06em;">📇 Annuaire commerciaux</div>'
+      +     '<div style="font-size:10.5px;color:#9E94C4;margin-top:2px;">Nom exactement identique à celui saisi dans les deals. Un commercial sans email en face ne sera pas mis en copie.</div>'
+      +   '</div>'
+      +   '<div style="display:flex;gap:6px;">'
+      +     '<button onclick="autofillCommerciauxFromDeals()" title="Importer les noms des commerciaux détectés dans les deals" style="padding:7px 12px;background:#F5F3FF;color:#7343EE;border:1.5px solid #C8B8FF;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;">⬇ Importer depuis deals</button>'
+      +     '<button onclick="addCommercialToConfig()" style="padding:7px 12px;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border:none;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;">+ Ajouter</button>'
+      +   '</div>'
+      + '</div>';
+
+    if (commerciauxList.length === 0) {
+      html += '<div style="padding:16px;text-align:center;color:#9E94C4;font-size:12px;background:#FAF8FF;border:1.5px dashed #E4E0FA;border-radius:10px;">'
+        + 'Aucun commercial dans l\'annuaire.'
+        + '<div style="font-size:10.5px;color:#B8AEDB;margin-top:4px;">Cliquez sur <strong>Importer depuis deals</strong> pour initialiser, ou <strong>+ Ajouter</strong> pour en créer un à la main.</div>'
+        + '</div>';
+    } else {
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">';
+      commerciauxList.forEach(function(c, idx) {
+        var hasEmail = !!(c.email && c.email.indexOf('@') > 0);
+        var nomVal = (c.nom || '').replace(/"/g, '&quot;');
+        var emailVal = (c.email || '').replace(/"/g, '&quot;');
+        html += '<div style="background:#fff;border:1.5px solid ' + (hasEmail ? '#9FDBB8' : '#F0D98A') + ';border-radius:10px;padding:10px 12px;">'
+          + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
+          +   '<span style="font-size:10px;font-weight:700;color:' + (hasEmail ? '#0F5132' : '#8A5F00') + ';text-transform:uppercase;letter-spacing:0.05em;">' + (hasEmail ? '✓ Email renseigné' : '⏳ Email manquant') + '</span>'
+          +   '<button onclick="removeCommercialFromConfig(' + idx + ')" title="Retirer ce commercial" style="padding:3px 7px;background:#FFF5F5;color:#E24B4A;border:1px solid #FECACA;border-radius:5px;font-size:11px;cursor:pointer;line-height:1;">🗑</button>'
+          + '</div>'
+          + '<div style="display:grid;grid-template-columns:1fr;gap:6px;">'
+          +   '<div>'
+          +     '<label style="font-size:9.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:3px;letter-spacing:0.05em;">Nom</label>'
+          +     '<input type="text" value="' + nomVal + '" placeholder="ex: David Martin" onchange="updateCommercialInConfig(' + idx + ',\'nom\',this.value)" style="width:100%;padding:6px 9px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:12px;box-sizing:border-box;font-family:inherit;">'
+          +   '</div>'
+          +   '<div>'
+          +     '<label style="font-size:9.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:3px;letter-spacing:0.05em;">Email</label>'
+          +     '<input type="email" value="' + emailVal + '" placeholder="ex: david@seven-portage.fr" onchange="updateCommercialInConfig(' + idx + ',\'email\',this.value)" style="width:100%;padding:6px 9px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:12px;box-sizing:border-box;font-family:inherit;">'
+          +   '</div>'
+          + '</div>'
+          + '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';  // fin annuaire
+  }
+  html += '</div>';  // fin carte
+
+  // Filtres
+  html += '<div class="comm-card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'
+    + '<div style="flex:2;min-width:200px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Recherche</label>'
+    +   '<input type="text" placeholder="Nom, prénom, entreprise…" value="' + (f.search||'').replace(/"/g,'&quot;') + '" oninput="window._sortantsFilter.search=this.value;renderSortants();" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    + '</div>'
+    + '<div style="flex:1;min-width:150px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Commercial</label>'
+    +   '<select class="comm-param-input" onchange="window._sortantsFilter.commercial=this.value;renderSortants();" style="cursor:pointer;">' + commOpts + '</select>'
+    + '</div>'
+    + '<div style="flex:1;min-width:140px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Raison</label>'
+    +   '<select class="comm-param-input" onchange="window._sortantsFilter.raison=this.value;renderSortants();" style="cursor:pointer;">' + raisonOpts + '</select>'
+    + '</div>'
+    + '<div style="flex:1;min-width:160px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Type fin contrat</label>'
+    +   '<select class="comm-param-input" onchange="window._sortantsFilter.type=this.value;renderSortants();" style="cursor:pointer;">' + typeOpts + '</select>'
+    + '</div>'
+    + '<div style="min-width:110px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Année</label>'
+    +   '<select class="comm-param-input" onchange="window._sortantsFilter.year=this.value;renderSortants();" style="cursor:pointer;">' + yearOpts + '</select>'
+    + '</div>'
+    + '<div style="min-width:120px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Mois</label>'
+    +   '<select class="comm-param-input" onchange="window._sortantsFilter.month=this.value;renderSortants();" style="cursor:pointer;">' + monthOpts + '</select>'
+    + '</div>'
+    + '<div style="display:flex;gap:6px;">'
+    +   '<button onclick="exportSortantsCSV()" style="padding:9px 14px;background:#1D9E75;color:#fff;border:none;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">⬇ CSV</button>'
+    +   '<button onclick="window._sortantsFilter={commercial:\'__all__\',raison:\'__all__\',type:\'__all__\',year:\'__all__\',month:\'__all__\',search:\'\'};renderSortants();" style="padding:9px 14px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">↻</button>'
+    + '</div>'
+    + '</div>';
+
+  // Tableau
+  if (filtered.length === 0) {
+    html += '<div class="comm-empty" style="padding:48px 24px;">'
+      + '<div style="font-size:40px;margin-bottom:12px;">🚪</div>'
+      + '<div style="font-size:14px;color:#6B5E9C;font-weight:600;">' + (all.length === 0 ? 'Aucune fiche sortant créée pour le moment.' : 'Aucun résultat pour ces filtres.') + '</div>'
+      + (all.length === 0 ? '<div style="font-size:11.5px;color:#B8AEDB;margin-top:6px;">Activez une sortie via le bouton 🚪 Sortie dans le tableau des deals ou depuis une fiche candidat.</div>' : '')
+      + '</div>';
+  } else {
+    html += '<div class="comm-card" style="padding:0;overflow:hidden;">'
+      + '<div style="overflow-x:auto;max-width:100%;">'
+      + '<table class="comm-deals-table" style="min-width:1400px;">'
+      + '<thead><tr>'
+      +   '<th style="min-width:100px;">Date demande</th>'
+      +   '<th style="min-width:120px;">Commercial</th>'
+      +   '<th style="min-width:110px;">Prénom</th>'
+      +   '<th style="min-width:110px;">Nom</th>'
+      +   '<th style="min-width:140px;">Entreprise</th>'
+      +   '<th style="min-width:110px;">Fin mission</th>'
+      +   '<th style="min-width:100px;">Fin CDI</th>'
+      +   '<th style="min-width:120px;">Date fin CDI</th>'
+      +   '<th style="min-width:150px;">Type fin contrat</th>'
+      +   '<th style="min-width:130px;">Raison</th>'
+      +   '<th style="min-width:110px;">Doc envoyé</th>'
+      +   '<th style="min-width:110px;">Doc signé</th>'
+      +   '<th style="min-width:90px;">Laya</th>'
+      +   '<th style="min-width:90px;">SDTC</th>'
+      +   '<th style="min-width:160px;">Commentaires</th>'
+      +   '<th style="min-width:110px;text-align:center;">Actions</th>'
+      + '</tr></thead><tbody>';
+
+    filtered.forEach(function(s){
+      var escId = s.id.replace(/'/g, "\\'");
+      var finMissionDisplay = s.fin_mission ? new Date(s.fin_mission).toLocaleDateString('fr-FR') : '—';
+      var dateFinCdiDisplay = s.date_fin_contrat ? new Date(s.date_fin_contrat).toLocaleDateString('fr-FR') : '—';
+      html += '<tr>'
+        + '<td>' + (s.date_demande || '—') + '</td>'
+        + '<td>' + (s.commercial || '—') + '</td>'
+        + '<td style="font-weight:600;">' + (s.prenom || '—') + '</td>'
+        + '<td style="font-weight:600;">' + (s.nom || '—') + '</td>'
+        + '<td>' + (s.entreprise || '—') + '</td>'
+        + '<td>' + finMissionDisplay + '</td>'
+        + '<td>' + renderSortantBadge(s.fin_contrat_travail) + '</td>'
+        + '<td>' + dateFinCdiDisplay + '</td>'
+        + '<td style="font-size:11.5px;">' + (s.type_fin_contrat || '—') + '</td>'
+        + '<td style="font-size:11.5px;">' + (s.raison || '—') + '</td>'
+        + '<td>' + renderSortantYesNoSelect(s.id, 'doc_fin_envoye', s.doc_fin_envoye) + '</td>'
+        + '<td>' + renderSortantYesNoSelect(s.id, 'doc_fin_signe', s.doc_fin_signe) + '</td>'
+        + '<td>' + renderSortantYesNoSelect(s.id, 'laya', s.laya) + '</td>'
+        + '<td>' + renderSortantYesNoSelect(s.id, 'sdtc', s.sdtc) + '</td>'
+        + '<td style="font-size:11.5px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (s.commentaire||'').replace(/"/g,'&quot;') + '">' + (s.commentaire || '—') + '</td>'
+        + '<td style="text-align:center;white-space:nowrap;">'
+        +   '<button onclick="openSortiePopup(' + (s.sim_ts || 0) + ')" title="Modifier la fiche" style="padding:4px 9px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11px;cursor:pointer;margin-right:3px;">✎</button>'
+        +   '<button onclick="cancelSortie(\'' + escId + '\')" title="Annuler la sortie (remet le consultant en cours)" style="padding:4px 9px;background:#F0FDF4;color:#1D9E75;border:1.5px solid #9FE1CB;border-radius:6px;font-size:11px;cursor:pointer;margin-right:3px;">↺</button>'
+        +   '<button onclick="deleteSortant(\'' + escId + '\')" title="Supprimer la fiche (sans remettre en cours)" style="padding:4px 9px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:6px;font-size:11px;cursor:pointer;">🗑</button>'
+        + '</td>'
+        + '</tr>';
+    });
+    html += '</tbody></table></div></div>';
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// Helper : badge Oui/Non coloré (pour Fin CDI, lecture)
+function renderSortantBadge(val) {
+  if (val === 'Oui') return '<span style="display:inline-block;padding:2px 9px;background:#FFF3CD;color:#8A6500;border:1px solid #F0D98A;border-radius:10px;font-size:10.5px;font-weight:700;">Oui</span>';
+  if (val === 'Non') return '<span style="display:inline-block;padding:2px 9px;background:#E8F5EE;color:#0F5132;border:1px solid #9FDBB8;border-radius:10px;font-size:10.5px;font-weight:700;">Non</span>';
+  return '<span style="color:#9E94C4;">—</span>';
+}
+
+// Helper : dropdown Oui/Non éditable dans le tableau (pour champs de suivi)
+function renderSortantYesNoSelect(sortantId, field, currentVal) {
+  var val = currentVal || 'Non';
+  var bgColor = val === 'Oui' ? '#E8F5EE' : '#FAFAFA';
+  var color = val === 'Oui' ? '#0F5132' : '#6B5E9C';
+  var border = val === 'Oui' ? '#9FDBB8' : '#E4E0FA';
+  return '<select onchange="updateSortantField(\'' + sortantId.replace(/'/g,"\\'") + '\',\'' + field + '\',this.value);renderSortants();" '
+    + 'style="padding:4px 24px 4px 8px;border:1.5px solid ' + border + ';border-radius:7px;font-size:11px;font-weight:700;color:' + color + ';background:' + bgColor + ' url(\'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2210%22 height=%2210%22 viewBox=%220 0 12 12%22><path fill=%22%236B5E9C%22 d=%22M6 8L2 4h8z%22/></svg>\') no-repeat right 6px center;appearance:none;cursor:pointer;font-family:inherit;">'
+    + '<option value="Non"' + (val==='Non'?' selected':'') + '>Non</option>'
+    + '<option value="Oui"' + (val==='Oui'?' selected':'') + '>Oui</option>'
+    + '</select>';
+}
+
+// Export CSV
+function exportSortantsCSV() {
+  var all = getSortants();
+  var f = window._sortantsFilter || { commercial:'__all__', raison:'__all__', type:'__all__', year:'__all__', month:'__all__', search:'' };
+  var filtered = all.filter(function(s){
+    if (f.commercial !== '__all__' && (s.commercial || '') !== f.commercial) return false;
+    if (f.raison !== '__all__' && (s.raison || '') !== f.raison) return false;
+    if (f.type !== '__all__' && (s.type_fin_contrat || '') !== f.type) return false;
+    if (f.year !== '__all__') {
+      var yr = (s.fin_mission || '').slice(0, 4);
+      if (yr !== f.year) return false;
+    }
+    if (f.month && f.month !== '__all__') {
+      var mo = (s.fin_mission || '').slice(5, 7);
+      if (mo !== f.month) return false;
+    }
+    if (f.search) {
+      var q = f.search.toLowerCase();
+      var hay = [(s.prenom||''), (s.nom||''), (s.entreprise||''), (s.commercial||'')].join(' ').toLowerCase();
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+  if (filtered.length === 0) { alert('Aucun sortant à exporter.'); return; }
+
+  var headers = ['Date demande','Commercial','Prénom','Nom','Entreprise','Fin de mission','Fin de contrat travail','Date fin de contrat de travail','Type fin de contrat','Raison','Doc de fin Envoyé','Doc fin de contrat signé','Enregistré sur Laya','SDTC envoyé','Commentaires'];
+  var rows = filtered.map(function(s){
+    var finMission = s.fin_mission ? new Date(s.fin_mission).toLocaleDateString('fr-FR') : '';
+    var dateFinContrat = s.date_fin_contrat ? new Date(s.date_fin_contrat).toLocaleDateString('fr-FR') : '';
+    return [
+      s.date_demande || '',
+      s.commercial || '',
+      s.prenom || '',
+      s.nom || '',
+      s.entreprise || '',
+      finMission,
+      s.fin_contrat_travail || '',
+      dateFinContrat,
+      s.type_fin_contrat || '',
+      s.raison || '',
+      s.doc_fin_envoye || 'Non',
+      s.doc_fin_signe || 'Non',
+      s.laya || 'Non',
+      s.sdtc || 'Non',
+      s.commentaire || ''
+    ];
+  });
+
+  var nl = String.fromCharCode(10);
+  var csv = [headers].concat(rows).map(function(row){
+    return row.map(function(v){ return '"' + String(v).replace(/"/g, '""') + '"'; }).join(';');
+  }).join(nl);
+  var BOM = '\uFEFF';
+  var blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'Sortants_' + new Date().toISOString().split('T')[0] + '.csv';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
 function injectRHSubNav() {
@@ -5821,33 +6229,19 @@ function showRHPlaceholder(subtab) {
 function setDealsOriginalVisible(visible) {
   var tab = document.getElementById('tab-deals');
   if (!tab) return;
-  // Tous les enfants directs qui ne sont ni la sub-nav ni le placeholder
+  // Tous les enfants directs qui ne sont ni la sub-nav ni les conteneurs de sous-sections RH
   Array.prototype.forEach.call(tab.children, function(child) {
-    if (child.id === 'rh-subnav' || child.id === 'rh-placeholder') return;
+    if (child.id === 'rh-subnav' || child.id === 'rh-placeholder' || child.id === 'sortants-container') return;
     child.style.display = visible ? '' : 'none';
   });
   if (visible) {
     var ph = document.getElementById('rh-placeholder');
     if (ph) ph.style.display = 'none';
+    var sc = document.getElementById('sortants-container');
+    if (sc) sc.style.display = 'none';
   }
 }
 
-function openPlacementFromCand(candId) {
-  var cands = getCandidats();
-  var cand = cands.find(function(c){ return c.id === candId; });
-  if (!cand) return;
-  // Trouver la dernière simulation du candidat
-  var lastSim = (cand.simulations || [])[0];
-  if (!lastSim || !lastSim.timestamp) {
-    alert('Ce candidat n\'a pas encore de simulation. Faites une simulation d\'abord.');
-    return;
-  }
-  // Fermer la fiche candidat
-  var modalCand = document.getElementById('modal-cand-fiche');
-  if (modalCand) modalCand.remove();
-  // Ouvrir le popup placement
-  openPlacementPopup(lastSim.timestamp);
-}
 
 function openCandidatFiche(id) {
   var cands = getCandidats();
@@ -5896,12 +6290,58 @@ function buildCandFicheHTML(cand) {
       + '</div>';
   }).join('') || '<div style="color:#C0B8E0;font-size:12px;padding:10px 0;">Aucun commentaire.</div>';
 
-  // Couleur du header selon statut portage
-  var isPlace = (cand.statut_portage === 'Porté');
-  var headerGradient = isPlace
-    ? 'linear-gradient(135deg,#0E7550,#1D9E75)'
-    : 'linear-gradient(135deg,#372EB6,#7343EE)';
-  var shadowColor = isPlace ? 'rgba(29,158,117,0.25)' : 'rgba(115,67,238,0.2)';
+  // Statut portage effectif (calculé à partir des deals) + statut manuel saisi
+  var statutAuto = computeCandStatutAuto(cand);
+  var statutManuel = cand.statut_portage || 'Prospect';
+  var statutIsAuto = statutAuto !== statutManuel;
+
+  // Sélecteur Statut portage intelligent :
+  // - S'il existe un deal non-annulé → champ verrouillé avec valeur auto
+  // - Sinon → dropdown limité à Prospect / Prospect chaud (pas d'override manuel possible)
+  function selStatutPortage() {
+    var email = ((cand.email || '') + '').trim().toLowerCase();
+    var allDeals = (typeof getDeals === 'function') ? getDeals() : [];
+    var hasDeals = email && allDeals.some(function(d){
+      return (d.email || '').trim().toLowerCase() === email && d.etat !== 'Annulé';
+    });
+    if (hasDeals) {
+      // Lecture seule — le statut est dicté par les deals
+      var icon = statutAuto === 'Porté' ? '🟢' : (statutAuto === 'Ancien porté' ? '🔴' : '⚪');
+      return '<div><label class="cf-lbl">Statut portage 🔒 auto</label>'
+        + '<div class="cf-inp" style="padding:6px 9px;background:#F5F3FF;color:#4B36EC;font-weight:700;display:flex;align-items:center;gap:6px;cursor:not-allowed;" title="Statut calculé automatiquement à partir des placements de ce candidat. Il ne peut pas être modifié manuellement.">'
+        +   '<span>' + icon + '</span><span>' + statutAuto + '</span>'
+        + '</div></div>';
+    } else {
+      // Éditable — mais seulement Prospect / Prospect chaud
+      var curVal = (statutManuel === 'Prospect chaud') ? 'Prospect chaud' : 'Prospect';
+      var opts = ['Prospect', 'Prospect chaud'].map(function(o){
+        return '<option value="' + o + '"' + (o===curVal?' selected':'') + '>' + o + '</option>';
+      }).join('');
+      return '<div><label class="cf-lbl">Statut portage</label>'
+        + '<select data-field="statut_portage" data-candid="' + cand.id + '" onchange="updateCandField(this);openCandidatFiche(' + cand.id + ')" class="cf-inp" style="padding:5px 9px;">' + opts + '</select>'
+        + '</div>';
+    }
+  }
+
+  // Couleur du header selon statut portage effectif
+  var headerGradient, shadowColor, statutBadgeColor, statutBadgeBg;
+  if (statutAuto === 'Porté') {
+    headerGradient = 'linear-gradient(135deg,#0E7550,#1D9E75)';
+    shadowColor = 'rgba(29,158,117,0.25)';
+    statutBadgeColor = '#0E7550'; statutBadgeBg = '#D4F5E2';
+  } else if (statutAuto === 'Ancien porté') {
+    headerGradient = 'linear-gradient(135deg,#A8322A,#E24B4A)';
+    shadowColor = 'rgba(226,75,74,0.25)';
+    statutBadgeColor = '#A8322A'; statutBadgeBg = '#FDE0E0';
+  } else if (statutAuto === 'Prospect chaud') {
+    headerGradient = 'linear-gradient(135deg,#B8860B,#F0A500)';
+    shadowColor = 'rgba(240,165,0,0.25)';
+    statutBadgeColor = '#B8860B'; statutBadgeBg = '#FFF3CD';
+  } else {
+    headerGradient = 'linear-gradient(135deg,#372EB6,#7343EE)';
+    shadowColor = 'rgba(115,67,238,0.2)';
+    statutBadgeColor = '#4B36EC'; statutBadgeBg = '#E8E4FC';
+  }
 
   return '<div style="background:#fff;border-radius:14px;width:98%;max-width:950px;margin:auto;box-shadow:0 8px 40px ' + shadowColor + ';">'
 
@@ -5910,7 +6350,12 @@ function buildCandFicheHTML(cand) {
     + '<div style="display:flex;align-items:center;gap:12px;">'
     + '<div style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;flex-shrink:0;">' + initials + '</div>'
     + '<div style="flex:1;">'
-    + '<div style="font-size:17px;font-weight:800;color:#fff;">' + (cand.prenom||'') + ' ' + (cand.nom||'').toUpperCase() + '</div>'
+    + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:17px;font-weight:800;color:#fff;">' + (cand.prenom||'') + ' ' + (cand.nom||'').toUpperCase() + '</span>'
+    +   '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:rgba(255,255,255,0.22);color:#fff;border:1px solid rgba(255,255,255,0.35);border-radius:14px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">'
+    +     statutAuto
+    +     (statutIsAuto ? '<span title="Statut calculé automatiquement à partir des placements" style="font-size:9px;opacity:0.85;">● auto</span>' : '')
+    +   '</span>'
+    + '</div>'
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:3px;">'
     + (cand.email ? '<span style="font-size:11px;color:rgba(255,255,255,0.85);">&#9993; ' + cand.email + '</span>' : '')
     + (cand.tel   ? '<span style="font-size:11px;color:rgba(255,255,255,0.85);">&#128222; ' + cand.tel + '</span>' : '')
@@ -5935,7 +6380,7 @@ function buildCandFicheHTML(cand) {
     + fld('Disponibilité', cand.disponibilite, 'disponibilite', 'date')
     + fld('Anniversaire', cand.anniversaire, 'anniversaire', 'date')
     + sel('Statut', cand.statut||'', 'statut', ['','Freelance','Salarié','En poste','Disponible','En recherche'])
-    + sel('Statut portage', cand.statut_portage||'Prospect', 'statut_portage', ['Prospect','Prospect chaud','Porté','Ancien porté'])
+    + selStatutPortage()
     + fld('Ville', cand.ville, 'ville')
     + fld('LinkedIn', cand.linkedin, 'linkedin')
     + '</div>'
@@ -6009,17 +6454,59 @@ function switchCandTab(id, tab) {
 function buildCandSimsHTML(cand) {
   var sims = cand.simulations || [];
   if (!sims.length) return '<div style="color:#C0B8E0;font-size:12px;padding:20px 0;">Aucune simulation.</div>';
+  // Récupère les deals liés au candidat par email pour savoir lesquelles sont annulées/placées
+  var email = (cand.email || '').trim().toLowerCase();
+  var allDeals = (typeof getDeals === 'function') ? getDeals() : [];
+  var dealsOfCand = allDeals.filter(function(d){ return (d.email || '').trim().toLowerCase() === email; });
+
   return sims.map(function(s) {
-    return '<div style="background:#F5F3FF;border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">'
+    // Trouve le deal lié à cette simulation (via sim_ts / timestamp)
+    var linkedDeal = dealsOfCand.find(function(d){ return d.sim_ts === s.timestamp; });
+    var isCancelled = linkedDeal && linkedDeal.etat === 'Annulé';
+    var rowClass = isCancelled ? ' class="sim-row-cancelled"' : '';
+    var rowStyle = isCancelled
+      ? 'background:#FDECEC;border:1px solid #F5B5B5;border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:relative;'
+      : 'background:#F5F3FF;border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;';
+
+    var cancelBtn = '';
+    var sortantBtn = '';
+    if (linkedDeal) {
+      cancelBtn = isCancelled
+        ? '<button class="sim-cancelled-badge" onclick="restoreDeal(' + linkedDeal.id + ')" title="Restaurer le placement" style="padding:4px 10px;background:#F0FDF4;color:#1D9E75;border:1.5px solid #9FE1CB;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#8634; Restaurer</button>'
+        : '<button onclick="cancelDeal(' + linkedDeal.id + ')" title="Annuler le placement" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#10060; Annuler</button>';
+      // Bouton Sortant : visible si le placement n'est pas annulé
+      if (!isCancelled) {
+        var existingSortant = findSortantByDealId(linkedDeal.id);
+        var sortantLabel = existingSortant ? '&#9998; Éditer sortant' : '🚪 Sortant';
+        var sortantBg = existingSortant ? '#FFF8E1' : '#FDECEC';
+        var sortantColor = existingSortant ? '#8A5F00' : '#C24141';
+        var sortantBorder = existingSortant ? '#F0D98A' : '#F5B5B5';
+        sortantBtn = '<button data-ts="' + s.timestamp + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+s.timestamp+'\'))},100);" title="' + (existingSortant ? 'Modifier la fiche sortant' : 'Déclencher une sortie') + '" style="padding:4px 10px;background:' + sortantBg + ';color:' + sortantColor + ';border:1.5px solid ' + sortantBorder + ';border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">' + sortantLabel + '</button>';
+      }
+    }
+
+    var annuleBadge = isCancelled
+      ? '<span class="sim-cancelled-badge" style="display:inline-block;padding:2px 9px;background:#C24141;color:#fff;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-left:6px;">Annulé</span>'
+      : '';
+
+    // Badge sortant si une fiche existe
+    var sortantBadge = '';
+    if (linkedDeal && !isCancelled && findSortantByDealId(linkedDeal.id)) {
+      sortantBadge = '<span style="display:inline-block;padding:2px 9px;background:#F0A500;color:#fff;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-left:6px;">Sortant</span>';
+    }
+
+    return '<div' + rowClass + ' style="' + rowStyle + '">'
       + '<div>'
-      + '<div style="font-size:12px;font-weight:700;color:#1A1033;">' + (s.entreprise||'—') + (s.poste ? ' · ' + s.poste : '') + '</div>'
-      + '<div style="font-size:11px;color:#6B5E9C;">' + (s.date||'') + (s.commercial ? ' · ' + s.commercial : '') + '</div>'
+      + '<div style="font-size:12px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#1A1033') + ';">' + (s.entreprise||'—') + (s.poste ? ' · ' + s.poste : '') + annuleBadge + sortantBadge + '</div>'
+      + '<div style="font-size:11px;color:' + (isCancelled ? '#B47979' : '#6B5E9C') + ';">' + (s.date||'') + (s.commercial ? ' · ' + s.commercial : '') + '</div>'
       + '</div>'
-      + '<div style="display:flex;align-items:center;gap:8px;">'
-      + (s.tjm ? '<span style="font-size:13px;font-weight:700;color:#7343EE;">' + s.tjm + ' €/j</span>' : '')
-      + (s.net_payer ? '<span style="font-size:11px;color:#1D9E75;">' + s.net_payer + ' net</span>' : '')
+      + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+      + (s.tjm ? '<span style="font-size:13px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#7343EE') + ';">' + s.tjm + ' €/j</span>' : '')
+      + (s.net_payer ? '<span style="font-size:11px;color:' + (isCancelled ? '#9E4545' : '#1D9E75') + ';">' + s.net_payer + ' net</span>' : '')
       + '<button data-ts="' + s.timestamp + '" onclick="openSimFromDeal(parseInt(this.dataset.ts));closeCandFiche();" style="padding:4px 10px;background:#7343EE;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;">&#8629; Voir</button>'
-      + '<button data-ts="' + s.timestamp + '" onclick="closeCandFiche();setTimeout(function(){openPlacementPopup(parseInt(\''+s.timestamp+'\'))},100);" style="padding:4px 10px;background:#1D9E75;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#10133; Placement</button>'
+      + (linkedDeal
+          ? (cancelBtn + sortantBtn)
+          : '<button data-ts="' + s.timestamp + '" onclick="closeCandFiche();setTimeout(function(){openPlacementPopup(parseInt(\''+s.timestamp+'\'))},100);" style="padding:4px 10px;background:#1D9E75;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#10133; Placement</button>')
       + '</div>'
       + '</div>';
   }).join('');
@@ -6129,26 +6616,6 @@ function buildCandCommsHTML(cand) {
   return html;
 }
 
-function toggleCandDoc(input) {
-  var id = parseInt(input.dataset.candid);
-  var docName = input.dataset.docname;
-  var cands = getCandidats();
-  var idx = cands.findIndex(function(c) { return c.id === id; });
-  if (idx < 0) return;
-  if (!cands[idx].documents) cands[idx].documents = {};
-  cands[idx].documents[docName] = input.checked;
-  saveCandidatsArr(cands);
-  // Refresh docs tab
-  var cont = document.getElementById('ct-content-' + id);
-  if (cont) cont.innerHTML = buildCandDocsHTML(cands[idx]);
-}
-
-function uploadCandCV(input) {
-  // Déléguer vers uploadCandDoc avec docKey='cv'
-  input.dataset.dockey = 'cv';
-  input.dataset.doclabel = 'CV';
-  uploadCandDoc(input);
-}
 
 function addCandComment(id) {
   var textarea = document.getElementById('cand-new-comment-' + id);
@@ -6512,16 +6979,10 @@ function updateCandidatFromDeal(deal) {
   var idx = cands.findIndex(function(c) { return (c.email||'').trim().toLowerCase() === email; });
   if (idx < 0) return;
 
-  // Déduire le statut portage automatiquement selon l'état du deal
-  var derivedStatut = '';
-  var etat = (deal.etat || '').toLowerCase();
-  if (etat === 'sorti des effectifs') {
-    derivedStatut = 'Ancien porté';
-  } else if (etat === 'annulé' || etat === 'annule') {
-    derivedStatut = 'Prospect'; // retour au statut initial si annulé
-  } else if (etat === 'nouveau placement' || etat === 'en cours' || etat === 'signé' || etat === 'signe') {
-    derivedStatut = 'Porté';
-  }
+  // Le statut_portage n'est PAS écrit ici : il est calculé à la volée
+  // par computeCandStatutAuto() depuis l'état des deals à chaque affichage.
+  // Le champ sauvegardé ne sert qu'à mémoriser Prospect / Prospect chaud
+  // quand aucun deal n'existe encore.
 
   var fieldsMap = {
     prenom: deal.prenom,
@@ -6535,7 +6996,6 @@ function updateCandidatFromDeal(deal) {
     tjm_actuel: deal.tjm,
     entreprise: deal.entreprise,
     commercial: deal.commercial,
-    statut_portage: derivedStatut,
     secteur: deal.secteur
   };
 
@@ -6690,15 +7150,6 @@ function buildClientPageHTML(cl) {
   }
 
   // Input texte signataire (accent or/ambre)
-  function fldGold(lbl, val, fid, placeholder) {
-    var ph = placeholder ? ' placeholder="' + placeholder + '"' : '';
-    var goldLB = 'font-size:10px;font-weight:700;color:#8A5F00;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;';
-    return '<div><label style="' + goldLB + '">' + lbl + '</label>'
-      + '<input value="' + ((val || '') + '').replace(/"/g, '&quot;') + '"'
-      + ' data-field="' + fid + '" data-clid="' + cl.id + '"'
-      + ' onchange="updateClientField(this)" ' + IS_FOCUS_GOLD
-      + ' style="' + IS + '"' + ph + '></div>';
-  }
 
   // Dropdown (select) piloté par getCustomLists()
   function fldSelect(lbl, val, fid, listKey, placeholder) {
@@ -7204,16 +7655,6 @@ function addManager(id) {
   openClientPage(id);
 }
 
-function deleteManager(id, midx) {
-  if (!confirm('Supprimer ce manager ?')) return;
-  var clients = getClients();
-  var idx = clients.findIndex(function(c){ return c.id===id; });
-  if (idx<0) return;
-  clients[idx].managers.splice(midx,1);
-  saveClientsArr(clients);
-  renderClients();
-  openClientPage(id);
-}
 
 function openCandidatByEmail(email) {
   if (!email) return;
@@ -8988,25 +9429,6 @@ function renderCommParamsView() {
     + '</div>'
     + '</div>';
 
-  // Annuel — défauts
-  html += '<div class="comm-card">'
-    + '<div class="comm-card-title"><span class="comm-card-title-dot"></span><span>Barème commission annuelle · Valeurs par défaut</span></div>'
-    + '<div style="font-size:11.5px;color:#6B5E9C;margin-bottom:12px;line-height:1.55;">'
-    +   'La commission annuelle est composée de 3 primes. Les primes 1 et 2 se déclenchent si un objectif est atteint. '
-    +   'Le montant est alors appliqué à chaque deal compté sur l\'année. Les objectifs ci-dessous sont les <strong>valeurs par défaut</strong> '
-    +   'appliquées aux commerciaux qui n\'ont pas d\'objectif personnalisé ci-dessous.'
-    + '</div>'
-    + '<div class="comm-palier-row" style="grid-template-columns:1.5fr 1fr 1fr;"><div style="font-size:10px;color:#9E94C4;text-transform:uppercase;font-weight:700;">Prime</div><div style="font-size:10px;color:#9E94C4;text-transform:uppercase;font-weight:700;">Objectif par défaut</div><div style="font-size:10px;color:#9E94C4;text-transform:uppercase;font-weight:700;">€/deal si atteint</div></div>'
-    + '<div class="comm-palier-row"><div class="comm-palier-label">Moyenne frais gestion (%)</div>'
-    +   '<input class="comm-palier-input" type="number" step="0.1" value="' + p.annuel_objectif_moy_frais + '" onchange="updateCommParam(\'annuel_objectif_moy_frais\', parseFloat(this.value)||0)">'
-    +   '<input class="comm-palier-input" type="number" value="' + p.annuel_prime_moy + '" onchange="updateCommParam(\'annuel_prime_moy\', parseFloat(this.value)||0)">'
-    + '</div>'
-    + '<div class="comm-palier-row"><div class="comm-palier-label">Portés actifs en décembre</div>'
-    +   '<input class="comm-palier-input" type="number" value="' + p.annuel_objectif_portes + '" onchange="updateCommParam(\'annuel_objectif_portes\', parseInt(this.value)||0)">'
-    +   '<input class="comm-palier-input" type="number" value="' + p.annuel_prime_portes + '" onchange="updateCommParam(\'annuel_prime_portes\', parseFloat(this.value)||0)">'
-    + '</div>'
-    + '</div>';
-
   // Objectifs par commercial × année
   html += renderCommGoalsTable();
 
@@ -9029,9 +9451,7 @@ function renderCommParamsView() {
 
 // Tableau "Objectifs par commercial × année"
 function renderCommGoalsTable() {
-  var defaults = getCommParams();
   var commercials = getAllCommercialsFromDeals();
-  var all = getCommGoals();
 
   // Année sélectionnée pour l'édition (variable locale à l'écran params)
   if (!window._commGoalsYear) window._commGoalsYear = new Date().getFullYear();
@@ -9047,7 +9467,7 @@ function renderCommGoalsTable() {
   var html = '<div class="comm-card">'
     + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #F0EDF9;flex-wrap:wrap;gap:10px;">'
     +   '<div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:#0F5132;">'
-    +     '<span class="comm-card-title-dot"></span><span>Objectifs par commercial</span>'
+    +     '<span class="comm-card-title-dot"></span><span>Barème commission annuelle</span>'
     +   '</div>'
     +   '<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:#6B5E9C;">'
     +     '<span>Année :</span>'
@@ -9056,10 +9476,11 @@ function renderCommGoalsTable() {
     +   '</div>'
     + '</div>'
     + '<div style="font-size:11.5px;color:#6B5E9C;margin-bottom:14px;line-height:1.55;">'
-    +   'Définissez les 3 primes par commercial pour l\'année sélectionnée. '
-    +   'Les cases <strong>Prime 1</strong> et <strong>Prime 2</strong> vides utilisent les <strong>valeurs par défaut</strong>. '
-    +   'La <strong>Prime 3</strong> est 100 % personnalisée (libellé + objectif + tarif) et doit être <strong>validée manuellement</strong> depuis la vue annuelle. '
-    +   'Les objectifs sont propres à chaque année.'
+    +   'Configurez les primes annuelles de chaque commercial pour l\'année sélectionnée. '
+    +   'Chaque prime a un <strong>libellé</strong> libre et un <strong>tarif €/deal</strong>. '
+    +   'Elles sont toutes <strong>validées manuellement</strong> depuis la vue Annuelle (avec mot de passe admin). '
+    +   'Vous pouvez ajouter autant de primes que nécessaire avec le bouton <strong>+ Ajouter une prime</strong>. '
+    +   'Les primes sont propres à chaque année — elles doivent être redéfinies chaque année.'
     + '</div>';
 
   if (commercials.length === 0) {
@@ -9068,104 +9489,127 @@ function renderCommGoalsTable() {
     return html;
   }
 
-  // Une carte repliable par commercial
   commercials.forEach(function(c) {
-    var key = c + '|' + selYear;
-    var custom = all[key] || {};
-    var moyVal = (custom.moy_frais_gestion !== undefined && custom.moy_frais_gestion !== null) ? custom.moy_frais_gestion : '';
-    var portesVal = (custom.portes_actifs !== undefined && custom.portes_actifs !== null) ? custom.portes_actifs : '';
-    var p3Label = custom.prime3_label || '';
-    var p3Obj = custom.prime3_objectif || '';
-    var p3Tarif = (custom.prime3_tarif !== undefined && custom.prime3_tarif !== null) ? custom.prime3_tarif : '';
-    var p3Validated = !!custom.prime3_validated;
-    var hasP3 = !!(p3Label || p3Obj || p3Tarif);
-    var hasAnyCustom = moyVal !== '' || portesVal !== '' || hasP3;
-
+    var primes = getPrimesFor(c, selYear);
+    var hasPrimes = primes.length > 0;
+    var nbValidated = primes.filter(function(p){ return p.validated; }).length;
     var initials = c.split(/\s+/).filter(Boolean).map(function(w){return w[0]||'';}).slice(0,2).join('').toUpperCase() || '?';
     var escC = c.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    var escCAttr = c.replace(/"/g, '&quot;');
 
-    html += '<div style="background:#fff;border:1.5px solid ' + (hasAnyCustom ? '#C8B8FF' : '#E4E0FA') + ';border-radius:12px;padding:16px 18px;margin-bottom:12px;">'
+    html += '<div style="background:#fff;border:1.5px solid ' + (hasPrimes ? '#C8B8FF' : '#E4E0FA') + ';border-radius:12px;padding:16px 18px;margin-bottom:14px;">'
       // Entête commercial
-      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:10px;border-bottom:1px dashed #F0EDF9;">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:10px;border-bottom:1px dashed #F0EDF9;flex-wrap:wrap;gap:10px;">'
       +   '<div style="display:flex;align-items:center;gap:11px;">'
       +     '<div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;letter-spacing:-0.02em;box-shadow:0 3px 10px rgba(75,54,236,0.25);">' + initials + '</div>'
       +     '<div><div style="font-size:14px;font-weight:800;color:#1A1033;">' + c + '</div>'
-      +     '<div style="font-size:11px;color:#6B5E9C;">Année ' + selYear + (hasAnyCustom ? ' · <span style="color:#7343EE;font-weight:700;">objectifs personnalisés</span>' : ' · objectifs par défaut') + '</div></div>'
+      +     '<div style="font-size:11px;color:#6B5E9C;">Année ' + selYear + ' · '
+      +       (hasPrimes
+          ? primes.length + ' prime' + (primes.length > 1 ? 's' : '') + ' configurée' + (primes.length > 1 ? 's' : '')
+            + (nbValidated > 0 ? ' · <span style="color:#1D7F4F;font-weight:700;">' + nbValidated + ' validée' + (nbValidated > 1 ? 's' : '') + '</span>' : '')
+          : '<span style="color:#9E94C4;font-style:italic;">aucune prime</span>')
+      +     '</div></div>'
       +   '</div>'
-      +   (hasAnyCustom
-          ? '<button onclick="resetCommGoal(\'' + escC + '\',' + selYear + ')" title="Réinitialiser aux valeurs par défaut" style="padding:6px 12px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Reset</button>'
+      +   '<div style="display:flex;gap:8px;">'
+      +     (hasPrimes
+          ? '<button onclick="resetCommGoal(\'' + escC + '\',' + selYear + ')" title="Supprimer toutes les primes de ce commercial cette année" style="padding:7px 12px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Tout reset</button>'
           : '')
-      + '</div>'
-      // Primes 1 & 2 en ligne
-      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">'
-      +   '<div>'
-      +     '<div style="display:flex;align-items:center;gap:6px;font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:5px;">'
-      +       '<span style="display:inline-block;width:18px;height:18px;border-radius:5px;background:#1D7F4F;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">1</span>'
-      +       '<span>Moyenne frais gestion (%)</span>'
-      +     '</div>'
-      +     '<input type="number" step="0.1" min="0" value="' + moyVal + '" placeholder="défaut : ' + defaults.annuel_objectif_moy_frais + '%"'
-      +     ' onchange="updateCommGoal(\'' + escC + '\',' + selYear + ',\'moy_frais_gestion\',this.value)"'
-      +     ' style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;color:#1A1033;box-sizing:border-box;">'
+      +     '<button onclick="addPrimeForCommercial(\'' + escC + '\',' + selYear + ')" style="padding:7px 14px;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border:none;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 2px 8px rgba(75,54,236,0.2);">+ Ajouter une prime</button>'
       +   '</div>'
-      +   '<div>'
-      +     '<div style="display:flex;align-items:center;gap:6px;font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:5px;">'
-      +       '<span style="display:inline-block;width:18px;height:18px;border-radius:5px;background:#1D7F4F;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">2</span>'
-      +       '<span>Portés actifs en décembre</span>'
-      +     '</div>'
-      +     '<input type="number" step="1" min="0" value="' + portesVal + '" placeholder="défaut : ' + defaults.annuel_objectif_portes + '"'
-      +     ' onchange="updateCommGoal(\'' + escC + '\',' + selYear + ',\'portes_actifs\',this.value)"'
-      +     ' style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;color:#1A1033;box-sizing:border-box;">'
-      +   '</div>'
-      + '</div>'
-      // Prime 3 — bloc distinct
-      + '<div style="background:' + (p3Validated ? '#E8F5EE' : (hasP3 ? '#FFF8E1' : '#FAFAFA')) + ';border:1.5px solid ' + (p3Validated ? '#9FDBB8' : (hasP3 ? '#F0D98A' : '#E4E0FA')) + ';border-radius:10px;padding:14px;">'
-      +   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">'
-      +     '<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;color:#1A1033;text-transform:uppercase;letter-spacing:0.06em;">'
-      +       '<span style="display:inline-block;width:18px;height:18px;border-radius:5px;background:' + (p3Validated ? '#1D7F4F' : '#B8860B') + ';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">3</span>'
-      +       '<span>Prime personnelle</span>'
-      +     '</div>'
-      +     (hasP3
-          ? (p3Validated
-            ? '<span style="padding:3px 10px;background:#1D7F4F;color:#fff;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">✓ validée</span>'
-            : '<span style="padding:3px 10px;background:#F0D98A;color:#8A6500;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">⏳ en attente</span>')
-          : '<span style="padding:3px 10px;background:#F5F3FF;color:#9E94C4;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;font-style:italic;">non configurée</span>')
-      +   '</div>'
-      +   '<div style="display:grid;grid-template-columns:2fr 1.5fr 1fr;gap:10px;">'
-      +     '<div>'
-      +       '<label style="font-size:9.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:4px;letter-spacing:0.05em;">Libellé / Nom de l\'objectif</label>'
-      +       '<input type="text" value="' + p3Label.replace(/"/g,'&quot;') + '" placeholder="ex: Satisfaction clients"'
-      +       ' onchange="updateCommGoalText(\'' + escC + '\',' + selYear + ',\'prime3_label\',this.value)"'
-      +       ' style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;color:#1A1033;box-sizing:border-box;">'
-      +     '</div>'
-      +     '<div>'
-      +       '<label style="font-size:9.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:4px;letter-spacing:0.05em;">Objectif visé</label>'
-      +       '<input type="text" value="' + p3Obj.replace(/"/g,'&quot;') + '" placeholder="ex: 5 clients, score ≥ 4/5"'
-      +       ' onchange="updateCommGoalText(\'' + escC + '\',' + selYear + ',\'prime3_objectif\',this.value)"'
-      +       ' style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;color:#1A1033;box-sizing:border-box;">'
-      +     '</div>'
-      +     '<div>'
-      +       '<label style="font-size:9.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:4px;letter-spacing:0.05em;">Tarif (€/deal)</label>'
-      +       '<input type="number" step="0.01" min="0" value="' + p3Tarif + '" placeholder="0"'
-      +       ' onchange="updateCommGoal(\'' + escC + '\',' + selYear + ',\'prime3_tarif\',this.value)"'
-      +       ' style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;color:#1A1033;box-sizing:border-box;">'
-      +     '</div>'
-      +   '</div>'
-      +   (hasP3
-          ? '<div style="margin-top:10px;font-size:11px;color:#6B5E9C;line-height:1.5;">'
-            + '↪ La validation (ou dévalidation) de cette prime se fait depuis <strong>Commissions · Annuelle</strong>, '
-            + 'avec le mot de passe administrateur.'
-            + '</div>'
-          : '')
-      + '</div>'
       + '</div>';
+
+    // Liste des primes — ou placeholder si vide
+    if (!hasPrimes) {
+      html += '<div style="padding:18px;text-align:center;color:#9E94C4;font-size:12px;background:#FAF8FF;border:1.5px dashed #E4E0FA;border-radius:10px;">'
+        + 'Aucune prime définie pour ' + c + ' en ' + selYear + '.'
+        + '<div style="font-size:10.5px;color:#B8AEDB;margin-top:4px;">Cliquez sur <strong>+ Ajouter une prime</strong> pour commencer.</div>'
+        + '</div>';
+    } else {
+      primes.forEach(function(p, idx) {
+        var pBg = p.validated ? '#E8F5EE' : '#FFF8E1';
+        var pBorder = p.validated ? '#9FDBB8' : '#F0D98A';
+        var statusBadge = p.validated
+          ? '<span style="padding:3px 10px;background:#1D7F4F;color:#fff;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">✓ validée</span>'
+          : '<span style="padding:3px 10px;background:#F0D98A;color:#8A6500;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">⏳ en attente</span>';
+        var escPid = p.id.replace(/'/g, "\\'");
+        var labelVal = (p.label || '').replace(/"/g, '&quot;');
+        var tarifVal = p.tarif || 0;
+
+        html += '<div style="background:' + pBg + ';border:1.5px solid ' + pBorder + ';border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+          + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">'
+          +   '<div style="display:flex;align-items:center;gap:8px;font-size:10.5px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.06em;">'
+          +     '<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:6px;background:' + (p.validated ? '#1D7F4F' : '#B8860B') + ';color:#fff;font-size:10px;font-weight:800;">' + (idx + 1) + '</span>'
+          +     '<span>Prime ' + (idx + 1) + '</span>'
+          +   '</div>'
+          +   '<div style="display:flex;align-items:center;gap:8px;">'
+          +     statusBadge
+          +     '<button onclick="deletePrime(\'' + escC + '\',' + selYear + ',\'' + escPid + '\')" title="Supprimer cette prime" style="padding:4px 8px;background:#fff;color:#E24B4A;border:1.5px solid #FECACA;border-radius:6px;font-size:14px;cursor:pointer;font-family:inherit;line-height:1;">🗑</button>'
+          +   '</div>'
+          + '</div>'
+          + '<div style="display:grid;grid-template-columns:3fr 1fr;gap:10px;">'
+          +   '<div>'
+          +     '<label style="font-size:9.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:4px;letter-spacing:0.05em;">Libellé / Nom de la prime</label>'
+          +     '<input type="text" value="' + labelVal + '" placeholder="ex: Moyenne frais gestion, Portés actifs, Satisfaction clients…"'
+          +     ' onchange="updatePrimeField(\'' + escC + '\',' + selYear + ',\'' + escPid + '\',\'label\',this.value)"'
+          +     ' style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;color:#1A1033;box-sizing:border-box;background:#fff;">'
+          +   '</div>'
+          +   '<div>'
+          +     '<label style="font-size:9.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:4px;letter-spacing:0.05em;">Tarif (€/deal)</label>'
+          +     '<input type="number" step="0.01" min="0" value="' + tarifVal + '" placeholder="0"'
+          +     ' onchange="updatePrimeField(\'' + escC + '\',' + selYear + ',\'' + escPid + '\',\'tarif\',this.value)"'
+          +     ' style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;color:#1A1033;box-sizing:border-box;background:#fff;">'
+          +   '</div>'
+          + '</div>'
+          + (p.validated
+            ? '<div style="margin-top:8px;font-size:10.5px;color:#1D7F4F;line-height:1.5;">✓ Cette prime est validée — le montant sera versé dans la commission annuelle.</div>'
+            : '<div style="margin-top:8px;font-size:10.5px;color:#6B5E9C;line-height:1.5;">↪ La validation se fait depuis <strong>Commissions · Annuelle</strong> (mot de passe admin requis).</div>')
+          + '</div>';
+      });
+    }
+
+    html += '</div>';
   });
 
   html += '</div>';
   return html;
 }
 
+// Handlers nouveau modèle
+function addPrimeForCommercial(commercial, year) {
+  addPrimeFor(commercial, year);
+  renderCommParamsView();
+}
+
+function updatePrimeField(commercial, year, primeId, field, value) {
+  updatePrime(commercial, year, primeId, field, value);
+  // Pas de full re-render pour éviter de perdre le focus quand l'utilisateur tape
+  // On re-render uniquement si le champ change drastiquement
+}
+
+function deletePrime(commercial, year, primeId) {
+  var primes = getPrimesFor(commercial, year);
+  var p = primes.find(function(x){ return x.id === primeId; });
+  var label = p ? (p.label || 'sans nom') : 'cette prime';
+  if (!confirm('Supprimer la prime "' + label + '" de ' + commercial + ' pour ' + year + ' ?\n\nCette action est irréversible.')) return;
+  removePrime(commercial, year, primeId);
+  renderCommParamsView();
+}
+
+function resetCommGoal(commercial, year) {
+  if (!confirm('Supprimer toutes les primes de ' + commercial + ' pour ' + year + ' ?\n\nCette action est irréversible.')) return;
+  savePrimesFor(commercial, year, []);
+  // Nettoyer aussi l'ancien format v1 s'il existe (au cas où)
+  var all = getCommGoals();
+  var key = commercial + '|' + year;
+  if (all[key]) {
+    delete all[key];
+    saveCommGoals(all);
+  }
+  renderCommParamsView();
+}
+
+// Helpers v1 conservés pour compat (ne plus utilisés activement mais certains appels indirects pourraient rester)
 function updateCommGoal(commercial, year, field, value) {
-  // Valeur vide → utiliser le défaut
   if (value === '' || value === null) {
     setGoalFor(commercial, year, field, null);
   } else {
@@ -9173,26 +9617,9 @@ function updateCommGoal(commercial, year, field, value) {
     if (isNaN(num)) return;
     setGoalFor(commercial, year, field, num);
   }
-  // Re-render pour rafraîchir badges / état "perso vs défaut"
-  renderCommParamsView();
 }
-
-// Variante pour les champs texte (libellé, objectif Prime 3) — pas de parseFloat
 function updateCommGoalText(commercial, year, field, value) {
-  var trimmed = (value || '').trim();
-  setGoalFor(commercial, year, field, trimmed || null);
-  renderCommParamsView();
-}
-
-function resetCommGoal(commercial, year) {
-  if (!confirm('Réinitialiser tous les objectifs de ' + commercial + ' pour ' + year + ' (Primes 1, 2, 3) ?')) return;
-  setGoalFor(commercial, year, 'moy_frais_gestion', null);
-  setGoalFor(commercial, year, 'portes_actifs', null);
-  setGoalFor(commercial, year, 'prime3_label', null);
-  setGoalFor(commercial, year, 'prime3_objectif', null);
-  setGoalFor(commercial, year, 'prime3_tarif', null);
-  setGoalFor(commercial, year, 'prime3_validated', null);
-  renderCommParamsView();
+  setGoalFor(commercial, year, field, (value || '').trim() || null);
 }
 
 
@@ -9216,6 +9643,95 @@ function saveCommGoals(obj) {
   localStorage.setItem(COMM_GOALS_KEY, JSON.stringify(obj));
 }
 // Retourne les objectifs appliqués à (commercial, year), avec fallback sur défaut global
+// ── NOUVEAU MODÈLE PRIMES (v2) ────────────────────────────────
+// Un commercial × année a une liste de primes :
+//   primes: [ { id: 'p1_1700…', label: 'Moyenne frais gestion', tarif: 50, validated: true/false }, … ]
+// La validation est 100% manuelle : toi admin tu décides si la prime est validée.
+// Total annuel = somme des (tarif × nb_deals_annuel) pour les primes validées.
+
+function getPrimesFor(commercial, year) {
+  var all = getCommGoals();
+  var key = commercial + '|' + year;
+  var custom = all[key] || {};
+
+  // Migration auto depuis l'ancien format (v1) si présent
+  if (!custom.primes && (custom.moy_frais_gestion !== undefined || custom.portes_actifs !== undefined || custom.prime3_label || custom.prime3_tarif)) {
+    var migrated = [];
+    // Prime 1 — Moyenne frais gestion
+    if (custom.moy_frais_gestion !== undefined && custom.moy_frais_gestion !== null && custom.moy_frais_gestion !== '') {
+      var defaults = getCommParams();
+      migrated.push({
+        id: 'p_' + Date.now() + '_1',
+        label: 'Moyenne frais de gestion (seuil ' + custom.moy_frais_gestion + '%)',
+        tarif: parseFloat(defaults.annuel_prime_moy) || 50,
+        validated: false
+      });
+    }
+    // Prime 2 — Portés actifs décembre
+    if (custom.portes_actifs !== undefined && custom.portes_actifs !== null && custom.portes_actifs !== '') {
+      var defaults2 = getCommParams();
+      migrated.push({
+        id: 'p_' + Date.now() + '_2',
+        label: 'Portés actifs en décembre (seuil ' + custom.portes_actifs + ')',
+        tarif: parseFloat(defaults2.annuel_prime_portes) || 75,
+        validated: false
+      });
+    }
+    // Prime 3 — perso
+    if (custom.prime3_label || custom.prime3_tarif) {
+      migrated.push({
+        id: 'p_' + Date.now() + '_3',
+        label: custom.prime3_label || 'Prime personnelle',
+        tarif: parseFloat(custom.prime3_tarif) || 0,
+        validated: !!custom.prime3_validated
+      });
+    }
+    custom.primes = migrated;
+    all[key] = custom;
+    saveCommGoals(all);
+  }
+
+  return (custom.primes || []).slice();
+}
+
+function savePrimesFor(commercial, year, primes) {
+  var all = getCommGoals();
+  var key = commercial + '|' + year;
+  all[key] = all[key] || {};
+  all[key].primes = primes;
+  saveCommGoals(all);
+}
+
+function addPrimeFor(commercial, year) {
+  var primes = getPrimesFor(commercial, year);
+  primes.push({
+    id: 'p_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+    label: '',
+    tarif: 0,
+    validated: false
+  });
+  savePrimesFor(commercial, year, primes);
+  return primes;
+}
+
+function updatePrime(commercial, year, primeId, field, value) {
+  var primes = getPrimesFor(commercial, year);
+  var p = primes.find(function(x){ return x.id === primeId; });
+  if (!p) return;
+  if (field === 'tarif') p[field] = parseFloat(value) || 0;
+  else if (field === 'validated') p[field] = !!value;
+  else p[field] = value;
+  savePrimesFor(commercial, year, primes);
+}
+
+function removePrime(commercial, year, primeId) {
+  var primes = getPrimesFor(commercial, year).filter(function(p){ return p.id !== primeId; });
+  savePrimesFor(commercial, year, primes);
+}
+
+// ── (compat) Helpers v1 conservés pour ne pas casser le reste ──
+// getGoalsFor et setGoalFor ne sont plus utilisés par la vue annuelle mais restent
+// disponibles au cas où. Ils passent par les anciens champs directement.
 function getGoalsFor(commercial, year) {
   var all = getCommGoals();
   var defaults = getCommParams();
@@ -9228,15 +9744,11 @@ function getGoalsFor(commercial, year) {
     portes_actifs: (custom.portes_actifs !== undefined && custom.portes_actifs !== null && custom.portes_actifs !== '')
       ? parseInt(custom.portes_actifs)
       : parseInt(defaults.annuel_objectif_portes),
-    // ── Prime 3 : objectif personnel à validation manuelle ──
-    // Pas de fallback sur un défaut global — la Prime 3 est 100 % custom commercial×année
-    prime3_label: custom.prime3_label || '',                     // ex: "Nb nouveaux clients"
-    prime3_objectif: (custom.prime3_objectif !== undefined && custom.prime3_objectif !== null && custom.prime3_objectif !== '')
-      ? custom.prime3_objectif : '',                              // ex: "5 clients" (texte libre)
+    prime3_label: custom.prime3_label || '',
+    prime3_objectif: custom.prime3_objectif || '',
     prime3_tarif: (custom.prime3_tarif !== undefined && custom.prime3_tarif !== null && custom.prime3_tarif !== '')
-      ? parseFloat(custom.prime3_tarif) : 0,                      // €/deal si atteint
-    prime3_validated: !!custom.prime3_validated,                  // toggle admin
-    // Métadonnées : est-ce custom ?
+      ? parseFloat(custom.prime3_tarif) : 0,
+    prime3_validated: !!custom.prime3_validated,
     _custom_moy: (custom.moy_frais_gestion !== undefined && custom.moy_frais_gestion !== null && custom.moy_frais_gestion !== ''),
     _custom_portes: (custom.portes_actifs !== undefined && custom.portes_actifs !== null && custom.portes_actifs !== ''),
     _has_prime3: !!(custom.prime3_label || custom.prime3_tarif || custom.prime3_objectif)
@@ -9318,17 +9830,6 @@ function getCommManualPrimes() {
 function saveCommManualPrimes(obj) {
   localStorage.setItem(COMM_MANUAL_KEY, JSON.stringify(obj));
 }
-function getManualPrime(commercial, year) {
-  var key = commercial + '|' + year;
-  var all = getCommManualPrimes();
-  return all[key] || { amount: 0, comment: '' };
-}
-function saveManualPrime(commercial, year, amount, comment) {
-  var key = commercial + '|' + year;
-  var all = getCommManualPrimes();
-  all[key] = { amount: parseFloat(amount) || 0, comment: (comment || '').trim() };
-  saveCommManualPrimes(all);
-}
 
 // Parser une date au format "YYYY-MM-DD" (date_entree / date_sortie)
 function parseIsoDate(s) {
@@ -9360,64 +9861,29 @@ function countActiveConsultantsInDecember(commercial, year) {
 }
 
 // Calcule la commission annuelle complète pour un commercial × année
+// Nouveau modèle : liste de primes manuelles. Total = Σ (tarif × nb_deals) pour primes validées.
 function computeAnnualCommission(commercial, year) {
-  var params = getCommParams();
-  // Objectifs effectifs : custom si définis pour (commercial, year), sinon défaut global
-  var goals = getGoalsFor(commercial, year);
-  // Récupère tous les deals comptés sur l'année (mois=null → année entière)
   var yearResult = computeYearlyDealsAggregate(commercial, year);
+  var primes = getPrimesFor(commercial, year);
 
-  // Prime 1 : moyenne frais de gestion
-  var moyFG = yearResult.moy_frais_gestion;
-  var prime1_atteinte = moyFG >= goals.moy_frais_gestion;
-  var prime1_montant = prime1_atteinte ? (params.annuel_prime_moy * yearResult.nb) : 0;
+  var enriched = primes.map(function(p) {
+    var montant = (p.validated && p.tarif > 0) ? (parseFloat(p.tarif) * yearResult.nb) : 0;
+    return {
+      id: p.id,
+      label: p.label || 'Prime sans nom',
+      tarif: parseFloat(p.tarif) || 0,
+      validated: !!p.validated,
+      nb_deals: yearResult.nb,
+      montant: montant
+    };
+  });
 
-  // Prime 2 : portés actifs en décembre
-  var portesActifs = countActiveConsultantsInDecember(commercial, year);
-  var prime2_atteinte = portesActifs >= goals.portes_actifs;
-  var prime2_montant = prime2_atteinte ? (params.annuel_prime_portes * yearResult.nb) : 0;
-
-  // Prime 3 : objectif personnel avec validation manuelle admin
-  // Configuré par commercial × année : libellé, objectif, tarif €/deal
-  // Déclenche si _validated=true (toggle admin avec mdp)
-  var prime3_configured = goals._has_prime3;
-  var prime3_tarif = goals.prime3_tarif;
-  var prime3_atteinte = goals.prime3_validated;
-  var prime3_montant = (prime3_atteinte && prime3_tarif > 0) ? (prime3_tarif * yearResult.nb) : 0;
-
-  var total = prime1_montant + prime2_montant + prime3_montant;
+  var total = enriched.reduce(function(sum, p){ return sum + p.montant; }, 0);
 
   return {
     year_result: yearResult,
-    moy_frais_gestion: moyFG,
-    goals_custom: (goals._custom_moy || goals._custom_portes || goals._has_prime3),
-    prime1: {
-      atteinte: prime1_atteinte,
-      seuil: goals.moy_frais_gestion,
-      seuil_custom: goals._custom_moy,
-      valeur_actuelle: moyFG,
-      tarif: params.annuel_prime_moy,
-      nb_deals: yearResult.nb,
-      montant: prime1_montant
-    },
-    prime2: {
-      atteinte: prime2_atteinte,
-      seuil: goals.portes_actifs,
-      seuil_custom: goals._custom_portes,
-      valeur_actuelle: portesActifs,
-      tarif: params.annuel_prime_portes,
-      nb_deals: yearResult.nb,
-      montant: prime2_montant
-    },
-    prime3: {
-      configured: prime3_configured,
-      atteinte: prime3_atteinte,
-      label: goals.prime3_label || 'Objectif personnel',
-      objectif_txt: goals.prime3_objectif || '',
-      tarif: prime3_tarif,
-      nb_deals: yearResult.nb,
-      montant: prime3_montant
-    },
+    moy_frais_gestion: yearResult.moy_frais_gestion,
+    primes: enriched,
     total: total
   };
 }
@@ -9509,121 +9975,67 @@ function renderCommAnnuelleView() {
 
   var result = computeAnnualCommission(currentCommCommercial, currentCommYear);
   var yr = result.year_result;
+  var primes = result.primes;
+  var escCommForJs = currentCommCommercial.replace(/'/g, "\\'").replace(/\\/g, '\\\\');
 
   // Hero or/doré (annuel)
+  var nbPrimesValidated = primes.filter(function(p){ return p.validated; }).length;
   html += '<div class="comm-hero" style="background:linear-gradient(135deg,#8B6508 0%, #C89000 50%, #F0A500 100%);box-shadow:0 6px 20px rgba(240,165,0,0.25);">'
     + '<div class="comm-hero-title">🏆 ' + currentCommCommercial + ' — Bilan annuel ' + currentCommYear + '</div>'
     + '<div class="comm-hero-sub">' + yr.nb + ' deal' + (yr.nb>1?'s':'') + ' comptabilisé' + (yr.nb>1?'s':'') + ' sur l\'année · moyenne frais gestion : ' + yr.moy_frais_gestion.toFixed(2) + '%</div>'
     + '<div class="comm-stats" style="grid-template-columns:repeat(4,1fr);">'
-    +   '<div><div class="comm-stat-label">Total annuel</div><div class="comm-stat-val">' + result.total.toLocaleString('fr-FR') + ' €</div><div class="comm-stat-sub">3 primes cumulées</div></div>'
-    +   '<div><div class="comm-stat-label">Prime 1 · Frais gestion</div><div class="comm-stat-val">' + result.prime1.montant.toLocaleString('fr-FR') + ' €</div><div class="comm-stat-sub">' + (result.prime1.atteinte ? '✓ Objectif atteint' : '✗ Non atteint') + '</div></div>'
-    +   '<div><div class="comm-stat-label">Prime 2 · Portés actifs</div><div class="comm-stat-val">' + result.prime2.montant.toLocaleString('fr-FR') + ' €</div><div class="comm-stat-sub">' + (result.prime2.atteinte ? '✓ Objectif atteint' : '✗ Non atteint') + '</div></div>'
-    +   '<div><div class="comm-stat-label">Prime 3 · ' + (result.prime3.configured ? (result.prime3.label.length > 18 ? result.prime3.label.substring(0,18) + '…' : result.prime3.label) : 'Personnel') + '</div><div class="comm-stat-val">' + result.prime3.montant.toLocaleString('fr-FR') + ' €</div><div class="comm-stat-sub">' + (result.prime3.configured ? (result.prime3.atteinte ? '✓ Validée par admin' : '⏳ En attente') : 'Non configurée') + '</div></div>'
+    +   '<div><div class="comm-stat-label">Total annuel</div><div class="comm-stat-val">' + result.total.toLocaleString('fr-FR') + ' €</div><div class="comm-stat-sub">' + nbPrimesValidated + ' prime' + (nbPrimesValidated>1?'s':'') + ' validée' + (nbPrimesValidated>1?'s':'') + '</div></div>'
+    +   '<div><div class="comm-stat-label">Primes configurées</div><div class="comm-stat-val">' + primes.length + '</div><div class="comm-stat-sub">pour cette année</div></div>'
+    +   '<div><div class="comm-stat-label">Primes validées</div><div class="comm-stat-val">' + nbPrimesValidated + '</div><div class="comm-stat-sub">' + (primes.length > 0 ? Math.round(nbPrimesValidated * 100 / primes.length) + '% du total' : '—') + '</div></div>'
+    +   '<div><div class="comm-stat-label">Moyenne frais</div><div class="comm-stat-val">' + yr.moy_frais_gestion.toFixed(1) + '%</div><div class="comm-stat-sub">sur ' + yr.nb + ' deal' + (yr.nb>1?'s':'') + '</div></div>'
     + '</div>'
     + '</div>';
 
-  // Détail Prime 1
-  var p1 = result.prime1;
-  var p1Color = p1.atteinte ? '#1D7F4F' : '#B8860B';
-  var p1Bg = p1.atteinte ? '#E8F5EE' : '#FFF8E1';
-  var p1Border = p1.atteinte ? '#9FDBB8' : '#F0D98A';
-  html += '<div class="comm-card" style="background:' + p1Bg + ';border-color:' + p1Border + ';">'
-    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid ' + p1Border + ';">'
-    +   '<div style="display:flex;align-items:center;gap:10px;">'
-    +     '<div style="width:32px;height:32px;border-radius:8px;background:' + p1Color + ';color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;">1</div>'
-    +     '<div><div style="font-size:13px;font-weight:800;color:#1A1033;">Prime moyenne frais de gestion</div>'
-    +     '<div style="font-size:11px;color:#6B5E9C;">Objectif : moyenne ≥ ' + p1.seuil + '% · ' + p1.tarif + ' €/deal si atteint'
-    +     (p1.seuil_custom ? ' <span style="display:inline-block;margin-left:6px;padding:1px 7px;background:#7343EE;color:#fff;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">objectif perso</span>' : '')
-    +     '</div></div>'
-    +   '</div>'
-    +   '<div style="font-size:22px;font-weight:800;color:' + p1Color + ';">' + p1.montant.toLocaleString('fr-FR') + ' €</div>'
-    + '</div>'
-    + '<div style="font-family:monospace;font-size:12px;color:#1A1033;line-height:1.8;">'
-    +   '<div>Moyenne frais gestion actuelle : <strong>' + p1.valeur_actuelle.toFixed(2) + '%</strong> ' + (p1.atteinte ? '✓' : '✗') + '</div>'
-    +   '<div>Seuil requis : <strong>' + p1.seuil + '%</strong></div>'
-    +   (p1.atteinte
-        ? '<div>Calcul : ' + p1.nb_deals + ' deals × ' + p1.tarif + ' € = <strong>' + p1.montant.toLocaleString('fr-FR') + ' €</strong></div>'
-        : '<div style="color:#8A6500;">Objectif non atteint — prime non versée</div>')
-    + '</div>'
-    + '</div>';
-
-  // Détail Prime 2
-  var p2 = result.prime2;
-  var p2Color = p2.atteinte ? '#1D7F4F' : '#B8860B';
-  var p2Bg = p2.atteinte ? '#E8F5EE' : '#FFF8E1';
-  var p2Border = p2.atteinte ? '#9FDBB8' : '#F0D98A';
-  html += '<div class="comm-card" style="background:' + p2Bg + ';border-color:' + p2Border + ';">'
-    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid ' + p2Border + ';">'
-    +   '<div style="display:flex;align-items:center;gap:10px;">'
-    +     '<div style="width:32px;height:32px;border-radius:8px;background:' + p2Color + ';color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;">2</div>'
-    +     '<div><div style="font-size:13px;font-weight:800;color:#1A1033;">Prime portés actifs en décembre</div>'
-    +     '<div style="font-size:11px;color:#6B5E9C;">Objectif : ≥ ' + p2.seuil + ' portés actifs · ' + p2.tarif + ' €/deal si atteint'
-    +     (p2.seuil_custom ? ' <span style="display:inline-block;margin-left:6px;padding:1px 7px;background:#7343EE;color:#fff;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">objectif perso</span>' : '')
-    +     '</div></div>'
-    +   '</div>'
-    +   '<div style="font-size:22px;font-weight:800;color:' + p2Color + ';">' + p2.montant.toLocaleString('fr-FR') + ' €</div>'
-    + '</div>'
-    + '<div style="font-family:monospace;font-size:12px;color:#1A1033;line-height:1.8;">'
-    +   '<div>Portés actifs en décembre ' + currentCommYear + ' : <strong>' + p2.valeur_actuelle + '</strong> ' + (p2.atteinte ? '✓' : '✗') + '</div>'
-    +   '<div>Seuil requis : <strong>' + p2.seuil + '</strong></div>'
-    +   (p2.atteinte
-        ? '<div>Calcul : ' + p2.nb_deals + ' deals × ' + p2.tarif + ' € = <strong>' + p2.montant.toLocaleString('fr-FR') + ' €</strong></div>'
-        : '<div style="color:#8A6500;">Objectif non atteint — prime non versée</div>')
-    + '</div>'
-    + '</div>';
-
-  // Prime 3 : objectif personnel à validation manuelle admin
-  var p3 = result.prime3;
-  var escCommForJs = currentCommCommercial.replace(/'/g, "\\'").replace(/\\/g, '\\\\');
-
-  // Couleurs selon état
-  var p3Color, p3Bg, p3Border, p3Status;
-  if (!p3.configured) {
-    p3Color = '#9E94C4'; p3Bg = '#FAFAFA'; p3Border = '#E4E0FA';
-    p3Status = '<span style="color:#9E94C4;font-style:italic;">Non configurée</span>';
-  } else if (p3.atteinte) {
-    p3Color = '#1D7F4F'; p3Bg = '#E8F5EE'; p3Border = '#9FDBB8';
-    p3Status = '<span style="color:#1D7F4F;font-weight:700;">✓ Validée par admin</span>';
-  } else {
-    p3Color = '#B8860B'; p3Bg = '#FFF8E1'; p3Border = '#F0D98A';
-    p3Status = '<span style="color:#B8860B;font-weight:700;">⏳ En attente de validation admin</span>';
-  }
-
-  html += '<div class="comm-card" style="background:' + p3Bg + ';border-color:' + p3Border + ';">'
-    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid ' + p3Border + ';">'
-    +   '<div style="display:flex;align-items:center;gap:10px;">'
-    +     '<div style="width:32px;height:32px;border-radius:8px;background:' + p3Color + ';color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;">3</div>'
-    +     '<div><div style="font-size:13px;font-weight:800;color:#1A1033;">' + (p3.configured ? p3.label : 'Objectif personnel (non configuré)') + '</div>'
-    +     '<div style="font-size:11px;color:#6B5E9C;">' + (p3.configured
-          ? 'Objectif : ' + (p3.objectif_txt || '—') + ' · ' + p3.tarif + ' €/deal si validé'
-          : 'Rendez-vous dans Paramètres · Objectifs par commercial pour le définir') + '</div></div>'
-    +   '</div>'
-    +   '<div style="font-size:22px;font-weight:800;color:' + p3Color + ';">' + p3.montant.toLocaleString('fr-FR') + ' €</div>'
-    + '</div>';
-
-  if (p3.configured) {
-    html += '<div style="font-family:monospace;font-size:12px;color:#1A1033;line-height:1.8;">'
-      +   '<div>Statut : ' + p3Status + '</div>'
-      +   '<div>Tarif configuré : <strong>' + p3.tarif + ' €/deal</strong></div>'
-      +   (p3.atteinte
-          ? '<div>Calcul : ' + p3.nb_deals + ' deals × ' + p3.tarif + ' € = <strong>' + p3.montant.toLocaleString('fr-FR') + ' €</strong></div>'
-          : '<div style="color:#8A6500;">Cette prime sera versée uniquement après validation admin.</div>')
+  // Cartes primes (dynamique)
+  if (primes.length === 0) {
+    html += '<div class="comm-card" style="text-align:center;padding:32px 24px;background:#FAFAFA;border:1.5px dashed #E4E0FA;">'
+      + '<div style="font-size:36px;margin-bottom:10px;">🎯</div>'
+      + '<div style="font-size:14px;font-weight:700;color:#1A1033;margin-bottom:6px;">Aucune prime configurée</div>'
+      + '<div style="font-size:12px;color:#6B5E9C;line-height:1.55;max-width:460px;margin:0 auto 16px;">'
+      +   'Configurez les primes de ' + currentCommCommercial + ' pour ' + currentCommYear + ' depuis <strong>Paramètres</strong> → <strong>Barème commission annuelle</strong>.'
       + '</div>'
-      // Bouton de validation / dévalidation (admin)
-      + '<div style="margin-top:14px;padding-top:12px;border-top:1px dashed ' + p3Border + ';display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
-      +   (p3.atteinte
-          ? '<button onclick="togglePrime3Validation(\'' + escCommForJs + '\',' + currentCommYear + ', false)" style="display:inline-flex;align-items:center;gap:6px;padding:9px 18px;background:#fff;color:#B8860B;border:1.5px solid #F0D98A;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;">↺ Dévalider cette prime</button>'
-          : '<button onclick="togglePrime3Validation(\'' + escCommForJs + '\',' + currentCommYear + ', true)" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:linear-gradient(135deg,#1D7F4F,#0F5132);color:#fff;border:none;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(29,127,79,0.25);">✓ Valider cette prime</button>')
-      +   '<span style="font-size:10.5px;color:#6B5E9C;">🔒 Mot de passe admin requis</span>'
+      + '<button onclick="showCommissionsSection(\'params\')" style="padding:9px 18px;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border:none;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Configurer les primes →</button>'
       + '</div>';
   } else {
-    html += '<div style="padding:14px;background:#fff;border:1px dashed #E4E0FA;border-radius:10px;text-align:center;font-size:12px;color:#9E94C4;">'
-      +   'Pour configurer cette prime, allez dans <strong>Paramètres</strong> → <strong>Objectifs par commercial</strong> '
-      +   'et renseignez le libellé, l\'objectif et le tarif €/deal pour ' + currentCommCommercial + ' en ' + currentCommYear + '.'
-      + '</div>';
-  }
+    primes.forEach(function(p, idx) {
+      var pColor = p.validated ? '#1D7F4F' : '#B8860B';
+      var pBg = p.validated ? '#E8F5EE' : '#FFF8E1';
+      var pBorder = p.validated ? '#9FDBB8' : '#F0D98A';
+      var status = p.validated
+        ? '<span style="color:#1D7F4F;font-weight:700;">✓ Validée par admin</span>'
+        : '<span style="color:#B8860B;font-weight:700;">⏳ En attente de validation admin</span>';
+      var escPid = p.id.replace(/'/g, "\\'");
 
-  html += '</div>';
+      html += '<div class="comm-card" style="background:' + pBg + ';border-color:' + pBorder + ';">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid ' + pBorder + ';flex-wrap:wrap;gap:10px;">'
+        +   '<div style="display:flex;align-items:center;gap:10px;">'
+        +     '<div style="width:32px;height:32px;border-radius:8px;background:' + pColor + ';color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;">' + (idx + 1) + '</div>'
+        +     '<div><div style="font-size:13px;font-weight:800;color:#1A1033;">' + (p.label || 'Prime sans nom') + '</div>'
+        +     '<div style="font-size:11px;color:#6B5E9C;">' + p.tarif + ' €/deal · validation manuelle admin</div></div>'
+        +   '</div>'
+        +   '<div style="font-size:22px;font-weight:800;color:' + pColor + ';">' + p.montant.toLocaleString('fr-FR') + ' €</div>'
+        + '</div>'
+        + '<div style="font-family:monospace;font-size:12px;color:#1A1033;line-height:1.8;">'
+        +   '<div>Statut : ' + status + '</div>'
+        +   '<div>Tarif : <strong>' + p.tarif + ' €/deal</strong></div>'
+        +   (p.validated
+            ? '<div>Calcul : ' + p.nb_deals + ' deals × ' + p.tarif + ' € = <strong>' + p.montant.toLocaleString('fr-FR') + ' €</strong></div>'
+            : '<div style="color:#8A6500;">Cette prime sera versée uniquement après validation admin.</div>')
+        + '</div>'
+        + '<div style="margin-top:14px;padding-top:12px;border-top:1px dashed ' + pBorder + ';display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+        +   (p.validated
+            ? '<button onclick="togglePrimeValidation(\'' + escCommForJs + '\',' + currentCommYear + ',\'' + escPid + '\', false)" style="display:inline-flex;align-items:center;gap:6px;padding:9px 18px;background:#fff;color:#B8860B;border:1.5px solid #F0D98A;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;">↺ Dévalider cette prime</button>'
+            : '<button onclick="togglePrimeValidation(\'' + escCommForJs + '\',' + currentCommYear + ',\'' + escPid + '\', true)" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:linear-gradient(135deg,#1D7F4F,#0F5132);color:#fff;border:none;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(29,127,79,0.25);">✓ Valider cette prime</button>')
+        +   '<span style="font-size:10.5px;color:#6B5E9C;">🔒 Mot de passe admin requis</span>'
+        + '</div>'
+        + '</div>';
+    });
+  }
 
   // Récap mensuel (mini tableau des 12 mois)
   var monthLabels = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sept','Oct','Nov','Déc'];
@@ -9643,21 +10055,24 @@ function renderCommAnnuelleView() {
   }
   html += '</div></div>';
 
-  // Récap total
-  html += '<div class="comm-card" style="background:linear-gradient(135deg,#FAFFF7 0%, #E8F5EE 100%);border-color:#9FDBB8;">'
-    + '<div class="comm-card-title" style="color:#0F5132;"><span class="comm-card-title-dot" style="background:#0F5132;box-shadow:0 0 0 3px rgba(15,81,50,0.18);"></span><span>Total commission annuelle ' + currentCommYear + '</span></div>'
-    + '<div style="display:grid;grid-template-columns:repeat(4,auto);gap:18px;align-items:center;font-family:monospace;font-size:13px;">'
-    +   '<div><div style="font-size:10px;color:#6B5E9C;text-transform:uppercase;font-weight:700;letter-spacing:0.04em;">Prime 1</div><div style="font-size:16px;font-weight:800;color:#1A1033;">' + result.prime1.montant.toLocaleString('fr-FR') + ' €</div></div>'
-    +   '<div style="color:#9E94C4;">+</div>'
-    +   '<div><div style="font-size:10px;color:#6B5E9C;text-transform:uppercase;font-weight:700;letter-spacing:0.04em;">Prime 2</div><div style="font-size:16px;font-weight:800;color:#1A1033;">' + result.prime2.montant.toLocaleString('fr-FR') + ' €</div></div>'
-    +   '<div style="color:#9E94C4;">+</div>'
-    + '</div>'
-    + '<div style="display:grid;grid-template-columns:repeat(4,auto);gap:18px;align-items:center;font-family:monospace;font-size:13px;margin-top:8px;padding-top:8px;border-top:1px dashed #9FDBB8;">'
-    +   '<div><div style="font-size:10px;color:#6B5E9C;text-transform:uppercase;font-weight:700;letter-spacing:0.04em;">Prime 3</div><div style="font-size:16px;font-weight:800;color:#1A1033;">' + result.prime3.montant.toLocaleString('fr-FR') + ' €</div></div>'
-    +   '<div style="color:#9E94C4;">=</div>'
-    +   '<div><div style="font-size:10px;color:#0F5132;text-transform:uppercase;font-weight:700;letter-spacing:0.04em;">Total annuel</div><div style="font-size:22px;font-weight:800;color:#0F5132;">' + result.total.toLocaleString('fr-FR') + ' €</div></div>'
-    + '</div>'
-    + '</div>';
+  // Récap total — somme des primes
+  if (primes.length > 0) {
+    html += '<div class="comm-card" style="background:linear-gradient(135deg,#FAFFF7 0%, #E8F5EE 100%);border-color:#9FDBB8;">'
+      + '<div class="comm-card-title" style="color:#0F5132;"><span class="comm-card-title-dot" style="background:#0F5132;box-shadow:0 0 0 3px rgba(15,81,50,0.18);"></span><span>Total commission annuelle ' + currentCommYear + '</span></div>'
+      + '<div style="font-family:monospace;font-size:13px;line-height:2;color:#1A1033;">';
+    primes.forEach(function(p, idx) {
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;">'
+        + '<span>Prime ' + (idx + 1) + ' · ' + (p.label || 'sans nom') + ' ' + (p.validated ? '<span style="color:#1D7F4F;">✓</span>' : '<span style="color:#9E94C4;">(non validée)</span>') + '</span>'
+        + '<strong style="color:' + (p.validated ? '#0F5132' : '#9E94C4') + ';">' + p.montant.toLocaleString('fr-FR') + ' €</strong>'
+        + '</div>';
+    });
+    html += '</div>'
+      + '<div style="margin-top:10px;padding-top:10px;border-top:1.5px solid #9FDBB8;display:flex;justify-content:space-between;align-items:center;">'
+      +   '<span style="font-size:12px;color:#0F5132;text-transform:uppercase;font-weight:800;letter-spacing:0.06em;">Total annuel</span>'
+      +   '<span style="font-size:24px;font-weight:800;color:#0F5132;">' + result.total.toLocaleString('fr-FR') + ' €</span>'
+      + '</div>'
+      + '</div>';
+  }
 
   // Bouton Valider la commission annuelle
   var existingAnn = findCommHistEntry('annual', currentCommCommercial, currentCommYear, null);
@@ -9691,21 +10106,37 @@ function renderCommAnnuelleView() {
   tab.innerHTML = html;
 }
 
-// Toggle validation de la Prime 3 (admin only, mot de passe requis)
-function togglePrime3Validation(commercial, year, wantValidated) {
+// Toggle validation d'une prime (admin only, mot de passe requis)
+// Applique à n'importe quelle prime identifiée par son id (nouveau modèle v2)
+function togglePrimeValidation(commercial, year, primeId, wantValidated) {
   var params = getCommParams();
+  var primes = getPrimesFor(commercial, year);
+  var prime = primes.find(function(p){ return p.id === primeId; });
+  if (!prime) { alert('Prime introuvable.'); return; }
   var input = prompt(wantValidated
-    ? 'Valider la Prime 3 pour ' + commercial + ' (' + year + ') ?\n\nMot de passe administrateur :'
-    : 'Dévalider la Prime 3 pour ' + commercial + ' (' + year + ') ?\n\nMot de passe administrateur :');
+    ? 'Valider la prime "' + (prime.label || 'sans nom') + '" pour ' + commercial + ' (' + year + ') ?\n\nMontant qui sera versé : ' + (prime.tarif * computeYearlyDealsAggregate(commercial, year).nb).toLocaleString('fr-FR') + ' €\n\nMot de passe administrateur :'
+    : 'Dévalider la prime "' + (prime.label || 'sans nom') + '" pour ' + commercial + ' (' + year + ') ?\n\nMot de passe administrateur :');
   if (input === null) return;  // annulation
   if (input !== params.admin_password) {
     alert('Mot de passe incorrect.');
     return;
   }
-  // Persister le flag
-  setGoalFor(commercial, year, 'prime3_validated', wantValidated);
-  // Re-render pour refléter
+  updatePrime(commercial, year, primeId, 'validated', wantValidated);
   renderCommAnnuelleView();
+}
+
+// Conservé pour compat — redirige vers le nouveau handler au cas où un vieux bouton
+// d'historique validé appelle encore togglePrime3Validation
+function togglePrime3Validation(commercial, year, wantValidated) {
+  // L'ancienne prime 3 v1 n'a pas d'id dans le nouveau modèle, on regarde si elle a été migrée
+  var primes = getPrimesFor(commercial, year);
+  if (primes.length === 0) {
+    alert('Aucune prime configurée pour ce commercial cette année.');
+    return;
+  }
+  // Prendre la dernière prime par défaut (conventionnellement la "Prime 3")
+  var lastPrime = primes[primes.length - 1];
+  togglePrimeValidation(commercial, year, lastPrime.id, wantValidated);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -9816,11 +10247,12 @@ function validateAnnualCommission(commercial, year) {
     alert('Aucun deal à valider pour ' + commercial + ' en ' + year + '.');
     return;
   }
+  var primesLines = (result.primes || []).map(function(p, idx){
+    return 'Prime ' + (idx+1) + ' (' + (p.label || 'sans nom') + ') : ' + p.montant.toLocaleString('fr-FR') + ' €' + (p.validated ? ' ✓' : ' (non validée)');
+  }).join('\n');
   if (!confirm('Valider la commission annuelle de ' + commercial + ' pour ' + year + ' ?\n\n'
       + 'Total : ' + result.total.toLocaleString('fr-FR') + ' €\n'
-      + 'Prime 1 : ' + result.prime1.montant.toLocaleString('fr-FR') + ' €\n'
-      + 'Prime 2 : ' + result.prime2.montant.toLocaleString('fr-FR') + ' €\n'
-      + 'Prime 3 : ' + result.prime3.montant.toLocaleString('fr-FR') + ' €\n'
+      + (primesLines ? primesLines + '\n' : '')
       + 'Deals comptés : ' + result.year_result.nb + '\n\n'
       + 'Une fois validée, cette commission sera figée et apparaîtra dans l\'Historique.')) {
     return;
@@ -9886,8 +10318,6 @@ function buildMonthlySnapshot(commercial, year, month, result) {
 
 function buildAnnualSnapshot(commercial, year, result) {
   var now = new Date();
-  var params = getCommParams();
-  var goals = getGoalsFor(commercial, year);
   return {
     key: commHistKey('annual', commercial, year, null),
     type: 'annual',
@@ -9899,40 +10329,17 @@ function buildAnnualSnapshot(commercial, year, result) {
     total: result.total,
     nb_deals: result.year_result.nb,
     moy_frais_gestion: result.year_result.moy_frais_gestion,
-    prime1_snapshot: {
-      atteinte: result.prime1.atteinte,
-      seuil: result.prime1.seuil,
-      seuil_custom: result.prime1.seuil_custom,
-      valeur_actuelle: result.prime1.valeur_actuelle,
-      tarif: result.prime1.tarif,
-      nb_deals: result.prime1.nb_deals,
-      montant: result.prime1.montant
-    },
-    prime2_snapshot: {
-      atteinte: result.prime2.atteinte,
-      seuil: result.prime2.seuil,
-      seuil_custom: result.prime2.seuil_custom,
-      valeur_actuelle: result.prime2.valeur_actuelle,
-      tarif: result.prime2.tarif,
-      nb_deals: result.prime2.nb_deals,
-      montant: result.prime2.montant
-    },
-    prime3_snapshot: {
-      configured: result.prime3.configured,
-      atteinte: result.prime3.atteinte,
-      label: result.prime3.label,
-      objectif_txt: result.prime3.objectif_txt,
-      tarif: result.prime3.tarif,
-      nb_deals: result.prime3.nb_deals,
-      montant: result.prime3.montant
-    },
-    goals_snapshot: {
-      moy_frais_gestion: goals.moy_frais_gestion,
-      portes_actifs: goals.portes_actifs,
-      prime3_label: goals.prime3_label,
-      prime3_objectif: goals.prime3_objectif,
-      prime3_tarif: goals.prime3_tarif
-    }
+    // Snapshot des primes (nouveau modèle v2)
+    primes_snapshot: (result.primes || []).map(function(p){
+      return {
+        id: p.id,
+        label: p.label,
+        tarif: p.tarif,
+        validated: p.validated,
+        nb_deals: p.nb_deals,
+        montant: p.montant
+      };
+    })
   };
 }
 
@@ -10140,9 +10547,6 @@ function openCommHistDetail(key) {
     }
   } else {
     // Annuel
-    var p1 = entry.prime1_snapshot || {};
-    var p2 = entry.prime2_snapshot || {};
-    var p3 = entry.prime3_snapshot || {};
     body += '<div style="font-size:13px;color:#1A1033;line-height:1.7;font-family:monospace;">'
       + '<div><strong>Période :</strong> Année ' + entry.year + '</div>'
       + '<div><strong>Commercial :</strong> ' + entry.commercial + '</div>'
@@ -10150,14 +10554,36 @@ function openCommHistDetail(key) {
       + '<hr style="border:none;border-top:1px dashed #E4E0FA;margin:10px 0;">'
       + '<div><strong>Deals sur l\'année :</strong> ' + entry.nb_deals + '</div>'
       + '<div><strong>Moyenne frais gestion :</strong> ' + (entry.moy_frais_gestion || 0).toFixed(2) + '%</div>'
-      + '<hr style="border:none;border-top:1px dashed #E4E0FA;margin:10px 0;">'
-      + '<div><strong>Prime 1 (frais gestion) :</strong> ' + p1.montant.toLocaleString('fr-FR') + ' €'
-      +   ' <span style="color:' + (p1.atteinte?'#1D7F4F':'#B8860B') + ';">(' + (p1.atteinte?'✓ atteinte':'✗ non atteinte') + ' · seuil ' + p1.seuil + '%)</span></div>'
-      + '<div><strong>Prime 2 (portés déc.) :</strong> ' + p2.montant.toLocaleString('fr-FR') + ' €'
-      +   ' <span style="color:' + (p2.atteinte?'#1D7F4F':'#B8860B') + ';">(' + (p2.atteinte?'✓ atteinte':'✗ non atteinte') + ' · seuil ' + p2.seuil + ')</span></div>'
-      + '<div><strong>Prime 3 (' + (p3.label || 'personnelle') + ') :</strong> ' + p3.montant.toLocaleString('fr-FR') + ' €'
-      +   ' <span style="color:' + (p3.atteinte?'#1D7F4F':'#9E94C4') + ';">(' + (p3.atteinte?'✓ validée':'non déclenchée') + ')</span></div>'
-      + '<div style="font-size:16px;color:#0F5132;margin-top:10px;"><strong>TOTAL : ' + entry.total.toLocaleString('fr-FR') + ' €</strong></div>'
+      + '<hr style="border:none;border-top:1px dashed #E4E0FA;margin:10px 0;">';
+
+    // Format v2 (nouveau) : liste de primes dans primes_snapshot
+    if (Array.isArray(entry.primes_snapshot) && entry.primes_snapshot.length > 0) {
+      entry.primes_snapshot.forEach(function(p, idx) {
+        body += '<div><strong>Prime ' + (idx + 1) + ' (' + (p.label || 'sans nom') + ') :</strong> ' + (p.montant || 0).toLocaleString('fr-FR') + ' €'
+          + ' <span style="color:' + (p.validated ? '#1D7F4F' : '#9E94C4') + ';">('
+          + (p.validated ? '✓ validée' : 'non déclenchée')
+          + ' · tarif ' + (p.tarif || 0) + ' €/deal)</span></div>';
+      });
+    } else {
+      // Format v1 (ancien) — rétro-compat pour historiques déjà validés
+      var p1 = entry.prime1_snapshot || {};
+      var p2 = entry.prime2_snapshot || {};
+      var p3 = entry.prime3_snapshot || {};
+      if (p1.montant !== undefined) {
+        body += '<div><strong>Prime 1 (frais gestion) :</strong> ' + (p1.montant || 0).toLocaleString('fr-FR') + ' €'
+          + ' <span style="color:' + (p1.atteinte?'#1D7F4F':'#B8860B') + ';">(' + (p1.atteinte?'✓ atteinte':'✗ non atteinte') + ' · seuil ' + (p1.seuil || '—') + '%)</span></div>';
+      }
+      if (p2.montant !== undefined) {
+        body += '<div><strong>Prime 2 (portés déc.) :</strong> ' + (p2.montant || 0).toLocaleString('fr-FR') + ' €'
+          + ' <span style="color:' + (p2.atteinte?'#1D7F4F':'#B8860B') + ';">(' + (p2.atteinte?'✓ atteinte':'✗ non atteinte') + ' · seuil ' + (p2.seuil || '—') + ')</span></div>';
+      }
+      if (p3.montant !== undefined) {
+        body += '<div><strong>Prime 3 (' + (p3.label || 'personnelle') + ') :</strong> ' + (p3.montant || 0).toLocaleString('fr-FR') + ' €'
+          + ' <span style="color:' + (p3.atteinte?'#1D7F4F':'#9E94C4') + ';">(' + (p3.atteinte?'✓ validée':'non déclenchée') + ')</span></div>';
+      }
+    }
+
+    body += '<div style="font-size:16px;color:#0F5132;margin-top:10px;"><strong>TOTAL : ' + entry.total.toLocaleString('fr-FR') + ' €</strong></div>'
       + '</div>';
   }
 
@@ -10187,8 +10613,22 @@ function exportCommHistCSV() {
   if (filtered.length === 0) { alert('Aucune commission à exporter.'); return; }
   var monthLabels = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
-  var headers = ['Date validation','Type','Commercial','Année','Mois','Deals comptés','Total €','Prime 1 €','Prime 2 €','Prime 3 €','Validé par'];
+  var headers = ['Date validation','Type','Commercial','Année','Mois','Deals comptés','Total €','Détail primes','Validé par'];
   var rows = filtered.map(function(e){
+    // Construit un texte "détail primes" qui marche pour v1 et v2
+    var primesDetail = '';
+    if (Array.isArray(e.primes_snapshot) && e.primes_snapshot.length > 0) {
+      primesDetail = e.primes_snapshot.map(function(p, idx){
+        return 'P' + (idx+1) + ' ' + (p.label || 'sans nom') + ': ' + (p.montant || 0) + ' €' + (p.validated ? ' ✓' : '');
+      }).join(' | ');
+    } else if (e.type === 'annual') {
+      // Rétro-compat v1
+      var parts = [];
+      if (e.prime1_snapshot) parts.push('P1: ' + (e.prime1_snapshot.montant || 0) + ' €');
+      if (e.prime2_snapshot) parts.push('P2: ' + (e.prime2_snapshot.montant || 0) + ' €');
+      if (e.prime3_snapshot) parts.push('P3: ' + (e.prime3_snapshot.montant || 0) + ' €');
+      primesDetail = parts.join(' | ');
+    }
     return [
       e.validated_date || '',
       e.type === 'monthly' ? 'Mensuelle' : 'Annuelle',
@@ -10197,9 +10637,7 @@ function exportCommHistCSV() {
       e.type === 'monthly' ? monthLabels[e.month] : '',
       e.nb_deals || 0,
       e.total || 0,
-      (e.prime1_snapshot && e.prime1_snapshot.montant) || '',
-      (e.prime2_snapshot && e.prime2_snapshot.montant) || '',
-      (e.prime3_snapshot && e.prime3_snapshot.montant) || '',
+      primesDetail,
       e.validated_by || ''
     ];
   });
@@ -10372,38 +10810,88 @@ function exportCommHistCSV() {
 </div>
 
 <!-- ===== MODAL SORTIE ===== -->
-<div id="modal-sortie" style="display:none;position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3000;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:14px;width:96%;max-width:460px;box-shadow:0 8px 40px rgba(226,75,74,0.25);">
-    <div style="background:linear-gradient(135deg,#C0392B,#E24B4A);padding:18px 24px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center;">
-      <div style="font-size:16px;font-weight:700;color:#fff;">&#128683; Sortie des effectifs</div>
-      <button onclick="closeModal('modal-sortie')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#fff;">&#215;</button>
+<div id="modal-sortie" style="display:none;position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3000;align-items:center;justify-content:center;padding:20px;overflow-y:auto;">
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:620px;box-shadow:0 12px 48px rgba(226,75,74,0.25);margin:auto;">
+    <div style="background:linear-gradient(135deg,#A8322A,#E24B4A);padding:18px 24px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="font-size:16px;font-weight:800;color:#fff;">🚪 Sortie consultant</div>
+        <div id="sortie-subtitle" style="font-size:11.5px;color:rgba(255,255,255,0.85);margin-top:2px;"></div>
+      </div>
+      <button onclick="closeModal('modal-sortie')" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.35);color:#fff;width:32px;height:32px;border-radius:8px;font-size:18px;cursor:pointer;">&#215;</button>
     </div>
-    <div style="padding:24px;">
+    <div style="padding:22px 24px;">
       <input type="hidden" id="sortie-sim-ts">
-      <div style="margin-bottom:16px;">
-        <label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:6px;">Raison de la sortie</label>
-        <select id="sortie-raison" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;">
-          <option value="">-- Sélectionner --</option>
-          <option>Fin de mission</option>
-          <option>Démission</option>
-          <option>Rupture conventionnelle</option>
-          <option>Licenciement</option>
-          <option>Fin de CDD</option>
-          <option>Départ volontaire</option>
-          <option>Autre</option>
+      <input type="hidden" id="sortie-deal-id">
+
+      <!-- Infos auto (lecture seule) -->
+      <div style="background:#FAFAFA;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:18px;">
+        <div style="font-size:10px;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.08em;font-weight:700;margin-bottom:8px;">Informations auto-remplies</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;">
+          <div><span style="color:#9E94C4;">Date demande :</span> <strong id="sortie-info-date" style="color:#1A1033;">—</strong></div>
+          <div><span style="color:#9E94C4;">Commercial :</span> <strong id="sortie-info-commercial" style="color:#1A1033;">—</strong></div>
+          <div><span style="color:#9E94C4;">Prénom :</span> <strong id="sortie-info-prenom" style="color:#1A1033;">—</strong></div>
+          <div><span style="color:#9E94C4;">Nom :</span> <strong id="sortie-info-nom" style="color:#1A1033;">—</strong></div>
+        </div>
+      </div>
+
+      <!-- Ligne 1 : Date fin mission + Date fin contrat travail -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+        <div>
+          <label style="font-size:10.5px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em;">Fin de mission <span style="color:#E24B4A;">*</span></label>
+          <input id="sortie-fin-mission" type="date" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;font-family:inherit;">
+        </div>
+        <div>
+          <label style="font-size:10.5px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em;">Fin de contrat de travail ?</label>
+          <select id="sortie-fin-contrat-travail" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;cursor:pointer;font-family:inherit;">
+            <option value="">—</option>
+            <option value="Non">Non</option>
+            <option value="Oui">Oui</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Ligne 2 : Date fin CDI + Type fin contrat (TOUJOURS visibles, indépendants) -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+        <div>
+          <label style="font-size:10.5px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em;">Date fin de contrat de travail</label>
+          <input id="sortie-date-fin-contrat" type="date" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;font-family:inherit;">
+        </div>
+        <div>
+          <label style="font-size:10.5px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em;">Type de fin de contrat</label>
+          <select id="sortie-type-fin-contrat" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;cursor:pointer;font-family:inherit;">
+            <option value="">— Sélectionner —</option>
+            <option>Rupture PE Employeur</option>
+            <option>Licenciement</option>
+            <option>Rupture Co</option>
+            <option>Fin de CDD</option>
+            <option>Rupture PE Salarié</option>
+            <option>Démission</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Raison -->
+      <div style="margin-bottom:14px;">
+        <label style="font-size:10.5px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em;">Raison</label>
+        <select id="sortie-raison" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;cursor:pointer;font-family:inherit;">
+          <option value="">— Sélectionner —</option>
+          <option>Fin de Mission</option>
+          <option>Création Structure</option>
+          <option>CDI</option>
+          <option>Autre EPS</option>
         </select>
       </div>
-      <div style="margin-bottom:16px;">
-        <label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:6px;">Date de sortie</label>
-        <input id="sortie-date" type="date" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;">
-      </div>
+
+      <!-- Commentaires -->
       <div style="margin-bottom:20px;">
-        <label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:6px;">Commentaire</label>
-        <textarea id="sortie-commentaire" rows="3" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;resize:vertical;"></textarea>
+        <label style="font-size:10.5px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em;">Commentaires</label>
+        <textarea id="sortie-commentaire" rows="3" placeholder="Notes additionnelles…" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;resize:vertical;min-height:68px;font-family:inherit;"></textarea>
       </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;">
-        <button onclick="closeModal('modal-sortie')" style="padding:10px 20px;border:1px solid #E4E0FA;border-radius:8px;background:#fff;font-size:13px;cursor:pointer;">Annuler</button>
-        <button onclick="saveSortie()" style="padding:10px 24px;background:#E24B4A;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">&#10003; Confirmer la sortie</button>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
+        <button onclick="closeModal('modal-sortie')" style="padding:10px 20px;border:1.5px solid #E4E0FA;border-radius:9px;background:#fff;color:#6B5E9C;font-size:13px;cursor:pointer;font-family:inherit;font-weight:600;">Annuler</button>
+        <button onclick="saveSortie()" style="padding:10px 24px;background:linear-gradient(135deg,#A8322A,#E24B4A);color:#fff;border:none;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 4px 12px rgba(226,75,74,0.3);">✓ Enregistrer la sortie</button>
       </div>
     </div>
   </div>
