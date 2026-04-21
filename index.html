@@ -9274,7 +9274,17 @@ function getAllParams() {
     // Configs modules RH (partagées entre tous les postes)
     sortants_config: JSON.parse(localStorage.getItem('sp_sortants_config_v1') || 'null'),
     cooptations_config: JSON.parse(localStorage.getItem('sp_cooptations_config_v1') || 'null'),
-    avances_config: JSON.parse(localStorage.getItem('sp_avances_config_v1') || 'null')
+    avances_config: JSON.parse(localStorage.getItem('sp_avances_config_v1') || 'null'),
+    // Emails internes (notifications placements + annuaire commerciaux unifié)
+    internal_emails: JSON.parse(localStorage.getItem('sp_internal_emails_v1') || 'null'),
+    // Rappels calendrier + types
+    rappels: JSON.parse(localStorage.getItem('sp_rappels_v1') || '[]'),
+    rappel_types: JSON.parse(localStorage.getItem('sp_rappel_types_v1') || 'null'),
+    // Paramètres commissions (mot de passe admin unifié + tarifs primes)
+    commission_params: JSON.parse(localStorage.getItem('sp_commission_params_v1') || 'null'),
+    commission_exclusions: JSON.parse(localStorage.getItem('sp_commission_exclusions_v1') || '[]'),
+    commission_goals: JSON.parse(localStorage.getItem('sp_commission_goals_v1') || 'null'),
+    commission_manual_prime: JSON.parse(localStorage.getItem('sp_commission_manual_prime_v1') || 'null')
   };
 }
 
@@ -9370,6 +9380,142 @@ function mergeParams(remote) {
     }
     localStorage.setItem('sp_avances_config_v1', JSON.stringify(mergedAv));
   }
+
+  // Emails internes (annuaire commerciaux unifié)
+  // Stratégie : valeurs locales gardées si non vides, sinon prend les valeurs distantes
+  if (remote.internal_emails) {
+    var localIE = JSON.parse(localStorage.getItem('sp_internal_emails_v1') || 'null') || {};
+    var mergedIE = Object.assign({}, remote.internal_emails);
+    Object.keys(localIE).forEach(function(k){
+      // Local prioritaire si pas vide et pas par défaut "norman@..." (sauf pour Norman)
+      var lv = (localIE[k] || '').trim();
+      if (lv && (k === 'norman' || lv.toLowerCase() !== 'norman@seven-portage.fr')) {
+        mergedIE[k] = lv;
+      }
+    });
+    localStorage.setItem('sp_internal_emails_v1', JSON.stringify(mergedIE));
+  }
+
+  // Rappels calendrier (collection avec id)
+  if (Array.isArray(remote.rappels)) {
+    var localR = JSON.parse(localStorage.getItem('sp_rappels_v1') || '[]');
+    var mapR = {};
+    localR.forEach(function(r){ if (r && r.id) mapR[r.id] = r; });
+    remote.rappels.forEach(function(rr){
+      if (!rr || !rr.id) return;
+      var existing = mapR[rr.id];
+      if (!existing || (rr.updated_ts || 0) > (existing.updated_ts || 0)) {
+        mapR[rr.id] = rr;
+      }
+    });
+    localStorage.setItem('sp_rappels_v1', JSON.stringify(Object.values(mapR)));
+  }
+
+  // Types de rappel
+  if (remote.rappel_types) {
+    var localRT = JSON.parse(localStorage.getItem('sp_rappel_types_v1') || 'null');
+    if (!localRT) {
+      localStorage.setItem('sp_rappel_types_v1', JSON.stringify(remote.rappel_types));
+    }
+  }
+
+  // Paramètres commissions (tarifs primes + mot de passe admin unifié)
+  // Important : merge intelligent — si admin_password modifié localement, on garde le local
+  // sinon on prend le distant (pour propager les changements de tarifs entre commerciaux)
+  if (remote.commission_params) {
+    var localCP = JSON.parse(localStorage.getItem('sp_commission_params_v1') || 'null');
+    if (!localCP) {
+      localStorage.setItem('sp_commission_params_v1', JSON.stringify(remote.commission_params));
+    } else {
+      // Fusion champ par champ : remote prioritaire SAUF pour admin_password (si déjà personnalisé)
+      var mergedCP = Object.assign({}, remote.commission_params);
+      // Si l'utilisateur a personnalisé son mot de passe admin localement, on garde sa version
+      if (localCP.admin_password && localCP.admin_password !== 'seven2026') {
+        mergedCP.admin_password = localCP.admin_password;
+      }
+      localStorage.setItem('sp_commission_params_v1', JSON.stringify(mergedCP));
+    }
+  }
+
+  // Exclusions de commissions (collection avec deal_id)
+  if (Array.isArray(remote.commission_exclusions)) {
+    var localCE = JSON.parse(localStorage.getItem('sp_commission_exclusions_v1') || '[]');
+    var mapCE = {};
+    localCE.forEach(function(e){
+      if (e && e.deal_id != null) mapCE[String(e.deal_id)] = e;
+    });
+    remote.commission_exclusions.forEach(function(re){
+      if (!re || re.deal_id == null) return;
+      var k = String(re.deal_id);
+      var existing = mapCE[k];
+      if (!existing || (re.updated_ts || 0) > (existing.updated_ts || 0)) {
+        mapCE[k] = re;
+      }
+    });
+    localStorage.setItem('sp_commission_exclusions_v1', JSON.stringify(Object.values(mapCE)));
+  }
+
+  // Objectifs annuels commissions
+  if (remote.commission_goals) {
+    var localCG = JSON.parse(localStorage.getItem('sp_commission_goals_v1') || 'null');
+    if (!localCG) {
+      localStorage.setItem('sp_commission_goals_v1', JSON.stringify(remote.commission_goals));
+    } else {
+      // Merge : prend la valeur la plus récente par clé année-commercial
+      var mergedCG = Object.assign({}, localCG);
+      Object.keys(remote.commission_goals).forEach(function(k){
+        var rv = remote.commission_goals[k];
+        var lv = mergedCG[k];
+        if (!lv || (rv && rv.updated_ts && (!lv.updated_ts || rv.updated_ts > lv.updated_ts))) {
+          mergedCG[k] = rv;
+        }
+      });
+      localStorage.setItem('sp_commission_goals_v1', JSON.stringify(mergedCG));
+    }
+  }
+
+  // Primes manuelles commissions
+  if (remote.commission_manual_prime) {
+    var localCM = JSON.parse(localStorage.getItem('sp_commission_manual_prime_v1') || 'null');
+    if (!localCM) {
+      localStorage.setItem('sp_commission_manual_prime_v1', JSON.stringify(remote.commission_manual_prime));
+    } else {
+      var mergedCM = Object.assign({}, localCM);
+      Object.keys(remote.commission_manual_prime).forEach(function(k){
+        var rv = remote.commission_manual_prime[k];
+        var lv = mergedCM[k];
+        if (!lv || (rv && rv.updated_ts && (!lv.updated_ts || rv.updated_ts > lv.updated_ts))) {
+          mergedCM[k] = rv;
+        }
+      });
+      localStorage.setItem('sp_commission_manual_prime_v1', JSON.stringify(mergedCM));
+    }
+  }
+
+  // Rafraîchir les vues actuellement ouvertes pour refléter les changements distants
+  try {
+    // Onglet Paramètres ouvert : re-render listes/emails/types
+    var tp = document.getElementById('tab-params');
+    if (tp && tp.style.display !== 'none') {
+      if (typeof renderInternalEmailsParams === 'function') renderInternalEmailsParams();
+      if (typeof renderRappelTypesParams === 'function') renderRappelTypesParams();
+      if (typeof renderCustomListsParams === 'function') renderCustomListsParams();
+      if (typeof renderParamsSortantsAccordion === 'function') renderParamsSortantsAccordion();
+      if (typeof renderParamsAvancesAccordion === 'function') renderParamsAvancesAccordion();
+      if (typeof renderParamsCooptationsAccordion === 'function') renderParamsCooptationsAccordion();
+    }
+    // Calendrier ouvert : re-render
+    var tt = document.getElementById('tab-taches');
+    if (tt && tt.style.display !== 'none') {
+      if (typeof renderCalendar === 'function') renderCalendar();
+      if (typeof renderTachesDashboard === 'function') renderTachesDashboard();
+    }
+    // Vue Commissions ouverte : re-render
+    var tc = document.getElementById('tab-commissions');
+    if (tc && tc.style.display !== 'none' && typeof renderCommCurrentView === 'function') {
+      renderCommCurrentView();
+    }
+  } catch(e) { console.warn('[mergeParams] refresh error', e); }
 }
 
 function mergeClients(remote) {
@@ -10197,6 +10343,7 @@ function getInternalEmails() {
 
 function saveInternalEmails(obj) {
   localStorage.setItem(INTERNAL_EMAILS_KEY, JSON.stringify(obj));
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 
 function updateInternalEmail(key, val) {
@@ -10834,7 +10981,10 @@ function getRappels() {
   try { return JSON.parse(localStorage.getItem(RAPPELS_KEY) || '[]'); }
   catch(e) { return []; }
 }
-function saveRappels(arr) { localStorage.setItem(RAPPELS_KEY, JSON.stringify(arr)); }
+function saveRappels(arr) {
+  localStorage.setItem(RAPPELS_KEY, JSON.stringify(arr));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
 
 function getRappelTypes() {
   try {
@@ -10842,7 +10992,10 @@ function getRappelTypes() {
     return saved && saved.length ? saved : JSON.parse(JSON.stringify(DEFAULT_RAPPEL_TYPES));
   } catch(e) { return JSON.parse(JSON.stringify(DEFAULT_RAPPEL_TYPES)); }
 }
-function saveRappelTypes(arr) { localStorage.setItem(RAPPEL_TYPES_KEY, JSON.stringify(arr)); }
+function saveRappelTypes(arr) {
+  localStorage.setItem(RAPPEL_TYPES_KEY, JSON.stringify(arr));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
 
 function getRappelColor(typeLabel) {
   var types = getRappelTypes();
@@ -11998,6 +12151,7 @@ function getCommParams() {
 }
 function saveCommParams(p) {
   localStorage.setItem(COMM_PARAMS_KEY, JSON.stringify(p));
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 
 // Exclusions : { "dealId": { excluded: true, comment: "..." } }
@@ -12007,6 +12161,7 @@ function getCommExclusions() {
 }
 function saveCommExclusions(obj) {
   localStorage.setItem(COMM_EXCLUSIONS_KEY, JSON.stringify(obj));
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 
 // Détermine la date de référence d'un deal (1er document uploadé sur le candidat, sinon fallback)
@@ -12637,6 +12792,7 @@ function getCommGoals() {
 }
 function saveCommGoals(obj) {
   localStorage.setItem(COMM_GOALS_KEY, JSON.stringify(obj));
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 // Retourne les objectifs appliqués à (commercial, year), avec fallback sur défaut global
 // ── NOUVEAU MODÈLE PRIMES (v2) ────────────────────────────────
@@ -12825,6 +12981,7 @@ function getCommManualPrimes() {
 }
 function saveCommManualPrimes(obj) {
   localStorage.setItem(COMM_MANUAL_KEY, JSON.stringify(obj));
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 
 // Parser une date au format "YYYY-MM-DD" (date_entree / date_sortie)
