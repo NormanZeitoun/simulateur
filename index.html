@@ -1190,6 +1190,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         </div>
       </div>
 
+      <div class="params-acc-header" onclick="toggleAcc('acc-demandes-cfg')">🌴 Paramètres Demandes congés / TT<span class="params-acc-arrow" id="acc-demandes-cfg-arrow">&#9658;</span></div>
+      <div class="params-acc-body" id="acc-demandes-cfg">
+        <div id="params-demandes-content" style="padding:12px;">Chargement…</div>
+      </div>
+
       <div class="params-acc-header" onclick="toggleAcc('acc-coop-cfg')">🤝 Paramètres Cooptations<span class="params-acc-arrow" id="acc-coop-cfg-arrow">&#9658;</span></div>
       <div class="params-acc-body" id="acc-coop-cfg">
         <div id="params-cooptations-content" style="padding:12px;">Chargement…</div>
@@ -1559,6 +1564,7 @@ function showTab(id) {
     try { if (typeof renderParamsSortantsAccordion === 'function') renderParamsSortantsAccordion(); } catch(e){}
     try { if (typeof renderParamsAvancesAccordion === 'function') renderParamsAvancesAccordion(); } catch(e){}
     try { if (typeof renderParamsCooptationsAccordion === 'function') renderParamsCooptationsAccordion(); } catch(e){}
+    try { if (typeof renderParamsDemandesAccordion === 'function') renderParamsDemandesAccordion(); } catch(e){}
   }
   // Gérer les boutons actifs des sous-tabs Mission/Frais/Cotisations/Param
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
@@ -1865,11 +1871,12 @@ function onContextChange() {
 
 // Quand l'utilisateur touche BRUT → calcule le TJM minimum correspondant
 function onBRUTChange() {
-  // Quand l'utilisateur édite le brut mensuel, vider le brut annuel pour éviter
-  // une incohérence (sinon le solveur peut donner un TJM basé sur le brut annuel périmé).
-  // Symétrique avec onTJMChange qui vide déjà brut_annuel.
+  // Quand l'utilisateur édite le brut mensuel, recalculer le brut annuel pour maintenir la cohérence
+  var mensuel = parseFloat(document.getElementById('brut').value) || 0;
   var annuelEl = document.getElementById('brut_annuel');
-  if (annuelEl) annuelEl.value = '';
+  if (annuelEl) {
+    annuelEl.value = mensuel > 0 ? Math.round(mensuel * 12) : '';
+  }
   lastEdited = 'brut';
   document.getElementById('brut-source-badge').textContent = '← saisi';
   document.getElementById('brut').style.borderColor = 'var(--success)';
@@ -3955,7 +3962,8 @@ function odSilentFullSync() {
       { path: OD_SORTANTS_PATH, key: 'sortants',   merge: mergeSortants,   getData: function(){ return {version:1,updated:new Date().toISOString(),sortants:getSortants()}; } },
       { path: OD_COOPTATIONS_PATH, key: 'cooptations', merge: mergeCooptations, getData: function(){ return {version:1,updated:new Date().toISOString(),cooptations:getCooptations()}; } },
       { path: OD_AVANCES_PATH, key: 'avances', merge: mergeAvances, getData: function(){ return {version:1,updated:new Date().toISOString(),avances:getAvances()}; } },
-      { path: OD_TACHES_PATH, key: 'taches', merge: mergeTaches, getData: function(){ return {version:1,updated:new Date().toISOString(),taches:getTaches()}; } }
+      { path: OD_TACHES_PATH, key: 'taches', merge: mergeTaches, getData: function(){ return {version:1,updated:new Date().toISOString(),taches:getTaches()}; } },
+      { path: OD_DEMANDES_PATH, key: 'demandes', merge: mergeDemandes, getData: function(){ return {version:1,updated:new Date().toISOString(),demandes:getDemandes()}; } }
     ];
 
     var errors = [];
@@ -6971,6 +6979,54 @@ function renderParamsCooptationsAccordion() {
   if (el) el.innerHTML = buildCooptationsConfigCard(false, 'renderParamsCooptationsAccordion');
 }
 
+// ── Carte de configuration des demandes congés/TT ──
+function buildDemandesConfigCard() {
+  var cfg = getDemandesConfig();
+  var html = '';
+
+  // En-tête explicatif
+  html += '<div style="background:#F0FDF4;border:1px solid #9FE1CB;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:11.5px;color:#0F5132;line-height:1.5;">'
+    + '<strong>Workflow de validation</strong><br>'
+    + 'Quand un commercial fait une demande de congé/RTT/TT, les <strong>3 valideurs</strong> reçoivent un mail + une tâche dans leur dashboard. Le <strong>premier qui répond tranche</strong>.'
+    + '<br><br>Si <strong>congé accordé (CP/RTT)</strong> → mail à Marine + Salomé, demandeur en copie, ajout au calendrier équipe.'
+    + '<br>Si <strong>TT accordé</strong> → mail au demandeur, valideurs en copie, ajout au calendrier équipe.'
+    + '<br>Si <strong>refusé</strong> → mail au demandeur uniquement.'
+    + '</div>';
+
+  // 3 valideurs
+  html += '<div style="margin-bottom:18px;">'
+    + '<label style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:8px;">📋 Valideurs (3 personnes — premier qui répond tranche)</label>';
+  for (var i = 0; i < 3; i++) {
+    var v = (cfg.valideurs && cfg.valideurs[i]) || '';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+      + '<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;background:#7343EE;color:#fff;border-radius:50%;font-size:11px;font-weight:700;flex-shrink:0;">' + (i+1) + '</span>'
+      + '<input type="email" value="' + v.replace(/"/g,'&quot;') + '" placeholder="email@seven-portage.fr" onchange="updateDemandeValideur(' + i + ', this.value)" style="flex:1;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+      + '</div>';
+  }
+  html += '</div>';
+
+  // Marine
+  html += '<div style="padding-top:14px;border-top:1px solid #F0EDF9;margin-bottom:14px;">'
+    + '<label style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:5px;">📧 Email Marine (notification congé accordé)</label>'
+    + '<input type="email" value="' + (cfg.mail_marine || '').replace(/"/g,'&quot;') + '" placeholder="marine@seven-portage.fr" onchange="updateDemandeConfigField(\'mail_marine\', this.value)" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    + '<div style="font-size:10.5px;color:#9E94C4;margin-top:4px;">Reçoit le mail uniquement quand un congé (CP ou RTT) est accordé.</div>'
+    + '</div>';
+
+  // Salomé
+  html += '<div>'
+    + '<label style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:5px;">📧 Email Salomé (notification congé accordé)</label>'
+    + '<input type="email" value="' + (cfg.mail_salome || '').replace(/"/g,'&quot;') + '" placeholder="salome@seven-portage.fr" onchange="updateDemandeConfigField(\'mail_salome\', this.value)" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    + '<div style="font-size:10.5px;color:#9E94C4;margin-top:4px;">En copie du mail à Marine. <strong>Pas notifiée pour les TT exceptionnels.</strong></div>'
+    + '</div>';
+
+  return html;
+}
+
+function renderParamsDemandesAccordion() {
+  var el = document.getElementById('params-demandes-content');
+  if (el) el.innerHTML = buildDemandesConfigCard();
+}
+
 function mergeCooptations(remote) {
   if (!Array.isArray(remote)) return;
   var local = getCooptations();
@@ -9126,6 +9182,7 @@ function runFullSync(btn) {
     { label: '↓ Cooptations...', path: OD_COOPTATIONS_PATH, key: 'cooptations', merge: mergeCooptations },
     { label: '↓ Avances...', path: OD_AVANCES_PATH, key: 'avances', merge: mergeAvances },
     { label: '↓ Tâches...', path: OD_TACHES_PATH, key: 'taches', merge: mergeTaches },
+    { label: '↓ Demandes...', path: OD_DEMANDES_PATH, key: 'demandes', merge: mergeDemandes },
     { label: '↓ Paramètres...', path: OD_PARAMS_PATH, key: 'params', merge: mergeParams }
   ];
   var pushSteps = [
@@ -9138,6 +9195,7 @@ function runFullSync(btn) {
     { label: '↑ Cooptations...', path: OD_COOPTATIONS_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),cooptations:getCooptations()}; } },
     { label: '↑ Avances...', path: OD_AVANCES_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),avances:getAvances()}; } },
     { label: '↑ Tâches...', path: OD_TACHES_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),taches:getTaches()}; } },
+    { label: '↑ Demandes...', path: OD_DEMANDES_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),demandes:getDemandes()}; } },
     { label: '↑ Paramètres...', path: OD_PARAMS_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),params:getAllParams()}; } }
   ];
   var idx = 0;
@@ -9284,7 +9342,9 @@ function getAllParams() {
     commission_params: JSON.parse(localStorage.getItem('sp_commission_params_v1') || 'null'),
     commission_exclusions: JSON.parse(localStorage.getItem('sp_commission_exclusions_v1') || '[]'),
     commission_goals: JSON.parse(localStorage.getItem('sp_commission_goals_v1') || 'null'),
-    commission_manual_prime: JSON.parse(localStorage.getItem('sp_commission_manual_prime_v1') || 'null')
+    commission_manual_prime: JSON.parse(localStorage.getItem('sp_commission_manual_prime_v1') || 'null'),
+    // Config demandes congés / TT (3 valideurs + Marine + Salomé)
+    demandes_config: JSON.parse(localStorage.getItem('sp_demandes_config_v1') || 'null')
   };
 }
 
@@ -9492,6 +9552,25 @@ function mergeParams(remote) {
     }
   }
 
+  // Config demandes congés / TT (valideurs + Marine + Salomé)
+  if (remote.demandes_config) {
+    var localDC = JSON.parse(localStorage.getItem('sp_demandes_config_v1') || 'null');
+    if (!localDC) {
+      localStorage.setItem('sp_demandes_config_v1', JSON.stringify(remote.demandes_config));
+    } else {
+      // Garde local si défini (les valideurs/Marine/Salomé sont des paramètres globaux)
+      var mergedDC = Object.assign({}, remote.demandes_config, localDC);
+      // Pour les valideurs (array) : garde local si l'un d'eux est différent du défaut
+      if (Array.isArray(remote.demandes_config.valideurs) && Array.isArray(localDC.valideurs)) {
+        var hasCustom = localDC.valideurs.some(function(e){
+          return e && e.toLowerCase() !== 'norman@seven-portage.fr';
+        });
+        if (!hasCustom) mergedDC.valideurs = remote.demandes_config.valideurs;
+      }
+      localStorage.setItem('sp_demandes_config_v1', JSON.stringify(mergedDC));
+    }
+  }
+
   // Rafraîchir les vues actuellement ouvertes pour refléter les changements distants
   try {
     // Onglet Paramètres ouvert : re-render listes/emails/types
@@ -9503,6 +9582,7 @@ function mergeParams(remote) {
       if (typeof renderParamsSortantsAccordion === 'function') renderParamsSortantsAccordion();
       if (typeof renderParamsAvancesAccordion === 'function') renderParamsAvancesAccordion();
       if (typeof renderParamsCooptationsAccordion === 'function') renderParamsCooptationsAccordion();
+      if (typeof renderParamsDemandesAccordion === 'function') renderParamsDemandesAccordion();
     }
     // Calendrier ouvert : re-render
     var tt = document.getElementById('tab-taches');
@@ -10974,6 +11054,7 @@ var DEFAULT_RAPPEL_TYPES = [
   { label: 'RDV client', color: '#1D9E75' },
   { label: 'Signature contrat', color: '#F0A500' },
   { label: 'Suivi onboarding', color: '#0078D4' },
+  { label: 'demande', color: '#1D9E75' },
   { label: 'Autre', color: '#6B5E9C' }
 ];
 
@@ -11008,7 +11089,12 @@ function getMyRappels() {
   var all = getRappels();
   var myName = getCommercialData().nom || '';
   if (!myName) return all;
-  return all.filter(function(r){ return (r.commercial||'') === myName; });
+  return all.filter(function(r){
+    // Rappels de type "demande" (congé/RTT/TT validés) : visibles par toute l'équipe
+    if (r.type === 'demande') return true;
+    // Autres rappels : uniquement les miens
+    return (r.commercial||'') === myName;
+  });
 }
 
 // ── Vue calendrier ──
@@ -11292,7 +11378,10 @@ function renderTachesDashboard() {
   html += '<div style="background:#fff;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
     + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
     +   '<div style="font-size:11.5px;font-weight:700;color:#1A1033;text-transform:uppercase;letter-spacing:0.05em;">' + (mine ? 'Mes tâches' : 'Toutes les tâches') + ' · ' + pendingTaches + '</div>'
-    +   '<button onclick="openTaskPopup()" style="padding:5px 11px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">+ Nouvelle tâche</button>'
+    +   '<div style="display:flex;gap:6px;">'
+    +     '<button onclick="openDemandePopup()" title="Demande de congé / RTT / TT exceptionnel" style="padding:5px 11px;background:linear-gradient(135deg,#0F6E56,#1D9E75);color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">+ Demande</button>'
+    +     '<button onclick="openTaskPopup()" style="padding:5px 11px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">+ Tâche</button>'
+    +   '</div>'
     + '</div>';
   if (taches.length === 0) {
     html += '<div style="padding:14px;text-align:center;font-size:11.5px;color:#9E94C4;background:#FAF8FF;border-radius:8px;border:1.5px dashed #E4E0FA;">Aucune tâche.</div>';
@@ -11346,6 +11435,76 @@ function renderTachesDashboard() {
     });
     h += '</div>';
     return h;
+  }
+
+  // ── Demandes (à valider + mes demandes) ──
+  var allDemandes = getDemandes();
+  var demEmail = ((typeof getCommercialData === 'function' ? (getCommercialData().email || '') : '')).trim().toLowerCase();
+  var demCfg = getDemandesConfig();
+  var iAmValideur = (demCfg.valideurs || []).some(function(e){
+    return e && demEmail && (e || '').trim().toLowerCase() === demEmail;
+  });
+  // Demandes en attente que JE peux valider (uniquement si valideur)
+  var demandesAValider = iAmValideur ? allDemandes.filter(function(d){
+    return d.statut === 'pending' && !_sameCommercial(d.demandeur, currentUser);
+  }) : [];
+  // Mes propres demandes (en attente ou récentes)
+  var mesDemandes = allDemandes.filter(function(d){
+    if (!_sameCommercial(d.demandeur, currentUser)) return false;
+    if (d.statut === 'pending') return true;
+    // Garder les décidées des 7 derniers jours
+    if (d.decision_ts && (Date.now() - d.decision_ts) < 7 * 24 * 3600 * 1000) return true;
+    return false;
+  });
+
+  function _demandeIcon(t) { return t === 'CP' ? '🌴' : (t === 'RTT' ? '⏱' : '🏠'); }
+  function _demandeLbl(t) { return t === 'CP' ? 'CP' : (t === 'RTT' ? 'RTT' : 'TT excep'); }
+  function _formatPeriode(d) {
+    var d1 = new Date(d.date_debut), d2 = new Date(d.date_fin);
+    if (d.date_debut === d.date_fin) return d1.toLocaleDateString('fr-FR');
+    return d1.toLocaleDateString('fr-FR', {day:'2-digit',month:'short'}) + ' → ' + d2.toLocaleDateString('fr-FR', {day:'2-digit',month:'short'});
+  }
+
+  // Bloc "À valider" (si je suis valideur)
+  if (demandesAValider.length > 0) {
+    html += '<div style="background:#F0FDF4;border-left:3px solid #1D9E75;border-radius:0 8px 8px 0;padding:10px 12px;margin-bottom:10px;">'
+      + '<div style="font-size:11px;font-weight:700;color:#0F6E56;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">📋 Demandes à valider · ' + demandesAValider.length + '</div>';
+    demandesAValider.forEach(function(d){
+      html += '<div style="padding:8px 0;border-top:1px solid #C5EBD5;">'
+        + '<div style="display:flex;align-items:flex-start;gap:8px;">'
+        +   '<div style="flex:1;min-width:0;">'
+        +     '<div style="font-size:12px;font-weight:700;color:#1A1033;">' + _demandeIcon(d.type) + ' ' + _demandeLbl(d.type) + ' — ' + _escHtml(d.demandeur || '?') + '</div>'
+        +     '<div style="font-size:11px;color:#0F5132;margin-top:2px;">📅 ' + _formatPeriode(d) + '</div>'
+        + (d.commentaire ? '<div style="font-size:10.5px;color:#6B5E9C;margin-top:4px;font-style:italic;">"' + _escHtml(d.commentaire) + '"</div>' : '')
+        +   '</div>'
+        +   '<div style="display:flex;gap:4px;flex-shrink:0;">'
+        +     '<button onclick="decideDemande(\'' + d.id + '\', true)" title="Accorder" style="padding:4px 9px;background:#1D9E75;color:#fff;border:none;border-radius:5px;font-size:10.5px;font-weight:700;cursor:pointer;">✓ Accorder</button>'
+        +     '<button onclick="decideDemande(\'' + d.id + '\', false)" title="Refuser" style="padding:4px 9px;background:#fff;border:1.5px solid #E24B4A;color:#A8322A;border-radius:5px;font-size:10.5px;font-weight:700;cursor:pointer;">✗ Refuser</button>'
+        +   '</div>'
+        + '</div>'
+        + '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Bloc "Mes demandes" (en attente ou récentes)
+  if (mesDemandes.length > 0) {
+    html += '<div style="background:#FAF8FF;border-left:3px solid #7343EE;border-radius:0 8px 8px 0;padding:10px 12px;margin-bottom:10px;">'
+      + '<div style="font-size:11px;font-weight:700;color:#4B36EC;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">🌴 Mes demandes · ' + mesDemandes.length + '</div>';
+    mesDemandes.forEach(function(d){
+      var statutBadge = '';
+      if (d.statut === 'pending') statutBadge = '<span style="display:inline-block;padding:2px 8px;background:#FFF3CD;color:#8A5F00;border-radius:10px;font-size:9.5px;font-weight:700;">⏳ En attente</span>';
+      else if (d.statut === 'accorde') statutBadge = '<span style="display:inline-block;padding:2px 8px;background:#E8F5EE;color:#0F5132;border-radius:10px;font-size:9.5px;font-weight:700;">✓ Accordée</span>';
+      else statutBadge = '<span style="display:inline-block;padding:2px 8px;background:#FCEBEB;color:#A8322A;border-radius:10px;font-size:9.5px;font-weight:700;">✗ Refusée</span>';
+      html += '<div style="padding:6px 0;border-top:1px solid #E4E0FA;">'
+        + '<div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">'
+        +   '<div style="font-size:12px;font-weight:600;color:#1A1033;">' + _demandeIcon(d.type) + ' ' + _demandeLbl(d.type) + ' · ' + _formatPeriode(d) + '</div>'
+        +   statutBadge
+        + '</div>'
+        + (d.statut !== 'pending' ? '<div style="font-size:10.5px;color:#6B5E9C;margin-top:2px;">' + (d.statut === 'accorde' ? 'Accordée' : 'Refusée') + ' par ' + _escHtml(d.decision_par || '?') + (d.decision_motif ? ' — "' + _escHtml(d.decision_motif) + '"' : '') + '</div>' : '')
+        + '</div>';
+    });
+    html += '</div>';
   }
 
   html += _alertBlock('🔴 Avances à verser', '#A8322A', '#FCEBEB', '#F5C5C5', alerts.avances, 'Verser');
@@ -11541,6 +11700,465 @@ function quickHandleAlert(action, alertId) {
     closeAutoAlert(alertId);
   }
 }
+
+
+// ═══════════════════════════════════════════════════════════
+// MODULE DEMANDES CONGÉS / TT EXCEPTIONNEL
+// Workflow : demandeur crée → 3 valideurs reçoivent mail+tâche → 1er qui répond tranche
+// Si accordé Congé : mail Marine+Salomé+demandeur en copie + calendrier équipe
+// Si accordé TT : mail demandeur+valideurs en copie + calendrier équipe
+// Si refusé : mail demandeur uniquement
+// ═══════════════════════════════════════════════════════════
+
+// Helper : échappement HTML pour insertion sûre dans un mail/template
+function _escHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+var DEMANDES_KEY = 'sp_demandes_v1';
+var DEMANDES_CONFIG_KEY = 'sp_demandes_config_v1';
+var OD_DEMANDES_PATH = '/General/Seven Portage Simlateur/SP_Demandes_Global.json';
+
+function getDemandes() {
+  try { return JSON.parse(localStorage.getItem(DEMANDES_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+function saveDemandes(arr) {
+  localStorage.setItem(DEMANDES_KEY, JSON.stringify(arr));
+}
+function getDemandesConfig() {
+  var defaults = {
+    valideurs: ['norman@seven-portage.fr', 'norman@seven-portage.fr', 'norman@seven-portage.fr'],
+    mail_marine: 'norman@seven-portage.fr',
+    mail_salome: 'norman@seven-portage.fr'
+  };
+  try {
+    var saved = JSON.parse(localStorage.getItem(DEMANDES_CONFIG_KEY) || '{}');
+    var merged = Object.assign({}, defaults, saved);
+    if (!Array.isArray(merged.valideurs) || merged.valideurs.length !== 3) {
+      merged.valideurs = defaults.valideurs;
+    }
+    return merged;
+  } catch(e) { return defaults; }
+}
+function saveDemandesConfig(cfg) {
+  localStorage.setItem(DEMANDES_CONFIG_KEY, JSON.stringify(cfg));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+function updateDemandeValideur(idx, value) {
+  var cfg = getDemandesConfig();
+  cfg.valideurs[idx] = (value || '').trim();
+  saveDemandesConfig(cfg);
+}
+function updateDemandeConfigField(field, value) {
+  var cfg = getDemandesConfig();
+  cfg[field] = (value || '').trim();
+  saveDemandesConfig(cfg);
+}
+function mergeDemandes(remote) {
+  if (!Array.isArray(remote)) return;
+  var local = getDemandes();
+  var byId = {};
+  local.forEach(function(d){ if (d && d.id) byId[d.id] = d; });
+  remote.forEach(function(d){
+    if (!d || !d.id) return;
+    var existing = byId[d.id];
+    if (!existing || (d.updated_ts || 0) > (existing.updated_ts || 0)) {
+      byId[d.id] = d;
+    }
+  });
+  saveDemandes(Object.values(byId).sort(function(a,b){ return (b.created_ts||0) - (a.created_ts||0); }));
+}
+
+// ── Popup création demande ──
+function openDemandePopup(typePrefill) {
+  var existing = document.getElementById('modal-demande');
+  if (existing) existing.remove();
+  var modal = document.createElement('div');
+  modal.id = 'modal-demande';
+  modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3200;align-items:center;justify-content:center;padding:20px;overflow-y:auto;';
+
+  var todayISO = _todayISO();
+  var demandeur = getCurrentUserCommercial() || '';
+  var typeOpts = [
+    { val: 'CP', lbl: '🌴 Congé payé (CP)' },
+    { val: 'RTT', lbl: '⏱ RTT' },
+    { val: 'TT', lbl: '🏠 Télétravail exceptionnel' }
+  ].map(function(t){
+    var sel = (typePrefill === t.val) ? ' selected' : '';
+    return '<option value="' + t.val + '"' + sel + '>' + t.lbl + '</option>';
+  }).join('');
+
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:560px;width:95%;margin:auto;">'
+    +   '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 22px;background:linear-gradient(135deg,#0F6E56,#1D9E75);color:#fff;border-radius:12px 12px 0 0;">'
+    +     '<div>'
+    +       '<div style="font-size:17px;font-weight:800;">📅 Nouvelle demande</div>'
+    +       '<div style="font-size:11.5px;opacity:0.88;margin-top:3px;">Congé ou télétravail exceptionnel</div>'
+    +     '</div>'
+    +     '<button onclick="document.getElementById(\'modal-demande\').remove()" style="background:none;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1;opacity:0.85;">×</button>'
+    +   '</div>'
+    +   '<div style="padding:20px 24px;display:grid;grid-template-columns:1fr;gap:14px;">'
+    + (demandeur ? '<div style="background:#FAFAFA;border:1px solid #E4E0FA;border-radius:8px;padding:9px 12px;font-size:12px;color:#1A1033;"><strong>Demandeur :</strong> ' + demandeur + '</div>' : '<div style="background:#FFF8E1;border:1px solid #F0D98A;border-radius:8px;padding:9px 12px;font-size:11.5px;color:#8A5F00;">⚠ Renseignez votre prénom dans Paramètres → Commercial Seven Portage avant de faire une demande.</div>')
+    +     '<div>'
+    +       '<label style="font-size:10.5px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em;">Type <span style="color:#E24B4A;">*</span></label>'
+    +       '<select id="dem-type" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;font-family:inherit;cursor:pointer;">' + typeOpts + '</select>'
+    +     '</div>'
+    +     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    +       '<div>'
+    +         '<label style="font-size:10.5px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em;">Date début <span style="color:#E24B4A;">*</span></label>'
+    +         '<input id="dem-debut" type="date" value="' + todayISO + '" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;font-family:inherit;">'
+    +       '</div>'
+    +       '<div>'
+    +         '<label style="font-size:10.5px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em;">Date fin <span style="color:#E24B4A;">*</span></label>'
+    +         '<input id="dem-fin" type="date" value="' + todayISO + '" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;font-family:inherit;">'
+    +       '</div>'
+    +     '</div>'
+    +     '<div>'
+    +       '<label style="font-size:10.5px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em;">Commentaire</label>'
+    +       '<textarea id="dem-commentaire" rows="3" placeholder="Motif ou détails (optionnel)..." style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;font-family:inherit;resize:vertical;"></textarea>'
+    +     '</div>'
+    +     '<div style="display:flex;justify-content:flex-end;gap:8px;padding-top:8px;border-top:1px solid #F0EDF9;">'
+    +       '<button onclick="document.getElementById(\'modal-demande\').remove()" style="padding:9px 18px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;">Annuler</button>'
+    +       '<button onclick="saveDemande()" style="padding:9px 22px;background:linear-gradient(135deg,#0F6E56,#1D9E75);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;">📤 Envoyer la demande</button>'
+    +     '</div>'
+    +   '</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+}
+
+function saveDemande() {
+  var typeEl = document.getElementById('dem-type');
+  var debutEl = document.getElementById('dem-debut');
+  var finEl = document.getElementById('dem-fin');
+  var commEl = document.getElementById('dem-commentaire');
+  var type = typeEl.value;
+  var debut = debutEl.value;
+  var fin = finEl.value;
+  var comment = (commEl.value || '').trim();
+  var demandeur = getCurrentUserCommercial();
+
+  if (!demandeur) { alert('⚠ Renseignez votre prénom dans Paramètres → Commercial Seven Portage avant de faire une demande.'); return; }
+  if (!debut || !fin) { alert('⚠ Les dates de début et fin sont obligatoires.'); return; }
+  if (debut > fin) { alert('⚠ La date de fin doit être après la date de début.'); return; }
+
+  // Vérifier connexion OneDrive AVANT de créer la demande (sinon mail impossible)
+  if (typeof odToken === 'undefined' || !odToken) {
+    alert('⚠ Impossible de créer la demande : OneDrive n\'est pas connecté.\n\nLes valideurs doivent recevoir un mail automatique pour pouvoir traiter votre demande. Connectez-vous à OneDrive (Paramètres → bouton "Se connecter") puis recommencez.');
+    return;
+  }
+
+  // Vérifier qu'au moins 1 valideur est configuré
+  var cfg = getDemandesConfig();
+  var validValideurs = (cfg.valideurs || []).filter(function(e){ return e && e.indexOf('@') > 0; });
+  if (validValideurs.length === 0) {
+    alert('⚠ Impossible de créer la demande : aucun valideur n\'est configuré.\n\nDemandez à votre administrateur de renseigner les 3 emails de valideurs dans Paramètres → 🌴 Paramètres Demandes congés / TT.');
+    return;
+  }
+
+  // Construire la demande (pas encore enregistrée)
+  var now = Date.now();
+  var demande = {
+    id: 'dem_' + now + '_' + Math.floor(Math.random()*1000),
+    type: type,
+    demandeur: demandeur,
+    demandeur_email: (typeof getCommercialData === 'function' ? (getCommercialData().email || '') : ''),
+    date_debut: debut,
+    date_fin: fin,
+    commentaire: comment,
+    statut: 'pending',
+    decision_par: null,
+    decision_ts: null,
+    decision_motif: '',
+    created_ts: now,
+    updated_ts: now
+  };
+
+  // Désactiver le bouton pour éviter double-clic pendant l'envoi
+  var btnSave = document.querySelector('#modal-demande button[onclick="saveDemande()"]');
+  if (btnSave) { btnSave.disabled = true; btnSave.textContent = '⏳ Envoi en cours...'; btnSave.style.opacity = '0.6'; }
+
+  // Envoyer le mail EN PREMIER, créer la demande SEULEMENT si succès
+  sendDemandeNotificationToValideurs(demande, function(success, errorMsg) {
+    if (!success) {
+      // Échec : pas de création, message d'erreur, restaurer bouton
+      if (btnSave) { btnSave.disabled = false; btnSave.textContent = '📤 Envoyer la demande'; btnSave.style.opacity = '1'; }
+      alert('❌ Demande NON enregistrée.\n\n' + (errorMsg || 'L\'envoi du mail aux valideurs a échoué.') + '\n\nLa demande a été annulée. Vérifiez votre connexion OneDrive et réessayez.');
+      return;
+    }
+    // Succès : créer la demande maintenant
+    var all = getDemandes();
+    all.unshift(demande);
+    saveDemandes(all);
+
+    document.getElementById('modal-demande').remove();
+    if (typeof renderTachesDashboard === 'function') renderTachesDashboard();
+    if (typeof odAutoSync === 'function') odAutoSync();
+
+    var typeLbl = (type === 'CP') ? 'congé payé' : (type === 'RTT' ? 'RTT' : 'télétravail exceptionnel');
+    alert('✓ Demande de ' + typeLbl + ' envoyée aux ' + validValideurs.length + ' valideur' + (validValideurs.length>1?'s':'') + '.\n\nLa demande apparaîtra dans leur dashboard Tâches dès leur prochaine sync.');
+  });
+}
+
+// ── Mail aux valideurs ──
+function sendDemandeNotificationToValideurs(demande, callback) {
+  var cb = (typeof callback === 'function') ? callback : function(){};
+  var cfg = getDemandesConfig();
+  var valideurs = (cfg.valideurs || []).filter(function(e){ return e && e.indexOf('@') > 0; });
+  if (valideurs.length === 0) {
+    console.warn('[Demande] Aucun valideur configuré');
+    cb(false, 'Aucun valideur configuré dans Paramètres → 🌴 Paramètres Demandes congés / TT.');
+    return;
+  }
+  var typeLbl = (demande.type === 'CP') ? 'Congé payé (CP)' : (demande.type === 'RTT' ? 'RTT' : 'Télétravail exceptionnel');
+  var typeIcon = (demande.type === 'CP') ? '🌴' : (demande.type === 'RTT' ? '⏱' : '🏠');
+  var debutFR = new Date(demande.date_debut).toLocaleDateString('fr-FR');
+  var finFR = new Date(demande.date_fin).toLocaleDateString('fr-FR');
+  var subject = '[Validation] ' + typeIcon + ' Demande ' + typeLbl + ' de ' + demande.demandeur + ' (' + debutFR + ' → ' + finFR + ')';
+
+  var appUrl = (window.location && window.location.href) ? window.location.href.split('?')[0].split('#')[0] : '';
+  var deepLink = appUrl ? (appUrl + '?validate=' + encodeURIComponent(demande.id)) : '';
+  var demandeurEsc = _escHtml(demande.demandeur);
+
+  var html = ''
+    + '<div style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#1a1a1a;max-width:640px;">'
+    +   '<div style="background:linear-gradient(135deg,#0F6E56,#1D9E75);color:#fff;padding:18px 22px;border-radius:8px 8px 0 0;">'
+    +     '<div style="font-size:18px;font-weight:800;">' + typeIcon + ' Demande à valider — ' + typeLbl + '</div>'
+    +     '<div style="font-size:12px;opacity:0.88;margin-top:4px;">Demandeur : ' + demandeurEsc + '</div>'
+    +   '</div>'
+    +   '<div style="border:1px solid #E4E0FA;border-top:0;padding:20px 22px;border-radius:0 0 8px 8px;background:#fff;">'
+    +     '<p style="margin:0 0 14px;">Bonjour,</p>'
+    +     '<p style="margin:0 0 14px;"><strong>' + demandeurEsc + '</strong> a soumis une demande de <strong>' + typeLbl.toLowerCase() + '</strong> qui attend votre validation.</p>'
+    +     '<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:18px 0;border:1px solid #E4E0FA;border-radius:6px;overflow:hidden;">'
+    +       '<tr style="background:#FAF8FF;"><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;width:40%;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Type</td><td style="padding:10px 14px;color:#1a1a1a;">' + typeLbl + '</td></tr>'
+    +       '<tr><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Période</td><td style="padding:10px 14px;color:#1a1a1a;border-top:1px solid #F0EDF9;font-weight:600;">' + debutFR + ' → ' + finFR + '</td></tr>'
+    + (demande.commentaire ? '<tr style="background:#FAF8FF;"><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;vertical-align:top;">Commentaire</td><td style="padding:10px 14px;color:#1a1a1a;border-top:1px solid #F0EDF9;white-space:pre-line;">' + _escHtml(demande.commentaire) + '</td></tr>' : '')
+    +     '</table>'
+    + (deepLink ? '<div style="margin:18px 0;padding:14px 18px;background:#F0FDF4;border:1.5px solid #9FE1CB;border-radius:8px;text-align:center;"><a href="' + deepLink + '" style="display:inline-block;padding:11px 24px;background:#1D9E75;color:#fff;text-decoration:none;border-radius:7px;font-weight:700;font-size:14px;">📋 Ouvrir la demande dans le simulateur</a><div style="font-size:11px;color:#6B5E9C;margin-top:10px;">Si le bouton ne fonctionne pas : ouvrez le Simulateur Seven Portage manuellement → onglet <strong>Tâches</strong> → la demande sera dans la section "À valider".</div></div>' : '<div style="margin:18px 0;padding:14px 18px;background:#FAF8FF;border-left:3px solid #7343EE;border-radius:4px;"><div style="font-size:13px;color:#1a1a1a;">Connectez-vous au <strong>Simulateur Seven Portage</strong> → onglet <strong>Tâches</strong> → la demande sera dans la section "À valider".</div></div>')
+    +     '<p style="margin:14px 0 0;color:#6B5E9C;font-size:12px;">Le premier des trois valideurs qui répond tranche la décision. Les autres seront automatiquement informés.</p>'
+    +     '<p style="margin:16px 0 0;color:#6B5E9C;font-size:12px;">— Simulateur Seven Portage</p>'
+    +   '</div>'
+    + '</div>';
+
+  _sendDemandeMail(valideurs[0], valideurs.slice(1), subject, html, demande, 'request', cb);
+}
+
+// Helper Graph + fallback .eml pour tous les mails de demandes
+function _sendDemandeMail(to, ccArr, subject, html, demande, kind, callback) {
+  var cb = (typeof callback === 'function') ? callback : function(){};
+  ccArr = (ccArr || []).filter(function(e){ return e && e.indexOf('@') > 0; });
+
+  if (typeof odToken === 'undefined' || !odToken) {
+    console.warn('[Demande mail] OneDrive non connecté');
+    cb(false, 'OneDrive n\'est pas connecté. Connectez-vous via Paramètres → bouton "Se connecter" puis réessayez.');
+    return;
+  }
+
+  var payload = {
+    message: {
+      subject: subject,
+      body: { contentType: 'HTML', content: html },
+      toRecipients: [{ emailAddress: { address: to } }],
+      ccRecipients: ccArr.map(function(e){ return { emailAddress: { address: e } }; })
+    },
+    saveToSentItems: true
+  };
+  fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(function(r){
+    if (r.ok || r.status === 202) {
+      console.log('[Demande mail] Envoyé à', to, 'CC:', ccArr.join(','));
+      if (typeof showNotifToast === 'function') showNotifToast('✉ Mail envoyé à ' + to);
+      cb(true);
+    } else {
+      r.text().then(function(t){ console.error('[Demande mail] Échec:', r.status, t); });
+      cb(false, 'Échec de l\'envoi du mail (erreur HTTP ' + r.status + '). Vérifiez votre connexion OneDrive.');
+    }
+  }).catch(function(err){
+    console.error('[Demande mail] Erreur réseau:', err);
+    cb(false, 'Erreur réseau lors de l\'envoi du mail. Vérifiez votre connexion internet.');
+  });
+}
+
+// ── Décision sur une demande ──
+function decideDemande(demandeId, accord) {
+  var all = getDemandes();
+  var d = all.find(function(x){ return x.id === demandeId; });
+  if (!d) return;
+  if (d.statut !== 'pending') {
+    alert('Cette demande a déjà été traitée par ' + (d.decision_par || '?') + '.');
+    return;
+  }
+  var motif = '';
+  if (!accord) {
+    motif = prompt('Motif du refus (sera envoyé au demandeur) :', '');
+    if (motif === null) return;
+  }
+  var user = getCurrentUserCommercial() || '?';
+  d.statut = accord ? 'accorde' : 'refuse';
+  d.decision_par = user;
+  d.decision_ts = Date.now();
+  d.decision_motif = motif;
+  d.updated_ts = Date.now();
+  saveDemandes(all);
+
+  // Si accordé : ajouter au calendrier équipe (rappel partagé)
+  if (accord) {
+    try { _addDemandeToCalendrier(d); } catch(e) { console.error('[Demande] calendrier:', e); }
+  }
+
+  // Envoi mail de décision
+  try { sendDemandeDecisionMail(d); } catch(e) { console.error('[Demande] mail décision:', e); }
+
+  if (typeof renderTachesDashboard === 'function') renderTachesDashboard();
+  if (typeof renderCalendar === 'function') renderCalendar();
+  if (typeof odAutoSync === 'function') odAutoSync();
+
+  alert('✓ Décision enregistrée : ' + (accord ? 'ACCORDÉE' : 'REFUSÉE') + '\n\nNotification envoyée au demandeur.');
+}
+
+// Ajout au calendrier équipe via le système de rappels existant
+function _addDemandeToCalendrier(d) {
+  if (typeof getRappels !== 'function' || typeof saveRappels !== 'function') return;
+  var typeLbl = (d.type === 'CP') ? 'Congé' : (d.type === 'RTT' ? 'RTT' : 'TT excep');
+  var icon = (d.type === 'CP') ? '🌴' : (d.type === 'RTT' ? '⏱' : '🏠');
+  var rappels = getRappels();
+  // Un rappel par jour de la période — schéma aligné avec le calendrier existant (datetime ISO complet)
+  var d1 = new Date(d.date_debut);
+  var d2 = new Date(d.date_fin);
+  var cur = new Date(d1);
+  var added = 0;
+  while (cur <= d2 && added < 60) { // safety cap
+    var iso = cur.getFullYear() + '-' + ('0'+(cur.getMonth()+1)).slice(-2) + '-' + ('0'+cur.getDate()).slice(-2);
+    // Datetime à 09:00 par défaut (jour entier, sera visible en vue day/week/month)
+    var datetime = iso + 'T09:00:00';
+    rappels.push({
+      id: 'RP-DEM-' + d.id + '-' + iso,
+      subject: icon + ' ' + typeLbl + ' — ' + d.demandeur,
+      datetime: datetime,
+      type: 'demande',
+      comment: 'Demande ' + typeLbl + ' validée par ' + (d.decision_par || '?') + (d.commentaire ? ' · "' + d.commentaire + '"' : ''),
+      commercial: d.demandeur || '',
+      linked_type: 'demande',
+      linked_id: d.id,
+      linked_name: d.demandeur || '',
+      created: new Date().toISOString(),
+      updated: new Date().toISOString(),
+      updated_ts: Date.now(),
+      done: false
+    });
+    cur.setDate(cur.getDate() + 1);
+    added++;
+  }
+  saveRappels(rappels);
+}
+
+// ── Mail de décision (accordé/refusé) ──
+function sendDemandeDecisionMail(d) {
+  var cfg = getDemandesConfig();
+  var typeLbl = (d.type === 'CP') ? 'Congé payé (CP)' : (d.type === 'RTT' ? 'RTT' : 'Télétravail exceptionnel');
+  var typeIcon = (d.type === 'CP') ? '🌴' : (d.type === 'RTT' ? '⏱' : '🏠');
+  var isCongeAccorde = (d.statut === 'accorde' && (d.type === 'CP' || d.type === 'RTT'));
+  var isTTAccorde = (d.statut === 'accorde' && d.type === 'TT');
+  var isRefuse = (d.statut === 'refuse');
+  var debutFR = new Date(d.date_debut).toLocaleDateString('fr-FR');
+  var finFR = new Date(d.date_fin).toLocaleDateString('fr-FR');
+  var demandeurEmail = d.demandeur_email || _findEmailByName(d.demandeur);
+
+  var subject, to, ccArr = [], statutBg, statutColor, statutText;
+  if (isRefuse) {
+    subject = '[Refusée] ' + typeIcon + ' Votre demande ' + typeLbl + ' (' + debutFR + ' → ' + finFR + ')';
+    to = demandeurEmail;
+    statutBg = '#FCEBEB'; statutColor = '#A8322A'; statutText = '✗ Demande refusée';
+  } else if (isCongeAccorde) {
+    // Mail à Marine + Salomé, demandeur en copie
+    subject = '[Accordée] ' + typeIcon + ' ' + typeLbl + ' — ' + d.demandeur + ' (' + debutFR + ' → ' + finFR + ')';
+    to = (cfg.mail_marine || 'norman@seven-portage.fr');
+    if (cfg.mail_salome && cfg.mail_salome !== to) ccArr.push(cfg.mail_salome);
+    if (demandeurEmail && demandeurEmail !== to && ccArr.indexOf(demandeurEmail) < 0) ccArr.push(demandeurEmail);
+    statutBg = '#E8F5EE'; statutColor = '#0F5132'; statutText = '✓ Demande accordée';
+  } else if (isTTAccorde) {
+    // Mail au demandeur, valideurs en copie (sauf celui qui a tranché — on l'inclut quand même pour info)
+    subject = '[Accordée] ' + typeIcon + ' ' + typeLbl + ' — ' + d.demandeur + ' (' + debutFR + ' → ' + finFR + ')';
+    to = demandeurEmail;
+    ccArr = (cfg.valideurs || []).filter(function(e){ return e && e.indexOf('@') > 0 && e !== to; });
+    statutBg = '#E8F5EE'; statutColor = '#0F5132'; statutText = '✓ Demande accordée';
+  }
+  if (!to) { console.warn('[Demande mail décision] Pas de destinataire (email demandeur introuvable)'); return; }
+
+  var dEsc = _escHtml(d.demandeur);
+  var decParEsc = _escHtml(d.decision_par || '?');
+  var motifEsc = _escHtml(d.decision_motif || '');
+  var commEsc = _escHtml(d.commentaire || '');
+
+  var html = ''
+    + '<div style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#1a1a1a;max-width:640px;">'
+    +   '<div style="background:' + statutBg + ';color:' + statutColor + ';padding:18px 22px;border-radius:8px 8px 0 0;border:1.5px solid ' + statutColor + ';border-bottom:0;">'
+    +     '<div style="font-size:18px;font-weight:800;">' + statutText + '</div>'
+    +     '<div style="font-size:12px;margin-top:4px;">' + typeIcon + ' ' + typeLbl + ' · ' + dEsc + '</div>'
+    +   '</div>'
+    +   '<div style="border:1px solid ' + statutColor + ';border-top:0;padding:20px 22px;border-radius:0 0 8px 8px;background:#fff;">'
+    + (isRefuse ? '<p style="margin:0 0 14px;">Bonjour ' + dEsc + ',</p><p style="margin:0 0 14px;">Votre demande de <strong>' + typeLbl.toLowerCase() + '</strong> pour la période <strong>' + debutFR + ' → ' + finFR + '</strong> a été <strong style="color:' + statutColor + ';">refusée</strong> par ' + decParEsc + '.</p>' + (d.decision_motif ? '<div style="margin:14px 0;padding:12px 16px;background:#FFF5F5;border-left:3px solid #E24B4A;border-radius:4px;"><div style="font-size:11px;font-weight:700;color:#A8322A;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:5px;">Motif du refus</div><div style="font-size:13px;color:#501313;white-space:pre-line;">' + motifEsc + '</div></div>' : '') : '<p style="margin:0 0 14px;">Bonjour,</p><p style="margin:0 0 14px;">La demande de <strong>' + typeLbl.toLowerCase() + '</strong> de <strong>' + dEsc + '</strong> a été <strong style="color:' + statutColor + ';">accordée</strong> par ' + decParEsc + '.</p>')
+    +     '<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:18px 0;border:1px solid #E4E0FA;border-radius:6px;overflow:hidden;">'
+    +       '<tr style="background:#FAF8FF;"><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;width:40%;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Demandeur</td><td style="padding:10px 14px;color:#1a1a1a;">' + (dEsc || '—') + '</td></tr>'
+    +       '<tr><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Type</td><td style="padding:10px 14px;color:#1a1a1a;border-top:1px solid #F0EDF9;">' + typeLbl + '</td></tr>'
+    +       '<tr style="background:#FAF8FF;"><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Période</td><td style="padding:10px 14px;color:#1a1a1a;border-top:1px solid #F0EDF9;font-weight:600;">' + debutFR + ' → ' + finFR + '</td></tr>'
+    +       '<tr><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Décision</td><td style="padding:10px 14px;color:' + statutColor + ';font-weight:700;border-top:1px solid #F0EDF9;">' + statutText + ' par ' + decParEsc + ' le ' + new Date(d.decision_ts).toLocaleDateString('fr-FR') + '</td></tr>'
+    + (d.commentaire ? '<tr style="background:#FAF8FF;"><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;border-top:1px solid #F0EDF9;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;vertical-align:top;">Commentaire initial</td><td style="padding:10px 14px;color:#1a1a1a;border-top:1px solid #F0EDF9;white-space:pre-line;">' + commEsc + '</td></tr>' : '')
+    +     '</table>'
+    + (!isRefuse ? '<p style="margin:14px 0 0;color:#6B5E9C;font-size:12px;">L\'événement a été ajouté au calendrier de l\'équipe.</p>' : '')
+    +     '<p style="margin:16px 0 0;color:#6B5E9C;font-size:12px;">— Simulateur Seven Portage</p>'
+    +   '</div>'
+    + '</div>';
+
+  _sendDemandeMail(to, ccArr, subject, html, d, 'decision');
+}
+
+// Cherche l'email d'une personne par son prénom dans les emails internes
+function _findEmailByName(name) {
+  if (!name) return '';
+  var firstName = (name + '').trim().split(/\s+/)[0].toLowerCase();
+  if (typeof getInternalEmails === 'function') {
+    var ie = getInternalEmails();
+    var email = ie[firstName];
+    if (email && email.indexOf('@') > 0) return email;
+  }
+  return '';
+}
+
+// Si l'URL contient ?validate=xxx, on ouvre le dashboard tâches au chargement
+(function checkValidateDeepLink(){
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var validateId = params.get('validate');
+    if (!validateId) return;
+    setTimeout(function(){
+      if (typeof mainNavTo === 'function') mainNavTo('taches');
+      setTimeout(function(){
+        var d = getDemandes().find(function(x){ return x.id === validateId; });
+        if (!d) {
+          alert('⚠ Demande introuvable. Elle a peut-être été synchronisée mais pas encore reçue. Faites une sync OneDrive et réessayez.');
+          return;
+        }
+        if (d.statut !== 'pending') {
+          alert('Cette demande a déjà été traitée par ' + (d.decision_par || '?') + ' (' + (d.statut === 'accorde' ? 'accordée' : 'refusée') + ').');
+          return;
+        }
+        // Scroll vers le dashboard tâches
+        var dash = document.getElementById('taches-dashboard');
+        if (dash && typeof dash.scrollIntoView === 'function') dash.scrollIntoView({ behavior:'smooth', block:'start' });
+      }, 800);
+    }, 1500);
+  } catch(e) { console.warn('[validate deeplink] error', e); }
+})();
 
 
 function switchCalendarView(view) {
