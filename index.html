@@ -8802,6 +8802,47 @@ function sendMailViaGraph(options, onSuccess, onError) {
   });
 }
 
+// ── Helper : bandeau violet avec logo Seven (en-tête des mails auto) ──
+// Retourne le HTML du header à placer en haut de chaque mail automatique
+function buildEmailHeader(options) {
+  options = options || {};
+  var title = options.title || '';
+  var subtitle = options.subtitle || '';
+
+  var logoSrc = (typeof SEVEN_LOGO_B64 !== 'undefined' && SEVEN_LOGO_B64)
+    ? SEVEN_LOGO_B64
+    : '';
+
+  return ''
+    + '<div style="background:linear-gradient(135deg,#372EB6 0%,#7343EE 100%);padding:20px 24px;border-radius:10px 10px 0 0;display:flex;align-items:center;gap:16px;">'
+    +   (logoSrc
+        ? '<img src="' + logoSrc + '" alt="Seven Portage" style="height:48px;width:auto;display:block;flex-shrink:0;" />'
+        : '')
+    +   '<div style="flex:1;color:#fff;">'
+    +     (title ? '<div style="font-size:17px;font-weight:700;letter-spacing:-0.01em;">' + title + '</div>' : '')
+    +     (subtitle ? '<div style="font-size:13px;opacity:0.92;margin-top:4px;">' + subtitle + '</div>' : '')
+    +   '</div>'
+    + '</div>';
+}
+
+// Helper : ouvre le conteneur blanc après le header (bordure + coins arrondis)
+function emailBodyOpen() {
+  return '<div style="background:#fff;border:1px solid #E4E0FA;border-top:none;padding:20px 24px;border-radius:0 0 10px 10px;">';
+}
+
+function emailBodyClose() {
+  return '</div>';
+}
+
+// Helper : wrapper global du mail (famille de polices, largeur max)
+function emailWrapperOpen() {
+  return '<div style="font-family:Arial,sans-serif;color:#1A1033;max-width:640px;font-size:14px;line-height:1.55;">';
+}
+
+function emailWrapperClose() {
+  return '</div>';
+}
+
 // ── Helper : déterminer qui gère un consultant selon son nom (A-H / I-Z) ──
 // Même logique que getPlacementRecipients
 function getProlongationSender(nomCandidat) {
@@ -8915,8 +8956,36 @@ function renderProlongation() {
     var contratStatut = d.contrat_prolong_statut || '';
     var comment = d.commentaire_prolong || '';
 
+    // Lookup client + manager pour liens cliquables
+    var clientLink = '—';
+    var managerLink = '—';
+    try {
+      var entName = (d.entreprise || '').trim().toLowerCase();
+      if (entName) {
+        var cl = getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === entName; });
+        if (cl) {
+          // Lien vers la fiche client
+          clientLink = '<a href="#" onclick="event.preventDefault();event.stopPropagation();mainNavTo(\'clients\');setTimeout(function(){openClientPage(' + cl.id + ');},100);return false;" style="color:#4B36EC;text-decoration:none;font-weight:600;border-bottom:1px dashed #4B36EC;">' + (d.entreprise||'').replace(/</g,'&lt;') + '</a>';
+          // Lien vers la fiche manager
+          if (d.manager) {
+            var mgrIdx = (cl.managers || []).findIndex(function(m){ return (m.name||'').trim().toLowerCase() === d.manager.trim().toLowerCase(); });
+            if (mgrIdx >= 0) {
+              managerLink = '<a href="#" onclick="event.preventDefault();event.stopPropagation();openManagerFiche(' + cl.id + ',' + mgrIdx + ');return false;" style="color:#4B36EC;text-decoration:none;font-weight:600;border-bottom:1px dashed #4B36EC;">' + d.manager.replace(/</g,'&lt;') + '</a>';
+            } else {
+              managerLink = '<span style="color:#6B5E9C;">' + d.manager.replace(/</g,'&lt;') + '</span>';
+            }
+          }
+        } else {
+          clientLink = '<span style="color:#6B5E9C;">' + (d.entreprise||'').replace(/</g,'&lt;') + '</span>';
+          if (d.manager) managerLink = '<span style="color:#6B5E9C;">' + d.manager.replace(/</g,'&lt;') + '</span>';
+        }
+      }
+    } catch(e) { console.warn('[Prolong link]', e); }
+
     return '<tr data-deal-id="' + d.id + '" style="border-bottom:1px solid #F0EDF9;">'
       + '<td style="padding:10px 8px;font-weight:600;color:#1A1033;">' + prenomNom + '</td>'
+      + '<td style="padding:10px 8px;">' + clientLink + '</td>'
+      + '<td style="padding:10px 8px;">' + managerLink + '</td>'
       + '<td style="padding:10px 8px;color:#6B5E9C;">' + (d.commercial || '—') + '</td>'
       + '<td style="padding:10px 8px;color:#1A1033;font-weight:600;">' + dateFinPrev + '</td>'
       + '<td style="padding:10px 8px;">'
@@ -8970,6 +9039,8 @@ function renderProlongation() {
     +   '<thead style="background:#F5F3FF;">'
     +     '<tr style="border-bottom:2px solid #E4E0FA;">'
     +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Prénom Nom</th>'
+    +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Client</th>'
+    +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Manager</th>'
     +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Commercial</th>'
     +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Date fin prévisionnelle</th>'
     +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Type contrat (Seven/Client)</th>'
@@ -9229,12 +9300,17 @@ function sendProlongationRelance(deal, niveau) {
     ? '<div style="margin-top:8px;color:#555;font-size:13px;white-space:pre-wrap;">' + signature.replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</div>'
     : '';
 
-  // ── Mise en forme finale du mail ──
+  // ── Mise en forme finale du mail avec bandeau violet ──
+  var headerTitle = 'Prolongation de mission';
+  var headerSubtitle = candidat + ' — Relance ' + niveau;
   var htmlBody = ''
-    + '<div style="font-family:Arial,sans-serif;color:#1A1033;max-width:640px;font-size:14px;line-height:1.55;">'
-    +   corps
-    +   signatureHtml
-    + '</div>';
+    + emailWrapperOpen()
+    +   buildEmailHeader({ title: headerTitle, subtitle: headerSubtitle })
+    +   emailBodyOpen()
+    +     corps
+    +     signatureHtml
+    +   emailBodyClose()
+    + emailWrapperClose();
 
   sendMailViaGraph({
     to: [managerEmail],
@@ -10988,12 +11064,9 @@ function sendAvanceNotificationEmail(avance) {
   var appUrl = (window.location && window.location.href) ? (window.location.href.split('#')[0] + '#rh-avances') : '';
 
   var html = ''
-    + '<div style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#1a1a1a;max-width:640px;">'
-    +   '<div style="background:linear-gradient(135deg,#B26A00,#F0A500);color:#fff;padding:18px 22px;border-radius:8px 8px 0 0;">'
-    +     '<div style="font-size:18px;font-weight:800;">💶 Nouvelle avance sur salaire</div>'
-    +     '<div style="font-size:12px;opacity:0.88;margin-top:4px;">' + name + (avance.entreprise ? ' · ' + avance.entreprise : '') + '</div>'
-    +   '</div>'
-    +   '<div style="border:1px solid #E4E0FA;border-top:0;padding:20px 22px;border-radius:0 0 8px 8px;background:#fff;">'
+    + emailWrapperOpen()
+    + buildEmailHeader({ title: '💶 Nouvelle avance sur salaire', subtitle: name + (avance.entreprise ? ' · ' + avance.entreprise : '') })
+    + emailBodyOpen()
     +     '<p style="margin:0 0 14px;">Bonjour,</p>'
     +     '<p style="margin:0 0 14px;">Une <strong>nouvelle demande d\'avance sur salaire</strong> vient d\'être enregistrée pour le consultant ci-dessous.</p>'
     +     '<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:18px 0;border:1px solid #E4E0FA;border-radius:6px;overflow:hidden;">'
@@ -11014,8 +11087,8 @@ function sendAvanceNotificationEmail(avance) {
     + (appUrl ? '<div style="font-size:11.5px;color:#6B5E9C;margin-top:6px;word-break:break-all;">' + appUrl + '</div>' : '')
     +     '</div>'
     +     '<p style="margin:16px 0 0;color:#6B5E9C;font-size:12px;">— Simulateur Seven Portage</p>'
-    +   '</div>'
-    + '</div>';
+    + emailBodyClose()
+    + emailWrapperClose();
 
   if (typeof odToken !== 'undefined' && odToken) {
     var payload = {
@@ -13682,11 +13755,36 @@ function buildCandPlacementsHTML(cand) {
       sortantBadge = '<span style="display:inline-block;padding:2px 9px;background:#F0A500;color:#fff;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-left:6px;">Sortant</span>';
     }
 
+    // Lookup client + manager pour liens cliquables
+    var clientDisplay = (d.entreprise||'—').replace(/</g,'&lt;');
+    var managerDisplay = '';
+    try {
+      if (d.entreprise) {
+        var entName = d.entreprise.trim().toLowerCase();
+        var cl = getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === entName; });
+        if (cl) {
+          // Entreprise cliquable
+          clientDisplay = '<a href="#" onclick="event.preventDefault();event.stopPropagation();closeCandFiche();setTimeout(function(){mainNavTo(\'clients\');setTimeout(function(){openClientPage(' + cl.id + ');},150);},100);return false;" style="color:#4B36EC;text-decoration:none;font-weight:700;border-bottom:1px dashed #4B36EC;">' + d.entreprise.replace(/</g,'&lt;') + '</a>';
+          // Manager cliquable
+          if (d.manager) {
+            var mgrIdx = (cl.managers || []).findIndex(function(m){ return (m.name||'').trim().toLowerCase() === d.manager.trim().toLowerCase(); });
+            if (mgrIdx >= 0) {
+              managerDisplay = ' · <a href="#" onclick="event.preventDefault();event.stopPropagation();closeCandFiche();setTimeout(function(){openManagerFiche(' + cl.id + ',' + mgrIdx + ');},100);return false;" style="color:#4B36EC;text-decoration:none;font-weight:600;border-bottom:1px dashed #4B36EC;">👤 ' + d.manager.replace(/</g,'&lt;') + '</a>';
+            } else {
+              managerDisplay = ' · <span>👤 ' + d.manager.replace(/</g,'&lt;') + '</span>';
+            }
+          }
+        } else if (d.manager) {
+          managerDisplay = ' · <span>👤 ' + d.manager.replace(/</g,'&lt;') + '</span>';
+        }
+      }
+    } catch(e) { console.warn('[CandPlacement link]', e); }
+
     return '<div style="' + cardStyle + '">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">'
       + '<div>'
-      + '<div style="font-size:12px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#1A1033') + ';">' + (d.entreprise||'—') + (d.poste ? ' · ' + d.poste : '') + sortantBadge + '</div>'
-      + '<div style="font-size:11px;color:' + (isCancelled ? '#B47979' : '#6B5E9C') + ';">' + (d.date_entree||d.date_deal||'') + (d.commercial ? ' · ' + d.commercial : '') + '</div>'
+      + '<div style="font-size:12px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#1A1033') + ';">' + clientDisplay + (d.poste ? ' · ' + d.poste : '') + sortantBadge + '</div>'
+      + '<div style="font-size:11px;color:' + (isCancelled ? '#B47979' : '#6B5E9C') + ';">' + (d.date_entree||d.date_deal||'') + (d.commercial ? ' · ' + d.commercial : '') + managerDisplay + '</div>'
       + '</div>'
       + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
       + (d.tjm ? '<span style="font-size:12px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#7343EE') + ';">' + d.tjm + ' €/j</span>' : '')
@@ -13786,12 +13884,9 @@ function sendPlacementNotificationEmail(deal) {
   var lienDeals = 'https://normanzeitoun.github.io/simulateur/#deals';
 
   var htmlBody = ''
-    + '<div style="font-family:Arial,sans-serif;color:#1A1033;max-width:600px;">'
-    + '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;padding:16px 20px;border-radius:8px 8px 0 0;">'
-    +   '<div style="font-size:16px;font-weight:700;">Nouveau placement créé</div>'
-    +   '<div style="font-size:12px;opacity:0.9;margin-top:4px;">' + (deal.prenom||'') + ' ' + (deal.nom||'') + '</div>'
-    + '</div>'
-    + '<div style="background:#fff;border:1px solid #E4E0FA;border-top:none;padding:18px 20px;border-radius:0 0 8px 8px;">'
+    + emailWrapperOpen()
+    + buildEmailHeader({ title: 'Nouveau placement créé', subtitle: (deal.prenom||'') + ' ' + (deal.nom||'') })
+    + emailBodyOpen()
     +   '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
     +   '<tr><td style="padding:6px 0;color:#6B5E9C;width:40%;">Candidat</td><td style="padding:6px 0;font-weight:600;">' + (deal.prenom||'') + ' ' + (deal.nom||'') + '</td></tr>'
     +   (deal.poste ? '<tr><td style="padding:6px 0;color:#6B5E9C;">Poste</td><td style="padding:6px 0;">' + deal.poste + '</td></tr>' : '')
@@ -13806,8 +13901,8 @@ function sendPlacementNotificationEmail(deal) {
     +     '<a href="' + lienDeals + '" style="display:inline-block;background:#7343EE;color:#fff !important;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">Voir le tableau des deals &rarr;</a>'
     +   '</div>'
     +   '<div style="margin-top:16px;padding-top:12px;border-top:1px solid #E4E0FA;font-size:11px;color:#9E9E9E;">Notification automatique - Seven Portage Simulateur</div>'
-    + '</div>'
-    + '</div>';
+    + emailBodyClose()
+    + emailWrapperClose();
 
   var toRecipients = recipients.map(function(e){ return { emailAddress: { address: e } }; });
 
@@ -13869,12 +13964,9 @@ function sendPlacementCommercialEmail(deal) {
   var tjm = deal.tjm ? deal.tjm + ' €/j' : '—';
 
   var htmlBody = ''
-    + '<div style="font-family:Arial,sans-serif;color:#1A1033;max-width:600px;">'
-    + '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;padding:16px 20px;border-radius:8px 8px 0 0;">'
-    +   '<div style="font-size:16px;font-weight:700;">🎉 Nouveau placement créé</div>'
-    +   '<div style="font-size:12px;opacity:0.9;margin-top:4px;">' + candidat + '</div>'
-    + '</div>'
-    + '<div style="background:#fff;border:1px solid #E4E0FA;border-top:none;padding:18px 20px;border-radius:0 0 8px 8px;">'
+    + emailWrapperOpen()
+    + buildEmailHeader({ title: '🎉 Nouveau placement créé', subtitle: candidat })
+    + emailBodyOpen()
     +   '<p style="margin:0 0 12px;font-size:13px;">Bonjour ' + (deal.commercial||'') + ',</p>'
     +   '<p style="margin:0 0 14px;font-size:13px;">Ton placement pour <strong>' + candidat + '</strong> a bien été créé. Voici les éléments clés :</p>'
     +   '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">'
@@ -13893,8 +13985,8 @@ function sendPlacementCommercialEmail(deal) {
     +   '</div>'
     +   '<p style="margin:0;font-size:12px;color:#6B5E9C;">N\'hésite pas à transmettre ces documents à ton candidat.</p>'
     +   '<div style="margin-top:16px;padding-top:12px;border-top:1px solid #E4E0FA;font-size:11px;color:#9E9E9E;">Email automatique - Seven Portage Simulateur</div>'
-    + '</div>'
-    + '</div>';
+    + emailBodyClose()
+    + emailWrapperClose();
 
   // Récupérer les 2 PDFs (Avantages Sociaux + Henner) + bulletin de simu
   getPDFb64('pdf1', function(b64_1, name1) {
@@ -13990,12 +14082,9 @@ function sendWelcomeEmailToCandidate(deal) {
   var subject = 'Bienvenue chez Seven Portage — ' + candidat;
 
   var htmlBody = ''
-    + '<div style="font-family:Arial,sans-serif;color:#1A1033;max-width:600px;">'
-    + '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;padding:20px;border-radius:8px 8px 0 0;">'
-    +   '<div style="font-size:18px;font-weight:700;">👋 Bienvenue chez Seven Portage</div>'
-    +   '<div style="font-size:13px;opacity:0.9;margin-top:5px;">' + candidat + '</div>'
-    + '</div>'
-    + '<div style="background:#fff;border:1px solid #E4E0FA;border-top:none;padding:20px;border-radius:0 0 8px 8px;">'
+    + emailWrapperOpen()
+    + buildEmailHeader({ title: '👋 Bienvenue chez Seven Portage', subtitle: candidat })
+    + emailBodyOpen()
     +   '<p style="margin:0 0 12px;">Bonjour ' + (deal.prenom||'') + ',</p>'
     +   '<p style="margin:0 0 14px;">Nous sommes ravis de t\'accueillir au sein de Seven Portage !</p>'
     +   '<p style="margin:0 0 14px;">Tu trouveras ci-joint tous les documents utiles pour démarrer ta mission en toute sérénité :</p>'
@@ -14006,8 +14095,8 @@ function sendWelcomeEmailToCandidate(deal) {
     +   '<p style="margin:0 0 14px;">Pour toute question, n\'hésite pas à contacter ton commercial <strong>' + (deal.commercial||'') + '</strong> ou notre équipe RH.</p>'
     +   '<p style="margin:0;">À très vite,<br>L\'équipe Seven Portage</p>'
     +   '<div style="margin-top:16px;padding-top:12px;border-top:1px solid #E4E0FA;font-size:11px;color:#9E9E9E;">Email automatique - Seven Portage</div>'
-    + '</div>'
-    + '</div>';
+    + emailBodyClose()
+    + emailWrapperClose();
 
   // CC : commercial
   var ccList = [];
