@@ -8921,6 +8921,7 @@ function getCooptations() {
 }
 function saveCooptations(arr) {
   localStorage.setItem(COOPTATIONS_KEY, JSON.stringify(arr));
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 function findCooptationByDealId(dealId) {
   if (!dealId) return null;
@@ -9105,7 +9106,8 @@ function mergeCooptations(remote) {
     }
   });
   var merged = Object.values(byId).sort(function(a,b){ return (b.updated_ts||0) - (a.updated_ts||0); });
-  saveCooptations(merged);
+  // Écriture DIRECTE en localStorage (pas saveCooptations) pour ne pas déclencher odAutoSync
+  localStorage.setItem(COOPTATIONS_KEY, JSON.stringify(merged));
 }
 
 // Convertit une valeur date (ISO natif, fr dd/mm/yyyy, timestamp, Date) en YYYY-MM-DD
@@ -9865,7 +9867,8 @@ function mergeAvances(remote) {
     }
   });
   var merged = Object.values(byId).sort(function(a,b){ return (b.updated_ts||0) - (a.updated_ts||0); });
-  saveAvances(merged);
+  // Écriture DIRECTE en localStorage (pas saveAvances) pour ne pas déclencher odAutoSync
+  localStorage.setItem(AVANCES_KEY, JSON.stringify(merged));
 }
 
 // ── Vérifie si le candidat est éligible à une avance ──
@@ -13597,7 +13600,10 @@ function mergeTaches(remote) {
       byId[t.id] = t;
     }
   });
-  saveTaches(Object.values(byId).sort(function(a,b){ return (b.updated_ts||0) - (a.updated_ts||0); }));
+  // Écriture DIRECTE en localStorage (pas saveTaches) pour ne pas déclencher odAutoSync
+  // qui provoquerait une boucle infinie merge→save→sync→merge→save...
+  var merged = Object.values(byId).sort(function(a,b){ return (b.updated_ts||0) - (a.updated_ts||0); });
+  localStorage.setItem(TACHES_KEY, JSON.stringify(merged));
 }
 
 // Convertit "DD/MM/YYYY" ou ISO en format ISO (YYYY-MM-DD)
