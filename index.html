@@ -657,8 +657,83 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 }
 .hist-finale-check { display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; color:#6B5E9C; font-weight:500; user-select:none; }
 .hist-finale-check input[type=checkbox] { accent-color:#F0A500; width:14px; height:14px; cursor:pointer; }
+
+/* ════════════════════════════════════════════════════════════════════ */
+/* MODE LECTURE SEULE / ÉDITION pour fiches Candidat / Client / Manager */
+/* ════════════════════════════════════════════════════════════════════ */
+/* Par défaut : TOUS les inputs/selects/textareas dans une modal fiche sont READONLY */
+#modal-cand-fiche:not(.fiche-edit-mode) input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([data-always-editable]),
+#modal-cand-fiche:not(.fiche-edit-mode) select:not([data-always-editable]),
+#modal-cand-fiche:not(.fiche-edit-mode) textarea:not([data-always-editable]),
+.client-page-container:not(.fiche-edit-mode) input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([data-always-editable]),
+.client-page-container:not(.fiche-edit-mode) select:not([data-always-editable]),
+.client-page-container:not(.fiche-edit-mode) textarea:not([data-always-editable]),
+#modal-manager-fiche:not(.fiche-edit-mode) input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([data-always-editable]),
+#modal-manager-fiche:not(.fiche-edit-mode) select:not([data-always-editable]),
+#modal-manager-fiche:not(.fiche-edit-mode) textarea:not([data-always-editable]) {
+  pointer-events: none !important;
+  background: #F7F5FC !important;
+  color: #5D5476 !important;
+  border-color: #E4E0FA !important;
+  cursor: not-allowed !important;
+  opacity: 0.95;
+}
+/* Les boutons restent cliquables (pour changer d'onglet, voir simu, etc.) */
+#modal-cand-fiche:not(.fiche-edit-mode) button[data-lock-hide],
+.client-page-container:not(.fiche-edit-mode) button[data-lock-hide],
+#modal-manager-fiche:not(.fiche-edit-mode) button[data-lock-hide] {
+  display: none !important;
+}
+/* Boutons de la barre d'édition */
+.fiche-edit-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.fiche-edit-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  border: 1.5px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: transform 0.08s;
+}
+.fiche-edit-btn:active { transform: scale(0.97); }
+.fiche-edit-btn.fiche-edit-btn-edit { background: #fff; color: #4B36EC; border-color: #D9CFFA; }
+.fiche-edit-btn.fiche-edit-btn-edit:hover { background: #F5F3FF; }
+.fiche-edit-btn.fiche-edit-btn-save { background: #1D9E75; color: #fff; }
+.fiche-edit-btn.fiche-edit-btn-save:hover { background: #148760; }
+.fiche-edit-btn.fiche-edit-btn-cancel { background: #fff; color: #A8322A; border-color: #F5B5B5; }
+.fiche-edit-btn.fiche-edit-btn-cancel:hover { background: #FDECEC; }
+/* Badge "lecture seule" */
+.fiche-lock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  background: rgba(255,255,255,0.22);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: 14px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+/* Variante pour fonds clairs (page Client) */
+.client-page-container .fiche-lock-badge {
+  background: #F5F3FF;
+  color: #4B36EC;
+  border-color: #D9CFFA;
+}
 </style>
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
 </head>
 <body>
 
@@ -712,12 +787,27 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         </label>
       </div>
       <div class="field-row">
-        <div class="field"><label>Prénom candidat</label><input type="text" id="prenom" placeholder="Laurent" oninput="calc()"></div>
-        <div class="field"><label>Nom candidat</label><input type="text" id="nom" placeholder="Devoulon" oninput="calc()"></div>
+        <div class="field" style="position:relative;">
+          <label>Prénom candidat</label>
+          <input type="text" id="prenom" placeholder="Laurent" oninput="calc();filterSimCandidat()" onblur="setTimeout(hideSimCandidatDrop,200)" autocomplete="off">
+          <div id="sim-candidat-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:260px;overflow-y:auto;margin-top:2px;"></div>
+        </div>
+        <div class="field" style="position:relative;">
+          <label>Nom candidat</label>
+          <input type="text" id="nom" placeholder="Devoulon" oninput="calc();filterSimCandidat()" onblur="setTimeout(hideSimCandidatDrop,200)" autocomplete="off">
+        </div>
       </div>
       <div class="field-row">
-        <div class="field"><label>Entreprise cliente</label><input type="text" id="entreprise" placeholder="Nom entreprise" oninput="calc()"></div>
-        <div class="field"><label>Manager / Contact</label><input type="text" id="manager" placeholder="Nom manager" oninput="calc()"></div>
+        <div class="field" style="position:relative;">
+          <label>Entreprise cliente</label>
+          <input type="text" id="entreprise" placeholder="Nom entreprise" oninput="calc();filterSimClient()" onblur="setTimeout(hideSimClientDrop,200)" autocomplete="off">
+          <div id="sim-client-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:260px;overflow-y:auto;margin-top:2px;"></div>
+        </div>
+        <div class="field" style="position:relative;">
+          <label>Manager / Contact</label>
+          <input type="text" id="manager" placeholder="Nom manager" oninput="calc();filterSimManager()" onfocus="filterSimManager()" onblur="setTimeout(hideSimManagerDrop,200)" autocomplete="off">
+          <div id="sim-manager-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:260px;overflow-y:auto;margin-top:2px;"></div>
+        </div>
       </div>
       <div class="field-row">
         <div class="field"><label>Email candidat</label><input type="text" id="email" placeholder="candidat@domaine.fr" oninput="calc()"></div>
@@ -1290,7 +1380,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
     <div style="padding:0 0 12px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
         <div style="display:flex;align-items:center;gap:8px;"><button class="back-btn" onclick="mainNavTo('mission')">&#8592; Retour</button><div style="font-size:13px;font-weight:700;color:#1A1033;">&#128100; Candidats</div></div>
-        <span id="cand-count" style="font-size:11px;color:#6B5E9C;"></span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="cand-count" style="font-size:11px;color:#6B5E9C;"></span>
+          <button onclick="openNewCandidatPopup()" style="padding:7px 14px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">+ Nouveau candidat</button>
+        </div>
       </div>
       <!-- Barre recherche + filtres -->
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
@@ -1298,12 +1391,19 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <input id="cand-search" type="text" placeholder="Rechercher par nom, email, entreprise..." oninput="renderCandidats()" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
           <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>
         </div>
+        <select id="cand-filter-commercial" onchange="renderCandidats()" style="padding:7px 10px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;background:#F5F3FF;cursor:pointer;color:#4B36EC;font-weight:600;min-width:150px;">
+          <option value="__mine__">👤 Mes candidats</option>
+          <option value="">Tous les commerciaux</option>
+        </select>
         <select id="cand-filter-statut" onchange="renderCandidats()" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;background:#fff;cursor:pointer;">
           <option value="">Tous statuts</option>
+          <option value="Non Attribué">Non Attribué</option>
           <option value="Prospect">Prospect</option>
           <option value="Prospect chaud">Prospect chaud</option>
           <option value="Porté">Porté</option>
+          <option value="Porté sans mission">Porté sans mission</option>
           <option value="Ancien porté">Ancien porté</option>
+          <option value="Perdu">Perdu</option>
         </select>
         <select id="cand-filter-date" onchange="renderCandidats()" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;background:#fff;cursor:pointer;">
           <option value="">Toutes dates</option>
@@ -1352,11 +1452,20 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
     <div style="padding:0 0 12px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
         <div style="display:flex;align-items:center;gap:8px;"><button class="back-btn" onclick="mainNavTo('mission')">&#8592; Retour</button><div style="font-size:13px;font-weight:700;color:#1A1033;">&#127970; Clients</div></div>
-        <span id="clients-count" style="font-size:11px;color:#6B5E9C;"></span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="clients-count" style="font-size:11px;color:#6B5E9C;"></span>
+          <button onclick="openNewClientPopup()" style="padding:7px 14px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">+ Nouveau client</button>
+        </div>
       </div>
-      <div style="position:relative;margin-bottom:12px;">
-        <input id="clients-search" type="text" placeholder="Rechercher une entreprise..." oninput="renderClients()" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
-        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <div style="position:relative;flex:1;min-width:200px;">
+          <input id="clients-search" type="text" placeholder="Rechercher une entreprise..." oninput="renderClients()" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>
+        </div>
+        <select id="clients-filter-commercial" onchange="renderClients()" style="padding:7px 10px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;background:#F5F3FF;cursor:pointer;color:#4B36EC;font-weight:600;min-width:150px;">
+          <option value="__mine__">👤 Mes clients</option>
+          <option value="">Tous les commerciaux</option>
+        </select>
       </div>
       <div id="clients-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;"></div>
     </div>
@@ -1437,7 +1546,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       </div>
     </div>
     <div class="sub-amounts">
-      <div class="sub-item"><div class="sub-label">Net avant impôt (sans frais)</div><div class="sub-val" id="r-net-brut">—</div></div>
+      <div class="sub-item"><div class="sub-label">Salaire Net sans Frais</div><div class="sub-val" id="r-net-brut">—</div></div>
       <div class="sub-item"><div class="sub-label">Total frais exonérés</div><div class="sub-val" id="r-frais-total">—</div></div>
       <div class="sub-item"><div class="sub-label">Net après impôt</div><div class="sub-val" id="r-net-apres">—</div></div>
       <div class="sub-item"><div class="sub-label">Facturation mensuelle</div><div class="sub-val" id="r-facturation">—</div></div>
@@ -1488,14 +1597,15 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
     <div style="background:#F0FDF8;padding:10px 16px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--success);">
       Frais professionnels exonérés
     </div>
-    <div class="frais-row" id="fr-ik" style="display:none;"><span class="label">Indemnités kilométriques</span><span class="val" id="fr-ik-val">0 €</span></div>
-    <div class="frais-row" id="fr-repas" style="display:none;"><span class="label">Repas / Swile</span><span class="val" id="fr-repas-val">0 €</span></div>
-    <div class="frais-row" id="fr-tt" style="display:none;"><span class="label">Télétravail</span><span class="val" id="fr-tt-val">0 €</span></div>
-    <div class="frais-row" id="fr-transport" style="display:none;"><span class="label">Transport (75%)</span><span class="val" id="fr-transport-val">0 €</span></div>
-    <div class="frais-row" id="fr-telnet" style="display:none;"><span class="label">Tél. / Internet</span><span class="val" id="fr-telnet-val">0 €</span></div>
-    <div class="frais-row" id="fr-formation" style="display:none;"><span class="label">Formation</span><span class="val" id="fr-formation-val">0 €</span></div>
-    <div class="frais-row" id="fr-materiel" style="display:none;"><span class="label">Matériel professionnel</span><span class="val" id="fr-materiel-val">0 €</span></div>
-    <div class="frais-row total"><span>Total frais exonérés / mois</span><span class="val" id="fr-total">0 €</span></div>
+    <div class="frais-row" style="background:#FAFAFA;font-size:10px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;padding:6px 16px;"><span class="label">&nbsp;</span><span style="display:flex;gap:14px;"><span style="min-width:70px;text-align:right;">/ jour</span><span style="min-width:70px;text-align:right;">/ mois</span></span></div>
+    <div class="frais-row" id="fr-ik" style="display:none;"><span class="label">Indemnités kilométriques</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-ik-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-ik-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row" id="fr-repas" style="display:none;"><span class="label">Repas / Swile</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-repas-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-repas-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row" id="fr-tt" style="display:none;"><span class="label">Télétravail</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-tt-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-tt-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row" id="fr-transport" style="display:none;"><span class="label">Transport (75%)</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-transport-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-transport-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row" id="fr-telnet" style="display:none;"><span class="label">Tél. / Internet</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-telnet-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-telnet-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row" id="fr-formation" style="display:none;"><span class="label">Formation</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-formation-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-formation-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row" id="fr-materiel" style="display:none;"><span class="label">Matériel professionnel</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-materiel-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-materiel-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row total"><span>Total frais exonérés</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-total-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-total" style="min-width:70px;text-align:right;">0 €</span></span></div>
   </div>
 
   <!-- Cotisations → voir onglet "Cotisations" -->
@@ -1854,7 +1964,99 @@ function syncTelnetField() {
 // INIT
 // ============================================
 function resetSimulateur() {
-  window.location.reload();
+  // Remet tous les champs du simulateur aux valeurs initiales définies dans le HTML
+  // sans recharger la page (pas de synchro déclenchée).
+  // ── Valeurs par défaut des champs numériques / texte ──
+  var defaults = {
+    // Identification
+    prenom: '',
+    nom: '',
+    entreprise: '',
+    manager: '',
+    email: '',
+    email_client: '',
+    tel: '',
+    poste: '',
+    source_origine: '',
+    // Facturation
+    tjm: '610',
+    nb_jours: '21',
+    brut_annuel: '',
+    brut: '',
+    marge: '5',
+    marge_affichee: '',
+    taux_impot: '0',
+    // Frais
+    km_aller: '0',
+    puissance_fiscale: '8',
+    jours_presentiels: '5',
+    swile_val: '0',
+    jours_tt: '0',
+    abo_transport: '0',
+    abo_tel: '0',
+    abo_internet: '0',
+    frais_formation: '0',
+    frais_materiel: '0'
+  };
+
+  Object.keys(defaults).forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = defaults[id];
+  });
+
+  // ── Checkboxes : Connaît son TJM = true, Masquer TJM = false ──
+  var chkConnait = document.getElementById('sim-connait-tjm');
+  if (chkConnait) chkConnait.checked = true;
+  var chkHideTjm = document.getElementById('hide-tjm-mail');
+  if (chkHideTjm) chkHideTjm.checked = false;
+
+  // ── State + toggles ──
+  try {
+    // Mutuelle → Renoncement
+    if (typeof setMutuelle === 'function') setMutuelle('renoncement');
+    // CP → Non provisionnés
+    if (typeof setCP === 'function') setCP('Non');
+    // RTT → 0
+    if (typeof setRTT === 'function') setRTT(0);
+    // Repas → Aucun (= Non dans l'API du toggle)
+    if (typeof setRepas === 'function') setRepas('Non');
+    // Télétravail → Non
+    if (typeof setTT === 'function') setTT(false);
+  } catch(e) { console.warn('[reset state]', e); }
+
+  // ── Masquer le bloc cooptation si ouvert ──
+  var coopWrap = document.getElementById('sim-coop-wrap');
+  if (coopWrap) coopWrap.style.display = 'none';
+  var coopData = document.getElementById('sim-coop-data');
+  if (coopData) coopData.value = '';
+  var coopSearch = document.getElementById('sim-coop-search');
+  if (coopSearch) coopSearch.value = '';
+  var coopBadge = document.getElementById('sim-coop-selected-badge');
+  if (coopBadge) coopBadge.style.display = 'none';
+
+  // ── Réinitialiser les badges de source (TJM saisi / BRUT calculé) ──
+  var tjmBadge = document.getElementById('tjm-source-badge');
+  if (tjmBadge) tjmBadge.textContent = '';
+  var brutBadge = document.getElementById('brut-source-badge');
+  if (brutBadge) brutBadge.textContent = '← calculé';
+  window.lastEdited = 'tjm';
+
+  // ── Masquer warnings éventuels ──
+  ['seuil-warning','frais-over-net-warning','frais-hero-warning','tjm-equiv-box','rtt-warning','rtt-info']
+    .forEach(function(wid) {
+      var w = document.getElementById(wid);
+      if (w) w.style.display = 'none';
+    });
+
+  // ── Relancer le calcul avec les valeurs par défaut ──
+  if (typeof calc === 'function') {
+    try { calc(); } catch(e) { console.warn('[reset calc]', e); }
+  }
+
+  // Toast discret
+  if (typeof showNotifToast === 'function') {
+    showNotifToast('↺ Simulateur remis à zéro');
+  }
 }
 
 function onContextChange() {
@@ -2095,6 +2297,255 @@ function calcPat(brut) {
 }
 
 
+// ═══════════════════════════════════════════════════════════
+// AUTOCOMPLETE SIMULATEUR — Candidat / Client / Manager
+// ═══════════════════════════════════════════════════════════
+
+// ── CANDIDAT ──
+function filterSimCandidat() {
+  var drop = document.getElementById('sim-candidat-dropdown');
+  if (!drop) return;
+  var prenom = (document.getElementById('prenom').value || '').trim().toLowerCase();
+  var nom = (document.getElementById('nom').value || '').trim().toLowerCase();
+  if (!prenom && !nom) { drop.style.display = 'none'; return; }
+  var q = (prenom + ' ' + nom).trim();
+  var cands = (typeof getCandidats === 'function') ? getCandidats() : [];
+  var matches = cands.filter(function(c) {
+    var full = ((c.prenom||'') + ' ' + (c.nom||'')).trim().toLowerCase();
+    var full2 = ((c.nom||'') + ' ' + (c.prenom||'')).trim().toLowerCase();
+    var email = (c.email||'').toLowerCase();
+    return full.indexOf(q) >= 0 || full2.indexOf(q) >= 0 || (prenom && (c.prenom||'').toLowerCase().indexOf(prenom) >= 0) || (nom && (c.nom||'').toLowerCase().indexOf(nom) >= 0) || (prenom.length>=3 && email.indexOf(prenom) >= 0);
+  }).sort(function(a,b){
+    return ((a.nom||'') + (a.prenom||'')).localeCompare((b.nom||'') + (b.prenom||''));
+  }).slice(0, 8);
+
+  if (matches.length === 0) {
+    drop.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:#9E94C4;background:#FAF8FF;border-bottom:1px solid #F0EDF9;">Aucun candidat trouvé</div>'
+      + '<div style="padding:10px 12px;font-size:11.5px;color:#4B36EC;display:flex;align-items:center;gap:6px;background:#F5F3FF;"><span style="font-size:14px;">➕</span><span>Un nouveau candidat sera créé à l\'envoi</span></div>';
+    drop.style.display = 'block';
+    return;
+  }
+
+  var html = '';
+  matches.forEach(function(c) {
+    var fullName = ((c.prenom||'') + ' ' + (c.nom||'')).trim() || '(sans nom)';
+    var initials = ((c.prenom||'')[0] || '?') + ((c.nom||'')[0] || '');
+    var escId = String(c.id);
+    html += '<div onmousedown="selectSimCandidat(\'' + escId + '\')" style="padding:9px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid #F5F3FF;transition:background .1s;" onmouseover="this.style.background=\'#F5F3FF\'" onmouseout="this.style.background=\'#fff\'">'
+      + '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;flex-shrink:0;text-transform:uppercase;">' + initials + '</div>'
+      + '<div style="flex:1;min-width:0;">'
+      +   '<div style="font-size:12.5px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + fullName.replace(/</g,'&lt;') + '</div>'
+      +   '<div style="font-size:10.5px;color:#8378B8;">' + (c.email||'sans email').replace(/</g,'&lt;') + (c.poste ? ' · ' + c.poste : '') + '</div>'
+      + '</div>'
+      + '</div>';
+  });
+  drop.innerHTML = html;
+  drop.style.display = 'block';
+}
+
+function selectSimCandidat(candId) {
+  var cands = getCandidats();
+  var c = cands.find(function(x){ return String(x.id) === String(candId); });
+  if (!c) return;
+  document.getElementById('prenom').value = c.prenom || '';
+  document.getElementById('nom').value = c.nom || '';
+  document.getElementById('email').value = c.email || '';
+  document.getElementById('tel').value = c.tel || '';
+  document.getElementById('poste').value = c.poste || document.getElementById('poste').value;
+  hideSimCandidatDrop();
+  if (typeof calc === 'function') calc();
+  if (typeof showNotifToast === 'function') showNotifToast('✓ Candidat chargé : ' + ((c.prenom||'') + ' ' + (c.nom||'')).trim());
+}
+
+function hideSimCandidatDrop() {
+  var d = document.getElementById('sim-candidat-dropdown');
+  if (d) d.style.display = 'none';
+}
+
+// ── CLIENT ──
+function filterSimClient() {
+  var drop = document.getElementById('sim-client-dropdown');
+  if (!drop) return;
+  var q = (document.getElementById('entreprise').value || '').trim().toLowerCase();
+  if (!q) { drop.style.display = 'none'; return; }
+  var clients = (typeof getClients === 'function') ? getClients() : [];
+  var matches = clients.filter(function(cl){
+    return (cl.name||'').toLowerCase().indexOf(q) >= 0;
+  }).sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); }).slice(0, 8);
+
+  if (matches.length === 0) {
+    drop.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:#9E94C4;background:#FAF8FF;border-bottom:1px solid #F0EDF9;">Aucun client existant ne correspond</div>'
+      + '<div style="padding:10px 12px;font-size:11.5px;color:#4B36EC;display:flex;align-items:center;gap:6px;background:#F5F3FF;"><span style="font-size:14px;">➕</span><span>Un nouveau client sera créé à l\'envoi</span></div>';
+    drop.style.display = 'block';
+    return;
+  }
+
+  var html = '';
+  matches.forEach(function(cl){
+    var nbMgrs = (cl.managers || []).length;
+    var initials = (cl.name || '').trim().split(/\s+/).filter(Boolean).map(function(w){ return w[0] || ''; }).slice(0,2).join('').toUpperCase() || '?';
+    var escName = (cl.name||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    html += '<div onmousedown="selectSimClient(\'' + escName + '\')" style="padding:9px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid #F5F3FF;transition:background .1s;" onmouseover="this.style.background=\'#F5F3FF\'" onmouseout="this.style.background=\'#fff\'">'
+      + '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;flex-shrink:0;">' + initials + '</div>'
+      + '<div style="flex:1;min-width:0;">'
+      +   '<div style="font-size:12.5px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (cl.name||'').replace(/</g,'&lt;') + '</div>'
+      +   '<div style="font-size:10.5px;color:#8378B8;">' + nbMgrs + ' manager' + (nbMgrs > 1 ? 's' : '') + (cl.secteur ? ' · ' + cl.secteur : '') + '</div>'
+      + '</div>'
+      + '</div>';
+  });
+  drop.innerHTML = html;
+  drop.style.display = 'block';
+}
+
+function selectSimClient(name) {
+  var inp = document.getElementById('entreprise');
+  if (!inp) return;
+  inp.value = name;
+  hideSimClientDrop();
+  if (typeof calc === 'function') calc();
+  // Vider le manager — il dépend du client choisi, l'utilisateur va sélectionner dans la liste
+  var mgrEl = document.getElementById('manager');
+  var mgrEmail = document.getElementById('email_client');
+  if (mgrEl) mgrEl.value = '';
+  if (mgrEmail) mgrEmail.value = '';
+  if (typeof showNotifToast === 'function') showNotifToast('✓ Client chargé : ' + name + ' — choisissez un manager');
+  // Focus sur le champ manager pour enchaîner
+  setTimeout(function(){ if (mgrEl) mgrEl.focus(); }, 100);
+}
+
+function hideSimClientDrop() {
+  var d = document.getElementById('sim-client-dropdown');
+  if (d) d.style.display = 'none';
+}
+
+// ── MANAGER : recherche intelligente ──
+// Si entreprise saisie + connue → propose managers de ce client
+// Si entreprise vide ou inconnue → recherche globale dans tous les clients
+// + ouverture auto de la dropdown au focus (même sans taper)
+function filterSimManager() {
+  var drop = document.getElementById('sim-manager-dropdown');
+  if (!drop) return;
+  var entrepriseInput = (document.getElementById('entreprise').value || '').trim().toLowerCase();
+  var q = (document.getElementById('manager').value || '').trim().toLowerCase();
+  var clients = (typeof getClients === 'function') ? getClients() : [];
+
+  // Cas 1 : entreprise saisie ET correspond à un client connu → propose ses managers
+  var client = entrepriseInput ? clients.find(function(cl){ return (cl.name||'').toLowerCase() === entrepriseInput; }) : null;
+
+  if (client) {
+    var managers = client.managers || [];
+    var matches = q ? managers.filter(function(m){
+      return (m.name||'').toLowerCase().indexOf(q) >= 0 || (m.email||'').toLowerCase().indexOf(q) >= 0;
+    }) : managers;
+    matches = matches.sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); }).slice(0, 10);
+
+    if (matches.length === 0) {
+      drop.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:#9E94C4;background:#FAF8FF;border-bottom:1px solid #F0EDF9;">Aucun manager chez "' + (client.name||'').replace(/</g,'&lt;') + '"</div>'
+        + '<div style="padding:10px 12px;font-size:11.5px;color:#4B36EC;display:flex;align-items:center;gap:6px;background:#F5F3FF;"><span style="font-size:14px;">➕</span><span>Un nouveau manager sera créé à l\'envoi</span></div>';
+      drop.style.display = 'block';
+      return;
+    }
+
+    var html = '<div style="padding:7px 12px;font-size:10px;color:#6B5E9C;background:#FAF8FF;border-bottom:1px solid #F0EDF9;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Managers chez ' + (client.name||'').replace(/</g,'&lt;') + '</div>';
+    matches.forEach(function(m){
+      var initials = (m.name || '').trim().split(/\s+/).filter(Boolean).map(function(w){ return w[0] || ''; }).slice(0,2).join('').toUpperCase() || '?';
+      var realIdx = managers.indexOf(m);
+      html += '<div onmousedown="selectSimManager(' + realIdx + ')" style="padding:9px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid #F5F3FF;transition:background .1s;" onmouseover="this.style.background=\'#F5F3FF\'" onmouseout="this.style.background=\'#fff\'">'
+        + '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#1D9E75,#0F6E56);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;flex-shrink:0;">' + initials + '</div>'
+        + '<div style="flex:1;min-width:0;">'
+        +   '<div style="font-size:12.5px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (m.name||'(sans nom)').replace(/</g,'&lt;') + '</div>'
+        +   '<div style="font-size:10.5px;color:#8378B8;">' + (m.email||'sans email').replace(/</g,'&lt;') + (m.poste ? ' · ' + m.poste : '') + '</div>'
+        + '</div>'
+        + '</div>';
+    });
+    drop.innerHTML = html;
+    drop.style.display = 'block';
+    return;
+  }
+
+  // Cas 2 : entreprise vide ou inconnue → recherche globale par manager dans tous les clients
+  if (!q) {
+    // Pas de requête + pas de client connu : on n'affiche rien tant que l'utilisateur ne tape pas
+    if (entrepriseInput) {
+      drop.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:#9E94C4;background:#FAF8FF;border-bottom:1px solid #F0EDF9;">Client "' + entrepriseInput.replace(/</g,'&lt;') + '" pas encore en base</div>'
+        + '<div style="padding:10px 12px;font-size:11.5px;color:#4B36EC;display:flex;align-items:center;gap:6px;background:#F5F3FF;"><span style="font-size:14px;">➕</span><span>Tapez le nom du manager — il sera créé à l\'envoi</span></div>';
+      drop.style.display = 'block';
+    } else {
+      drop.style.display = 'none';
+    }
+    return;
+  }
+
+  // Recherche globale : on scanne tous les clients pour trouver des managers qui matchent
+  var globalMatches = [];
+  clients.forEach(function(cl){
+    (cl.managers || []).forEach(function(m, mIdx){
+      var nameLc = (m.name||'').toLowerCase();
+      var emailLc = (m.email||'').toLowerCase();
+      if (nameLc.indexOf(q) >= 0 || emailLc.indexOf(q) >= 0) {
+        globalMatches.push({ client: cl, manager: m, mgrIdx: mIdx });
+      }
+    });
+  });
+  globalMatches = globalMatches.sort(function(a,b){ return (a.manager.name||'').localeCompare(b.manager.name||''); }).slice(0, 10);
+
+  if (globalMatches.length === 0) {
+    drop.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:#9E94C4;background:#FAF8FF;border-bottom:1px solid #F0EDF9;">Aucun manager "' + q.replace(/</g,'&lt;') + '" trouvé chez aucun client</div>'
+      + '<div style="padding:10px 12px;font-size:11.5px;color:#4B36EC;display:flex;align-items:center;gap:6px;background:#F5F3FF;"><span style="font-size:14px;">➕</span><span>Renseignez l\'entreprise pour que ce manager soit créé à l\'envoi</span></div>';
+    drop.style.display = 'block';
+    return;
+  }
+
+  var html = '<div style="padding:7px 12px;font-size:10px;color:#6B5E9C;background:#FFF8E1;border-bottom:1px solid #F5E6A0;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">🔍 Recherche globale — ' + globalMatches.length + ' résultat' + (globalMatches.length>1?'s':'') + '</div>';
+  globalMatches.forEach(function(match){
+    var m = match.manager;
+    var cl = match.client;
+    var initials = (m.name || '').trim().split(/\s+/).filter(Boolean).map(function(w){ return w[0] || ''; }).slice(0,2).join('').toUpperCase() || '?';
+    var escClientName = (cl.name||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    html += '<div onmousedown="selectSimManagerFromGlobal(\'' + escClientName + '\', ' + match.mgrIdx + ')" style="padding:9px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid #F5F3FF;transition:background .1s;" onmouseover="this.style.background=\'#F5F3FF\'" onmouseout="this.style.background=\'#fff\'">'
+      + '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#1D9E75,#0F6E56);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;flex-shrink:0;">' + initials + '</div>'
+      + '<div style="flex:1;min-width:0;">'
+      +   '<div style="font-size:12.5px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (m.name||'(sans nom)').replace(/</g,'&lt;') + '</div>'
+      +   '<div style="font-size:10.5px;color:#8378B8;">🏢 ' + (cl.name||'').replace(/</g,'&lt;') + (m.email ? ' · ' + m.email.replace(/</g,'&lt;') : '') + '</div>'
+      + '</div>'
+      + '</div>';
+  });
+  drop.innerHTML = html;
+  drop.style.display = 'block';
+}
+
+function selectSimManager(mgrIdx) {
+  var entreprise = (document.getElementById('entreprise').value || '').trim().toLowerCase();
+  var clients = getClients();
+  var client = clients.find(function(cl){ return (cl.name||'').toLowerCase() === entreprise; });
+  if (!client || !client.managers || !client.managers[mgrIdx]) return;
+  var m = client.managers[mgrIdx];
+  document.getElementById('manager').value = m.name || '';
+  document.getElementById('email_client').value = m.email || '';
+  hideSimManagerDrop();
+  if (typeof calc === 'function') calc();
+  if (typeof showNotifToast === 'function') showNotifToast('✓ Manager chargé : ' + (m.name || m.email));
+}
+
+// Sélection depuis recherche globale : remplit manager + entreprise + email en une fois
+function selectSimManagerFromGlobal(clientName, mgrIdx) {
+  var clients = getClients();
+  var client = clients.find(function(cl){ return (cl.name||'') === clientName; });
+  if (!client || !client.managers || !client.managers[mgrIdx]) return;
+  var m = client.managers[mgrIdx];
+  document.getElementById('entreprise').value = client.name || '';
+  document.getElementById('manager').value = m.name || '';
+  document.getElementById('email_client').value = m.email || '';
+  hideSimManagerDrop();
+  if (typeof calc === 'function') calc();
+  if (typeof showNotifToast === 'function') showNotifToast('✓ ' + (m.name || m.email) + ' — ' + client.name);
+}
+
+function hideSimManagerDrop() {
+  var d = document.getElementById('sim-manager-dropdown');
+  if (d) d.style.display = 'none';
+}
+
 function calc() {
   // INPUTS
   const PMSS = f('p_pmss');
@@ -2295,7 +2746,16 @@ function calc() {
     const row = document.getElementById(id);
     const show = val > 0.01;
     row.style.display = show ? 'flex' : 'none';
-    if (show) document.getElementById(idVal).textContent = fmt(val, 2);
+    if (show) {
+      document.getElementById(idVal).textContent = fmt(val, 2);
+      // Affiche aussi la valeur par jour (val / NB_JOURS) si l'ID -jour existe
+      var idJour = idVal + '-jour';
+      var elJour = document.getElementById(idJour);
+      if (elJour) {
+        var valJour = (NB_JOURS > 0) ? (val / NB_JOURS) : 0;
+        elJour.textContent = fmt(valJour, 2);
+      }
+    }
   };
   showFrais('fr-ik', 'fr-ik-val', ik.mensuelle);
   // Label dynamique selon le type de repas/GD
@@ -2313,6 +2773,9 @@ function calc() {
   showFrais('fr-formation', 'fr-formation-val', frais_formation);
   showFrais('fr-materiel', 'fr-materiel-val', frais_materiel);
   document.getElementById('fr-total').textContent = fmt(TOTAL_FRAIS, 2);
+  var fraisTotalJour = (NB_JOURS > 0) ? (TOTAL_FRAIS / NB_JOURS) : 0;
+  var elTotalJour = document.getElementById('fr-total-jour');
+  if (elTotalJour) elTotalJour.textContent = fmt(fraisTotalJour, 2);
 
   // Warning si frais > net avant impôt
   const warnFrais = document.getElementById('frais-over-net-warning');
@@ -2395,6 +2858,67 @@ function calc() {
   // Mise à jour du badge commercial (lit p_commercial_nom depuis onglet Paramètres ou localStorage).
   // Ancien code bugué : lisait 'nom_commercial' (inexistant) puis écrasait avec prenom+nom candidat.
   if (typeof updateBadgeCommercial === 'function') updateBadgeCommercial();
+
+  // Stocker les valeurs pour le bulletin de paie (utilisé par buildBulletinPaieHTML)
+  window._lastBulletinData = {
+    NB_JOURS: NB_JOURS,
+    BRUT: BRUT,
+    PMSS: PMSS,
+    SMIC: SMIC,
+    T_A: T_A,
+    T_B: T_B,
+    MUTUELLE: MUTUELLE,
+    TOTAL_PAT: TOTAL_PAT,
+    TOTAL_SAL: TOTAL_SAL,
+    TOTAL_FRAIS: TOTAL_FRAIS,
+    net_avant_impot: net_avant_impot,
+    net_apres_impot: net_apres_impot,
+    facturation: facturation,
+    ca_dispo: ca_dispo,
+    frais_gestion: frais_gestion,
+    taux_impot: taux_impot,
+    // Frais par type
+    frais_ik: ik.mensuelle,
+    frais_repas: frais_repas,
+    frais_tt: frais_tt,
+    frais_transport: frais_transport,
+    frais_telnet: frais_telnet,
+    frais_formation: frais_formation,
+    frais_materiel: frais_materiel,
+    // Breakdowns (objets {label, base, taux, montant})
+    patRows: patRows.map(function(r){ return {label:r[0], base:r[1], taux:r[2], montant:r[3]}; }),
+    salRows: salRows.map(function(r){ return {label:r[0], base:r[1], taux:r[2], montant:r[3]}; }),
+    // Valeurs détaillées par cotisation (pour reconstruire le bulletin)
+    mal_pat: mal_pat,
+    at_pat: at_pat,
+    prev_ta_pat: prev_ta_pat, prev_ta_sal: prev_ta_sal,
+    prev_tb_pat: prev_tb_pat, prev_tb_sal: prev_tb_sal,
+    mut_pat: (typeof mut_pat !== 'undefined' ? mut_pat : 0), mut_sal: (typeof mut_sal !== 'undefined' ? mut_sal : 0),
+    vieux_plaf_pat: vieux_plaf_pat, vieux_plaf_sal: vieux_plaf_sal,
+    vieux_dep_pat: vieux_dep_pat, vieux_dep_sal: vieux_dep_sal,
+    ret1_pat: ret1_pat, ret1_sal: ret1_sal,
+    ceg1_pat: ceg1_pat, ceg1_sal: ceg1_sal,
+    cet1_pat: cet1_pat, cet1_sal: cet1_sal,
+    ret2_pat: (typeof ret2_pat !== 'undefined' ? ret2_pat : 0), ret2_sal: (typeof ret2_sal !== 'undefined' ? ret2_sal : 0),
+    ceg2_pat: (typeof ceg2_pat !== 'undefined' ? ceg2_pat : 0), ceg2_sal: (typeof ceg2_sal !== 'undefined' ? ceg2_sal : 0),
+    cet2_pat: (typeof cet2_pat !== 'undefined' ? cet2_pat : 0), cet2_sal: (typeof cet2_sal !== 'undefined' ? cet2_sal : 0),
+    af_pat: af_pat, af_compl_pat: af_compl_pat,
+    chom_ta_pat: chom_ta_pat, chom_tb_pat: (typeof chom_tb_pat !== 'undefined' ? chom_tb_pat : 0), ags_pat: ags_pat,
+    apec_pat: apec_pat, apec_sal: apec_sal,
+    csg_base: csg_base, csg_ded: csg_ded, crds: crds,
+    mobilite_pat: mobilite_pat, fnal_pat: fnal_pat, med_pat: med_pat, csa_pat: csa_pat,
+    formation_pat: formation_pat, parit_pat: parit_pat, synd_pat: synd_pat,
+    // Taux params (lus depuis Paramètres)
+    p_mal: p('p_mal'), p_mal_compl: p('p_mal_compl'),
+    p_prev_ta: p('p_prev_ta'), p_prev_tb: p('p_prev_tb'),
+    p_vieux_plaf: p('p_vieux_plaf'), p_vieux_sal: p('p_vieux_sal'),
+    p_vieux_dep: p('p_vieux_dep'), p_vieux_dep_sal: p('p_vieux_dep_sal'),
+    p_ret1: p('p_ret1'), p_ret1_sal: p('p_ret1_sal'),
+    p_ret2: p('p_ret2'), p_ret2_sal: p('p_ret2_sal'),
+    p_af: p('p_af'), p_af_compl: p('p_af_compl'),
+    p_chom: p('p_chom'), p_apec_pat: p('p_apec_pat'), p_apec_sal: p('p_apec_sal'),
+    p_at: p('p_at'), p_csg_ded: p('p_csg_ded'), p_crds: p('p_crds')
+  };
 }
 
 // ============================================
@@ -2909,20 +3433,460 @@ function doEnvoi() {
       // Les deux : client = To, candidat = CC
       var toEmail = currentDest === 'les_deux' ? emailClient : email;
       var ccEmail = currentDest === 'les_deux' ? email : '';
-      var eml = buildEML(toEmail, subject, htmlBody, attachments, 'SP_EML_' + Date.now(), ccEmail);
-      var blob = new Blob([eml], { type: 'message/rfc822' });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = 'Seven_Portage_' + nom + '.eml';
-      document.body.appendChild(a); a.click();
-      document.body.removeChild(a);
-      setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
 
-      saveHistorique(data, currentDest, email, consultant);
-      closeModal('modal-envoi');
+      // Fonction interne pour finaliser l'envoi après attachements
+      function finalizeEml() {
+        var eml = buildEML(toEmail, subject, htmlBody, attachments, 'SP_EML_' + Date.now(), ccEmail);
+        var blob = new Blob([eml], { type: 'message/rfc822' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'Seven_Portage_' + nom + '.eml';
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+
+        saveHistorique(data, currentDest, email, consultant);
+        closeModal('modal-envoi');
+      }
+
+      // Vérifier si la checkbox "Joindre bulletin de paie" est cochée
+      var chkBull = document.getElementById('envoi-bulletin-paie');
+      if (chkBull && chkBull.checked) {
+        // Afficher un overlay "Génération PDF en cours..."
+        var loadingOverlay = document.createElement('div');
+        loadingOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.65);z-index:9998;display:flex;align-items:center;justify-content:center;';
+        loadingOverlay.innerHTML = '<div style="background:#fff;padding:28px 40px;border-radius:12px;text-align:center;font-family:inherit;"><div style="font-size:36px;margin-bottom:10px;">📄</div><div style="font-weight:700;color:#4B36EC;">Génération du bulletin de paie...</div><div style="font-size:11.5px;color:#6B5E9C;margin-top:5px;">Quelques secondes</div></div>';
+        document.body.appendChild(loadingOverlay);
+
+        buildBulletinPaiePDFb64(data, function(pdfB64, filename, errMsg) {
+          document.body.removeChild(loadingOverlay);
+          if (pdfB64) {
+            attachments.push({ name: filename, b64: pdfB64 });
+          } else {
+            console.warn('[Bulletin PDF] Échec :', errMsg);
+            var skip = confirm('⚠ Erreur lors de la génération du bulletin PDF :\n' + (errMsg || 'inconnue') + '\n\nVoulez-vous envoyer le mail SANS le bulletin ?');
+            if (!skip) return;
+          }
+          finalizeEml();
+        });
+      } else {
+        finalizeEml();
+      }
     });
   });
+}
+
+// Logo Seven Portage embarqué (base64)
+var SEVEN_LOGO_B64 = 'data:image/png;base64,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';
+
+// ═══════════════════════════════════════════════════════════
+// BULLETIN DE PAIE — Génération HTML imprimable (PDF via Ctrl+P)
+// Toutes les valeurs viennent de window._lastBulletinData (stocké par calc())
+// Aucune sauvegarde — HTML généré à la volée
+// ═══════════════════════════════════════════════════════════
+function _bpFmt(n, dec) {
+  if (dec === undefined) dec = 2;
+  if (n === null || n === undefined || isNaN(n)) return '';
+  return Number(n).toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+function _bpFmtEur(n, dec) {
+  if (n === null || n === undefined || isNaN(n) || Math.abs(n) < 0.005) return '';
+  return _bpFmt(n, dec) + ' €';
+}
+function _bpPct(n) {
+  if (n === null || n === undefined || isNaN(n) || Math.abs(n) < 0.00001) return '';
+  return (n * 100).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + ' %';
+}
+function _bpEsc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function buildBulletinPaieHTML(data) {
+  var bd = window._lastBulletinData;
+  if (!bd) {
+    throw new Error('Données du bulletin non disponibles — relancez le calcul (modifiez un champ pour rafraîchir).');
+  }
+  var consultant = data.consultant || '—';
+  var email = data.email || '';
+  var poste = data.poste || '';
+  var mutuelleTxt = (bd.MUTUELLE || 'renoncement').toLowerCase();
+  var entreprise = data.entreprise || '';
+
+  // Mois/période en cours
+  var now = new Date();
+  var moisNom = now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  var premierJour = new Date(now.getFullYear(), now.getMonth(), 1);
+  var dernierJour = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  var periodeDebut = premierJour.toLocaleDateString('fr-FR');
+  var periodeFin = dernierJour.toLocaleDateString('fr-FR');
+
+  // Nombre de jours ouvrés et calendaires du mois
+  var joursOuvres = 0;
+  for (var d = new Date(premierJour); d <= dernierJour; d.setDate(d.getDate() + 1)) {
+    var dow = d.getDay();
+    if (dow >= 1 && dow <= 5) joursOuvres++;
+  }
+  var joursCalendaires = dernierJour.getDate();
+
+  // Indemnités journalières (montant / jour) pour en-tête
+  var ikJour = bd.NB_JOURS > 0 ? bd.frais_ik / bd.NB_JOURS : 0;
+  var ttJour = bd.NB_JOURS > 0 ? bd.frais_tt / bd.NB_JOURS : 0;
+  var repasJour = bd.NB_JOURS > 0 ? bd.frais_repas / bd.NB_JOURS : 0;
+  var transportJour = bd.NB_JOURS > 0 ? bd.frais_transport / bd.NB_JOURS : 0;
+  var telnetJour = bd.NB_JOURS > 0 ? bd.frais_telnet / bd.NB_JOURS : 0;
+
+  // Calculs Salaire brut — décomposé selon mockup : salaire_base + prime (5%) + indemnité CP (10%)
+  // La base "brut" est le BRUT mensuel standard. On suit la formule Excel du mockup :
+  // SALAIRE DE BASE + PRIME (5%) + INDEMNITÉ CP (10%) = SALAIRE BRUT
+  var salaire_base = bd.BRUT * (1 - 0.05 - 0.10);  // = 0.85 * BRUT
+  var prime_apport = bd.BRUT * 0.05;
+  var indem_cp = bd.BRUT * 0.10;
+
+  // Total "retenues avec mutuelle" vs "sans mutuelle"
+  var mut_pat_montant = bd.mut_pat || 0;
+  var mut_sal_montant = bd.mut_sal || 0;
+  var totalPatSansMut = bd.TOTAL_PAT - mut_pat_montant;
+  var totalSalSansMut = bd.TOTAL_SAL - mut_sal_montant;
+  var tauxPatSansMut = bd.BRUT > 0 ? totalPatSansMut / bd.BRUT : 0;
+  var tauxSalSansMut = bd.BRUT > 0 ? totalSalSansMut / bd.BRUT : 0;
+  var tauxPatAvecMut = bd.BRUT > 0 ? bd.TOTAL_PAT / bd.BRUT : 0;
+  var tauxSalAvecMut = bd.BRUT > 0 ? bd.TOTAL_SAL / bd.BRUT : 0;
+
+  // Total retraite (Sécu plafonnée + déplafonnée + Complémentaire T1 + T2)
+  var retraite_pat = bd.vieux_plaf_pat + bd.vieux_dep_pat + bd.ret1_pat + bd.ceg1_pat + bd.cet1_pat + bd.ret2_pat + bd.ceg2_pat + bd.cet2_pat;
+  var retraite_sal = bd.vieux_plaf_sal + bd.vieux_dep_sal + bd.ret1_sal + bd.ceg1_sal + bd.cet1_sal + bd.ret2_sal + bd.ceg2_sal + bd.cet2_sal;
+
+  // Autres contributions employeur (regroupé)
+  var autres_pat = (bd.mobilite_pat||0) + (bd.fnal_pat||0) + (bd.med_pat||0) + (bd.csa_pat||0)
+    + (bd.formation_pat||0) + (bd.synd_pat||0) + (bd.ags_pat||0);
+  // Paritarisme (petite cotisation convention collective)
+  var paritarisme_pat = bd.parit_pat || 0;
+
+  // Nombre de jours facturés (17 ou 21 etc)
+  var nb_jours = bd.NB_JOURS;
+
+  // Helpers
+  function row(label, base, tauxPat, mtPat, tauxSal, mtSal, sousTotal, opts) {
+    opts = opts || {};
+    var bold = opts.bold ? 'font-weight:700;' : '';
+    var bg = opts.bg ? ('background:' + opts.bg + ';') : '';
+    var borderTop = opts.topBorder ? 'border-top:1.5px solid #5844d3;' : '';
+    var borderBot = opts.bottomBorder ? 'border-bottom:1.5px solid #5844d3;' : 'border-bottom:0.5px solid #f0f0f0;';
+    return '<tr style="' + bold + bg + borderTop + '">'
+      + '<td style="padding:3px 6px;' + borderBot + '">' + _bpEsc(label) + '</td>'
+      + '<td style="text-align:right;padding:3px 6px;' + borderBot + '">' + (base !== null && base !== undefined && base !== '' ? _bpFmt(base, 2) + ' €' : '') + '</td>'
+      + '<td style="text-align:right;padding:3px 6px;' + borderBot + '">' + (tauxPat !== null && tauxPat !== undefined ? _bpPct(tauxPat) : '') + '</td>'
+      + '<td style="text-align:right;padding:3px 6px;' + borderBot + '">' + (mtPat !== null && mtPat !== undefined ? _bpFmt(mtPat, 2) + ' €' : '') + '</td>'
+      + '<td style="text-align:right;padding:3px 6px;' + borderBot + '">' + (tauxSal !== null && tauxSal !== undefined ? _bpPct(tauxSal) : '') + '</td>'
+      + '<td style="text-align:right;padding:3px 6px;' + borderBot + '">' + (mtSal !== null && mtSal !== undefined ? _bpFmt(mtSal, 2) + ' €' : '') + '</td>'
+      + '<td style="text-align:right;padding:3px 6px;' + borderBot + 'font-weight:' + (opts.bold ? '700' : '400') + ';">' + (sousTotal !== null && sousTotal !== undefined ? _bpFmt(sousTotal, 2) + ' €' : '') + '</td>'
+      + '</tr>';
+  }
+  function sectionRow(label) {
+    return '<tr><td colspan="7" style="padding:7px 6px 1px;font-weight:700;color:#5844d3;">' + _bpEsc(label) + '</td></tr>';
+  }
+
+  var tableRows = '';
+
+  // === SALAIRE ===
+  tableRows += row('SALAIRE DE BASE', null, null, null, null, null, salaire_base);
+  tableRows += row('PRIME APPORT AFFAIRES', bd.BRUT, null, null, 0.05, prime_apport, null);
+  tableRows += row('INDEMNITÉ DE CONGES PAYÉS', bd.BRUT, null, null, 0.10, indem_cp, null);
+  tableRows += row('SALAIRE BRUT', null, null, null, null, null, bd.BRUT, {bold:true});
+
+  // === SANTE ===
+  tableRows += sectionRow('SANTE');
+  // Maladie (mal_pat contient maladie + complément maladie déjà additionnés)
+  var mal_taux = bd.BRUT > 0 ? bd.mal_pat / bd.BRUT : 0;
+  tableRows += row('SECURITE SOCIALE - MAL. MAT. INVAL DECES', bd.BRUT, mal_taux, bd.mal_pat, null, null, null);
+  tableRows += row('COMPLEMENTAIRE INCAP. INVAL. DECES (TRCH A)', bd.T_A, bd.p_prev_ta/100, bd.prev_ta_pat, bd.p_prev_ta/100, bd.prev_ta_sal, null);
+  tableRows += row('COMPLEMENTAIRE INCAP. INVAL. DECES (TRCH B/C)', bd.T_B, bd.p_prev_tb/100, bd.prev_tb_pat, bd.p_prev_tb/100, bd.prev_tb_sal, null);
+  if (mut_pat_montant > 0 || mut_sal_montant > 0) {
+    var tauxMutPat = bd.PMSS > 0 ? mut_pat_montant / bd.PMSS : 0;
+    var tauxMutSal = bd.PMSS > 0 ? mut_sal_montant / bd.PMSS : 0;
+    tableRows += row('COMPLEMENTAIRE SANTE (MUTUELLE)', bd.PMSS, tauxMutPat, mut_pat_montant, tauxMutSal, mut_sal_montant, null);
+  }
+
+  // === ACCIDENTS DU TRAVAIL ===
+  tableRows += row('ACCIDENTS DU TRAVAIL - MAL. PROFESSIONNELLES', bd.BRUT, bd.p_at/100, bd.at_pat, null, null, null);
+
+  // === RETRAITE ===
+  tableRows += sectionRow('RETRAITE');
+  tableRows += row('SECURITE SOCIALE PLAFONNEE', bd.T_A, bd.p_vieux_plaf/100, bd.vieux_plaf_pat, bd.p_vieux_sal/100, bd.vieux_plaf_sal, null);
+  tableRows += row('SECURITE SOCIALE DEPLAFONNEE', bd.BRUT, bd.p_vieux_dep/100, bd.vieux_dep_pat, bd.p_vieux_dep_sal/100, bd.vieux_dep_sal, null);
+  var t1_pat_tot = bd.ret1_pat + bd.ceg1_pat + bd.cet1_pat;
+  var t1_sal_tot = bd.ret1_sal + bd.ceg1_sal + bd.cet1_sal;
+  var t1_pat_pct = bd.T_A > 0 ? t1_pat_tot / bd.T_A : 0;
+  var t1_sal_pct = bd.T_A > 0 ? t1_sal_tot / bd.T_A : 0;
+  tableRows += row('COMPLEMENTAIRE TRANCHE 1', bd.T_A, t1_pat_pct, t1_pat_tot, t1_sal_pct, t1_sal_tot, null);
+  var t2_pat_tot = bd.ret2_pat + bd.ceg2_pat + bd.cet2_pat;
+  var t2_sal_tot = bd.ret2_sal + bd.ceg2_sal + bd.cet2_sal;
+  var t2_pat_pct = bd.T_B > 0 ? t2_pat_tot / bd.T_B : 0;
+  var t2_sal_pct = bd.T_B > 0 ? t2_sal_tot / bd.T_B : 0;
+  tableRows += row('COMPLEMENTAIRE TRANCHE 2', bd.T_B, t2_pat_pct, t2_pat_tot, t2_sal_pct, t2_sal_tot, null);
+
+  // === FAMILLE ===
+  var famille_tot_pat = (bd.af_pat||0) + (bd.af_compl_pat||0);
+  var famille_tot_pct = bd.BRUT > 0 ? famille_tot_pat / bd.BRUT : 0;
+  tableRows += row('FAMILLE', bd.BRUT, famille_tot_pct, famille_tot_pat, null, null, null);
+
+  // === ASSURANCE CHOMAGE ===
+  tableRows += sectionRow('ASSURANCE CHOMAGE');
+  var chom_pat_tot = (bd.chom_ta_pat||0) + (bd.chom_tb_pat||0);
+  var chom_pct = bd.BRUT > 0 ? chom_pat_tot / bd.BRUT : 0;
+  tableRows += row('CHOMAGE', bd.BRUT, chom_pct, chom_pat_tot, null, null, null);
+  tableRows += row('APEC', bd.BRUT, bd.p_apec_pat/100, bd.apec_pat, bd.p_apec_sal/100, bd.apec_sal, null);
+
+  // === COT. PREVUES PAR LA CONVENTION COLLECTIVE ===
+  var parit_pct = bd.BRUT > 0 ? paritarisme_pat / bd.BRUT : 0;
+  tableRows += row('COT. PREVUES PAR LA CONVENTION COLLECTIVE', bd.BRUT, parit_pct, paritarisme_pat, null, null, null);
+
+  // === AUTRES CONTRIBUTIONS EMPLOYEUR (regroupé, 1 ligne) ===
+  tableRows += row('AUTRES CONTRIBUTIONS DUES PAR L\'EMPLOYEUR', null, null, autres_pat, null, null, null);
+
+  // === CSG ===
+  tableRows += row('CSG DEDUCTIBLE DE L\'IMPOT SUR LE REVENU', bd.csg_base, null, null, bd.p_csg_ded, bd.csg_ded, null);
+  tableRows += row('CSG/CRDS NON DEDUCTIBLE DE L\'IMPOT SUR LE REVENU', bd.csg_base, null, null, bd.p_crds, bd.crds, null);
+
+  // === EXONERATIONS FILLON ===
+  tableRows += row('EXONERATIONS DE COTISATIONS EMPLOYEUR (réduction fillon)', 0, 0, 0, null, null, null);
+
+  // === TOTAUX ===
+  tableRows += row('TOTAL RETENUES (SANS MUTUELLE)', null, tauxPatSansMut, totalPatSansMut, tauxSalSansMut, totalSalSansMut, null, {bold:true, topBorder:true});
+  tableRows += row('TOTAL RETENUES (AVEC MUTUELLE)', null, tauxPatAvecMut, bd.TOTAL_PAT, tauxSalAvecMut, bd.TOTAL_SAL, -bd.TOTAL_SAL, {bold:true});
+
+  // === FRAIS avec 3 colonnes (montant/jour | jours | montant total) ===
+  // Structure spéciale : label | ../jour | NB_JOURS | total
+  function fraisRow(label, perJour, montant) {
+    return '<tr>'
+      + '<td style="padding:3px 6px;border-bottom:0.5px solid #f0f0f0;">' + _bpEsc(label) + '</td>'
+      + '<td style="text-align:right;padding:3px 6px;border-bottom:0.5px solid #f0f0f0;">' + (perJour > 0.01 ? _bpFmt(perJour, 2) + ' €' : '') + '</td>'
+      + '<td style="text-align:right;padding:3px 6px;border-bottom:0.5px solid #f0f0f0;" colspan="2">' + (perJour > 0.01 ? _bpFmt(nb_jours, 2) : '') + '</td>'
+      + '<td colspan="2" style="border-bottom:0.5px solid #f0f0f0;"></td>'
+      + '<td style="text-align:right;padding:3px 6px;border-bottom:0.5px solid #f0f0f0;">' + (montant > 0.01 ? _bpFmt(montant, 2) + ' €' : '') + '</td>'
+      + '</tr>';
+  }
+  if (bd.frais_repas > 0) tableRows += fraisRow('FORFAIT REPAS (BS) / TITRE RESTAURANT (Swile)', repasJour, bd.frais_repas);
+  if (bd.frais_ik > 0) tableRows += fraisRow('INDEMNITE KM', ikJour, bd.frais_ik);
+  if (bd.frais_tt > 0) tableRows += fraisRow('TELETRAVAIL', ttJour, bd.frais_tt);
+  if (bd.frais_transport > 0) tableRows += fraisRow('REMBOURSEMENT TRANSPORT (75%)', transportJour, bd.frais_transport);
+  if (bd.frais_telnet > 0) tableRows += fraisRow('ABONNEMENT TEL INTERNET SI PAS DE TELETRAVAIL', telnetJour, bd.frais_telnet);
+  if (bd.frais_formation > 0) tableRows += fraisRow('FORMATION', 0, bd.frais_formation);
+  if (bd.frais_materiel > 0) tableRows += fraisRow('MATERIEL PROFESSIONNEL', 0, bd.frais_materiel);
+  // Frais réel : toujours affiché à 0 comme dans le mockup (placeholder justificatifs)
+  tableRows += '<tr>'
+    + '<td style="padding:3px 6px;border-bottom:0.5px solid #f0f0f0;">FRAIS REEL (sur justificatifs)</td>'
+    + '<td colspan="5" style="border-bottom:0.5px solid #f0f0f0;"></td>'
+    + '<td style="text-align:right;padding:3px 6px;border-bottom:0.5px solid #f0f0f0;">0,00 €</td>'
+    + '</tr>';
+
+  // CSS
+  var css = ''
+    + '@page { size: A4; margin: 8mm; }'
+    + 'body { font-family: Calibri, Arial, sans-serif; font-size: 10px; color: #1a1a1a; margin: 0; padding: 0; background: #fff; }'
+    + '.bp-container { max-width: 195mm; margin: 0 auto; padding: 5mm; }'
+    + '.bp-header { background: #5844d3; color: #fff; padding: 8px 14px; display: flex; align-items: center; font-size: 12px; font-weight: 700; margin: 0 0 10px; letter-spacing: 0.02em; }'
+    + '.bp-header .month { flex: 1; }'
+    + '.bp-header .period { font-weight: 400; font-size: 11px; }'
+    + '.bp-header .period span { margin: 0 12px; }'
+    + '.bp-top { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 14px; font-size: 10px; }'
+    + '.bp-top .sec-title { color: #5844d3; font-style: italic; font-weight: 700; margin-bottom: 3px; font-size: 10px; }'
+    + '.bp-top .bp-logo-box { text-align: center; }'
+    + '.bp-top .info-line { display: flex; justify-content: space-between; gap: 6px; }'
+    + '.bp-top .info-line .lbl { color: #1a1a1a; }'
+    + '.bp-top .info-line .val { text-align: right; min-width: 60px; }'
+    + 'table.bp-main { width: 100%; border-collapse: collapse; font-size: 9.5px; }'
+    + 'table.bp-main thead th { background: #5844d3; color: #fff; padding: 5px 6px; border: 0.5px solid #5844d3; text-align: center; font-weight: 700; font-size: 10px; }'
+    + 'table.bp-main thead th.libl { text-align: center; font-weight: 700; letter-spacing: 0.04em; }'
+    + 'table.bp-main thead tr.sub th { background: #5844d3; font-size: 9px; padding: 3px; font-weight: 600; }'
+    + '.bp-bandeau-net { background: #5844d3; color: #fff; padding: 6px 10px; font-weight: 700; font-size: 14px; display: flex; justify-content: space-between; align-items: center; margin: 4px 0; letter-spacing: 0.02em; }'
+    + '.bp-impot-row { background: #5844d3; color: #fff; padding: 4px 10px; font-weight: 700; font-size: 11px; margin: 2px 0 0; display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 8px; }'
+    + '.bp-impot-row.white { background: #fff; color: #1a1a1a; border-bottom: 0.5px solid #ddd; }'
+    + '.bp-final-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; align-items: stretch; }'
+    + '.bp-final-left { padding: 7px 10px; border: 1px solid #5844d3; border-radius: 4px; }'
+    + '.bp-final-left .label { font-weight: 700; font-size: 11px; color: #5844d3; }'
+    + '.bp-final-left .total-val { font-size: 13px; font-weight: 700; text-align: right; }'
+    + '.bp-final-right .block { padding: 5px 10px; margin-bottom: 3px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px; }'
+    + '.bp-final-right .after-impot { background: #F5F3FF; color: #5844d3; font-weight: 700; }'
+    + '.bp-final-right .a-payer { background: #E24B4A; color: #fff; font-weight: 700; font-size: 14px; }'
+    + '.bp-print-btn { position: fixed; top: 14px; right: 14px; padding: 10px 20px; background: #7343EE; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgba(115,67,238,0.35); z-index: 9999; }'
+    + '.bp-print-btn:hover { background: #5844d3; }'
+    + '@media print { .bp-print-btn { display: none; } }';
+
+  // HTML complet
+  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Bulletin de paie - ' + _bpEsc(consultant) + '</title><style>' + css + '</style></head><body>'
+    + '<button class="bp-print-btn" onclick="window.print()">🖨 Imprimer / Enregistrer en PDF</button>'
+    + '<div class="bp-container">'
+
+    // ═══ Header violet ═══
+    + '<div class="bp-header">'
+    +   '<span class="month">' + _bpEsc(moisNom) + '</span>'
+    +   '<span class="period">du<span></span>' + periodeDebut + '<span></span>au<span></span>' + periodeFin + '</span>'
+    + '</div>'
+
+    // ═══ 3 colonnes d'en-tête ═══
+    + '<div class="bp-top">'
+
+    // Col 1 : Convention + Salarié
+    + '  <div>'
+    + '    <div class="sec-title">Convention collective</div>'
+    + '    <div>Salariés en portage salarial</div>'
+    + '    <div style="margin-top:6px;font-weight:700;font-style:italic;text-align:center;">Salarié</div>'
+    + '    <div style="margin-top:5px;"><b>Prénom Nom :</b> ' + _bpEsc(consultant) + '</div>'
+    + '    <div><b>Email :</b> ' + _bpEsc(email) + '</div>'
+    + '    <div><b>Emploi</b></div>'
+    + '    <div><b>Mutuelle :</b> ' + _bpEsc(mutuelleTxt) + '</div>'
+    + '  </div>'
+
+    // Col 2 : Logo + adresse
+    + '  <div class="bp-logo-box">'
+    + '    <img src="' + SEVEN_LOGO_B64 + '" alt="Seven Portage" style="width:120px;height:auto;display:inline-block;" />'
+    + '    <div style="font-size:10px;">6 Rue d\'Armaillé</div>'
+    + '    <div style="font-size:10px;">75017 PARIS</div>'
+    + '  </div>'
+
+    // Col 3 : Lieu mission + indemnités + jours
+    + '  <div>'
+    + '    <div class="info-line"><span class="lbl"><b>Lieu de mission :</b></span><span class="val">' + _bpEsc(entreprise) + '</span></div>'
+    + '    <div class="info-line"><span class="lbl">Ind. Kilométrique :</span><span class="val">€ ' + _bpFmt(ikJour, 2) + '</span></div>'
+    + '    <div class="info-line"><span class="lbl">Ind Teletravail :</span><span class="val">€ ' + (ttJour > 0.01 ? _bpFmt(ttJour, 2) : '-') + '</span></div>'
+    + '    <div class="info-line"><span class="lbl">Repas :</span><span class="val">€ ' + _bpFmt(repasJour, 2) + '</span></div>'
+    + '    <div class="info-line"><span class="lbl">Transport :</span><span class="val">€ ' + (transportJour > 0.01 ? _bpFmt(transportJour, 2) : '-') + '</span></div>'
+    + '    <div style="margin-top:4px;"><b>Jours ouvrés :</b> ' + joursOuvres + '</div>'
+    + '    <div><b>Jours calenda :</b> ' + joursCalendaires + '</div>'
+    + '    <div><b>J abs cumu cal :</b> 0</div>'
+    + '  </div>'
+    + '</div>'
+
+    // ═══ Tableau principal ═══
+    + '<table class="bp-main">'
+    + '  <thead>'
+    + '    <tr><th class="libl" rowspan="2">LIBELLÉ</th><th rowspan="2">BASE</th><th colspan="2">EMPLOYEUR</th><th colspan="2">SALARIÉ</th><th rowspan="2">S/TOTAL</th></tr>'
+    + '    <tr class="sub"><th>TAUX</th><th>MONTANT</th><th>TAUX</th><th>MONTANT</th></tr>'
+    + '  </thead>'
+    + '  <tbody>'
+    +       tableRows
+    + '  </tbody>'
+    + '</table>'
+
+    // ═══ Bandeau NET À PAYER AVANT IMPÔT ═══
+    + '<div class="bp-bandeau-net"><span>NET A PAYER AVANT IMPÔT SUR LE REVENU</span><span>' + _bpFmt(bd.net_avant_impot, 2) + ' €</span></div>'
+
+    // ═══ Impôt sur le revenu ═══
+    + '<div class="bp-impot-row"><span>IMPOT SUR LE REVENU</span><span>BASE</span><span>TAUX</span><span>MONTANT</span></div>'
+    + '<div class="bp-impot-row white" style="color:#1a1a1a;"><span>IMPOT SUR LE REVENU PRELEVE A LA SOURCE</span><span style="text-align:right;">' + _bpFmt(bd.net_avant_impot, 2) + ' €</span><span style="text-align:right;">' + _bpPct(bd.taux_impot || 0) + '</span><span style="text-align:right;">' + _bpFmt(bd.net_avant_impot * (bd.taux_impot || 0), 2) + ' €</span></div>'
+
+    // ═══ Bloc final : TOTAL FRAIS / NET APRES IMPOT / NET A PAYER ═══
+    + '<div class="bp-final-grid">'
+    + '  <div class="bp-final-left">'
+    + '    <div style="display:flex;justify-content:space-between;align-items:center;"><span class="label">TOTAL FRAIS (exonéré de l\'impôt et des cotisations):</span><span class="total-val">€ ' + _bpFmt(bd.TOTAL_FRAIS, 2) + '</span></div>'
+    + '  </div>'
+    + '  <div class="bp-final-right">'
+    + '    <div class="block after-impot"><span>NET APRES IMPÔT</span><span>' + _bpFmt(bd.net_apres_impot, 2) + ' €</span></div>'
+    + '    <div class="block a-payer"><span>NET A PAYER</span><span>' + _bpFmt(bd.net_apres_impot + bd.TOTAL_FRAIS, 2) + ' €</span></div>'
+    + '  </div>'
+    + '</div>'
+
+    + '</div></body></html>';
+
+  return html;
+}
+
+function openBulletinPaieTab(data) {
+  var html = buildBulletinPaieHTML(data);
+  var win = window.open('', '_blank');
+  if (!win) {
+    alert('⚠ Bloqueur de popup — autorise les fenêtres pour ce site et réessaie.');
+    return;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
+// Bouton "Voir le bulletin" depuis la modal d'envoi
+// Utilise les données actuelles du simulateur + le nom/email saisis dans la modal
+function openBulletinPaieFromModal() {
+  try {
+    var data = (typeof getSimData === 'function') ? getSimData() : {};
+    // Écraser avec ce que l'utilisateur a saisi dans la modal d'envoi
+    var consultantInput = document.getElementById('envoi-consultant');
+    var emailInput = document.getElementById('envoi-email');
+    if (consultantInput && consultantInput.value.trim()) data.consultant = consultantInput.value.trim();
+    if (emailInput && emailInput.value.trim()) data.email = emailInput.value.trim();
+    openBulletinPaieTab(data);
+  } catch(e) {
+    console.error('[Bulletin paie]', e);
+    alert('Erreur génération bulletin : ' + e.message);
+  }
+}
+
+// Génère le PDF du bulletin en base64 de manière asynchrone
+// callback(b64, filename) appelé en succès, callback(null, null, errMsg) en cas d'erreur
+function buildBulletinPaiePDFb64(data, callback) {
+  if (typeof html2pdf === 'undefined') {
+    callback(null, null, 'Library html2pdf.js non chargée — vérifiez votre connexion internet.');
+    return;
+  }
+  try {
+    var html = buildBulletinPaieHTML(data);
+
+    // Créer un container invisible pour rendre le HTML
+    var container = document.createElement('div');
+    container.style.cssText = 'position:absolute;left:-99999px;top:0;width:210mm;background:#fff;';
+    // Extraire le body du HTML généré
+    var bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    var headMatch = html.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+    if (bodyMatch) {
+      // Injecter le CSS dans le document principal pour qu'il soit rendu
+      var styleId = 'bp-temp-style-' + Date.now();
+      if (headMatch) {
+        var styleTag = document.createElement('style');
+        styleTag.id = styleId;
+        styleTag.innerHTML = headMatch[1];
+        document.head.appendChild(styleTag);
+      }
+      container.innerHTML = bodyMatch[1];
+      // Retirer le bouton d'impression (pas nécessaire dans le PDF)
+      var printBtns = container.querySelectorAll('.bp-print-btn');
+      printBtns.forEach(function(b){ b.remove(); });
+
+      document.body.appendChild(container);
+
+      var nom = (data.consultant || 'simulation').replace(/[^a-zA-Z0-9]/g, '_');
+      var filename = 'Bulletin_Paie_' + nom + '.pdf';
+
+      var opt = {
+        margin: [5, 5, 5, 5],
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+
+      html2pdf().set(opt).from(container).outputPdf('datauristring').then(function(dataUri) {
+        // Cleanup
+        try { document.body.removeChild(container); } catch(e){}
+        var st = document.getElementById(styleId); if (st) st.remove();
+        // Extraire le base64 pur (sans le prefix data:application/pdf;base64,)
+        var b64 = dataUri.replace(/^data:application\/pdf;base64,/, '');
+        callback(b64, filename);
+      }).catch(function(err) {
+        try { document.body.removeChild(container); } catch(e){}
+        var st = document.getElementById(styleId); if (st) st.remove();
+        console.error('[html2pdf]', err);
+        callback(null, null, 'Erreur génération PDF : ' + (err.message || err));
+      });
+    } else {
+      callback(null, null, 'Impossible d\'extraire le contenu du bulletin.');
+    }
+  } catch(e) {
+    console.error('[buildBulletinPaiePDFb64]', e);
+    callback(null, null, e.message);
+  }
 }
 
 function buildEML(to, subject, htmlBody, attachments, boundary, cc) {
@@ -3449,6 +4413,17 @@ function saveHistorique(data, dest, email, consultantName) {
   saveHistoryArr(hist);
   // Enregistrer / mettre à jour le candidat
   saveCandidatFromEntry(entry);
+  // Enregistrer / mettre à jour le client + manager
+  try {
+    var cmResult = saveClientManagerFromEntry(entry);
+    if (cmResult.created_client || cmResult.created_manager) {
+      var msg = [];
+      if (cmResult.created_client) msg.push('Client "' + entry.entreprise + '" créé');
+      if (cmResult.created_manager) msg.push('Manager "' + (entry.manager || entry.email_client) + '" ajouté');
+      if (typeof showNotifToast === 'function') showNotifToast('✓ ' + msg.join(' · '));
+      console.log('[saveHistorique] Upsert:', cmResult);
+    }
+  } catch(e) { console.error('[saveHistorique] saveClientManagerFromEntry:', e); }
   // Sync automatique OneDrive si connecté
   odAutoSync();
 }
@@ -6279,6 +7254,10 @@ function saveCandidatFromEntry(entry) {
     if (!cands[idx].tjm_actuel && entry.tjm) cands[idx].tjm_actuel = entry.tjm;
     if (!cands[idx].entreprise && entry.entreprise) cands[idx].entreprise = entry.entreprise;
     if (!cands[idx].commercial && entry.commercial) cands[idx].commercial = entry.commercial;
+    // Candidat "Non Attribué" → bascule en "Prospect" dès qu'une simu est envoyée
+    if ((cands[idx].statut_portage || '') === 'Non Attribué') {
+      cands[idx].statut_portage = 'Prospect';
+    }
     cands[idx].updated = new Date().toLocaleDateString('fr-FR');
     // Ajouter la simulation si pas déjà présente
     if (!cands[idx].simulations) cands[idx].simulations = [];
@@ -6294,7 +7273,7 @@ function saveCandidatFromEntry(entry) {
       prenom: parts[0] || '',
       nom: parts.slice(1).join(' ') || '',
       email: entry.email || '',
-      tel: '',
+      tel: entry.tel || '',
       poste: entry.poste || '',
       profil: '',
       tjm_actuel: entry.tjm || '',
@@ -6316,6 +7295,327 @@ function saveCandidatFromEntry(entry) {
     });
   }
   saveCandidatsArr(cands);
+}
+
+// Upsert client + manager à partir d'une entrée simulation
+// - Si l'entreprise n'existe pas → création d'un nouveau client
+// - Si le manager n'existe pas dans ce client → ajout comme nouveau manager
+function saveClientManagerFromEntry(entry) {
+  var entreprise = (entry.entreprise || '').trim();
+  if (!entreprise) return { created_client: false, created_manager: false };
+
+  var clients = getClients();
+  var clientIdx = clients.findIndex(function(c){ return (c.name||'').trim().toLowerCase() === entreprise.toLowerCase(); });
+  var createdClient = false;
+  var createdManager = false;
+  var clientObj;
+
+  if (clientIdx < 0) {
+    // Création nouveau client
+    clientObj = {
+      id: Date.now() + Math.floor(Math.random()*1000),
+      sp_id: (typeof generateSpId === 'function' ? generateSpId('CLI', clients) : ''),
+      name: entreprise,
+      secteur: '',
+      siret: '',
+      adresse: '',
+      telephone: '',
+      site_web: '',
+      commercial: entry.commercial || '',
+      managers: [],
+      commentaires: [],
+      documents: {},
+      created: new Date().toLocaleDateString('fr-FR'),
+      updated: new Date().toLocaleDateString('fr-FR')
+    };
+    clients.unshift(clientObj);
+    createdClient = true;
+  } else {
+    clientObj = clients[clientIdx];
+    if (!clientObj.managers) clientObj.managers = [];
+    clientObj.updated = new Date().toLocaleDateString('fr-FR');
+  }
+
+  // Upsert manager si renseigné
+  var managerName = (entry.manager || '').trim();
+  var managerEmail = (entry.email_client || '').trim().toLowerCase();
+  if (managerName || managerEmail) {
+    var mgrIdx = (clientObj.managers || []).findIndex(function(m){
+      var byEmail = managerEmail && (m.email||'').trim().toLowerCase() === managerEmail;
+      var byName = managerName && (m.name||'').trim().toLowerCase() === managerName.toLowerCase();
+      return byEmail || byName;
+    });
+    if (mgrIdx < 0) {
+      clientObj.managers.push({
+        name: managerName,
+        poste: '',
+        email: entry.email_client || '',
+        tel: '',
+        commentaires: [],
+        deals: []
+      });
+      createdManager = true;
+    } else {
+      // Mise à jour des infos manquantes
+      var m = clientObj.managers[mgrIdx];
+      if (!m.email && entry.email_client) m.email = entry.email_client;
+      if (!m.name && managerName) m.name = managerName;
+    }
+  }
+
+  saveClients(clients);
+  return { created_client: createdClient, created_manager: createdManager };
+}
+
+// ═══════════════════════════════════════════════════════════
+// POPUP "+ Nouveau candidat" (onglet Candidats)
+// ═══════════════════════════════════════════════════════════
+function openNewCandidatPopup() {
+  var existing = document.getElementById('modal-new-candidat');
+  if (existing) existing.remove();
+  var modal = document.createElement('div');
+  modal.id = 'modal-new-candidat';
+  modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3200;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;';
+
+  var LBL = 'font-size:10.5px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em;';
+  var INP = 'width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;font-family:inherit;';
+  var commerciaux = ['David','Rayan','Esteban','Sacha','Farah','Joanne','Norman'];
+  var commOpts = '<option value="">--</option>' + commerciaux.map(function(c){ return '<option value="' + c + '">' + c + '</option>'; }).join('');
+
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:680px;width:100%;margin:auto;">'
+    +   '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 22px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border-radius:12px 12px 0 0;">'
+    +     '<div>'
+    +       '<div style="font-size:17px;font-weight:800;">👤 Nouveau candidat</div>'
+    +       '<div style="font-size:11.5px;opacity:0.88;margin-top:3px;">Créer une fiche candidat (sans lien à une simulation)</div>'
+    +     '</div>'
+    +     '<button onclick="document.getElementById(\'modal-new-candidat\').remove()" style="background:none;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1;opacity:0.85;">×</button>'
+    +   '</div>'
+    +   '<div style="padding:20px 24px;">'
+    +     '<div style="display:grid;grid-template-columns:100px 1fr 1fr;gap:12px;margin-bottom:12px;">'
+    +       '<div><label style="' + LBL + '">Civilité</label><select id="nc-civilite" style="' + INP + 'cursor:pointer;"><option value="">--</option><option>M.</option><option>Mme</option></select></div>'
+    +       '<div><label style="' + LBL + '">Prénom <span style="color:#E24B4A;">*</span></label><input id="nc-prenom" style="' + INP + '" placeholder="Laurent"></div>'
+    +       '<div><label style="' + LBL + '">Nom <span style="color:#E24B4A;">*</span></label><input id="nc-nom" style="' + INP + '" placeholder="Devoulon"></div>'
+    +     '</div>'
+    +     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">'
+    +       '<div><label style="' + LBL + '">Email <span style="color:#E24B4A;">*</span></label><input id="nc-email" type="email" style="' + INP + '" placeholder="laurent@domaine.fr"></div>'
+    +       '<div><label style="' + LBL + '">Téléphone</label><input id="nc-tel" type="tel" style="' + INP + '" placeholder="06 XX XX XX XX"></div>'
+    +     '</div>'
+    +     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">'
+    +       '<div><label style="' + LBL + '">Poste / Métier</label><input id="nc-poste" style="' + INP + '" placeholder="Dev Senior, PM..."></div>'
+    +       '<div><label style="' + LBL + '">LinkedIn (URL)</label><input id="nc-linkedin" style="' + INP + '" placeholder="linkedin.com/in/..."></div>'
+    +     '</div>'
+    +     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">'
+    +       '<div><label style="' + LBL + '">TJM actuel (€)</label><input id="nc-tjm" type="number" style="' + INP + '" placeholder="550"></div>'
+    +       '<div><label style="' + LBL + '">Ville</label><input id="nc-ville" style="' + INP + '" placeholder="Paris, Lyon..."></div>'
+    +       '<div><label style="' + LBL + '">Disponibilité</label><input id="nc-dispo" style="' + INP + '" placeholder="Immédiate, 1er juin..."></div>'
+    +     '</div>'
+    +     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">'
+    +       '<div><label style="' + LBL + '">Statut portage</label><select id="nc-statut-portage" style="' + INP + 'cursor:pointer;"><option value="Non Attribué" selected>⚪ Non Attribué</option><option value="Prospect">Prospect</option><option value="Prospect chaud">Prospect chaud</option><option value="Porté">Porté</option><option value="Ancien porté">Ancien porté</option></select></div>'
+    +       '<div><label style="' + LBL + '">Entreprise actuelle</label><input id="nc-entreprise" style="' + INP + '" placeholder="Son employeur actuel"></div>'
+    +       '<div><label style="' + LBL + '">Commercial référent</label><select id="nc-commercial" style="' + INP + 'cursor:pointer;">' + commOpts + '</select></div>'
+    +     '</div>'
+    +     '<div style="margin-bottom:12px;">'
+    +       '<label style="' + LBL + '">Compétences / Techno</label>'
+    +       '<input id="nc-techno" style="' + INP + '" placeholder="React, Node.js, AWS...">'
+    +     '</div>'
+    +     '<div style="margin-bottom:16px;">'
+    +       '<label style="' + LBL + '">Commentaire</label>'
+    +       '<textarea id="nc-commentaire" rows="3" style="' + INP + 'resize:vertical;" placeholder="Notes internes..."></textarea>'
+    +     '</div>'
+    +     '<div style="display:flex;justify-content:flex-end;gap:8px;padding-top:12px;border-top:1px solid #F0EDF9;">'
+    +       '<button onclick="document.getElementById(\'modal-new-candidat\').remove()" style="padding:9px 18px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;">Annuler</button>'
+    +       '<button onclick="saveNewCandidat()" style="padding:9px 22px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;">💾 Créer le candidat</button>'
+    +     '</div>'
+    +   '</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+  setTimeout(function(){ var el = document.getElementById('nc-prenom'); if (el) el.focus(); }, 100);
+
+  // Pré-remplir commercial avec l'utilisateur connecté si dispo
+  setTimeout(function(){
+    var commEl = document.getElementById('nc-commercial');
+    var curr = (typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
+    if (commEl && curr) commEl.value = curr;
+  }, 150);
+}
+
+function saveNewCandidat() {
+  var prenom = (document.getElementById('nc-prenom').value || '').trim();
+  var nom = (document.getElementById('nc-nom').value || '').trim();
+  var email = (document.getElementById('nc-email').value || '').trim();
+  if (!prenom || !nom) { alert('⚠ Prénom et nom sont obligatoires.'); return; }
+  if (!email) { alert('⚠ Email obligatoire (sert de clé unique).'); return; }
+
+  var cands = getCandidats();
+  var emailLc = email.toLowerCase();
+  if (cands.some(function(c){ return (c.email||'').toLowerCase() === emailLc; })) {
+    alert('⚠ Un candidat avec cet email existe déjà.');
+    return;
+  }
+
+  var newCand = {
+    id: Date.now(),
+    sp_id: (typeof generateSpId === 'function' ? generateSpId('CAND', cands) : ''),
+    civilite: document.getElementById('nc-civilite').value || '',
+    prenom: prenom,
+    nom: nom,
+    email: email,
+    tel: (document.getElementById('nc-tel').value || '').trim(),
+    poste: (document.getElementById('nc-poste').value || '').trim(),
+    linkedin: (document.getElementById('nc-linkedin').value || '').trim(),
+    tjm_actuel: (document.getElementById('nc-tjm').value || '').trim(),
+    ville: (document.getElementById('nc-ville').value || '').trim(),
+    disponibilite: (document.getElementById('nc-dispo').value || '').trim(),
+    statut_portage: document.getElementById('nc-statut-portage').value || 'Non Attribué',
+    entreprise: (document.getElementById('nc-entreprise').value || '').trim(),
+    commercial: document.getElementById('nc-commercial').value || '',
+    techno: (document.getElementById('nc-techno').value || '').trim(),
+    commentaire: (document.getElementById('nc-commentaire').value || '').trim(),
+    profil: '',
+    statut: '',
+    cv_name: '',
+    cv_b64: '',
+    documents: {},
+    simulations: [],
+    created: new Date().toLocaleDateString('fr-FR'),
+    updated: new Date().toLocaleDateString('fr-FR')
+  };
+  cands.unshift(newCand);
+  saveCandidatsArr(cands);
+
+  document.getElementById('modal-new-candidat').remove();
+  if (typeof renderCandidats === 'function') renderCandidats();
+  if (typeof odAutoSync === 'function') odAutoSync();
+  if (typeof showNotifToast === 'function') showNotifToast('✓ Candidat "' + prenom + ' ' + nom + '" créé');
+}
+
+// ═══════════════════════════════════════════════════════════
+// POPUP "+ Nouveau client" (onglet Clients)
+// ═══════════════════════════════════════════════════════════
+function openNewClientPopup() {
+  var existing = document.getElementById('modal-new-client');
+  if (existing) existing.remove();
+  var modal = document.createElement('div');
+  modal.id = 'modal-new-client';
+  modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3200;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;';
+
+  var LBL = 'font-size:10.5px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em;';
+  var INP = 'width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;font-family:inherit;';
+  var commerciaux = ['David','Rayan','Esteban','Sacha','Farah','Joanne','Norman'];
+  var commOpts = '<option value="">--</option>' + commerciaux.map(function(c){ return '<option value="' + c + '">' + c + '</option>'; }).join('');
+
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:680px;width:100%;margin:auto;">'
+    +   '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 22px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border-radius:12px 12px 0 0;">'
+    +     '<div>'
+    +       '<div style="font-size:17px;font-weight:800;">🏢 Nouveau client</div>'
+    +       '<div style="font-size:11.5px;opacity:0.88;margin-top:3px;">Créer une fiche client (avec un manager initial optionnel)</div>'
+    +     '</div>'
+    +     '<button onclick="document.getElementById(\'modal-new-client\').remove()" style="background:none;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1;opacity:0.85;">×</button>'
+    +   '</div>'
+    +   '<div style="padding:20px 24px;">'
+    +     '<div style="font-size:11px;color:#4B36EC;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">📋 Informations entreprise</div>'
+    +     '<div style="margin-bottom:12px;">'
+    +       '<label style="' + LBL + '">Nom de l\'entreprise <span style="color:#E24B4A;">*</span></label>'
+    +       '<input id="ncl-name" style="' + INP + '" placeholder="Capgemini, Société Générale...">'
+    +     '</div>'
+    +     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">'
+    +       '<div><label style="' + LBL + '">Secteur</label><input id="ncl-secteur" style="' + INP + '" placeholder="Banque, Santé, Tech..."></div>'
+    +       '<div><label style="' + LBL + '">SIRET</label><input id="ncl-siret" style="' + INP + '" placeholder="123 456 789 00012"></div>'
+    +     '</div>'
+    +     '<div style="margin-bottom:12px;">'
+    +       '<label style="' + LBL + '">Adresse</label>'
+    +       '<input id="ncl-adresse" style="' + INP + '" placeholder="12 rue de la République, 75001 Paris">'
+    +     '</div>'
+    +     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;">'
+    +       '<div><label style="' + LBL + '">Téléphone standard</label><input id="ncl-tel" type="tel" style="' + INP + '" placeholder="01 XX XX XX XX"></div>'
+    +       '<div><label style="' + LBL + '">Site web</label><input id="ncl-web" style="' + INP + '" placeholder="www.entreprise.fr"></div>'
+    +       '<div><label style="' + LBL + '">Commercial en charge</label><select id="ncl-commercial" style="' + INP + 'cursor:pointer;">' + commOpts + '</select></div>'
+    +     '</div>'
+    +     '<div style="font-size:11px;color:#1D9E75;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin:6px 0 8px;padding-top:12px;border-top:1px solid #F0EDF9;">👤 Manager / contact principal (optionnel)</div>'
+    +     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">'
+    +       '<div><label style="' + LBL + '">Nom du manager</label><input id="ncl-mgr-name" style="' + INP + '" placeholder="Marie Dubois"></div>'
+    +       '<div><label style="' + LBL + '">Poste</label><input id="ncl-mgr-poste" style="' + INP + '" placeholder="Responsable achats IT"></div>'
+    +     '</div>'
+    +     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">'
+    +       '<div><label style="' + LBL + '">Email manager</label><input id="ncl-mgr-email" type="email" style="' + INP + '" placeholder="m.dubois@entreprise.fr"></div>'
+    +       '<div><label style="' + LBL + '">Téléphone manager</label><input id="ncl-mgr-tel" type="tel" style="' + INP + '" placeholder="06 XX XX XX XX"></div>'
+    +     '</div>'
+    +     '<div style="margin-bottom:16px;">'
+    +       '<label style="' + LBL + '">Commentaire</label>'
+    +       '<textarea id="ncl-commentaire" rows="3" style="' + INP + 'resize:vertical;" placeholder="Notes internes sur ce client..."></textarea>'
+    +     '</div>'
+    +     '<div style="display:flex;justify-content:flex-end;gap:8px;padding-top:12px;border-top:1px solid #F0EDF9;">'
+    +       '<button onclick="document.getElementById(\'modal-new-client\').remove()" style="padding:9px 18px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;">Annuler</button>'
+    +       '<button onclick="saveNewClient()" style="padding:9px 22px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;">💾 Créer le client</button>'
+    +     '</div>'
+    +   '</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+  setTimeout(function(){ var el = document.getElementById('ncl-name'); if (el) el.focus(); }, 100);
+
+  setTimeout(function(){
+    var commEl = document.getElementById('ncl-commercial');
+    var curr = (typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
+    if (commEl && curr) commEl.value = curr;
+  }, 150);
+}
+
+function saveNewClient() {
+  var name = (document.getElementById('ncl-name').value || '').trim();
+  if (!name) { alert('⚠ Le nom de l\'entreprise est obligatoire.'); return; }
+
+  var clients = getClients();
+  if (clients.some(function(c){ return (c.name||'').toLowerCase() === name.toLowerCase(); })) {
+    alert('⚠ Un client avec ce nom existe déjà.');
+    return;
+  }
+
+  var mgrName = (document.getElementById('ncl-mgr-name').value || '').trim();
+  var mgrEmail = (document.getElementById('ncl-mgr-email').value || '').trim();
+  var mgrPoste = (document.getElementById('ncl-mgr-poste').value || '').trim();
+  var mgrTel = (document.getElementById('ncl-mgr-tel').value || '').trim();
+
+  var managers = [];
+  if (mgrName || mgrEmail) {
+    managers.push({
+      name: mgrName,
+      poste: mgrPoste,
+      email: mgrEmail,
+      tel: mgrTel,
+      commentaires: [],
+      deals: []
+    });
+  }
+
+  var commentaire = (document.getElementById('ncl-commentaire').value || '').trim();
+
+  var newClient = {
+    id: Date.now() + Math.floor(Math.random()*1000),
+    sp_id: (typeof generateSpId === 'function' ? generateSpId('CLI', clients) : ''),
+    name: name,
+    secteur: (document.getElementById('ncl-secteur').value || '').trim(),
+    siret: (document.getElementById('ncl-siret').value || '').trim(),
+    adresse: (document.getElementById('ncl-adresse').value || '').trim(),
+    telephone: (document.getElementById('ncl-tel').value || '').trim(),
+    site_web: (document.getElementById('ncl-web').value || '').trim(),
+    commercial: document.getElementById('ncl-commercial').value || '',
+    managers: managers,
+    commentaires: commentaire ? [{ texte: commentaire, auteur: (typeof getCurrentUserCommercial === 'function' ? getCurrentUserCommercial() : ''), date: new Date().toLocaleDateString('fr-FR') }] : [],
+    documents: {},
+    created: new Date().toLocaleDateString('fr-FR'),
+    updated: new Date().toLocaleDateString('fr-FR')
+  };
+  clients.unshift(newClient);
+  saveClients(clients);
+
+  document.getElementById('modal-new-client').remove();
+  if (typeof renderClients === 'function') renderClients();
+  if (typeof odAutoSync === 'function') odAutoSync();
+  var msg = '✓ Client "' + name + '" créé';
+  if (managers.length) msg += ' avec manager "' + (mgrName || mgrEmail) + '"';
+  if (typeof showNotifToast === 'function') showNotifToast(msg);
 }
 
 function showCandidatsTab() {
@@ -6342,6 +7642,10 @@ function computeCandStatutAuto(cand) {
   if (!cand) return 'Prospect';
   var manualStatut = cand.statut_portage || 'Prospect';
 
+  // STATUT "PERDU" → prioritaire, toujours respecté s'il est mis manuellement
+  // (le commercial a explicitement déclaré ce candidat perdu, on ne le rétrograde pas)
+  if (manualStatut === 'Perdu') return 'Perdu';
+
   // Récupérer les deals liés au candidat (par email, case-insensitive)
   // Les deals annulés sont totalement ignorés : comme s'ils n'existaient pas.
   var email = ((cand.email || '') + '').trim().toLowerCase();
@@ -6351,8 +7655,9 @@ function computeCandStatutAuto(cand) {
     return (d.email || '').trim().toLowerCase() === email
         && d.etat !== 'Annulé';
   });
-  // Aucun deal → on garde le statut manuel (Prospect ou Prospect chaud)
+  // Aucun deal → on garde le statut manuel (Non Attribué, Prospect ou Prospect chaud)
   if (dealsOfCand.length === 0) {
+    if (manualStatut === 'Non Attribué') return 'Non Attribué';
     return (manualStatut === 'Prospect chaud') ? 'Prospect chaud' : 'Prospect';
   }
 
@@ -6361,6 +7666,13 @@ function computeCandStatutAuto(cand) {
 
   var hasActive = false;  // au moins un deal en cours (date non échue)
   var hasPast = false;    // au moins un deal terminé
+  var hasPorteSansMission = false;  // Porté sorti mais fin_contrat_travail = Non → encore Seven, plus de mission
+
+  // Récupérer les sortants pour détecter "Porté sans mission"
+  var allSortants = (typeof getSortants === 'function') ? getSortants() : [];
+  var sortantsOfCand = allSortants.filter(function(s){
+    return (s.email || '').trim().toLowerCase() === email;
+  });
 
   dealsOfCand.forEach(function(d){
     var dateSortie = d.date_sortie ? new Date(d.date_sortie) : null;
@@ -6385,6 +7697,16 @@ function computeCandStatutAuto(cand) {
     }
   });
 
+  // "Porté sans mission" : il existe au moins 1 fiche sortant pour ce candidat
+  // avec fin_contrat_travail = 'Non' (le contrat Seven n'est pas terminé, mais la mission oui)
+  // ET le candidat n'est pas actuellement actif sur une autre mission
+  var hasSortantSansFinContrat = sortantsOfCand.some(function(s){
+    return s.fin_contrat_travail === 'Non';
+  });
+  if (hasSortantSansFinContrat && !hasActive) {
+    return 'Porté sans mission';
+  }
+
   if (hasActive) return 'Porté';
   if (hasPast) return 'Ancien porté';
   // Tous les deals sont dans un état non interprété → on garde le manuel
@@ -6397,7 +7719,49 @@ function renderCandidats() {
   var cands = getCandidats();
   var q = (document.getElementById('cand-search') ? document.getElementById('cand-search').value : '').toLowerCase().trim();
   var filtStatut = document.getElementById('cand-filter-statut') ? document.getElementById('cand-filter-statut').value : '';
+  var filtComm = document.getElementById('cand-filter-commercial') ? document.getElementById('cand-filter-commercial').value : '__mine__';
   var countEl = document.getElementById('cand-count');
+
+  // Peupler la dropdown commercial avec la liste distincte des commerciaux + option "Mes candidats"
+  var commEl = document.getElementById('cand-filter-commercial');
+  if (commEl) {
+    var allCommercials = {};
+    getCandidats().forEach(function(c){
+      if (c.commercial) allCommercials[c.commercial] = true;
+      (c.simulations||[]).forEach(function(s){ if (s.commercial) allCommercials[s.commercial] = true; });
+    });
+    var existingVals = Array.from(commEl.options).map(function(o){ return o.value; });
+    var commList = Object.keys(allCommercials).sort();
+    var needsRebuild = commList.some(function(c){ return existingVals.indexOf(c) < 0; });
+    if (needsRebuild) {
+      var currentVal = commEl.value;
+      var commOpts = '<option value="__mine__">👤 Mes candidats</option><option value="">Tous les commerciaux</option>';
+      commList.forEach(function(c){
+        commOpts += '<option value="' + c + '">' + c + '</option>';
+      });
+      commEl.innerHTML = commOpts;
+      commEl.value = currentVal || '__mine__';
+    }
+  }
+
+  // Filtre par commercial
+  if (filtComm === '__mine__') {
+    var myName = (typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
+    if (myName) {
+      cands = cands.filter(function(cand) {
+        if ((cand.commercial||'') === myName) return true;
+        // Fallback : regarder aussi les commercials des simulations
+        return (cand.simulations||[]).some(function(s){ return (s.commercial||'') === myName; });
+      });
+    }
+    // Si l'utilisateur n'a pas renseigné son prénom dans Paramètres → on affiche tout (comportement défensif)
+  } else if (filtComm && filtComm !== '') {
+    cands = cands.filter(function(cand) {
+      if ((cand.commercial||'') === filtComm) return true;
+      return (cand.simulations||[]).some(function(s){ return (s.commercial||'') === filtComm; });
+    });
+  }
+
   if (q) {
     cands = cands.filter(function(cand) {
       return [(cand.prenom||''),(cand.nom||''),(cand.email||''),((cand.simulations||[]).map(function(s){return s.entreprise||'';}).join(' '))].join(' ').toLowerCase().indexOf(q) >= 0;
@@ -6428,10 +7792,13 @@ function renderCandidats() {
     return;
   }
   var statutCfg = {
-    'Prospect':        { color:'#9AA0A6', bg:'#F5F5F5' },
-    'Prospect chaud':  { color:'#F0A500', bg:'#FFF8E6' },
-    'Porté':           { color:'#1D9E75', bg:'#F0FDF4' },
-    'Ancien porté':    { color:'#E24B4A', bg:'#FFE8E8' }
+    'Non Attribué':       { color:'#4A4068', bg:'#EEEBF7' },
+    'Prospect':           { color:'#9AA0A6', bg:'#F5F5F5' },
+    'Prospect chaud':     { color:'#F0A500', bg:'#FFF8E6' },
+    'Porté':              { color:'#1D9E75', bg:'#F0FDF4' },
+    'Porté sans mission': { color:'#8B5A00', bg:'#FEE8C7' },
+    'Ancien porté':       { color:'#E24B4A', bg:'#FFE8E8' },
+    'Perdu':              { color:'#5A1F1A', bg:'#F5D5D2' }
   };
   var html = '';
   cands.forEach(function(cand) {
@@ -6586,7 +7953,7 @@ function renderSortants() {
   var all = getSortants();
 
   // Filtres (état local)
-  if (!window._sortantsFilter) window._sortantsFilter = { commercial: '__all__', raison: '__all__', type: '__all__', year: '__all__', month: '__all__', search: '' };
+  if (!window._sortantsFilter) window._sortantsFilter = { commercial: '__all__', raison: '__all__', type: '__all__', fin_contrat: '__all__', year: '__all__', month: '__all__', search: '' };
   var f = window._sortantsFilter;
   if (typeof f.month === 'undefined') f.month = '__all__';  // compat avec ancien state
 
@@ -6608,6 +7975,7 @@ function renderSortants() {
     if (f.commercial !== '__all__' && (s.commercial || '') !== f.commercial) return false;
     if (f.raison !== '__all__' && (s.raison || '') !== f.raison) return false;
     if (f.type !== '__all__' && (s.type_fin_contrat || '') !== f.type) return false;
+    if (f.fin_contrat !== '__all__' && (s.fin_contrat_travail || '') !== f.fin_contrat) return false;
     if (f.year !== '__all__') {
       var yr = (s.fin_mission || '').slice(0, 4);
       if (yr !== f.year) return false;
@@ -6682,6 +8050,13 @@ function renderSortants() {
     + '<div style="flex:1;min-width:160px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Type fin contrat</label>'
     +   '<select class="comm-param-input" onchange="window._sortantsFilter.type=this.value;renderSortants();" style="cursor:pointer;">' + typeOpts + '</select>'
     + '</div>'
+    + '<div style="flex:1;min-width:150px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Fin de contrat</label>'
+    +   '<select class="comm-param-input" onchange="window._sortantsFilter.fin_contrat=this.value;renderSortants();" style="cursor:pointer;">'
+    +     '<option value="__all__"' + (f.fin_contrat==='__all__'?' selected':'') + '>Tous</option>'
+    +     '<option value="Oui"' + (f.fin_contrat==='Oui'?' selected':'') + '>✅ Oui (CDI terminé)</option>'
+    +     '<option value="Non"' + (f.fin_contrat==='Non'?' selected':'') + '>⚠️ Non (encore sous contrat)</option>'
+    +   '</select>'
+    + '</div>'
     + '<div style="min-width:110px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Année</label>'
     +   '<select class="comm-param-input" onchange="window._sortantsFilter.year=this.value;renderSortants();" style="cursor:pointer;">' + yearOpts + '</select>'
     + '</div>'
@@ -6690,7 +8065,7 @@ function renderSortants() {
     + '</div>'
     + '<div style="display:flex;gap:6px;">'
     +   '<button onclick="exportSortantsCSV()" style="padding:9px 14px;background:#1D9E75;color:#fff;border:none;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">⬇ CSV</button>'
-    +   '<button onclick="window._sortantsFilter={commercial:\'__all__\',raison:\'__all__\',type:\'__all__\',year:\'__all__\',month:\'__all__\',search:\'\'};renderSortants();" style="padding:9px 14px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">↻</button>'
+    +   '<button onclick="window._sortantsFilter={commercial:\'__all__\',raison:\'__all__\',type:\'__all__\',fin_contrat:\'__all__\',year:\'__all__\',month:\'__all__\',search:\'\'};renderSortants();" style="padding:9px 14px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">↻</button>'
     + '</div>'
     + '</div>';
 
@@ -8740,29 +10115,62 @@ function buildCandFicheHTML(cand) {
   var statutIsAuto = statutAuto !== statutManuel;
 
   // Sélecteur Statut portage intelligent :
-  // - S'il existe un deal non-annulé → champ verrouillé avec valeur auto
-  // - Sinon → dropdown limité à Prospect / Prospect chaud (pas d'override manuel possible)
+  // - S'il existe un deal non-annulé → champ verrouillé avec valeur auto (Porté / Ancien porté / Porté sans mission)
+  //   SAUF si statut manuel = "Perdu" → respecté même avec deal
+  // - Sinon → dropdown éditable : Prospect, Prospect chaud, Perdu (+ Non Attribué si jamais eu de simu)
   function selStatutPortage() {
     var email = ((cand.email || '') + '').trim().toLowerCase();
     var allDeals = (typeof getDeals === 'function') ? getDeals() : [];
     var hasDeals = email && allDeals.some(function(d){
       return (d.email || '').trim().toLowerCase() === email && d.etat !== 'Annulé';
     });
-    if (hasDeals) {
+    // Exception : si déjà marqué "Perdu" manuellement, on laisse la main pour le retirer
+    var isPerdu = statutManuel === 'Perdu';
+    if (hasDeals && !isPerdu) {
       // Lecture seule — le statut est dicté par les deals
-      var icon = statutAuto === 'Porté' ? '🟢' : (statutAuto === 'Ancien porté' ? '🔴' : '⚪');
+      var icon = statutAuto === 'Porté' ? '🟢'
+        : (statutAuto === 'Ancien porté' ? '🔴'
+        : (statutAuto === 'Porté sans mission' ? '🟠'
+        : '⚪'));
+      var raisonHtml = '';
+      if (statutAuto === 'Porté sans mission') {
+        raisonHtml = '<div style="font-size:10px;color:#8B5A00;margin-top:4px;font-weight:500;">⚠ Plus de mission active mais toujours en contrat Seven</div>';
+      }
       return '<div><label class="cf-lbl">Statut portage 🔒 auto</label>'
-        + '<div class="cf-inp" style="padding:6px 9px;background:#F5F3FF;color:#4B36EC;font-weight:700;display:flex;align-items:center;gap:6px;cursor:not-allowed;" title="Statut calculé automatiquement à partir des placements de ce candidat. Il ne peut pas être modifié manuellement.">'
+        + '<div class="cf-inp" style="padding:6px 9px;background:#F5F3FF;color:#4B36EC;font-weight:700;display:flex;align-items:center;gap:6px;cursor:not-allowed;" title="Statut calculé automatiquement à partir des placements de ce candidat.">'
         +   '<span>' + icon + '</span><span>' + statutAuto + '</span>'
-        + '</div></div>';
+        + '</div>' + raisonHtml + '</div>';
     } else {
-      // Éditable — mais seulement Prospect / Prospect chaud
-      var curVal = (statutManuel === 'Prospect chaud') ? 'Prospect chaud' : 'Prospect';
-      var opts = ['Prospect', 'Prospect chaud'].map(function(o){
+      // Éditable
+      var hasSims = (cand.simulations || []).length > 0;
+      var isNonAttribue = statutManuel === 'Non Attribué';
+      var optList = ['Prospect', 'Prospect chaud', 'Perdu'];
+      if (isNonAttribue && !hasSims) optList.unshift('Non Attribué');
+      if (isPerdu && hasDeals) optList.unshift('Perdu'); // forcer sa présence si on est déjà perdu avec des deals
+      // Dédoublonnage
+      var seen = {};
+      optList = optList.filter(function(o){ if (seen[o]) return false; seen[o] = true; return true; });
+      var curVal = statutManuel;
+      if (!isNonAttribue && !isPerdu) curVal = (statutManuel === 'Prospect chaud') ? 'Prospect chaud' : 'Prospect';
+      var opts = optList.map(function(o){
         return '<option value="' + o + '"' + (o===curVal?' selected':'') + '>' + o + '</option>';
       }).join('');
+
+      // Si perdu, afficher la raison en lecture + bouton modifier
+      var raisonBlock = '';
+      if (isPerdu) {
+        var raisonTxt = cand.raison_perdu || '—';
+        raisonBlock = '<div style="margin-top:6px;padding:7px 9px;background:#FDE0E0;border-left:3px solid #A8322A;border-radius:0 6px 6px 0;font-size:11.5px;">'
+          + '<div style="color:#A8322A;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px;">Raison de la perte</div>'
+          + '<div style="color:#1a1a1a;display:flex;align-items:center;justify-content:space-between;gap:8px;">'
+          +   '<span>' + (raisonTxt === '—' ? '<em style="color:#999;">Non renseignée</em>' : raisonTxt.replace(/</g,'&lt;')) + '</span>'
+          +   '<button onclick="openPerduReasonPopup(' + cand.id + ')" style="padding:3px 9px;background:#fff;color:#A8322A;border:1px solid #A8322A;border-radius:5px;font-size:10.5px;font-weight:600;cursor:pointer;font-family:inherit;">Modifier</button>'
+          + '</div></div>';
+      }
+
       return '<div><label class="cf-lbl">Statut portage</label>'
-        + '<select data-field="statut_portage" data-candid="' + cand.id + '" onchange="updateCandField(this);openCandidatFiche(' + cand.id + ')" class="cf-inp" style="padding:5px 9px;">' + opts + '</select>'
+        + '<select data-field="statut_portage" data-candid="' + cand.id + '" onchange="handleStatutPortageChange(this)" class="cf-inp" style="padding:5px 9px;">' + opts + '</select>'
+        + raisonBlock
         + '</div>';
     }
   }
@@ -8773,14 +10181,26 @@ function buildCandFicheHTML(cand) {
     headerGradient = 'linear-gradient(135deg,#0E7550,#1D9E75)';
     shadowColor = 'rgba(29,158,117,0.25)';
     statutBadgeColor = '#0E7550'; statutBadgeBg = '#D4F5E2';
+  } else if (statutAuto === 'Porté sans mission') {
+    headerGradient = 'linear-gradient(135deg,#B8650B,#E89520)';
+    shadowColor = 'rgba(232,149,32,0.25)';
+    statutBadgeColor = '#8B5A00'; statutBadgeBg = '#FEE8C7';
   } else if (statutAuto === 'Ancien porté') {
     headerGradient = 'linear-gradient(135deg,#A8322A,#E24B4A)';
     shadowColor = 'rgba(226,75,74,0.25)';
     statutBadgeColor = '#A8322A'; statutBadgeBg = '#FDE0E0';
+  } else if (statutAuto === 'Perdu') {
+    headerGradient = 'linear-gradient(135deg,#5A1F1A,#8E3A32)';
+    shadowColor = 'rgba(142,58,50,0.25)';
+    statutBadgeColor = '#5A1F1A'; statutBadgeBg = '#F5D5D2';
   } else if (statutAuto === 'Prospect chaud') {
     headerGradient = 'linear-gradient(135deg,#B8860B,#F0A500)';
     shadowColor = 'rgba(240,165,0,0.25)';
     statutBadgeColor = '#B8860B'; statutBadgeBg = '#FFF3CD';
+  } else if (statutAuto === 'Non Attribué') {
+    headerGradient = 'linear-gradient(135deg,#6B5E9C,#8378B8)';
+    shadowColor = 'rgba(107,94,156,0.2)';
+    statutBadgeColor = '#4A4068'; statutBadgeBg = '#EEEBF7';
   } else {
     headerGradient = 'linear-gradient(135deg,#372EB6,#7343EE)';
     shadowColor = 'rgba(115,67,238,0.2)';
@@ -8807,7 +10227,10 @@ function buildCandFicheHTML(cand) {
     + '<span style="font-size:10px;color:rgba(255,255,255,0.4);">MAJ : ' + (cand.updated||'') + '</span>'
     + '</div>'
     + '</div>'
-    + '<button onclick="closeCandFiche()" style="background:none;border:none;font-size:22px;cursor:pointer;color:rgba(255,255,255,0.8);line-height:1;flex-shrink:0;">&#215;</button>'
+    + '<div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">'
+    +   buildFicheEditBarHTML('candidat', cand.id)
+    +   '<button onclick="closeCandFiche()" style="background:none;border:none;font-size:22px;cursor:pointer;color:rgba(255,255,255,0.8);line-height:1;">&#215;</button>'
+    + '</div>'
     + '</div>'
     + '</div>'
 
@@ -8837,8 +10260,8 @@ function buildCandFicheHTML(cand) {
     + '<div style="flex:1;min-width:0;border-right:2px solid #F0EDF9;">'
     + '<div style="display:flex;align-items:center;border-bottom:2px solid #E4E0FA;padding:0 20px;background:#fff;">'
     + '<button data-tab="simulations" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-simulations" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#7343EE;border-bottom:2px solid #7343EE;margin-bottom:-2px;cursor:pointer;">&#128200; Simulations (' + (cand.simulations||[]).length + ')</button>'
-    + '<button data-tab="placements" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-placements" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128203; Placements</button>'
-    + '<button data-tab="avances" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-avances" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128182; Avances</button>'
+    + '<button data-tab="placements" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-placements" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128203; Placements (' + (function(){ var e=(cand.email||'').toLowerCase(); var fn=((cand.prenom||'')+' '+(cand.nom||'')).trim().toLowerCase(); return (typeof getDeals==='function' ? getDeals() : []).filter(function(d){ return (d.email||'').toLowerCase()===e || ((d.prenom||'')+' '+(d.nom||'')).trim().toLowerCase()===fn; }).length; })() + ')</button>'
+    + '<button data-tab="avances" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-avances" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128182; Avances (' + (typeof getAvances==='function' ? getAvances().filter(function(a){ return a.candidat_id === cand.id; }).length : 0) + ')</button>'
     + '<button data-tab="documents" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-documents" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128196; Documents</button>'
     + '<button data-tab="rappels" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-rappels" class="ct-btn-rappels" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128276; Rappels</button>'
     + '</div>'
@@ -8853,7 +10276,7 @@ function buildCandFicheHTML(cand) {
     + '</div>'
     + '<div id="ct-comments-' + cand.id + '" style="flex:1;overflow-y:auto;padding:10px 14px;max-height:38vh;">' + cmHtml + '</div>'
     + '<div style="padding:10px 14px;border-top:1.5px solid #E4E0FA;">'
-    + '<textarea id="cand-new-comment-' + cand.id + '" placeholder="Ajouter une note..." rows="2" style="width:100%;padding:7px 9px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;resize:none;outline:none;"></textarea>'
+    + '<textarea data-always-editable id="cand-new-comment-' + cand.id + '" placeholder="Ajouter une note..." rows="2" style="width:100%;padding:7px 9px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;resize:none;outline:none;"></textarea>'
     + '<button data-candid="' + cand.id + '" onclick="addCandComment(parseInt(this.dataset.candid))" style="margin-top:5px;width:100%;padding:7px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;">+ Ajouter</button>'
     + '</div>'
     + '</div>'
@@ -8872,6 +10295,252 @@ function updateCandField(input) {
   cands[idx].updated = new Date().toLocaleDateString('fr-FR');
   saveCandidatsArr(cands);
   renderCandidats();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MODE ÉDITION pour fiches Candidat / Client / Manager
+// Par défaut : LECTURE SEULE. Bouton "Éditer" pour déverrouiller.
+// Stocke un snapshot pour permettre "Annuler" les modifications.
+// ═══════════════════════════════════════════════════════════════════
+
+// Snapshot global : clé = modalId/containerId, valeur = snapshot des données
+window._ficheSnapshots = window._ficheSnapshots || {};
+
+// Helpers pour récupérer le container d'une fiche
+function _getFicheContainer(kind) {
+  if (kind === 'candidat') return document.getElementById('modal-cand-fiche');
+  if (kind === 'manager') return document.getElementById('modal-manager-fiche');
+  if (kind === 'client') return document.querySelector('.client-page-container');
+  return null;
+}
+
+// Active le mode édition : déverrouille les champs + change les boutons
+function enterFicheEditMode(kind, entityId, extraId) {
+  var container = _getFicheContainer(kind);
+  if (!container) return;
+
+  // 1. Snapshot des données actuelles (pour rollback)
+  var snapKey = kind + ':' + entityId + (extraId !== undefined ? (':' + extraId) : '');
+  try {
+    if (kind === 'candidat') {
+      var cands = getCandidats();
+      var c = cands.find(function(x){ return x.id === entityId; });
+      if (c) window._ficheSnapshots[snapKey] = JSON.parse(JSON.stringify(c));
+    } else if (kind === 'client') {
+      var clients = getClients();
+      var cl = clients.find(function(x){ return x.id === entityId; });
+      if (cl) window._ficheSnapshots[snapKey] = JSON.parse(JSON.stringify(cl));
+    } else if (kind === 'manager') {
+      var clients2 = getClients();
+      var cl2 = clients2.find(function(x){ return x.id === entityId; });
+      if (cl2 && cl2.managers && cl2.managers[extraId]) {
+        window._ficheSnapshots[snapKey] = JSON.parse(JSON.stringify(cl2.managers[extraId]));
+      }
+    }
+  } catch(e) { console.warn('[Snapshot]', e); }
+
+  // 2. Activer la classe CSS de déverrouillage
+  container.classList.add('fiche-edit-mode');
+
+  // 3. Basculer les boutons d'action
+  var editBar = container.querySelector('[data-fiche-edit-bar]');
+  if (editBar) {
+    editBar.setAttribute('data-mode', 'edit');
+    _renderFicheEditBar(editBar, kind, entityId, extraId, true);
+  }
+}
+
+// Sauvegarde : le mode repasse en lecture seule. Les données sont déjà sauvegardées
+// au fil de l'eau (par updateCandField / updateClientField / updateManagerField)
+// donc on nettoie juste le snapshot et le CSS.
+function saveFicheEditMode(kind, entityId, extraId) {
+  var container = _getFicheContainer(kind);
+  if (!container) return;
+  container.classList.remove('fiche-edit-mode');
+  var snapKey = kind + ':' + entityId + (extraId !== undefined ? (':' + extraId) : '');
+  delete window._ficheSnapshots[snapKey];
+  var editBar = container.querySelector('[data-fiche-edit-bar]');
+  if (editBar) {
+    editBar.setAttribute('data-mode', 'view');
+    _renderFicheEditBar(editBar, kind, entityId, extraId, false);
+  }
+  if (typeof showNotifToast === 'function') showNotifToast('✓ Modifications enregistrées');
+  // Re-sync OneDrive si dispo
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+// Annulation : rollback sur le snapshot + lecture seule
+function cancelFicheEditMode(kind, entityId, extraId) {
+  var snapKey = kind + ':' + entityId + (extraId !== undefined ? (':' + extraId) : '');
+  var snap = window._ficheSnapshots[snapKey];
+
+  if (!snap) {
+    // Pas de snapshot → juste sortir du mode édition
+    var container0 = _getFicheContainer(kind);
+    if (container0) container0.classList.remove('fiche-edit-mode');
+    return;
+  }
+
+  var confirmMsg = 'Annuler les modifications ?\n\nLes changements non enregistrés seront perdus.';
+  if (!confirm(confirmMsg)) return;
+
+  // Rollback dans le localStorage
+  try {
+    if (kind === 'candidat') {
+      var cands = getCandidats();
+      var idx = cands.findIndex(function(c){ return c.id === entityId; });
+      if (idx >= 0) { cands[idx] = snap; saveCandidatsArr(cands); }
+      if (typeof renderCandidats === 'function') renderCandidats();
+      if (typeof openCandidatFiche === 'function') setTimeout(function(){ openCandidatFiche(entityId); }, 50);
+    } else if (kind === 'client') {
+      var clients = getClients();
+      var cidx = clients.findIndex(function(c){ return c.id === entityId; });
+      if (cidx >= 0) { clients[cidx] = snap; saveClientsArr(clients); }
+      if (typeof renderClients === 'function') renderClients();
+      if (typeof openClientPage === 'function') setTimeout(function(){ openClientPage(entityId); }, 50);
+    } else if (kind === 'manager') {
+      var clients2 = getClients();
+      var cidx2 = clients2.findIndex(function(c){ return c.id === entityId; });
+      if (cidx2 >= 0 && clients2[cidx2].managers && clients2[cidx2].managers[extraId]) {
+        clients2[cidx2].managers[extraId] = snap;
+        saveClientsArr(clients2);
+      }
+      if (typeof openManagerFiche === 'function') {
+        setTimeout(function(){ openManagerFiche(entityId, extraId); }, 50);
+      }
+    }
+  } catch(e) {
+    console.error('[Cancel fiche]', e);
+    alert('Erreur lors de l\'annulation : ' + e.message);
+  }
+
+  delete window._ficheSnapshots[snapKey];
+  if (typeof showNotifToast === 'function') showNotifToast('↶ Modifications annulées');
+}
+
+// Génère le HTML de la barre d'édition (boutons Éditer OU Enregistrer+Annuler)
+function _renderFicheEditBar(barEl, kind, entityId, extraId, isEditMode) {
+  var idArg = kind === 'manager'
+    ? entityId + ',' + extraId
+    : entityId;
+  var kindLabel = kind === 'candidat' ? 'le candidat' : (kind === 'client' ? 'le client' : 'le manager');
+
+  if (isEditMode) {
+    barEl.innerHTML = ''
+      + '<button class="fiche-edit-btn fiche-edit-btn-save" onclick="saveFicheEditMode(\'' + kind + '\',' + idArg + ')">💾 Enregistrer</button>'
+      + '<button class="fiche-edit-btn fiche-edit-btn-cancel" onclick="cancelFicheEditMode(\'' + kind + '\',' + idArg + ')">✗ Annuler</button>';
+  } else {
+    barEl.innerHTML = ''
+      + '<span class="fiche-lock-badge">🔒 Lecture seule</span>'
+      + '<button class="fiche-edit-btn fiche-edit-btn-edit" onclick="enterFicheEditMode(\'' + kind + '\',' + idArg + ')" title="Déverrouiller ' + kindLabel + ' pour modifier">✎ Éditer</button>';
+  }
+}
+
+// Construit le HTML initial de la barre (à insérer dans les headers des fiches)
+function buildFicheEditBarHTML(kind, entityId, extraId) {
+  var idArg = kind === 'manager' ? entityId + ',' + extraId : entityId;
+  var kindLabel = kind === 'candidat' ? 'le candidat' : (kind === 'client' ? 'le client' : 'le manager');
+  return '<div data-fiche-edit-bar data-mode="view" class="fiche-edit-bar">'
+    + '<span class="fiche-lock-badge">🔒 Lecture seule</span>'
+    + '<button class="fiche-edit-btn fiche-edit-btn-edit" onclick="enterFicheEditMode(\'' + kind + '\',' + idArg + ')" title="Déverrouiller ' + kindLabel + ' pour modifier">✎ Éditer</button>'
+    + '</div>';
+}
+
+// Handler spécial pour le statut portage :
+// Si l'utilisateur passe le candidat en "Perdu" → ouvrir popup pour choisir la raison
+// Sinon → comportement normal (updateCandField + refresh fiche)
+function handleStatutPortageChange(select) {
+  var candId = parseInt(select.dataset.candid);
+  var newVal = select.value;
+  var cands = getCandidats();
+  var idx = cands.findIndex(function(c){ return c.id === candId; });
+  if (idx < 0) return;
+  var prevVal = cands[idx].statut_portage || '';
+
+  if (newVal === 'Perdu') {
+    // Écrire le statut tout de suite
+    cands[idx].statut_portage = 'Perdu';
+    cands[idx].updated = new Date().toLocaleDateString('fr-FR');
+    saveCandidatsArr(cands);
+    // Si raison pas encore renseignée → popup
+    if (!cands[idx].raison_perdu) {
+      openPerduReasonPopup(candId);
+    } else {
+      renderCandidats();
+      openCandidatFiche(candId);
+    }
+    return;
+  }
+
+  // Changement classique — si on passe de "Perdu" vers autre chose, on efface la raison
+  if (prevVal === 'Perdu' && newVal !== 'Perdu') {
+    cands[idx].raison_perdu = '';
+  }
+  cands[idx].statut_portage = newVal;
+  cands[idx].updated = new Date().toLocaleDateString('fr-FR');
+  saveCandidatsArr(cands);
+  renderCandidats();
+  openCandidatFiche(candId);
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+// Popup : raison de la perte
+function openPerduReasonPopup(candId) {
+  var existing = document.getElementById('modal-perdu-reason');
+  if (existing) existing.remove();
+
+  var cands = getCandidats();
+  var cand = cands.find(function(c){ return c.id === candId; });
+  if (!cand) return;
+  var curReason = cand.raison_perdu || '';
+
+  var raisons = ['Mission Annulée', 'Création de structure', 'Autre EPS'];
+  var opts = '<option value="">-- Sélectionner --</option>' + raisons.map(function(r){
+    return '<option value="' + r + '"' + (r === curReason ? ' selected' : '') + '>' + r + '</option>';
+  }).join('');
+
+  var modal = document.createElement('div');
+  modal.id = 'modal-perdu-reason';
+  modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3400;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:460px;width:100%;">'
+    +   '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 22px;background:linear-gradient(135deg,#5A1F1A,#8E3A32);color:#fff;border-radius:12px 12px 0 0;">'
+    +     '<div>'
+    +       '<div style="font-size:16px;font-weight:800;">❌ Raison de la perte</div>'
+    +       '<div style="font-size:11.5px;opacity:0.88;margin-top:3px;">' + (cand.prenom || '') + ' ' + (cand.nom || '') + '</div>'
+    +     '</div>'
+    +     '<button onclick="document.getElementById(\'modal-perdu-reason\').remove()" style="background:none;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1;opacity:0.85;">×</button>'
+    +   '</div>'
+    +   '<div style="padding:20px 24px;">'
+    +     '<label style="display:block;font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Pourquoi ce candidat est-il perdu ?</label>'
+    +     '<select id="perdu-raison-sel" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;background:#fff;cursor:pointer;font-family:inherit;">' + opts + '</select>'
+    +     '<div style="margin-top:16px;font-size:11.5px;color:#888;font-style:italic;">Cette raison apparaîtra dans la fiche candidat pour garder le contexte.</div>'
+    +     '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid #F0EDF9;">'
+    +       '<button onclick="document.getElementById(\'modal-perdu-reason\').remove()" style="padding:8px 16px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">Annuler</button>'
+    +       '<button onclick="savePerduReason(' + candId + ')" style="padding:8px 20px;background:#A8322A;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">💾 Enregistrer</button>'
+    +     '</div>'
+    +   '</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+  setTimeout(function(){ var el = document.getElementById('perdu-raison-sel'); if (el) el.focus(); }, 80);
+}
+
+function savePerduReason(candId) {
+  var sel = document.getElementById('perdu-raison-sel');
+  var raison = sel ? sel.value : '';
+  if (!raison) { alert('⚠ Veuillez sélectionner une raison.'); return; }
+  var cands = getCandidats();
+  var idx = cands.findIndex(function(c){ return c.id === candId; });
+  if (idx < 0) return;
+  cands[idx].raison_perdu = raison;
+  cands[idx].statut_portage = 'Perdu';
+  cands[idx].updated = new Date().toLocaleDateString('fr-FR');
+  saveCandidatsArr(cands);
+  document.getElementById('modal-perdu-reason').remove();
+  renderCandidats();
+  openCandidatFiche(candId);
+  if (typeof odAutoSync === 'function') odAutoSync();
+  if (typeof showNotifToast === 'function') showNotifToast('✓ Statut "Perdu" enregistré avec raison : ' + raison);
 }
 
 function switchCandTab(id, tab) {
@@ -8903,7 +10572,7 @@ function switchCandTab(id, tab) {
 function buildCandSimsHTML(cand) {
   var sims = cand.simulations || [];
   if (!sims.length) return '<div style="color:#C0B8E0;font-size:12px;padding:20px 0;">Aucune simulation.</div>';
-  // Récupère les deals liés au candidat par email pour savoir lesquelles sont annulées/placées
+  // Récupère les deals liés au candidat par email pour savoir lesquelles sont placées/annulées
   var email = (cand.email || '').trim().toLowerCase();
   var allDeals = (typeof getDeals === 'function') ? getDeals() : [];
   var dealsOfCand = allDeals.filter(function(d){ return (d.email || '').trim().toLowerCase() === email; });
@@ -8912,50 +10581,37 @@ function buildCandSimsHTML(cand) {
     // Trouve le deal lié à cette simulation (via sim_ts / timestamp)
     var linkedDeal = dealsOfCand.find(function(d){ return d.sim_ts === s.timestamp; });
     var isCancelled = linkedDeal && linkedDeal.etat === 'Annulé';
-    var rowClass = isCancelled ? ' class="sim-row-cancelled"' : '';
+    var isPlaced = linkedDeal && !isCancelled;
+
     var rowStyle = isCancelled
-      ? 'background:#FDECEC;border:1px solid #F5B5B5;border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:relative;'
+      ? 'background:#FDECEC;border:1px solid #F5B5B5;border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;opacity:0.75;'
       : 'background:#F5F3FF;border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;';
 
-    var cancelBtn = '';
-    var sortantBtn = '';
-    if (linkedDeal) {
-      cancelBtn = isCancelled
-        ? '<button class="sim-cancelled-badge" onclick="restoreDeal(' + linkedDeal.id + ')" title="Restaurer le placement" style="padding:4px 10px;background:#F0FDF4;color:#1D9E75;border:1.5px solid #9FE1CB;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#8634; Restaurer</button>'
-        : '<button onclick="cancelDeal(' + linkedDeal.id + ')" title="Annuler le placement" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#10060; Annuler</button>';
-      // Bouton Sortant : visible si le placement n'est pas annulé
-      if (!isCancelled) {
-        var existingSortant = findSortantByDealId(linkedDeal.id);
-        var sortantLabel = existingSortant ? '&#9998; Éditer sortant' : '🚪 Sortant';
-        var sortantBg = existingSortant ? '#FFF8E1' : '#FDECEC';
-        var sortantColor = existingSortant ? '#8A5F00' : '#C24141';
-        var sortantBorder = existingSortant ? '#F0D98A' : '#F5B5B5';
-        sortantBtn = '<button data-ts="' + s.timestamp + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+s.timestamp+'\'))},100);" title="' + (existingSortant ? 'Modifier la fiche sortant' : 'Déclencher une sortie') + '" style="padding:4px 10px;background:' + sortantBg + ';color:' + sortantColor + ';border:1.5px solid ' + sortantBorder + ';border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">' + sortantLabel + '</button>';
-      }
+    // Badge statut (info uniquement, lecture seule)
+    var statutBadge = '';
+    if (isCancelled) {
+      statutBadge = '<span style="display:inline-block;padding:2px 9px;background:#C24141;color:#fff;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-left:6px;">Placement annulé</span>';
+    } else if (isPlaced) {
+      statutBadge = '<span style="display:inline-block;padding:2px 9px;background:#1D9E75;color:#fff;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-left:6px;">Placée</span>';
     }
 
-    var annuleBadge = isCancelled
-      ? '<span class="sim-cancelled-badge" style="display:inline-block;padding:2px 9px;background:#C24141;color:#fff;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-left:6px;">Annulé</span>'
-      : '';
-
-    // Badge sortant si une fiche existe
-    var sortantBadge = '';
-    if (linkedDeal && !isCancelled && findSortantByDealId(linkedDeal.id)) {
-      sortantBadge = '<span style="display:inline-block;padding:2px 9px;background:#F0A500;color:#fff;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-left:6px;">Sortant</span>';
+    // Boutons de droite : "Voir sim" + (si pas de deal) "Faire placement"
+    // Les actions Annuler / Sortant / Restaurer sont dans l'onglet Placements
+    var actionBtn = '';
+    if (!linkedDeal) {
+      actionBtn = '<button data-ts="' + s.timestamp + '" onclick="closeCandFiche();setTimeout(function(){openPlacementPopup(parseInt(\''+s.timestamp+'\'))},100);" style="padding:4px 10px;background:#1D9E75;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#10133; Faire un placement</button>';
     }
 
-    return '<div' + rowClass + ' style="' + rowStyle + '">'
+    return '<div style="' + rowStyle + '">'
       + '<div>'
-      + '<div style="font-size:12px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#1A1033') + ';">' + (s.entreprise||'—') + (s.poste ? ' · ' + s.poste : '') + annuleBadge + sortantBadge + '</div>'
+      + '<div style="font-size:12px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#1A1033') + ';">' + (s.entreprise||'—') + (s.poste ? ' · ' + s.poste : '') + statutBadge + '</div>'
       + '<div style="font-size:11px;color:' + (isCancelled ? '#B47979' : '#6B5E9C') + ';">' + (s.date||'') + (s.commercial ? ' · ' + s.commercial : '') + '</div>'
       + '</div>'
       + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
       + (s.tjm ? '<span style="font-size:13px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#7343EE') + ';">' + s.tjm + ' €/j</span>' : '')
       + (s.net_payer ? '<span style="font-size:11px;color:' + (isCancelled ? '#9E4545' : '#1D9E75') + ';">' + s.net_payer + ' net</span>' : '')
-      + '<button data-ts="' + s.timestamp + '" onclick="openSimFromDeal(parseInt(this.dataset.ts));closeCandFiche();" style="padding:4px 10px;background:#7343EE;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;">&#8629; Voir</button>'
-      + (linkedDeal
-          ? (cancelBtn + sortantBtn)
-          : '<button data-ts="' + s.timestamp + '" onclick="closeCandFiche();setTimeout(function(){openPlacementPopup(parseInt(\''+s.timestamp+'\'))},100);" style="padding:4px 10px;background:#1D9E75;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#10133; Placement</button>')
+      + '<button data-ts="' + s.timestamp + '" onclick="openSimFromDeal(parseInt(this.dataset.ts));closeCandFiche();" style="padding:4px 10px;background:#7343EE;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;">&#8629; Voir la simu</button>'
+      + actionBtn
       + '</div>'
       + '</div>';
   }).join('');
@@ -9059,7 +10715,7 @@ function buildCandCommsHTML(cand) {
     });
     html += '</div>';
   }
-  html += '<textarea id="cand-new-comment-' + cand.id + '" placeholder="Ajouter un commentaire..." rows="3" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;resize:vertical;margin-bottom:8px;"></textarea>';
+  html += '<textarea data-always-editable id="cand-new-comment-' + cand.id + '" placeholder="Ajouter un commentaire..." rows="3" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;box-sizing:border-box;resize:vertical;margin-bottom:8px;"></textarea>';
   html += '<button onclick="addCandComment(' + cand.id + ')" style="padding:7px 18px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;">Ajouter</button>';
   html += '</div>';
   return html;
@@ -9792,7 +11448,47 @@ function renderClients() {
   if (!el) return;
   var clients = getClients();
   var q = (document.getElementById('clients-search')?document.getElementById('clients-search').value:'').toLowerCase().trim();
+  var filtComm = document.getElementById('clients-filter-commercial') ? document.getElementById('clients-filter-commercial').value : '__mine__';
   var countEl = document.getElementById('clients-count');
+
+  // Peupler la dropdown commercial avec la liste distincte + "Mes clients"
+  var commEl = document.getElementById('clients-filter-commercial');
+  if (commEl) {
+    var allCommercials = {};
+    getClients().forEach(function(cl){
+      if (cl.commercial) allCommercials[cl.commercial] = true;
+      (cl.managers || []).forEach(function(m){
+        (m.deals || []).forEach(function(d){ if (d.commercial) allCommercials[d.commercial] = true; });
+      });
+    });
+    var existingVals = Array.from(commEl.options).map(function(o){ return o.value; });
+    var commList = Object.keys(allCommercials).sort();
+    var needsRebuild = commList.some(function(c){ return existingVals.indexOf(c) < 0; });
+    if (needsRebuild) {
+      var currentVal = commEl.value;
+      var commOpts = '<option value="__mine__">👤 Mes clients</option><option value="">Tous les commerciaux</option>';
+      commList.forEach(function(c){ commOpts += '<option value="' + c + '">' + c + '</option>'; });
+      commEl.innerHTML = commOpts;
+      commEl.value = currentVal || '__mine__';
+    }
+  }
+
+  // Filtre par commercial : un client est "à moi" si je suis le commercial en charge OU si j'ai au moins un deal dessus
+  function matchesCommercial(cl, targetComm) {
+    if ((cl.commercial||'') === targetComm) return true;
+    return (cl.managers||[]).some(function(m){
+      return (m.deals||[]).some(function(d){ return (d.commercial||'') === targetComm; });
+    });
+  }
+  if (filtComm === '__mine__') {
+    var myName = (typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
+    if (myName) {
+      clients = clients.filter(function(cl){ return matchesCommercial(cl, myName); });
+    }
+  } else if (filtComm && filtComm !== '') {
+    clients = clients.filter(function(cl){ return matchesCommercial(cl, filtComm); });
+  }
+
   if (q) clients = clients.filter(function(cl){ return cl.name.toLowerCase().indexOf(q)>=0; });
   if (countEl) countEl.textContent = clients.length + ' client' + (clients.length>1?'s':'');
   if (!clients.length) {
@@ -9935,14 +11631,19 @@ function buildClientPageHTML(cl) {
   var DOT = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#7343EE;box-shadow:0 0 0 3px rgba(115,67,238,0.18);"></span>';
 
   // ── Rendu ──
-  return '<div style="padding:4px 0 24px;max-width:1200px;">'
-    // Breadcrumb + retour
+  return '<div class="client-page-container" style="padding:4px 0 24px;max-width:1200px;">'
+    // Breadcrumb + retour + barre d'édition
     + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">'
     +   '<button class="back-btn" onclick="showClientsTab()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#fff;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;" onmouseover="this.style.background=\'#F5F3FF\';this.style.borderColor=\'#7343EE\'" onmouseout="this.style.background=\'#fff\';this.style.borderColor=\'#E4E0FA\'">← Retour</button>'
     +   '<div style="flex:1;display:flex;align-items:center;gap:6px;font-size:12px;">'
     +     '<button onclick="showClientsTab()" style="background:none;border:none;color:#7343EE;font-size:12px;font-weight:600;cursor:pointer;padding:0;">Clients</button>'
     +     '<span style="color:#C0B8E0;">›</span>'
     +     '<span style="font-weight:700;color:#1A1033;">' + cleanName + '</span>'
+    +   '</div>'
+    // Barre d'édition (boutons en lecture seule au départ)
+    +   '<div data-fiche-edit-bar data-mode="view" class="fiche-edit-bar">'
+    +     '<span class="fiche-lock-badge">🔒 Lecture seule</span>'
+    +     '<button class="fiche-edit-btn fiche-edit-btn-edit" onclick="enterFicheEditMode(\'client\',' + cl.id + ')" title="Déverrouiller le client pour modifier">✎ Éditer</button>'
     +   '</div>'
     + '</div>'
 
@@ -10170,7 +11871,10 @@ function buildManagerFicheHTML(cl, mgridx, m) {
     + '<div style="font-size:16px;font-weight:800;color:#fff;">' + m.name + '</div>'
     + '<div style="font-size:11px;color:rgba(255,255,255,0.7);">' + cl.name + '</div>'
     + '</div>'
-    + '<button onclick="closeMgrFiche()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#fff;">&#215;</button>'
+    + '<div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">'
+    +   buildFicheEditBarHTML('manager', cl.id, mgridx)
+    +   '<button onclick="closeMgrFiche()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#fff;">&#215;</button>'
+    + '</div>'
     + '</div>'
 
     // Coordonnées
@@ -10202,7 +11906,7 @@ function buildManagerFicheHTML(cl, mgridx, m) {
     + '</div>'
     + '<div id="mgr-comments-list-' + mgrId + '" style="flex:1;overflow-y:auto;padding:8px 14px;max-height:30vh;">' + cmHtml + '</div>'
     + '<div style="padding:8px 14px;border-top:1.5px solid #E4E0FA;">'
-    + '<textarea id="mgr-new-comment-' + mgrId + '" placeholder="Ajouter une note..." rows="2" style="width:100%;padding:6px 8px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;resize:none;outline:none;"></textarea>'
+    + '<textarea data-always-editable id="mgr-new-comment-' + mgrId + '" placeholder="Ajouter une note..." rows="2" style="width:100%;padding:6px 8px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;resize:none;outline:none;"></textarea>'
     + '<button data-clid="' + cl.id + '" data-mgridx="' + mgridx + '" onclick="addMgrComment(parseInt(this.dataset.clid),parseInt(this.dataset.mgridx))" style="margin-top:4px;width:100%;padding:6px;background:#4B36EC;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;">+ Ajouter</button>'
     + '</div>'
     + '</div>'
@@ -10383,16 +12087,52 @@ function buildCandPlacementsHTML(cand) {
   var ECOLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
   return candDeals.map(function(d) {
     var color = ECOLORS[d.etat] || '#6B5E9C';
-    return '<div style="background:#F5F3FF;border-radius:8px;padding:10px 14px;margin-bottom:8px;">'
+    var isCancelled = d.etat === 'Annulé';
+    var isSorti = d.etat === 'Sorti des effectifs';
+
+    // Style carte : atténué si annulé, normal sinon
+    var cardStyle = isCancelled
+      ? 'background:#FDECEC;border:1px solid #F5B5B5;border-radius:8px;padding:10px 14px;margin-bottom:8px;opacity:0.85;'
+      : 'background:#F5F3FF;border-radius:8px;padding:10px 14px;margin-bottom:8px;';
+
+    // Actions : Annuler / Restaurer / Sortant / Éditer sortant
+    var actionsHtml = '';
+
+    // Voir la simu liée (toujours dispo)
+    actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="openSimFromDeal(parseInt(this.dataset.ts));closeCandFiche();" style="padding:4px 10px;background:#7343EE;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;">&#128200; Voir simu</button>';
+
+    // Annuler / Restaurer
+    if (isCancelled) {
+      actionsHtml += '<button onclick="restoreDeal(' + d.id + ')" title="Restaurer le placement (remet en cours)" style="padding:4px 10px;background:#F0FDF4;color:#1D9E75;border:1.5px solid #9FE1CB;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#8634; Restaurer</button>';
+    } else if (!isSorti) {
+      // Bouton Sortant : visible si placement actif (pas annulé, pas déjà sorti)
+      var existingSortant = (typeof findSortantByDealId === 'function') ? findSortantByDealId(d.id) : null;
+      var sortantLabel = existingSortant ? '&#9998; Éditer sortant' : '🚪 Sortant';
+      var sortantBg = existingSortant ? '#FFF8E1' : '#FDECEC';
+      var sortantColor = existingSortant ? '#8A5F00' : '#C24141';
+      var sortantBorder = existingSortant ? '#F0D98A' : '#F5B5B5';
+      actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'))},100);" title="' + (existingSortant ? 'Modifier la fiche sortant' : 'Déclencher une sortie') + '" style="padding:4px 10px;background:' + sortantBg + ';color:' + sortantColor + ';border:1.5px solid ' + sortantBorder + ';border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">' + sortantLabel + '</button>';
+
+      // Annuler le placement
+      actionsHtml += '<button onclick="cancelDeal(' + d.id + ')" title="Annuler le placement" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#10060; Annuler</button>';
+    }
+
+    // Badge sortant additionnel si une fiche existe
+    var sortantBadge = '';
+    if (!isCancelled && !isSorti && typeof findSortantByDealId === 'function' && findSortantByDealId(d.id)) {
+      sortantBadge = '<span style="display:inline-block;padding:2px 9px;background:#F0A500;color:#fff;border-radius:10px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-left:6px;">Sortant</span>';
+    }
+
+    return '<div style="' + cardStyle + '">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">'
       + '<div>'
-      + '<div style="font-size:12px;font-weight:700;color:#1A1033;">' + (d.entreprise||'—') + (d.poste ? ' · ' + d.poste : '') + '</div>'
-      + '<div style="font-size:11px;color:#6B5E9C;">' + (d.date_entree||d.date_deal||'') + (d.commercial ? ' · ' + d.commercial : '') + '</div>'
+      + '<div style="font-size:12px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#1A1033') + ';">' + (d.entreprise||'—') + (d.poste ? ' · ' + d.poste : '') + sortantBadge + '</div>'
+      + '<div style="font-size:11px;color:' + (isCancelled ? '#B47979' : '#6B5E9C') + ';">' + (d.date_entree||d.date_deal||'') + (d.commercial ? ' · ' + d.commercial : '') + '</div>'
       + '</div>'
-      + '<div style="display:flex;align-items:center;gap:6px;">'
-      + (d.tjm ? '<span style="font-size:12px;font-weight:700;color:#7343EE;">' + d.tjm + ' €/j</span>' : '')
+      + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
+      + (d.tjm ? '<span style="font-size:12px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#7343EE') + ';">' + d.tjm + ' €/j</span>' : '')
       + '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:' + color + ';">' + (d.etat||'') + '</span>'
-      + '<button data-ts="' + d.sim_ts + '" onclick="openSimFromDeal(parseInt(this.dataset.ts));closeCandFiche();" style="padding:3px 8px;background:#7343EE;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;">&#128200; Voir sim.</button>'
+      + actionsHtml
       + '</div>'
       + '</div>'
       + '</div>';
@@ -14489,8 +16229,20 @@ function exportCommHistCSV() {
         <label style="display:block;font-size:12px;color:#6B5E9C;font-weight:600;margin-bottom:4px;">Message personnalisé (optionnel)</label>
         <textarea id="envoi-message" rows="3" placeholder="Bonjour, veuillez trouver ci-joint..." style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;resize:vertical;box-sizing:border-box;"></textarea>
       </div>
-      <div style="padding:10px 14px;background:#F5F3FF;border-radius:8px;font-size:12px;color:#6B5E9C;margin-bottom:14px;">
+      <div style="padding:10px 14px;background:#F5F3FF;border-radius:8px;font-size:12px;color:#6B5E9C;margin-bottom:10px;">
         <strong>PDFs joints :</strong> Avantages Sociaux 2026 + Tableau Garanties Henner
+      </div>
+      <div style="padding:10px 14px;background:linear-gradient(90deg,#FAF8FF,#F0EDFC);border:1.5px solid #D9CFFA;border-radius:8px;font-size:12.5px;color:#1A1033;margin-bottom:14px;">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+          <input type="checkbox" id="envoi-bulletin-paie" style="width:17px;height:17px;cursor:pointer;accent-color:#7343EE;flex-shrink:0;">
+          <div style="flex:1;">
+            <div style="font-weight:700;color:#4B36EC;">📋 Joindre le bulletin de paie au mail</div>
+            <div style="font-size:11px;color:#6B5E9C;margin-top:2px;">Il sera ajouté au .eml avec les autres PDFs</div>
+          </div>
+        </label>
+        <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #D9CFFA;text-align:right;">
+          <a href="#" onclick="event.preventDefault();openBulletinPaieFromModal();" style="color:#4B36EC;font-size:11.5px;font-weight:600;text-decoration:underline;cursor:pointer;">👁️ Voir l'aperçu du bulletin</a>
+        </div>
       </div>
       <div id="envoi-warning" style="display:none;padding:8px 12px;background:#FCEBEB;border:1px solid #E24B4A;border-radius:7px;font-size:12px;color:#A32D2D;margin-bottom:12px;"></div>
     </div>
