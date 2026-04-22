@@ -1547,6 +1547,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div id="params-avances-content" style="padding:12px;">Chargement…</div>
       </div>
 
+      <div class="params-acc-header" onclick="toggleAcc('acc-prolongation-cfg')">&#9203; Paramètres Prolongation<span class="params-acc-arrow" id="acc-prolongation-cfg-arrow">&#9658;</span></div>
+      <div class="params-acc-body" id="acc-prolongation-cfg">
+        <div id="params-prolongation-content" style="padding:12px;">Chargement…</div>
+      </div>
+
     </div><!-- /params-protected -->
 
     <div style="margin-top:10px; padding:10px 14px; background:#F5F3FF; border-radius:8px; font-size:11px; color:var(--muted);">
@@ -1925,6 +1930,7 @@ function showTab(id) {
     try { if (typeof renderParamsAvancesAccordion === 'function') renderParamsAvancesAccordion(); } catch(e){}
     try { if (typeof renderParamsCooptationsAccordion === 'function') renderParamsCooptationsAccordion(); } catch(e){}
     try { if (typeof renderParamsDemandesAccordion === 'function') renderParamsDemandesAccordion(); } catch(e){}
+    try { if (typeof renderParamsProlongationAccordion === 'function') renderParamsProlongationAccordion(); } catch(e){}
   }
   // Gérer les boutons actifs des sous-tabs Mission/Frais/Cotisations/Param
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
@@ -5694,7 +5700,7 @@ function odFilterCommercial(val) {
 var DEALS_KEY = 'sp_deals_v1';
 var currentPlacementTs = null;
 var dealFilterEtat = '__all__';
-var dealFilterComm = '__all__';
+var dealFilterComm = '__mine__';
 var dealFilterEtranger = '__all__';
 var dealFilterPeriod = '__all__';
 
@@ -6490,6 +6496,15 @@ function onEntrepriseChange() {
     setIfEmpty('pl-secteur', cl.secteur);
     setIfEmpty('pl-delai-paiement', cl.delai_paiement);
     setIfEmpty('pl-banque', cl.banque);
+    // Type contrat Seven/Client : pré-remplir si défini sur la fiche client
+    if (cl.type_contrat_client) {
+      var tccEl = document.getElementById('pl-type-contrat-client');
+      if (tccEl && (!tccEl.value || tccEl.value === 'Seven')) {
+        // On écrase la valeur par défaut "Seven" uniquement si le client a une valeur explicite
+        tccEl.value = cl.type_contrat_client;
+        if (typeof updateTaciteField === 'function') updateTaciteField();
+      }
+    }
 
     // Remplir le sélecteur de managers
     if (mgrSel) {
@@ -6662,6 +6677,8 @@ function savePlacement() {
   // Envoi automatique de notification interne uniquement pour nouveau placement
   if (isNewDeal) {
     try { sendPlacementNotificationEmail(deal); } catch(e) { console.error('[Notif] Exception:', e); }
+    // Mail au commercial avec PJ (docs + bulletin simu)
+    try { sendPlacementCommercialEmail(deal); } catch(e) { console.error('[PlacementCommercial] Exception:', e); }
   }
 
   // Mettre à jour les infos de la fiche candidat à partir du placement
@@ -7320,7 +7337,12 @@ function renderDeals() {
   var deals = getDeals();
   // Filtres
   if (dealFilterEtat !== '__all__') deals = deals.filter(function(d) { return d.etat === dealFilterEtat; });
-  if (dealFilterComm !== '__all__') deals = deals.filter(function(d) { return (d.commercial||'') === dealFilterComm; });
+  if (dealFilterComm === '__mine__') {
+    var myName = (typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
+    if (myName) deals = deals.filter(function(d) { return (d.commercial||'') === myName; });
+  } else if (dealFilterComm !== '__all__') {
+    deals = deals.filter(function(d) { return (d.commercial||'') === dealFilterComm; });
+  }
   if (dealFilterEtranger === 'oui') deals = deals.filter(function(d) { return d.salarie_etranger === true; });
   if (dealFilterEtranger === 'non') deals = deals.filter(function(d) { return d.salarie_etranger !== true; });
 
@@ -7331,15 +7353,19 @@ function renderDeals() {
   var allDeals = getDeals();
   var selC = document.getElementById('deal-filter-comm');
   if (selC) {
-    var cv = selC.value;
+    var myName = (typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
     var comms = {};
     allDeals.forEach(function(d) { if (d.commercial) comms[d.commercial] = 1; });
-    selC.innerHTML = '<option value="__all__">Tous commerciaux</option>';
+    selC.innerHTML = ''
+      + (myName ? '<option value="__mine__">👤 Mes deals</option>' : '')
+      + '<option value="__all__">Tous commerciaux</option>';
     Object.keys(comms).sort().forEach(function(n) {
       var o = document.createElement('option'); o.value = n; o.textContent = n;
       if (n === dealFilterComm) o.selected = true;
       selC.appendChild(o);
     });
+    if (dealFilterComm === '__mine__') selC.value = '__mine__';
+    else if (dealFilterComm === '__all__') selC.value = '__all__';
   }
 
   if (deals.length === 0) {
@@ -7510,6 +7536,7 @@ var DEAL_ALL_COLS = [
   {key:'date_deal',   label:'Date deal'},
   {key:'origine',     label:'Origine'},
   {key:'contrat',     label:'Contrat'},
+  {key:'type_contrat_client', label:'Type contrat (Seven/Client)'},
   {key:'date_entree', label:'Date entrée'},
   {key:'frais_gestion',label:'Frais gest.'},
   {key:'mutuelle',    label:'Mutuelle'},
@@ -7702,6 +7729,12 @@ function getCellValue(d, key){
     case 'date_deal': return fmt(d.date_deal);
     case 'origine': return fmt(d.origine);
     case 'contrat': return fmt(d.contrat);
+    case 'type_contrat_client':
+      if (!d.type_contrat_client) return '—';
+      var tccLabel = d.type_contrat_client === 'Seven' ? 'Seven' : 'Client';
+      var tccColor = d.type_contrat_client === 'Seven' ? '#7343EE' : '#F0A500';
+      var tccBg = d.type_contrat_client === 'Seven' ? '#F5F3FF' : '#FFF4D6';
+      return '<span style="background:' + tccBg + ';color:' + tccColor + ';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;">' + tccLabel + '</span>';
     case 'date_entree': return fmt(d.date_entree);
     case 'frais_gestion': return d.frais_gestion ? d.frais_gestion+'%' : '—';
     case 'mutuelle': 
@@ -7812,8 +7845,26 @@ function updateDealField(dealId, key, value) {
   var deals = getDeals();
   var idx = deals.findIndex(function(d){ return d.id === dealId; });
   if (idx < 0) return;
+  var previousValue = deals[idx][key];
   deals[idx][key] = value;
   deals[idx].updated = new Date().toISOString();
+
+  // ── Hook : mail de bienvenue automatique au candidat ──
+  // Se déclenche UNE SEULE FOIS quand mail_bienvenue passe à "Oui"
+  if (key === 'mail_bienvenue' && value === 'Oui' && previousValue !== 'Oui' && !deals[idx].welcome_mail_sent_ts) {
+    try {
+      sendWelcomeEmailToCandidate(deals[idx]);
+      deals[idx].welcome_mail_sent_ts = Date.now();
+    } catch(e) {
+      console.error('[Welcome] Exception:', e);
+    }
+  }
+
+  // ── Hook : reset relances prolongation si date_fin modifiée ──
+  if (key === 'date_fin' && value !== previousValue) {
+    deals[idx].relance1_prolong_ts = null;
+    deals[idx].relance2_prolong_ts = null;
+  }
 
   // ── Auto-transition d'état basée sur les 3 champs clés d'onboarding ──
   // Règle : si les 3 champs suivants sont remplis "positivement" → etat = 'Signé'
@@ -8606,11 +8657,13 @@ function mainNavTo(section) {
 // ── Suivi RH : hub avec sous-onglets (Tableau deals, Avenants, Sortants, Avances, Cooptation) ──
 var currentRHSubTab = 'deals';
 var RH_SUBTABS = [
-  { key: 'deals',      label: 'Tableau des deals', icon: '\u{1F4CB}', ready: true  },
-  { key: 'avenants',   label: 'Avenants',          icon: '\u{1F4DD}', ready: false },
-  { key: 'sortants',   label: 'Sortants',          icon: '\u{1F6AA}', ready: true  },
-  { key: 'avances',    label: 'Avances',           icon: '\u{1F4B6}', ready: true  },
-  { key: 'cooptation', label: 'Cooptation',        icon: '\u{1F91D}', ready: true  }
+  { key: 'deals',        label: 'Tableau des deals', icon: '\u{1F4CB}', ready: true  },
+  { key: 'prolongation', label: 'Prolongation',      icon: '\u{23F3}',  ready: true  },
+  { key: 'avenants',     label: 'Avenants',          icon: '\u{1F4DD}', ready: false },
+  { key: 'sortants',     label: 'Sortants',          icon: '\u{1F6AA}', ready: true  },
+  { key: 'avances',      label: 'Avances',           icon: '\u{1F4B6}', ready: true  },
+  { key: 'frais',        label: 'Frais',             icon: '\u{1F4C4}', ready: true  },
+  { key: 'cooptation',   label: 'Cooptation',        icon: '\u{1F91D}', ready: true  }
 ];
 
 function showRHSection(subtab) {
@@ -8619,6 +8672,10 @@ function showRHSection(subtab) {
     // Afficher le tab-deals existant, avec la barre de sous-onglets injectée au-dessus
     showDealsTab();
     injectRHSubNav();
+  } else if (subtab === 'prolongation') {
+    showProlongationView();
+  } else if (subtab === 'frais') {
+    showFraisView();
   } else if (subtab === 'sortants') {
     showSortantsView();
   } else if (subtab === 'avances') {
@@ -8632,6 +8689,773 @@ function showRHSection(subtab) {
 }
 
 // Vue Sortants : utilise le conteneur tab-deals pour cohérence d'emplacement
+// ═══════════════════════════════════════════════════════════════════
+// PROLONGATION — Suivi des fins de contrat et relances automatiques
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Configuration ──
+var PROLONG_CFG_KEY = 'sp_prolong_cfg_v1';
+var PROLONG_LAST_RUN_KEY = 'sp_prolong_last_run_v1';
+
+function getProlongConfig() {
+  var defaults = {
+    jour_relance_1: 10,
+    jour_relance_2: 25,
+    // CC supplémentaires configurables (en plus de l'expéditeur auto)
+    mails_cc_supplementaires: [],
+    // Objet commun aux 4 cas (client R1/R2, seven R1/R2)
+    sujet: 'Seven Portage : Prolongation {prenom_nom_consultant}',
+    // 4 templates de corps (HTML)
+    corps_client_r1: '',
+    corps_client_r2: '',
+    corps_seven_r1: '',
+    corps_seven_r2: ''
+  };
+  try {
+    var saved = JSON.parse(localStorage.getItem(PROLONG_CFG_KEY) || '{}');
+    var merged = Object.assign({}, defaults, saved);
+    // Compat ascendante avec ancien schéma
+    if (Array.isArray(saved.mails_cc_relance1) && saved.mails_cc_relance1.length && !saved.mails_cc_supplementaires) {
+      merged.mails_cc_supplementaires = saved.mails_cc_relance1;
+    }
+    if (!Array.isArray(merged.mails_cc_supplementaires)) merged.mails_cc_supplementaires = [];
+    return merged;
+  } catch(e) { return defaults; }
+}
+function saveProlongConfig(cfg) {
+  localStorage.setItem(PROLONG_CFG_KEY, JSON.stringify(cfg));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+function updateProlongConfigField(field, value) {
+  var cfg = getProlongConfig();
+  cfg[field] = value;
+  saveProlongConfig(cfg);
+}
+function addProlongCC() {
+  var cfg = getProlongConfig();
+  cfg.mails_cc_supplementaires.push('');
+  saveProlongConfig(cfg);
+  renderParamsProlongationAccordion();
+}
+function updateProlongCC(idx, val) {
+  var cfg = getProlongConfig();
+  cfg.mails_cc_supplementaires[idx] = val;
+  saveProlongConfig(cfg);
+}
+function removeProlongCC(idx) {
+  var cfg = getProlongConfig();
+  cfg.mails_cc_supplementaires.splice(idx, 1);
+  saveProlongConfig(cfg);
+  renderParamsProlongationAccordion();
+}
+
+// ── Helper générique : envoi de mail via Microsoft Graph ──
+// options: { to: [], cc: [], subject: '', htmlBody: '', attachments: [{name, contentType, contentBytesB64}] }
+function sendMailViaGraph(options, onSuccess, onError) {
+  if (!odToken) {
+    var err = new Error('OneDrive non connecté — mail non envoyé');
+    if (onError) onError(err);
+    return;
+  }
+  if (!options || !options.to || !options.to.length) {
+    if (onError) onError(new Error('Aucun destinataire'));
+    return;
+  }
+  var toRec = options.to.filter(Boolean).map(function(e){ return { emailAddress: { address: e } }; });
+  var ccRec = (options.cc || []).filter(Boolean).map(function(e){ return { emailAddress: { address: e } }; });
+  var payload = {
+    message: {
+      subject: options.subject || '(Sans objet)',
+      body: { contentType: 'HTML', content: options.htmlBody || '' },
+      toRecipients: toRec
+    },
+    saveToSentItems: true
+  };
+  if (ccRec.length) payload.message.ccRecipients = ccRec;
+  if (options.attachments && options.attachments.length) {
+    payload.message.attachments = options.attachments.map(function(a) {
+      return {
+        '@odata.type': '#microsoft.graph.fileAttachment',
+        name: a.name,
+        contentType: a.contentType || 'application/octet-stream',
+        contentBytes: a.contentBytesB64
+      };
+    });
+  }
+
+  fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(function(r){
+    if (r.ok || r.status === 202) {
+      if (onSuccess) onSuccess();
+    } else {
+      r.text().then(function(txt){
+        console.error('[Graph Mail] Échec:', r.status, txt);
+        if (onError) onError(new Error('HTTP ' + r.status + ' : ' + txt));
+      });
+    }
+  }).catch(function(err) {
+    console.error('[Graph Mail] Erreur:', err);
+    if (onError) onError(err);
+  });
+}
+
+// ── Helper : déterminer qui gère un consultant selon son nom (A-H / I-Z) ──
+// Même logique que getPlacementRecipients
+function getProlongationSender(nomCandidat) {
+  if (typeof getInternalEmails !== 'function') return null;
+  var emails = getInternalEmails();
+  var firstLetter = (nomCandidat||'').trim().charAt(0).toUpperCase();
+  var isAH = firstLetter >= 'A' && firstLetter <= 'H';
+  var mgrEmail = isAH ? emails.clemence : emails.marie;
+  return mgrEmail || null;
+}
+
+// ── Filtrer les deals concernés par la prolongation (date_fin ce mois-ci) ──
+function getProlongationDeals() {
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var today = new Date();
+  var curYear = today.getFullYear();
+  var curMonth = today.getMonth(); // 0-11
+
+  return deals.filter(function(d) {
+    if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return false;
+    if (!d.date_fin) return false;
+    var df = new Date(d.date_fin);
+    if (isNaN(df.getTime())) return false;
+    return df.getFullYear() === curYear && df.getMonth() === curMonth;
+  });
+}
+
+// ── Vue Prolongation ──
+function showProlongationView() {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-deals');
+  if (!tab) return;
+  tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+  setDealsOriginalVisible(false);
+  injectRHSubNav();
+
+  var container = document.getElementById('prolongation-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'prolongation-container';
+    tab.appendChild(container);
+  }
+  container.style.display = 'block';
+  var ph = document.getElementById('rh-placeholder');
+  if (ph) ph.style.display = 'none';
+  // Masquer les autres containers
+  ['sortants-container','avances-container','cooptations-container'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+
+  // Déclenchement des relances auto (1 fois par jour, même si plusieurs ouvertures)
+  checkAndSendProlongationRelances();
+
+  renderProlongation();
+}
+
+function renderProlongation() {
+  var container = document.getElementById('prolongation-container');
+  if (!container) return;
+  var deals = getProlongationDeals();
+  var cfg = getProlongConfig();
+
+  // Tri : fin de contrat la plus proche d'abord
+  deals.sort(function(a, b) {
+    var da = new Date(a.date_fin);
+    var db = new Date(b.date_fin);
+    return da - db;
+  });
+
+  var monthNames = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  var now = new Date();
+  var periodLabel = monthNames[now.getMonth()] + ' ' + now.getFullYear();
+
+  var header = ''
+    + '<div style="padding:12px 16px;background:linear-gradient(135deg,#EDE8FB 0%,#F5F3FF 100%);border-radius:10px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">'
+    +   '<div>'
+    +     '<div style="font-size:13px;font-weight:700;color:#1A1033;">&#9203; Prolongation — ' + periodLabel + '</div>'
+    +     '<div style="font-size:11.5px;color:#6B5E9C;margin-top:3px;">Consultants avec fin de contrat dans le mois en cours</div>'
+    +   '</div>'
+    +   '<div style="display:flex;align-items:center;gap:10px;">'
+    +     '<span style="font-size:11px;color:#6B5E9C;">Relances : le <strong>' + cfg.jour_relance_1 + '</strong> et le <strong>' + cfg.jour_relance_2 + '</strong> du mois</span>'
+    +     '<button onclick="checkAndSendProlongationRelances(true);renderProlongation();" style="padding:6px 12px;background:#fff;color:#4B36EC;border:1.5px solid #4B36EC;border-radius:8px;font-size:11.5px;font-weight:600;cursor:pointer;">&#128257; Vérifier maintenant</button>'
+    +   '</div>'
+    + '</div>';
+
+  if (!deals.length) {
+    container.innerHTML = header
+      + '<div style="text-align:center;padding:60px 20px;color:#9E9E9E;font-size:13px;background:#fff;border-radius:10px;border:1.5px dashed #E4E0FA;">'
+      +   '&#9989; Aucun contrat ne se termine ce mois-ci.'
+      + '</div>';
+    return;
+  }
+
+  // Tableau
+  var rows = deals.map(function(d) {
+    var prenomNom = ((d.prenom||'') + ' ' + (d.nom||'')).trim();
+    var dateFinPrev = d.date_fin ? new Date(d.date_fin).toLocaleDateString('fr-FR') : '—';
+    var r1 = d.relance1_prolong_ts ? new Date(d.relance1_prolong_ts) : null;
+    var r2 = d.relance2_prolong_ts ? new Date(d.relance2_prolong_ts) : null;
+    var hasNewDate = !!(d.date_fin_nouvelle && d.date_fin_nouvelle.trim());
+    var hasEndDate = !!(d.date_fin_reelle && d.date_fin_reelle.trim());
+    var mailsDisabled = hasNewDate || hasEndDate;
+    var dateFinNouv = d.date_fin_nouvelle || '';
+    var dateFinReelle = d.date_fin_reelle || '';
+    var contratStatut = d.contrat_prolong_statut || '';
+    var comment = d.commentaire_prolong || '';
+
+    return '<tr data-deal-id="' + d.id + '" style="border-bottom:1px solid #F0EDF9;">'
+      + '<td style="padding:10px 8px;font-weight:600;color:#1A1033;">' + prenomNom + '</td>'
+      + '<td style="padding:10px 8px;color:#6B5E9C;">' + (d.commercial || '—') + '</td>'
+      + '<td style="padding:10px 8px;color:#1A1033;font-weight:600;">' + dateFinPrev + '</td>'
+      + '<td style="padding:10px 8px;">'
+      +   (d.type_contrat_client
+          ? '<span style="background:' + (d.type_contrat_client === 'Seven' ? '#F5F3FF' : '#FFF4D6')
+              + ';color:' + (d.type_contrat_client === 'Seven' ? '#7343EE' : '#F0A500')
+              + ';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;">'
+              + d.type_contrat_client + '</span>'
+          : '<span style="color:#9E9E9E;font-size:11px;">—</span>')
+      + '</td>'
+      + '<td style="padding:10px 8px;text-align:center;">'
+      +   (r1
+          ? '<span style="background:#D4EDDA;color:#0F6E56;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">Oui · ' + r1.toLocaleDateString('fr-FR') + '</span>'
+          : (mailsDisabled
+            ? '<span style="color:#9E9E9E;font-size:11px;font-style:italic;">Désactivé</span>'
+            : '<span style="color:#9E9E9E;font-size:11px;">Non</span>'))
+      + '</td>'
+      + '<td style="padding:10px 8px;text-align:center;">'
+      +   (r2
+          ? '<span style="background:#D4EDDA;color:#0F6E56;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">Oui · ' + r2.toLocaleDateString('fr-FR') + '</span>'
+          : (mailsDisabled
+            ? '<span style="color:#9E9E9E;font-size:11px;font-style:italic;">Désactivé</span>'
+            : '<span style="color:#9E9E9E;font-size:11px;">Non</span>'))
+      + '</td>'
+      + '<td style="padding:10px 8px;">'
+      +   '<input type="date" value="' + dateFinReelle + '" onchange="updateProlongField(' + d.id + ',\'date_fin_reelle\',this.value)" title="Date de fin réelle/définitive (désactive les relances)" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:130px;">'
+      + '</td>'
+      + '<td style="padding:10px 8px;">'
+      +   '<input type="date" value="' + dateFinNouv + '" onchange="updateProlongField(' + d.id + ',\'date_fin_nouvelle\',this.value)" title="Date de prolongation du contrat (désactive les relances)" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:130px;">'
+      + '</td>'
+      + '<td style="padding:10px 8px;">'
+      +   '<select onchange="updateProlongField(' + d.id + ',\'contrat_prolong_statut\',this.value)" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:110px;">'
+      +     '<option value="">—</option>'
+      +     '<option value="Envoyé"' + (contratStatut === 'Envoyé' ? ' selected' : '') + '>Envoyé</option>'
+      +     '<option value="Reçu"' + (contratStatut === 'Reçu' ? ' selected' : '') + '>Reçu</option>'
+      +   '</select>'
+      + '</td>'
+      + '<td style="padding:10px 8px;">'
+      +   '<input type="text" value="' + (comment||'').replace(/"/g,'&quot;') + '" onchange="updateProlongField(' + d.id + ',\'commentaire_prolong\',this.value)" placeholder="Commentaire…" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:180px;">'
+      + '</td>'
+      + '<td style="padding:10px 8px;white-space:nowrap;">'
+      +   '<button onclick="testSendProlongationRelance(' + d.id + ',1)" title="Envoyer le mail Relance 1 maintenant (test)" style="padding:4px 8px;background:#FFF4D6;color:#B26A00;border:1.5px solid #F0A500;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px;">▶ R1</button>'
+      +   '<button onclick="testSendProlongationRelance(' + d.id + ',2)" title="Envoyer le mail Relance 2 maintenant (test)" style="padding:4px 8px;background:#FCEBEB;color:#A8322A;border:1.5px solid #E24B4A;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">▶ R2</button>'
+      + '</td>'
+      + '</tr>';
+  }).join('');
+
+  var tableHtml = ''
+    + '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E4E0FA;overflow-x:auto;">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1200px;">'
+    +   '<thead style="background:#F5F3FF;">'
+    +     '<tr style="border-bottom:2px solid #E4E0FA;">'
+    +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Prénom Nom</th>'
+    +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Commercial</th>'
+    +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Date fin prévisionnelle</th>'
+    +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Type contrat (Seven/Client)</th>'
+    +       '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Relance 1</th>'
+    +       '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Relance 2</th>'
+    +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Date de Fin</th>'
+    +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Date de prolongation</th>'
+    +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Contrat</th>'
+    +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Commentaire</th>'
+    +       '<th style="padding:11px 8px;text-align:center;color:#E24B4A;font-weight:700;">🧪 Test envoi</th>'
+    +     '</tr>'
+    +   '</thead>'
+    +   '<tbody>' + rows + '</tbody>'
+    + '</table>'
+    + '</div>';
+
+  container.innerHTML = header + tableHtml;
+}
+
+function updateProlongField(dealId, field, value) {
+  var deals = getDeals();
+  var idx = deals.findIndex(function(d){ return d.id === dealId; });
+  if (idx < 0) return;  deals[idx][field] = value;
+  saveDeals(deals);
+  if (typeof odAutoSync === 'function') odAutoSync();
+  // Re-render si on est sur la vue
+  if (document.getElementById('prolongation-container') && document.getElementById('prolongation-container').style.display !== 'none') {
+    renderProlongation();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FONCTION DE TEST : envoi manuel d'une relance sans vérifier les flags
+// ═══════════════════════════════════════════════════════════════════
+// À utiliser pour valider les mails pendant la phase de test.
+// Peut être supprimée une fois le système validé en production.
+function testSendProlongationRelance(dealId, niveau) {
+  if (!odToken) {
+    alert('⚠️ OneDrive non connecté\n\nConnectez-vous à OneDrive (bouton "Se connecter" en haut à droite) pour pouvoir envoyer des mails.');
+    return;
+  }
+  var deals = getDeals();
+  var deal = deals.find(function(d){ return d.id === dealId; });
+  if (!deal) return;
+
+  var candidat = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
+  var typeContrat = deal.type_contrat_client || 'Seven';
+
+  // Résolution du manager pour afficher l'info dans le popup
+  var managerFullName = deal.manager || '(aucun)';
+  var managerEmail = '';
+  try {
+    var entName = (deal.entreprise || '').trim().toLowerCase();
+    var cl = getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === entName; });
+    if (cl && deal.manager) {
+      var mgr = (cl.managers || []).find(function(m){ return (m.name||'').trim().toLowerCase() === deal.manager.trim().toLowerCase(); });
+      if (mgr && mgr.email) managerEmail = mgr.email;
+    }
+  } catch(e) {}
+  if (!managerEmail) managerEmail = deal.email_signataire || deal.email_client || '';
+
+  var senderEmail = (typeof odAccount !== 'undefined' && odAccount) ? (odAccount.username || '(inconnu)') : '(inconnu)';
+
+  var cfg = getProlongConfig();
+  var ccInfo = [];
+  if (senderEmail) ccInfo.push(senderEmail + ' (expéditeur)');
+  (cfg.mails_cc_supplementaires || []).forEach(function(e){ if (e) ccInfo.push(e); });
+  if (niveau === 2 && deal.email) ccInfo.push(deal.email + ' (consultant)');
+
+  var recap = ''
+    + '🧪 TEST D\'ENVOI — Relance ' + niveau + '\n\n'
+    + '📋 Consultant : ' + candidat + '\n'
+    + '📑 Type contrat : ' + typeContrat + '\n'
+    + '📅 Date fin : ' + (deal.date_fin || '—') + '\n\n'
+    + '━━━━━━━━━━━━━━━━━━━━━━━\n\n'
+    + '✉️ Le mail sera envoyé à :\n'
+    + '   À : ' + (managerEmail || '❌ AUCUN EMAIL TROUVÉ') + '\n'
+    + '   Manager : ' + managerFullName + '\n\n'
+    + 'CC :\n'
+    + (ccInfo.length ? ccInfo.map(function(c){ return '   • ' + c; }).join('\n') : '   (aucun)') + '\n\n'
+    + '━━━━━━━━━━━━━━━━━━━━━━━\n\n'
+    + 'Confirmer l\'envoi réel ?';
+
+  if (!confirm(recap)) return;
+  if (!managerEmail) {
+    alert('❌ Impossible : aucun email manager/signataire défini sur ce deal.');
+    return;
+  }
+
+  // Appel direct à la fonction d'envoi (bypass des vérifs de date/flag)
+  sendProlongationRelance(deal, niveau);
+}
+
+// ── Déclenchement auto des relances ──
+// Logique : on compare la date d'aujourd'hui avec les jours configurés (10 / 25).
+// Si on est le jour exact (ou après, au cas où on n'aurait pas ouvert la page),
+// ET que la relance n'a pas encore été envoyée ce mois-ci, on envoie.
+// Un flag LocalStorage "last_run_YYYY-MM" évite les doubles envois par jour.
+function checkAndSendProlongationRelances(force) {
+  if (!odToken) {
+    console.log('[Prolongation] OneDrive non connecté, relances non envoyées');
+    return;
+  }
+  var cfg = getProlongConfig();
+  var today = new Date();
+  var day = today.getDate();
+  var monthKey = today.getFullYear() + '-' + ('0' + (today.getMonth()+1)).slice(-2);
+
+  // Protection : un seul check par jour (sauf force=true)
+  if (!force) {
+    var lastRun = localStorage.getItem(PROLONG_LAST_RUN_KEY) || '';
+    var todayKey = today.toISOString().slice(0, 10);
+    if (lastRun === todayKey) {
+      console.log('[Prolongation] Déjà vérifié aujourd\'hui');
+      return;
+    }
+    localStorage.setItem(PROLONG_LAST_RUN_KEY, todayKey);
+  }
+
+  var deals = getProlongationDeals();
+  var sentCount = 0;
+
+  deals.forEach(function(d) {
+    // Si date_fin_nouvelle OU date_fin_reelle renseignée, on bypass totalement les relances
+    if (d.date_fin_nouvelle && d.date_fin_nouvelle.trim()) return;
+    if (d.date_fin_reelle && d.date_fin_reelle.trim()) return;
+
+    // Relance 1 : on est au jour configuré (ou après) et pas encore envoyée
+    if (day >= cfg.jour_relance_1 && !d.relance1_prolong_ts) {
+      sendProlongationRelance(d, 1);
+      sentCount++;
+    }
+    // Relance 2 : idem
+    else if (day >= cfg.jour_relance_2 && !d.relance2_prolong_ts) {
+      sendProlongationRelance(d, 2);
+      sentCount++;
+    }
+  });
+
+  if (sentCount > 0) {
+    console.log('[Prolongation] ' + sentCount + ' relance(s) envoyée(s)');
+    if (typeof showNotifToast === 'function') {
+      showNotifToast('✉ ' + sentCount + ' relance(s) prolongation envoyée(s)');
+    }
+  }
+}
+
+function sendProlongationRelance(deal, niveau) {
+  if (!deal) return;
+  var cfg = getProlongConfig();
+
+  // ── Déterminer le manager : chercher dans la fiche client par nom ──
+  var managerEmail = '';
+  var managerFullName = deal.manager || '';  // nom complet du manager (ex: "Jean Dupont")
+  try {
+    var entName = (deal.entreprise || '').trim().toLowerCase();
+    var cl = getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === entName; });
+    if (cl && managerFullName) {
+      var mgr = (cl.managers || []).find(function(m){ return (m.name||'').trim().toLowerCase() === managerFullName.trim().toLowerCase(); });
+      if (mgr && mgr.email) managerEmail = mgr.email;
+    }
+  } catch(e) { console.warn('[Prolong] Lookup manager:', e); }
+
+  // Fallback sur email_signataire du deal si pas de manager trouvé
+  if (!managerEmail) managerEmail = deal.email_signataire || deal.email_client || '';
+
+  if (!managerEmail) {
+    console.warn('[Prolongation] Aucun email manager/signataire pour deal', deal.id);
+    return;
+  }
+
+  // ── Déterminer l'expéditeur (compte connecté) pour le CC auto ──
+  var senderEmail = (typeof odAccount !== 'undefined' && odAccount) ? (odAccount.username || '') : '';
+
+  // ── Déterminer le type de contrat (Seven / Client) ──
+  var typeContrat = deal.type_contrat_client || 'Seven';  // Défaut "Seven" si pas défini
+
+  // ── Construire la liste des CC ──
+  var ccList = [];
+  // 1. Expéditeur (lui-même en copie pour archivage/traçabilité)
+  if (senderEmail) ccList.push(senderEmail);
+  // 2. Personnes définies dans les paramètres
+  (cfg.mails_cc_supplementaires || []).forEach(function(e){ if (e && e.trim()) ccList.push(e.trim()); });
+  // 3. Pour la relance 2 : ajouter le candidat (consultant)
+  if (niveau === 2 && deal.email) ccList.push(deal.email);
+  // Dé-doublonner
+  var seen = {};
+  ccList = ccList.filter(function(e){ var k = e.toLowerCase(); if (seen[k]) return false; seen[k] = 1; return true; });
+
+  // ── Préparer les variables ──
+  var candidat = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
+  var dateFinFmt = deal.date_fin ? new Date(deal.date_fin).toLocaleDateString('fr-FR') : '—';
+
+  // ── Objet ──
+  var subject = (cfg.sujet || 'Seven Portage : Prolongation {prenom_nom_consultant}')
+    .replace(/\{prenom_nom_consultant\}/g, candidat)
+    .replace(/\{candidat\}/g, candidat);
+
+  // ── Sélection du template de corps selon type contrat + niveau ──
+  var cfgKey;
+  if (typeContrat === 'Client') {
+    cfgKey = niveau === 1 ? 'corps_client_r1' : 'corps_client_r2';
+  } else {
+    cfgKey = niveau === 1 ? 'corps_seven_r1' : 'corps_seven_r2';
+  }
+  var customBody = cfg[cfgKey];
+
+  // ── Templates par défaut ──
+  var defaultBodies = {
+    corps_client_r1: ''
+      + '<p>Bonjour <strong>' + managerFullName + '</strong>,</p>'
+      + '<p>J\'espère que vous allez bien.</p>'
+      + '<p>La date de fin du contrat de <strong>' + candidat + '</strong> est prévue le <strong>' + dateFinFmt + '</strong>.</p>'
+      + '<p>Pourriez-vous me confirmer si la mission est prolongée ? Si tel est le cas, merci de bien vouloir nous transmettre l\'avenant de prolongation correspondant.</p>'
+      + '<p>Je vous remercie par avance pour votre retour.</p>'
+      + '<p>Cordialement,</p>',
+    corps_client_r2: ''
+      + '<p>Bonjour <strong>' + managerFullName + '</strong>,</p>'
+      + '<p>Je me permets de revenir vers vous concernant ma précédente demande restée sans réponse à ce jour.</p>'
+      + '<p>Pouvez-vous, s\'il vous plaît, me confirmer si la mission de <strong>' + candidat + '</strong> est prolongée ?</p>'
+      + '<p>Dans l\'affirmative, merci de bien vouloir m\'envoyer l\'avenant de prolongation dans les meilleurs délais.</p>'
+      + '<p><em>Sans cette information, la prolongation ne pourra pas être formalisée, ce qui risque de bloquer le virement de son salaire.</em></p>'
+      + '<p>Je vous remercie par avance pour votre retour rapide et reste à votre disposition si besoin.</p>'
+      + '<p>Cordialement,</p>',
+    corps_seven_r1: ''
+      + '<p>Bonjour <strong>' + managerFullName + '</strong>,</p>'
+      + '<p>J\'espère que vous allez bien.</p>'
+      + '<p>La date de fin du contrat de <strong>' + candidat + '</strong> est prévue le <strong>' + dateFinFmt + '</strong>.</p>'
+      + '<p>Pouvez-vous me confirmer si la mission est prolongée ? Si tel est le cas, merci de bien vouloir me communiquer la nouvelle date de fin de mission afin que je puisse établir l\'avenant de prolongation.</p>'
+      + '<p>Je vous remercie par avance pour votre retour rapide.</p>'
+      + '<p>Cordialement,</p>',
+    corps_seven_r2: ''
+      + '<p>Bonjour <strong>' + managerFullName + '</strong>,</p>'
+      + '<p>Je me permets de revenir vers vous concernant ma précédente demande restée sans réponse à ce jour.</p>'
+      + '<p>Pouvez-vous, s\'il vous plaît, me confirmer si la mission de <strong>' + candidat + '</strong> est prolongée ?</p>'
+      + '<p>Dans l\'affirmative, merci de bien vouloir me communiquer la nouvelle date de fin de mission afin que je puisse établir l\'avenant de prolongation dans les meilleurs délais.</p>'
+      + '<p><em>Sans cette information, la prolongation ne pourra pas être formalisée, ce qui risque de bloquer le virement de son salaire.</em></p>'
+      + '<p>Je vous remercie par avance pour votre retour rapide et reste à votre disposition si besoin.</p>'
+      + '<p>Cordialement,</p>'
+  };
+
+  // Utiliser le template personnalisé ou le défaut
+  var corps = (customBody && customBody.trim()) ? customBody : defaultBodies[cfgKey];
+  // Remplacer variables dans le corps personnalisé
+  corps = corps
+    .replace(/\{prenom_nom_consultant\}/g, candidat)
+    .replace(/\{candidat\}/g, candidat)
+    .replace(/\{manager\}/g, managerFullName)
+    .replace(/\{prenom_manager\}/g, managerFullName)
+    .replace(/\{date_fin_prev\}/g, dateFinFmt)
+    .replace(/\{date_fin\}/g, dateFinFmt)
+    .replace(/\{commercial\}/g, deal.commercial || '');
+
+  // ── Ajouter la signature personnelle ──
+  var signature = (typeof getUserSignature === 'function') ? getUserSignature() : '';
+  var signatureHtml = signature
+    ? '<div style="margin-top:8px;color:#555;font-size:13px;white-space:pre-wrap;">' + signature.replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</div>'
+    : '';
+
+  // ── Mise en forme finale du mail ──
+  var htmlBody = ''
+    + '<div style="font-family:Arial,sans-serif;color:#1A1033;max-width:640px;font-size:14px;line-height:1.55;">'
+    +   corps
+    +   signatureHtml
+    + '</div>';
+
+  sendMailViaGraph({
+    to: [managerEmail],
+    cc: ccList,
+    subject: subject,
+    htmlBody: htmlBody
+  }, function() {
+    // Success : marquer la relance comme envoyée
+    var deals = getDeals();
+    var idx = deals.findIndex(function(x){ return x.id === deal.id; });
+    if (idx >= 0) {
+      deals[idx][niveau === 1 ? 'relance1_prolong_ts' : 'relance2_prolong_ts'] = Date.now();
+      saveDeals(deals);
+      if (typeof odAutoSync === 'function') odAutoSync();
+    }
+    if (typeof showNotifToast === 'function') {
+      showNotifToast('✉ Relance ' + niveau + ' envoyée à ' + managerFullName);
+    }
+  }, function(err) {
+    console.error('[Prolongation] Échec relance ' + niveau + ':', err);
+    if (typeof showNotifToast === 'function') {
+      showNotifToast('⚠ Échec relance ' + niveau + ' : ' + candidat, true);
+    }
+  });
+}
+
+// ── Reset des relances quand l'utilisateur modifie date_fin ──
+function resetProlongationFlagsIfDateFinChanged(deal, previousDateFin) {
+  if (!deal || !previousDateFin) return;
+  if (deal.date_fin !== previousDateFin) {
+    deal.relance1_prolong_ts = null;
+    deal.relance2_prolong_ts = null;
+    deal.date_fin_nouvelle = '';
+  }
+}
+
+// ── Accordion Paramètres Prolongation ──
+function buildProlongationConfigCard() {
+  var cfg = getProlongConfig();
+  var ccList = cfg.mails_cc_supplementaires || [];
+  var signature = (typeof getUserSignature === 'function') ? getUserSignature() : '';
+
+  var ccHtml = ccList.map(function(e, i) {
+    return '<div style="display:flex;gap:6px;margin-bottom:6px;">'
+      +   '<input type="email" value="' + (e||'').replace(/"/g,'&quot;') + '" onchange="updateProlongCC(' + i + ',this.value)" placeholder="exemple@seven-portage.fr" style="flex:1;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;">'
+      +   '<button onclick="removeProlongCC(' + i + ')" style="padding:6px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;cursor:pointer;">✕</button>'
+      + '</div>';
+  }).join('') || '<div style="font-size:11px;color:#9E94C4;font-style:italic;padding:4px 0;">Aucun destinataire en copie supplémentaire.</div>';
+
+  var textareaStyle = 'width:100%;padding:10px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;min-height:140px;font-family:inherit;resize:vertical;line-height:1.5;';
+  var inputStyle = 'width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-family:inherit;';
+  var sectionTitleStyle = 'font-size:12.5px;font-weight:700;color:#4B36EC;margin:18px 0 8px;padding-bottom:6px;border-bottom:1.5px solid #E4E0FA;';
+
+  return ''
+    // ── Section 1 : Jours de relance ──
+    + '<div style="' + sectionTitleStyle + '">📅 Jours de relance automatique</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">'
+    +   '<div>'
+    +     '<label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Jour relance 1 (du mois)</label>'
+    +     '<input type="number" min="1" max="31" value="' + cfg.jour_relance_1 + '" onchange="updateProlongConfigField(\'jour_relance_1\',parseInt(this.value)||10);renderParamsProlongationAccordion();" style="' + inputStyle + '">'
+    +   '</div>'
+    +   '<div>'
+    +     '<label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Jour relance 2 (du mois)</label>'
+    +     '<input type="number" min="1" max="31" value="' + cfg.jour_relance_2 + '" onchange="updateProlongConfigField(\'jour_relance_2\',parseInt(this.value)||25);renderProlongParamsAccordion();" style="' + inputStyle + '">'
+    +   '</div>'
+    + '</div>'
+    + '<div style="margin-top:10px;padding:10px 12px;background:#F5F3FF;border-radius:8px;font-size:11px;color:#6B5E9C;line-height:1.5;">'
+    +   '💡 Les relances partent automatiquement le jour configuré. L\'expéditeur est le compte Microsoft connecté. <strong>Aucun mail ne part si la colonne "Date de Fin" OU "Date de prolongation" est remplie dans le tableau.</strong>'
+    + '</div>'
+
+    // ── Section 2 : Signature personnelle ──
+    + '<div style="' + sectionTitleStyle + '">✍️ Votre signature (stockée localement)</div>'
+    + '<label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Signature ajoutée à la fin de vos mails</label>'
+    + '<textarea onchange="updateUserSignature(this.value)" placeholder="Prénom Nom&#10;Fonction&#10;Téléphone&#10;Seven Portage" style="' + textareaStyle.replace('min-height:140px','min-height:90px') + '">' + (signature||'').replace(/</g,'&lt;') + '</textarea>'
+    + '<div style="font-size:10.5px;color:#9E94C4;margin-top:4px;">📝 Cette signature est propre à votre poste (non synchronisée entre utilisateurs).</div>'
+
+    // ── Section 3 : Destinataires en copie supplémentaires ──
+    + '<div style="' + sectionTitleStyle + '">📮 Destinataires systématiques en copie (CC)</div>'
+    + '<div style="font-size:11px;color:#6B5E9C;margin-bottom:6px;">L\'expéditeur est automatiquement en copie. Ajoutez ici d\'autres personnes à mettre systématiquement en CC de toutes les relances.</div>'
+    + ccHtml
+    + '<button onclick="addProlongCC()" style="margin-top:6px;padding:6px 12px;background:#F0EDFC;color:#4B36EC;border:1.5px solid #D9CFFA;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer;">+ Ajouter un destinataire</button>'
+
+    // ── Section 4 : Objet du mail (commun aux 4 cas) ──
+    + '<div style="' + sectionTitleStyle + '">✉️ Objet du mail</div>'
+    + '<input type="text" value="' + (cfg.sujet||'').replace(/"/g,'&quot;') + '" onchange="updateProlongConfigField(\'sujet\',this.value)" style="' + inputStyle + '">'
+    + '<div style="font-size:10.5px;color:#9E94C4;margin-top:4px;">Variables : <code>{prenom_nom_consultant}</code></div>'
+
+    // ── Section 5 : Templates des 4 mails ──
+    + '<div style="' + sectionTitleStyle + '">📝 Templates des mails (laissez vide pour utiliser les templates par défaut)</div>'
+    + '<div style="font-size:11px;color:#6B5E9C;margin-bottom:8px;">Variables disponibles : <code>{prenom_nom_consultant}</code>, <code>{manager}</code>, <code>{date_fin_prev}</code>, <code>{commercial}</code></div>'
+
+    // Client R1
+    + '<div style="margin-top:12px;">'
+    +   '<label style="font-size:12px;font-weight:700;color:#F0A500;display:block;margin-bottom:4px;">🟠 Contrat <strong>Client</strong> — Relance 1</label>'
+    +   '<div style="font-size:10.5px;color:#9E94C4;margin-bottom:4px;">À → Manager · CC → Expéditeur + destinataires systématiques</div>'
+    +   '<textarea onchange="updateProlongConfigField(\'corps_client_r1\',this.value)" placeholder="Laisser vide pour utiliser le template par défaut" style="' + textareaStyle + '">' + (cfg.corps_client_r1||'').replace(/</g,'&lt;') + '</textarea>'
+    + '</div>'
+
+    // Client R2
+    + '<div style="margin-top:12px;">'
+    +   '<label style="font-size:12px;font-weight:700;color:#F0A500;display:block;margin-bottom:4px;">🟠 Contrat <strong>Client</strong> — Relance 2</label>'
+    +   '<div style="font-size:10.5px;color:#9E94C4;margin-bottom:4px;">À → Manager · CC → Expéditeur + destinataires systématiques + Consultant</div>'
+    +   '<textarea onchange="updateProlongConfigField(\'corps_client_r2\',this.value)" placeholder="Laisser vide pour utiliser le template par défaut" style="' + textareaStyle + '">' + (cfg.corps_client_r2||'').replace(/</g,'&lt;') + '</textarea>'
+    + '</div>'
+
+    // Seven R1
+    + '<div style="margin-top:12px;">'
+    +   '<label style="font-size:12px;font-weight:700;color:#7343EE;display:block;margin-bottom:4px;">🟣 Contrat <strong>Seven</strong> — Relance 1</label>'
+    +   '<div style="font-size:10.5px;color:#9E94C4;margin-bottom:4px;">À → Manager · CC → Expéditeur + destinataires systématiques</div>'
+    +   '<textarea onchange="updateProlongConfigField(\'corps_seven_r1\',this.value)" placeholder="Laisser vide pour utiliser le template par défaut" style="' + textareaStyle + '">' + (cfg.corps_seven_r1||'').replace(/</g,'&lt;') + '</textarea>'
+    + '</div>'
+
+    // Seven R2
+    + '<div style="margin-top:12px;">'
+    +   '<label style="font-size:12px;font-weight:700;color:#7343EE;display:block;margin-bottom:4px;">🟣 Contrat <strong>Seven</strong> — Relance 2</label>'
+    +   '<div style="font-size:10.5px;color:#9E94C4;margin-bottom:4px;">À → Manager · CC → Expéditeur + destinataires systématiques + Consultant</div>'
+    +   '<textarea onchange="updateProlongConfigField(\'corps_seven_r2\',this.value)" placeholder="Laisser vide pour utiliser le template par défaut" style="' + textareaStyle + '">' + (cfg.corps_seven_r2||'').replace(/</g,'&lt;') + '</textarea>'
+    + '</div>';
+}
+function renderParamsProlongationAccordion() {
+  var el = document.getElementById('params-prolongation-content');
+  if (el) el.innerHTML = buildProlongationConfigCard();
+}
+// Alias (utilisé dans le callback du 2e input number)
+function renderProlongParamsAccordion() {
+  renderParamsProlongationAccordion();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FRAIS — 2 sous-sous-onglets : Avantages Sociaux + Frais Pro
+// ═══════════════════════════════════════════════════════════════════
+var currentFraisSubTab = 'avantages';
+
+function showFraisView() {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-deals');
+  if (!tab) return;
+  tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+  setDealsOriginalVisible(false);
+  injectRHSubNav();
+
+  var container = document.getElementById('frais-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'frais-container';
+    tab.appendChild(container);
+  }
+  container.style.display = 'block';
+  var ph = document.getElementById('rh-placeholder');
+  if (ph) ph.style.display = 'none';
+
+  renderFrais();
+}
+
+function renderFrais() {
+  var container = document.getElementById('frais-container');
+  if (!container) return;
+
+  var subtabs = [
+    { key: 'avantages', label: 'Avantages Sociaux', icon: '\u{1F4B0}' },
+    { key: 'pro',       label: 'Frais Pro',         icon: '\u{1F4BC}' }
+  ];
+
+  var subnavHtml = '<div style="display:flex;gap:6px;margin-bottom:16px;padding:6px;background:#F5F3FF;border-radius:10px;">'
+    + subtabs.map(function(st) {
+        var isActive = st.key === currentFraisSubTab;
+        return '<button onclick="currentFraisSubTab=\'' + st.key + '\';renderFrais();" '
+          + 'style="padding:8px 16px;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;'
+          + (isActive
+              ? 'background:#fff;color:#4B36EC;box-shadow:0 2px 6px rgba(115,67,238,0.15);'
+              : 'background:transparent;color:#6B5E9C;')
+          + '">' + st.icon + ' ' + st.label + '</button>';
+      }).join('')
+    + '</div>';
+
+  var content = '';
+  if (currentFraisSubTab === 'avantages') {
+    content = buildFraisAvantagesContent();
+  } else {
+    content = buildFraisProContent();
+  }
+
+  container.innerHTML = subnavHtml + content;
+}
+
+// ── Coquille vide : Avantages Sociaux ──
+function buildFraisAvantagesContent() {
+  return ''
+    + '<div style="background:#fff;border:1.5px dashed #E4E0FA;border-radius:12px;padding:60px 30px;text-align:center;">'
+    +   '<div style="font-size:40px;margin-bottom:14px;">💰</div>'
+    +   '<div style="font-size:16px;font-weight:700;color:#1A1033;margin-bottom:8px;">Avantages Sociaux</div>'
+    +   '<div style="font-size:12.5px;color:#6B5E9C;max-width:480px;margin:0 auto 16px;">'
+    +     'Cette section est en cours de construction.'
+    +   '</div>'
+    +   '<div style="font-size:11.5px;color:#9E94C4;max-width:480px;margin:0 auto;">'
+    +     'Elle permettra de gérer les avantages sociaux des consultants : mutuelle, prévoyance, tickets restaurant, mobilité, etc.'
+    +   '</div>'
+    + '</div>';
+}
+
+// ── Coquille vide : Frais Pro ──
+function buildFraisProContent() {
+  return ''
+    + '<div style="background:#fff;border:1.5px dashed #E4E0FA;border-radius:12px;padding:60px 30px;text-align:center;">'
+    +   '<div style="font-size:40px;margin-bottom:14px;">💼</div>'
+    +   '<div style="font-size:16px;font-weight:700;color:#1A1033;margin-bottom:8px;">Frais Professionnels</div>'
+    +   '<div style="font-size:12.5px;color:#6B5E9C;max-width:480px;margin:0 auto 16px;">'
+    +     'Cette section est en cours de construction.'
+    +   '</div>'
+    +   '<div style="font-size:11.5px;color:#9E94C4;max-width:480px;margin:0 auto;">'
+    +     'Elle permettra de suivre les frais professionnels des consultants : transport, repas, matériel, formation, grand déplacement, etc.'
+    +   '</div>'
+    + '</div>';
+}
+
 function showSortantsView() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
   ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
@@ -10762,13 +11586,10 @@ function setDealsOriginalVisible(visible) {
   if (!tab) return;
   // Tous les enfants directs qui ne sont ni la sub-nav ni les conteneurs de sous-sections RH
   Array.prototype.forEach.call(tab.children, function(child) {
-    if (child.id === 'rh-subnav' || child.id === 'rh-placeholder' || child.id === 'sortants-container' || child.id === 'cooptations-container' || child.id === 'avances-container') return;
+    if (child.id === 'rh-subnav' || child.id === 'rh-placeholder' || child.id === 'sortants-container' || child.id === 'cooptations-container' || child.id === 'avances-container' || child.id === 'prolongation-container' || child.id === 'frais-container') return;
     child.style.display = visible ? '' : 'none';
   });
   // Masquer toutes les sous-sections RH systématiquement.
-  // La vue appelante (showSortantsView, showCooptationsView, showAvancesView, showRHPlaceholder)
-  // ré-affichera ensuite UNIQUEMENT sa propre section. Cela évite les superpositions
-  // quand on passe d'une sous-section à une autre.
   var ph = document.getElementById('rh-placeholder');
   if (ph) ph.style.display = 'none';
   var sc = document.getElementById('sortants-container');
@@ -10777,6 +11598,10 @@ function setDealsOriginalVisible(visible) {
   if (cc) cc.style.display = 'none';
   var ac = document.getElementById('avances-container');
   if (ac) ac.style.display = 'none';
+  var pc = document.getElementById('prolongation-container');
+  if (pc) pc.style.display = 'none';
+  var fc = document.getElementById('frais-container');
+  if (fc) fc.style.display = 'none';
 }
 
 
@@ -12081,6 +12906,7 @@ function saveClientFromDeal(deal) {
     clients[idx].adresse = deal.adresse_exec || clients[idx].adresse || '';
     clients[idx].delai_paiement = deal.delai_paiement || clients[idx].delai_paiement || '';
     clients[idx].banque = deal.banque || clients[idx].banque || '';
+    clients[idx].type_contrat_client = deal.type_contrat_client || clients[idx].type_contrat_client || '';
     // Signataires : stockés au niveau client (celui qui signe les contrats pour cette entreprise)
     clients[idx].nom_signataire = deal.nom_signataire || clients[idx].nom_signataire || '';
     clients[idx].tel_signataire = deal.tel_signataire || clients[idx].tel_signataire || '';
@@ -12116,6 +12942,7 @@ function saveClientFromDeal(deal) {
       secteur: deal.secteur||'',
       delai_paiement: deal.delai_paiement||'',
       banque: deal.banque||'',
+      type_contrat_client: deal.type_contrat_client||'',
       commentaire: '',
       created: new Date().toLocaleDateString('fr-FR'),
       updated: new Date().toLocaleDateString('fr-FR'),
@@ -12393,6 +13220,17 @@ function buildClientPageHTML(cl) {
     +     fld('Secteur', cl.secteur, 'secteur', 'IT / Finance …')
     +     fldSelect('Délai de paiement', cl.delai_paiement, 'delai_paiement', 'delais_paiement')
     +     fldSelect('Banque Seven', cl.banque, 'banque', 'banques')
+    +     (function() {
+          var tcc = cl.type_contrat_client || '';
+          return '<div><label style="' + LB + '">Type contrat (Seven/Client)</label>'
+            + '<select data-field="type_contrat_client" data-clid="' + cl.id + '"'
+            + ' onchange="updateClientField(this)" ' + IS_FOCUS
+            + ' style="' + IS + 'cursor:pointer;appearance:none;background-image:url(\'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 12 12%22><path fill=%22%236B5E9C%22 d=%22M6 8L2 4h8z%22/></svg>\');background-repeat:no-repeat;background-position:right 12px center;background-size:10px;padding-right:30px;">'
+            + '<option value=""' + (tcc === '' ? ' selected' : '') + '>— Non défini —</option>'
+            + '<option value="Seven"' + (tcc === 'Seven' ? ' selected' : '') + '>Seven</option>'
+            + '<option value="Client"' + (tcc === 'Client' ? ' selected' : '') + '>Client</option>'
+            + '</select></div>';
+        })()
     +   '</div>'
     +   '<div style="margin-top:14px;"><label style="' + LB + '">Commentaire</label>'
     +     '<textarea data-field="commentaire" data-clid="' + cl.id + '" onchange="updateClientField(this)"'
@@ -12893,6 +13731,19 @@ function updateInternalEmail(key, val) {
   saveInternalEmails(e);
 }
 
+// ── Signature personnelle (locale à chaque utilisateur, non synchronisée) ──
+var USER_SIGNATURE_KEY = 'sp_user_signature_v1';
+
+function getUserSignature() {
+  return localStorage.getItem(USER_SIGNATURE_KEY) || '';
+}
+function saveUserSignature(html) {
+  localStorage.setItem(USER_SIGNATURE_KEY, html || '');
+}
+function updateUserSignature(val) {
+  saveUserSignature(val);
+}
+
 // Règle alphabétique A-H -> Clémence+ADV / I-Z -> Marie+ADV
 function getPlacementRecipients(nomCandidat) {
   var emails = getInternalEmails();
@@ -12989,6 +13840,202 @@ function sendPlacementNotificationEmail(deal) {
   }).catch(function(err){
     console.error('[Notification] Erreur:', err);
     showNotifToast('Erreur réseau notification', true);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Mail auto placement → Commercial (avec pièces jointes docs + simu)
+// ═══════════════════════════════════════════════════════════════════
+function sendPlacementCommercialEmail(deal) {
+  if (!odToken) {
+    console.warn('[PlacementCommercial] OneDrive non connecté');
+    return;
+  }
+  if (!deal || !deal.commercial) return;
+
+  // Récupérer email du commercial
+  var emails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+  var commKey = deal.commercial.trim().toLowerCase();
+  var commEmail = emails[commKey];
+  if (!commEmail) {
+    console.warn('[PlacementCommercial] Pas d\'email pour', deal.commercial);
+    return;
+  }
+
+  var candidat = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
+  var subject = 'Ton nouveau placement - ' + candidat + (deal.entreprise ? ' · ' + deal.entreprise : '');
+
+  var salaireAn = deal.salaire_annuel ? parseInt(deal.salaire_annuel).toLocaleString('fr-FR') + ' €' : '—';
+  var tjm = deal.tjm ? deal.tjm + ' €/j' : '—';
+
+  var htmlBody = ''
+    + '<div style="font-family:Arial,sans-serif;color:#1A1033;max-width:600px;">'
+    + '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;padding:16px 20px;border-radius:8px 8px 0 0;">'
+    +   '<div style="font-size:16px;font-weight:700;">🎉 Nouveau placement créé</div>'
+    +   '<div style="font-size:12px;opacity:0.9;margin-top:4px;">' + candidat + '</div>'
+    + '</div>'
+    + '<div style="background:#fff;border:1px solid #E4E0FA;border-top:none;padding:18px 20px;border-radius:0 0 8px 8px;">'
+    +   '<p style="margin:0 0 12px;font-size:13px;">Bonjour ' + (deal.commercial||'') + ',</p>'
+    +   '<p style="margin:0 0 14px;font-size:13px;">Ton placement pour <strong>' + candidat + '</strong> a bien été créé. Voici les éléments clés :</p>'
+    +   '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;width:40%;">Candidat</td><td style="padding:6px 0;font-weight:600;">' + candidat + '</td></tr>'
+    +     (deal.poste ? '<tr><td style="padding:6px 0;color:#6B5E9C;">Poste</td><td style="padding:6px 0;">' + deal.poste + '</td></tr>' : '')
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;">Entreprise</td><td style="padding:6px 0;font-weight:600;">' + (deal.entreprise||'—') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;">TJM</td><td style="padding:6px 0;">' + tjm + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;">Salaire annuel</td><td style="padding:6px 0;">' + salaireAn + '</td></tr>'
+    +     (deal.date_entree ? '<tr><td style="padding:6px 0;color:#6B5E9C;">Date d\'entrée</td><td style="padding:6px 0;font-weight:600;">' + deal.date_entree + '</td></tr>' : '')
+    +   '</table>'
+    +   '<div style="background:#F5F3FF;padding:12px 14px;border-radius:8px;font-size:12px;color:#4B36EC;margin-bottom:14px;">'
+    +     '📎 <strong>Documents joints :</strong><br>'
+    +     '• Avantages Sociaux Seven Portage 2026<br>'
+    +     '• Tableau Garanties Henner<br>'
+    +     '• Bulletin de paie prévisionnel'
+    +   '</div>'
+    +   '<p style="margin:0;font-size:12px;color:#6B5E9C;">N\'hésite pas à transmettre ces documents à ton candidat.</p>'
+    +   '<div style="margin-top:16px;padding-top:12px;border-top:1px solid #E4E0FA;font-size:11px;color:#9E9E9E;">Email automatique - Seven Portage Simulateur</div>'
+    + '</div>'
+    + '</div>';
+
+  // Récupérer les 2 PDFs (Avantages Sociaux + Henner) + bulletin de simu
+  getPDFb64('pdf1', function(b64_1, name1) {
+    getPDFb64('pdf2', function(b64_2, name2) {
+      // Construire les données pour le bulletin de simu
+      var simData = {
+        consultant: candidat,
+        entreprise: deal.entreprise || '',
+        poste: deal.poste || '',
+        tjm: deal.tjm || 0,
+        nb_jours: deal.nb_jours || 21,
+        marge: deal.frais_gestion || 0,
+        mutuelle: deal.mutuelle || 'renoncement',
+        cp: deal.cp || 'Non',
+        rtt: deal.rtt || 0,
+        repas: deal.repas || 'Non',
+        tt: deal.tt === 'Oui',
+        brut: deal.brut || 0,
+        net_payer: deal.net_payer || 0,
+        net_avant: deal.net_avant || 0,
+        cout_global: deal.cout_global || 0,
+        taux_restitution: deal.taux_restitution || 0,
+        salaire_annuel: deal.salaire_annuel || 0,
+        km_aller: deal.km_aller || 0,
+        abo_transport: deal.abo_transport || 0,
+        abo_tel: deal.abo_tel || 0,
+        abo_internet: deal.abo_internet || 0,
+        frais_jour: deal.frais_jour || 0,
+        ik_1ere: deal.ik_1ere === 'Oui',
+        puissance: deal.puissance_fiscale || 0,
+        taux_impot: deal.taux_impot || 0,
+        gd_lieu: deal.gd_lieu || ''
+      };
+
+      var attachments = [
+        { name: name1 || 'Avantages_Sociaux.pdf', contentType: 'application/pdf', contentBytesB64: b64_1 },
+        { name: name2 || 'Garanties_Henner.pdf', contentType: 'application/pdf', contentBytesB64: b64_2 }
+      ];
+
+      // Tenter de générer le bulletin PDF
+      var proceedSend = function(bulletinB64) {
+        if (bulletinB64) {
+          attachments.push({
+            name: 'Bulletin_Simu_' + candidat.replace(/\s+/g,'_') + '.pdf',
+            contentType: 'application/pdf',
+            contentBytesB64: bulletinB64
+          });
+        }
+        sendMailViaGraph({
+          to: [commEmail],
+          subject: subject,
+          htmlBody: htmlBody,
+          attachments: attachments
+        }, function() {
+          console.log('[PlacementCommercial] Mail envoyé à', commEmail);
+          if (typeof showNotifToast === 'function') showNotifToast('✉ Mail placement envoyé à ' + deal.commercial);
+        }, function(err) {
+          console.error('[PlacementCommercial] Échec:', err);
+        });
+      };
+
+      // Générer le bulletin si possible
+      if (typeof buildBulletinPaiePDFb64 === 'function') {
+        try {
+          buildBulletinPaiePDFb64(simData, function(pdfB64) {
+            proceedSend(pdfB64);
+          });
+        } catch(e) {
+          console.warn('[PlacementCommercial] Bulletin PDF impossible:', e);
+          proceedSend(null);
+        }
+      } else {
+        proceedSend(null);
+      }
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Mail auto bienvenue → Candidat (quand "Mail bienvenue" passe à Oui)
+// ═══════════════════════════════════════════════════════════════════
+function sendWelcomeEmailToCandidate(deal) {
+  if (!odToken) {
+    console.warn('[Welcome] OneDrive non connecté');
+    return;
+  }
+  if (!deal || !deal.email) {
+    console.warn('[Welcome] Pas d\'email candidat');
+    return;
+  }
+
+  var candidat = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
+  var subject = 'Bienvenue chez Seven Portage — ' + candidat;
+
+  var htmlBody = ''
+    + '<div style="font-family:Arial,sans-serif;color:#1A1033;max-width:600px;">'
+    + '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;padding:20px;border-radius:8px 8px 0 0;">'
+    +   '<div style="font-size:18px;font-weight:700;">👋 Bienvenue chez Seven Portage</div>'
+    +   '<div style="font-size:13px;opacity:0.9;margin-top:5px;">' + candidat + '</div>'
+    + '</div>'
+    + '<div style="background:#fff;border:1px solid #E4E0FA;border-top:none;padding:20px;border-radius:0 0 8px 8px;">'
+    +   '<p style="margin:0 0 12px;">Bonjour ' + (deal.prenom||'') + ',</p>'
+    +   '<p style="margin:0 0 14px;">Nous sommes ravis de t\'accueillir au sein de Seven Portage !</p>'
+    +   '<p style="margin:0 0 14px;">Tu trouveras ci-joint tous les documents utiles pour démarrer ta mission en toute sérénité :</p>'
+    +   '<ul style="margin:0 0 14px;padding-left:20px;">'
+    +     '<li>Notre livret des avantages sociaux 2026</li>'
+    +     '<li>Le tableau des garanties de la mutuelle Henner</li>'
+    +   '</ul>'
+    +   '<p style="margin:0 0 14px;">Pour toute question, n\'hésite pas à contacter ton commercial <strong>' + (deal.commercial||'') + '</strong> ou notre équipe RH.</p>'
+    +   '<p style="margin:0;">À très vite,<br>L\'équipe Seven Portage</p>'
+    +   '<div style="margin-top:16px;padding-top:12px;border-top:1px solid #E4E0FA;font-size:11px;color:#9E9E9E;">Email automatique - Seven Portage</div>'
+    + '</div>'
+    + '</div>';
+
+  // CC : commercial
+  var ccList = [];
+  if (deal.commercial && typeof getInternalEmails === 'function') {
+    var emails = getInternalEmails();
+    var commKey = deal.commercial.trim().toLowerCase();
+    if (emails[commKey]) ccList.push(emails[commKey]);
+  }
+
+  // PDFs joints
+  getPDFb64('pdf1', function(b64_1, name1) {
+    getPDFb64('pdf2', function(b64_2, name2) {
+      sendMailViaGraph({
+        to: [deal.email],
+        cc: ccList,
+        subject: subject,
+        htmlBody: htmlBody,
+        attachments: [
+          { name: name1 || 'Avantages_Sociaux.pdf', contentType: 'application/pdf', contentBytesB64: b64_1 },
+          { name: name2 || 'Garanties_Henner.pdf', contentType: 'application/pdf', contentBytesB64: b64_2 }
+        ]
+      }, function() {
+        console.log('[Welcome] Mail envoyé à', deal.email);
+        if (typeof showNotifToast === 'function') showNotifToast('✉ Mail bienvenue envoyé à ' + candidat);
+      }, function(err) {
+        console.error('[Welcome] Échec:', err);
+      });
+    });
   });
 }
 
