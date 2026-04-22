@@ -4914,6 +4914,45 @@ function odPush() {
   });
 }
 
+// ═══════════════════════════════════════════════════════════
+// SYNC_ENTITIES — liste centralisée des entités à synchroniser
+// Utilisée par odSilentFullSync (auto) et runFullSync (manuel)
+// ═══════════════════════════════════════════════════════════
+var SYNC_ENTITIES = [
+  { path: OD_FILE_PATH,         key: 'simulations', label: 'Historique',   merge: null, getData: null },
+  { path: OD_CAND_PATH,         key: 'candidats',   label: 'Candidats',    merge: null, getData: null },
+  { path: OD_DEALS_PATH,        key: 'deals',       label: 'Deals',        merge: null, getData: null },
+  { path: OD_CLIENTS_PATH,      key: 'clients',     label: 'Clients',      merge: null, getData: null },
+  { path: OD_COMM_HISTORY_PATH, key: 'commissions', label: 'Commissions',  merge: null, getData: null },
+  { path: OD_SORTANTS_PATH,     key: 'sortants',    label: 'Sortants',     merge: null, getData: null },
+  { path: OD_COOPTATIONS_PATH,  key: 'cooptations', label: 'Cooptations',  merge: null, getData: null },
+  { path: OD_AVANCES_PATH,      key: 'avances',     label: 'Avances',      merge: null, getData: null },
+  { path: OD_TACHES_PATH,       key: 'taches',      label: 'Tâches',       merge: null, getData: null },
+  { path: OD_DEMANDES_PATH,     key: 'demandes',    label: 'Demandes',     merge: null, getData: null }
+];
+// Les merge/getData sont attachés au moment du 1er usage (après chargement complet du script,
+// car mergeHistorique etc. peuvent être définis plus loin dans le fichier)
+function _initSyncEntities() {
+  var mapping = {
+    simulations: { merge: mergeHistorique,   getData: function(){ return {version:1,updated:new Date().toISOString(),simulations:getHistory()}; } },
+    candidats:   { merge: mergeCandidats,    getData: function(){ return {version:1,updated:new Date().toISOString(),candidats:getCandidats()}; } },
+    deals:       { merge: mergeDeals,        getData: function(){ return {version:1,updated:new Date().toISOString(),deals:getDeals()}; } },
+    clients:     { merge: mergeClients,      getData: function(){ return {version:1,updated:new Date().toISOString(),clients:getClients()}; } },
+    commissions: { merge: mergeCommHistory,  getData: function(){ return {version:1,updated:new Date().toISOString(),commissions:getCommHistory()}; } },
+    sortants:    { merge: mergeSortants,     getData: function(){ return {version:1,updated:new Date().toISOString(),sortants:getSortants()}; } },
+    cooptations: { merge: mergeCooptations,  getData: function(){ return {version:1,updated:new Date().toISOString(),cooptations:getCooptations()}; } },
+    avances:     { merge: mergeAvances,      getData: function(){ return {version:1,updated:new Date().toISOString(),avances:getAvances()}; } },
+    taches:      { merge: mergeTaches,       getData: function(){ return {version:1,updated:new Date().toISOString(),taches:getTaches()}; } },
+    demandes:    { merge: mergeDemandes,     getData: function(){ return {version:1,updated:new Date().toISOString(),demandes:getDemandes()}; } }
+  };
+  SYNC_ENTITIES.forEach(function(ent) {
+    if (!ent.merge && mapping[ent.key]) {
+      ent.merge = mapping[ent.key].merge;
+      ent.getData = mapping[ent.key].getData;
+    }
+  });
+}
+
 function odAutoSync() {
   // Option A : sync auto de TOUS les entités (historique, candidats, deals, clients)
   // après un envoi de simulation ou une création/édition de placement.
@@ -4927,32 +4966,21 @@ function odAutoSync() {
 
 function odSilentFullSync() {
   if (!odToken) return;
+  _initSyncEntities();
   odWithToken(function(token) {
-    var entities = [
-      { path: OD_FILE_PATH,    key: 'simulations', merge: mergeHistorique, getData: function(){ return {version:1,updated:new Date().toISOString(),simulations:getHistory()}; } },
-      { path: OD_CAND_PATH,    key: 'candidats',   merge: mergeCandidats,  getData: function(){ return {version:1,updated:new Date().toISOString(),candidats:getCandidats()}; } },
-      { path: OD_DEALS_PATH,   key: 'deals',       merge: mergeDeals,      getData: function(){ return {version:1,updated:new Date().toISOString(),deals:getDeals()}; } },
-      { path: OD_CLIENTS_PATH, key: 'clients',     merge: mergeClients,    getData: function(){ return {version:1,updated:new Date().toISOString(),clients:getClients()}; } },
-      { path: OD_COMM_HISTORY_PATH, key: 'commissions', merge: mergeCommHistory, getData: function(){ return {version:1,updated:new Date().toISOString(),commissions:getCommHistory()}; } },
-      { path: OD_SORTANTS_PATH, key: 'sortants',   merge: mergeSortants,   getData: function(){ return {version:1,updated:new Date().toISOString(),sortants:getSortants()}; } },
-      { path: OD_COOPTATIONS_PATH, key: 'cooptations', merge: mergeCooptations, getData: function(){ return {version:1,updated:new Date().toISOString(),cooptations:getCooptations()}; } },
-      { path: OD_AVANCES_PATH, key: 'avances', merge: mergeAvances, getData: function(){ return {version:1,updated:new Date().toISOString(),avances:getAvances()}; } },
-      { path: OD_TACHES_PATH, key: 'taches', merge: mergeTaches, getData: function(){ return {version:1,updated:new Date().toISOString(),taches:getTaches()}; } },
-      { path: OD_DEMANDES_PATH, key: 'demandes', merge: mergeDemandes, getData: function(){ return {version:1,updated:new Date().toISOString(),demandes:getDemandes()}; } }
-    ];
+    var entities = SYNC_ENTITIES;
 
     var errors = [];
-    var idx = 0;
     odSetStatus('Synchronisation...', false);
-    console.log('[AutoSync] Démarrage LOAD+MERGE+PUSH sur', entities.length, 'entités');
+    var t0 = Date.now();
+    console.log('[AutoSync] Démarrage LOAD+MERGE+PUSH parallèle sur', entities.length, 'entités');
 
-    function nextLoad() {
-      if (idx >= entities.length) { idx = 0; nextPush(); return; }
-      var ent = entities[idx++];
+    // ═══ PHASE 1 : LOAD parallèle (toutes les entités en même temps) ═══
+    var loadPromises = entities.map(function(ent) {
       var loadUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(ent.path) + ':/content';
-      fetch(loadUrl, { headers: { 'Authorization': 'Bearer ' + token } })
+      return fetch(loadUrl, { headers: { 'Authorization': 'Bearer ' + token } })
         .then(function(r) {
-          if (r.status === 404) return null;  // Fichier n'existe pas encore côté remote, OK
+          if (r.status === 404) return null;
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
         })
@@ -4963,45 +4991,48 @@ function odSilentFullSync() {
             console.error('[AutoSync merge] ' + ent.key, mergeErr);
             errors.push('merge ' + ent.key);
           }
-          setTimeout(nextLoad, 30);
         })
         .catch(function(err) {
           console.warn('[AutoSync load] ' + ent.key, err);
           errors.push('load ' + ent.key);
-          setTimeout(nextLoad, 30);
         });
-    }
+    });
 
-    function nextPush() {
-      if (idx >= entities.length) {
+    Promise.all(loadPromises).then(function() {
+      console.log('[AutoSync] LOAD terminé en', (Date.now() - t0) + 'ms');
+
+      // ═══ PHASE 2 : PUSH parallèle (toutes les entités après merge) ═══
+      var t1 = Date.now();
+      var pushPromises = entities.map(function(ent) {
+        var putUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(ent.path) + ':/content';
+        var body;
+        try { body = JSON.stringify(ent.getData()); }
+        catch(serErr) { errors.push('ser ' + ent.key); return Promise.resolve(); }
+        return fetch(putUrl, {
+          method: 'PUT',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: body
+        }).then(function(r) {
+          if (!r.ok) {
+            errors.push('push ' + ent.key + ' HTTP ' + r.status);
+            console.warn('[AutoSync push] ' + ent.key + ' HTTP ' + r.status);
+          }
+        }).catch(function(err) {
+          errors.push('push ' + ent.key);
+          console.warn('[AutoSync push] ' + ent.key, err);
+        });
+      });
+
+      Promise.all(pushPromises).then(function() {
+        console.log('[AutoSync] PUSH terminé en', (Date.now() - t1) + 'ms · Total:', (Date.now() - t0) + 'ms');
         if (errors.length) {
           console.warn('[AutoSync] Terminé avec avertissements:', errors);
           odSetStatus('⚠ Sync partielle (' + errors.length + ')', true);
         } else {
-          odSetStatus('✓ Sync auto OK', false);
+          odSetStatus('✓ Sync auto OK (' + (Date.now() - t0) + 'ms)', false);
         }
-        return;
-      }
-      var ent = entities[idx++];
-      var putUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(ent.path) + ':/content';
-      var body;
-      try { body = JSON.stringify(ent.getData()); }
-      catch(serErr) { errors.push('ser ' + ent.key); setTimeout(nextPush, 30); return; }
-      fetch(putUrl, {
-        method: 'PUT',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: body
-      }).then(function(r) {
-        if (!r.ok) { errors.push('push ' + ent.key + ' HTTP ' + r.status); console.warn('[AutoSync push] ' + ent.key + ' HTTP ' + r.status); }
-        setTimeout(nextPush, 30);
-      }).catch(function(err) {
-        errors.push('push ' + ent.key);
-        console.warn('[AutoSync push] ' + ent.key, err);
-        setTimeout(nextPush, 30);
       });
-    }
-
-    nextLoad();
+    });
   });
 }
 
@@ -10818,118 +10849,95 @@ function setSyncProgress(msg, done) {
 
 function runFullSync(btn) {
   console.log('[runFullSync] Début - odToken:', odToken ? 'présent' : 'NULL');
-  if (btn) {
-    console.log('[runFullSync] Bouton trouvé:', btn);
-  } else {
-    console.log('[runFullSync] Pas de bouton passé');
-  }
   if (!odToken) {
     alert('OneDrive non connecté. Allez dans Paramètres pour vous connecter.');
     return;
   }
   if (btn) { btn.disabled = true; }
-  var loadSteps = [
-    { label: '↓ Historique...', path: OD_FILE_PATH, key: 'simulations', merge: mergeHistorique },
-    { label: '↓ Candidats...', path: OD_CAND_PATH, key: 'candidats', merge: mergeCandidats },
-    { label: '↓ Deals...', path: OD_DEALS_PATH, key: 'deals', merge: mergeDeals },
-    { label: '↓ Clients...', path: OD_CLIENTS_PATH, key: 'clients', merge: mergeClients },
-    { label: '↓ Commissions...', path: OD_COMM_HISTORY_PATH, key: 'commissions', merge: mergeCommHistory },
-    { label: '↓ Sortants...', path: OD_SORTANTS_PATH, key: 'sortants', merge: mergeSortants },
-    { label: '↓ Cooptations...', path: OD_COOPTATIONS_PATH, key: 'cooptations', merge: mergeCooptations },
-    { label: '↓ Avances...', path: OD_AVANCES_PATH, key: 'avances', merge: mergeAvances },
-    { label: '↓ Tâches...', path: OD_TACHES_PATH, key: 'taches', merge: mergeTaches },
-    { label: '↓ Demandes...', path: OD_DEMANDES_PATH, key: 'demandes', merge: mergeDemandes },
-    { label: '↓ Paramètres...', path: OD_PARAMS_PATH, key: 'params', merge: mergeParams }
-  ];
-  var pushSteps = [
-    { label: '↑ Historique...', path: OD_FILE_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),simulations:getHistory()}; } },
-    { label: '↑ Candidats...', path: OD_CAND_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),candidats:getCandidats()}; } },
-    { label: '↑ Deals...', path: OD_DEALS_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),deals:getDeals()}; } },
-    { label: '↑ Clients...', path: OD_CLIENTS_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),clients:getClients()}; } },
-    { label: '↑ Commissions...', path: OD_COMM_HISTORY_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),commissions:getCommHistory()}; } },
-    { label: '↑ Sortants...', path: OD_SORTANTS_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),sortants:getSortants()}; } },
-    { label: '↑ Cooptations...', path: OD_COOPTATIONS_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),cooptations:getCooptations()}; } },
-    { label: '↑ Avances...', path: OD_AVANCES_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),avances:getAvances()}; } },
-    { label: '↑ Tâches...', path: OD_TACHES_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),taches:getTaches()}; } },
-    { label: '↑ Demandes...', path: OD_DEMANDES_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),demandes:getDemandes()}; } },
-    { label: '↑ Paramètres...', path: OD_PARAMS_PATH, getData: function(){ return {version:1,updated:new Date().toISOString(),params:getAllParams()}; } }
-  ];
-  var idx = 0;
+  _initSyncEntities();
+
+  // runFullSync = SYNC_ENTITIES + Paramètres (spécifique au mode manuel)
+  var entities = SYNC_ENTITIES.concat([
+    { path: OD_PARAMS_PATH, key: 'params', label: 'Paramètres',
+      merge: mergeParams,
+      getData: function(){ return {version:1,updated:new Date().toISOString(),params:getAllParams()}; }
+    }
+  ]);
+
   var errors = [];
+  var t0 = Date.now();
+  var total = entities.length;
 
-  function nextLoad() {
-    if (idx >= loadSteps.length) { idx = 0; nextPush(); return; }
-    var step = loadSteps[idx++];
-    setSyncProgress(step.label);
-    console.log('[Sync LOAD]', step.label, step.path);
-    try {
-      fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(step.path) + ':/content', {
-        headers: { 'Authorization': 'Bearer ' + odToken }
-      }).then(function(r){
-        if (r.status === 404) return null;
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      }).then(function(data){
-        try {
-          if (data && data[step.key]) step.merge(data[step.key]);
-        } catch(mergeErr) {
-          console.error('[Sync] Erreur merge ' + step.label, mergeErr);
-          errors.push('merge ' + step.label + ': ' + mergeErr.message);
-        }
-        setTimeout(nextLoad, 50);
-      }).catch(function(err){
-        console.warn('[Sync] Skip ' + step.label, err);
-        errors.push('load ' + step.label + ': ' + err.message);
-        setTimeout(nextLoad, 50);
-      });
-    } catch(e) {
-      console.error('[Sync] Exception ' + step.label, e);
-      errors.push('exc ' + step.label + ': ' + e.message);
-      setTimeout(nextLoad, 50);
-    }
-  }
+  // ═══ PHASE 1 : LOAD parallèle ═══
+  setSyncProgress('↓ Chargement des ' + total + ' entités...');
+  var loadCount = 0;
+  var loadPromises = entities.map(function(step) {
+    return fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(step.path) + ':/content', {
+      headers: { 'Authorization': 'Bearer ' + odToken }
+    }).then(function(r){
+      if (r.status === 404) return null;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function(data){
+      try {
+        if (data && data[step.key]) step.merge(data[step.key]);
+      } catch(mergeErr) {
+        console.error('[Sync] Erreur merge ' + step.label, mergeErr);
+        errors.push('merge ' + step.label + ': ' + mergeErr.message);
+      }
+      loadCount++;
+      setSyncProgress('↓ ' + loadCount + '/' + total + ' chargées (' + step.label + ')');
+    }).catch(function(err){
+      console.warn('[Sync] Skip ' + step.label, err);
+      errors.push('load ' + step.label + ': ' + err.message);
+      loadCount++;
+      setSyncProgress('↓ ' + loadCount + '/' + total + ' chargées');
+    });
+  });
 
-  function nextPush() {
-    if (idx >= pushSteps.length) {
-      var msg = errors.length ? ('⚠ Terminé avec ' + errors.length + ' avertissement(s)') : '✓ Synchronisation terminée !';
-      setSyncProgress(msg, true);
-      if (errors.length) console.warn('[Sync] Avertissements:', errors);
-      setTimeout(closeSyncModal, 1800);
-      if (btn) btn.disabled = false;
-      return;
-    }
-    var step = pushSteps[idx++];
-    setSyncProgress(step.label);
-    console.log('[Sync PUSH]', step.label, step.path);
-    try {
+  Promise.all(loadPromises).then(function() {
+    console.log('[Sync] LOAD terminé en', (Date.now() - t0) + 'ms');
+
+    // ═══ PHASE 2 : PUSH parallèle ═══
+    setSyncProgress('↑ Envoi des ' + total + ' entités...');
+    var pushCount = 0;
+    var t1 = Date.now();
+    var pushPromises = entities.map(function(step) {
       var body;
       try { body = JSON.stringify(step.getData()); }
       catch(serErr) {
         console.error('[Sync] Erreur sérialisation ' + step.label, serErr);
         errors.push('serialize ' + step.label);
-        setTimeout(nextPush, 50);
-        return;
+        return Promise.resolve();
       }
-      fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(step.path) + ':/content', {
+      return fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(step.path) + ':/content', {
         method: 'PUT',
         headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
         body: body
       }).then(function(r){
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        setTimeout(nextPush, 50);
+        pushCount++;
+        setSyncProgress('↑ ' + pushCount + '/' + total + ' envoyées (' + step.label + ')');
       }).catch(function(err){
         console.warn('[Sync] Echec push ' + step.label, err);
         errors.push('push ' + step.label + ': ' + err.message);
-        setTimeout(nextPush, 50);
+        pushCount++;
+        setSyncProgress('↑ ' + pushCount + '/' + total + ' envoyées');
       });
-    } catch(e) {
-      console.error('[Sync] Exception push ' + step.label, e);
-      errors.push('exc push ' + step.label);
-      setTimeout(nextPush, 50);
-    }
-  }
+    });
 
-  nextLoad();
+    Promise.all(pushPromises).then(function() {
+      var totalMs = Date.now() - t0;
+      console.log('[Sync] PUSH terminé en', (Date.now() - t1) + 'ms · Total:', totalMs + 'ms');
+      var msg = errors.length
+        ? ('⚠ Terminé avec ' + errors.length + ' avertissement(s) (' + totalMs + 'ms)')
+        : ('✓ Synchronisation terminée en ' + totalMs + 'ms !');
+      setSyncProgress(msg, true);
+      if (errors.length) console.warn('[Sync] Avertissements:', errors);
+      setTimeout(closeSyncModal, 1800);
+      if (btn) btn.disabled = false;
+    });
+  });
 }
 
 // ── Fonctions de fusion ──
