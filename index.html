@@ -731,6 +731,252 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   color: #4B36EC;
   border-color: #D9CFFA;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   DASHBOARD — Design moderne avec gradients et animations
+═══════════════════════════════════════════════════════════════ */
+#tab-dashboard {
+  background: linear-gradient(180deg, #FAF8FF 0%, #ffffff 60%);
+  min-height: 100vh;
+  padding: 0 !important;
+}
+.dash-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+}
+.dash-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.dash-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: #1A1033;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dash-title .emoji-wrap {
+  background: linear-gradient(135deg, #372EB6, #7343EE);
+  padding: 6px 10px;
+  border-radius: 10px;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(115,67,238,0.32);
+  font-size: 18px;
+}
+.dash-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1.5px solid #EDE8FB;
+  box-shadow: 0 2px 10px rgba(115,67,238,0.05);
+}
+.dash-filter-bar label {
+  font-size: 10.5px;
+  color: #6B5E9C;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.dash-filter-bar select {
+  padding: 6px 28px 6px 10px;
+  border: 1.5px solid #E4E0FA;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #1A1033;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 600;
+  font-family: inherit;
+  appearance: none;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 12 12%22><path fill=%22%236B5E9C%22 d=%22M6 8L2 4h8z%22/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 10px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.dash-filter-bar select:hover { border-color: #7343EE; }
+.dash-filter-bar select:focus { border-color: #7343EE; box-shadow: 0 0 0 3px rgba(115,67,238,0.12); outline: none; }
+.dash-reset-btn {
+  padding: 6px 12px;
+  background: #fff;
+  color: #E24B4A;
+  border: 1.5px solid #FECACA;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+.dash-reset-btn:hover { background: #FDECEC; }
+.dash-period-banner {
+  background: linear-gradient(135deg, #EDE8FB 0%, #F5F3FF 100%);
+  border-radius: 12px;
+  padding: 12px 18px;
+  margin-bottom: 24px;
+  font-size: 12.5px;
+  color: #372EB6;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1.5px solid rgba(75,54,236,0.12);
+}
+.dash-section-title {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #4B36EC;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin: 28px 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dash-section-title::before {
+  content: '';
+  width: 4px;
+  height: 18px;
+  background: linear-gradient(180deg, #372EB6, #7343EE);
+  border-radius: 3px;
+}
+.dash-grid {
+  display: grid;
+  gap: 14px;
+}
+.dash-grid.cols-4 { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.dash-grid.cols-3 { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.dash-grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.kpi-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px 16px;
+  border: 1.5px solid #EDE8FB;
+  position: relative;
+  overflow: hidden;
+  transition: transform .2s, box-shadow .2s, border-color .2s;
+}
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 3px;
+  background: var(--kpi-accent, linear-gradient(90deg, #7343EE, #4B36EC));
+  opacity: 0.85;
+}
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(115,67,238,0.12);
+  border-color: #D9CFFA;
+}
+.kpi-card .kpi-icon {
+  font-size: 22px;
+  display: inline-flex;
+  width: 38px; height: 38px;
+  align-items: center; justify-content: center;
+  background: var(--kpi-bg, #F5F3FF);
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+.kpi-card .kpi-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--kpi-value-color, #1A1033);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.kpi-card .kpi-unit {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--kpi-value-color, #6B5E9C);
+  margin-left: 3px;
+}
+.kpi-card .kpi-label {
+  font-size: 11.5px;
+  color: #6B5E9C;
+  font-weight: 600;
+  margin-top: 6px;
+  letter-spacing: 0.02em;
+}
+.kpi-card .kpi-sub {
+  font-size: 10.5px;
+  color: #9E94C4;
+  margin-top: 4px;
+  font-style: italic;
+}
+.kpi-card.kpi-violet { --kpi-accent: linear-gradient(90deg, #372EB6, #7343EE); --kpi-bg: #F0EDFC; --kpi-value-color: #4B36EC; }
+.kpi-card.kpi-green  { --kpi-accent: linear-gradient(90deg, #0F6E56, #1D9E75); --kpi-bg: #E8F7F0; --kpi-value-color: #0F6E56; }
+.kpi-card.kpi-red    { --kpi-accent: linear-gradient(90deg, #A8322A, #E24B4A); --kpi-bg: #FCEBEB; --kpi-value-color: #A8322A; }
+.kpi-card.kpi-gold   { --kpi-accent: linear-gradient(90deg, #B26A00, #F0A500); --kpi-bg: #FFF4D6; --kpi-value-color: #A86B00; }
+.kpi-card.kpi-blue   { --kpi-accent: linear-gradient(90deg, #0051A8, #0078D4); --kpi-bg: #E3F0FF; --kpi-value-color: #0051A8; }
+.kpi-card.kpi-purple { --kpi-accent: linear-gradient(90deg, #6E1F8F, #B447C9); --kpi-bg: #F7E4FD; --kpi-value-color: #7A2D97; }
+.dash-repart-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px 22px;
+  border: 1.5px solid #EDE8FB;
+  transition: box-shadow .2s;
+}
+.dash-repart-card:hover { box-shadow: 0 8px 24px rgba(115,67,238,0.08); }
+.dash-repart-card .repart-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1A1033;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dash-repart-card .repart-count {
+  font-size: 11px;
+  color: #9E94C4;
+  margin-bottom: 16px;
+  font-weight: 600;
+}
+.dash-bar-row { margin-bottom: 12px; }
+.dash-bar-row:last-child { margin-bottom: 0; }
+.dash-bar-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  margin-bottom: 5px;
+  align-items: baseline;
+}
+.dash-bar-header .bar-label { color: #1A1033; font-weight: 600; }
+.dash-bar-header .bar-stats { color: #6B5E9C; font-size: 11.5px; font-weight: 600; }
+.dash-bar-header .bar-stats .bar-pct { color: #4B36EC; font-weight: 800; margin-left: 4px; }
+.dash-bar-track {
+  background: #F5F3FF;
+  border-radius: 10px;
+  height: 10px;
+  overflow: hidden;
+}
+.dash-bar-fill {
+  height: 100%;
+  border-radius: 10px;
+  transition: width .5s cubic-bezier(0.22, 0.8, 0.4, 1);
+  background: var(--bar-color, linear-gradient(90deg, #7343EE, #4B36EC));
+  box-shadow: 0 0 8px var(--bar-glow, rgba(115,67,238,0.4));
+}
+.dash-empty {
+  color: #C0B8E0;
+  font-size: 12px;
+  padding: 24px 0;
+  text-align: center;
+  font-style: italic;
+}
 </style>
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
@@ -752,6 +998,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 <!-- ===== BARRE DE NAVIGATION PRINCIPALE ===== -->
 <div class="main-nav">
   <button class="main-nav-btn active" id="mainnav-mission" onclick="mainNavTo('mission')">&#127959;&#65039; Simulateur</button>
+  <button class="main-nav-btn" id="mainnav-dashboard" onclick="mainNavTo('dashboard')">&#128202; Dashboard</button>
   <button class="main-nav-btn" id="mainnav-historique" onclick="mainNavTo('historique')">&#128200; Historique</button>
   <button class="main-nav-btn" id="mainnav-rh" onclick="mainNavTo('rh')">&#128188; Suivi RH</button>
   <button class="main-nav-btn" id="mainnav-candidats" onclick="mainNavTo('candidats')">&#128100; Candidats</button>
@@ -1447,6 +1694,9 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   <!-- TAB COMMISSIONS -->
   <div id="tab-commissions" style="display:none;"></div>
 
+  <!-- TAB DASHBOARD -->
+  <div id="tab-dashboard" style="display:none;"></div>
+
   <!-- TAB CLIENTS -->
   <div id="tab-clients" style="display:none;">
     <div style="padding:0 0 12px;">
@@ -1463,8 +1713,8 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>
         </div>
         <select id="clients-filter-commercial" onchange="renderClients()" style="padding:7px 10px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;background:#F5F3FF;cursor:pointer;color:#4B36EC;font-weight:600;min-width:150px;">
-          <option value="__mine__">👤 Mes clients</option>
           <option value="">Tous les commerciaux</option>
+          <option value="__mine__">👤 Mes clients</option>
         </select>
       </div>
       <div id="clients-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;"></div>
@@ -1661,7 +1911,7 @@ function p(id) { return f(id) / 100; }
 // ============================================
 function showTab(id) {
   // Masquer tous les tabs
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(t){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(t){
     var el = document.getElementById(t); if (el) el.style.display = 'none';
   });
   // Afficher le tab demandé
@@ -4229,7 +4479,7 @@ function showHistorique() {
   if (myName) histFilterCommercial = myName;
 
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-historique');
@@ -4249,6 +4499,363 @@ function showHistorique() {
     odBuildCommercialSelect(getHistory());
     selC.value = histFilterCommercial || '__all__';
   }
+}
+// ═══════════════════════════════════════════════════════════════════
+// DASHBOARD — Vue d'ensemble avec KPIs filtrables (redesign v2)
+// ═══════════════════════════════════════════════════════════════════
+
+var dashFilters = {
+  commercial: '__all__',
+  month: '__all__',
+  year: String(new Date().getFullYear())
+};
+
+function showDashboard() {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-dashboard');
+  if (tab) tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+
+  var myName = (typeof getCommercialData === 'function') ? getCommercialData().nom : '';
+  if (dashFilters.commercial === '__all__' && myName) dashFilters.commercial = myName;
+  if (dashFilters.month === '__all__') dashFilters.month = String(new Date().getMonth() + 1);
+
+  renderDashboardPage();
+}
+
+function renderDashboardPage() {
+  var tab = document.getElementById('tab-dashboard');
+  if (!tab) return;
+
+  var allCommercials = {};
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var history = (typeof getHistory === 'function') ? getHistory() : [];
+  deals.forEach(function(d){ if (d.commercial) allCommercials[d.commercial] = 1; });
+  history.forEach(function(s){ if (s.commercial) allCommercials[s.commercial] = 1; });
+  var commNames = Object.keys(allCommercials).sort();
+
+  var monthLabels = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  var monthOptions = '<option value="__all__">Toute l\'année</option>'
+    + monthLabels.map(function(lbl, i) {
+        var v = String(i + 1);
+        return '<option value="' + v + '"' + (dashFilters.month === v ? ' selected' : '') + '>' + lbl + '</option>';
+      }).join('');
+
+  var yearsSet = {};
+  yearsSet[String(new Date().getFullYear())] = 1;
+  deals.forEach(function(d){
+    var y = (d.date_deal||'').slice(0,4);
+    if (y && y.length === 4) yearsSet[y] = 1;
+  });
+  history.forEach(function(s){
+    if (s.date) { var m = String(s.date).match(/(\d{4})/); if (m) yearsSet[m[1]] = 1; }
+  });
+  var years = Object.keys(yearsSet).sort().reverse();
+  var yearOptions = years.map(function(y){
+    return '<option value="' + y + '"' + (dashFilters.year === y ? ' selected' : '') + '>' + y + '</option>';
+  }).join('');
+
+  var commOptions = '<option value="__all__">Tous les commerciaux</option>'
+    + commNames.map(function(name) {
+        return '<option value="' + name + '"' + (dashFilters.commercial === name ? ' selected' : '') + '>' + name + '</option>';
+      }).join('');
+
+  var html = ''
+    + '<div class="dash-container">'
+    +   '<div class="dash-header">'
+    +     '<div style="display:flex;align-items:center;gap:12px;">'
+    +       '<button class="back-btn" onclick="mainNavTo(\'mission\')" style="padding:7px 14px;background:#fff;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;" onmouseover="this.style.background=\'#F5F3FF\';this.style.borderColor=\'#7343EE\'" onmouseout="this.style.background=\'#fff\';this.style.borderColor=\'#E4E0FA\'">← Retour</button>'
+    +       '<div class="dash-title"><span class="emoji-wrap">📊</span>Dashboard</div>'
+    +     '</div>'
+    +     '<div class="dash-filter-bar">'
+    +       '<label>Commercial</label>'
+    +       '<select id="dash-filter-commercial" onchange="dashFilters.commercial=this.value;renderDashboardKPIs();">' + commOptions + '</select>'
+    +       '<label>Mois</label>'
+    +       '<select id="dash-filter-month" onchange="dashFilters.month=this.value;renderDashboardKPIs();">' + monthOptions + '</select>'
+    +       '<label>Année</label>'
+    +       '<select id="dash-filter-year" onchange="dashFilters.year=this.value;renderDashboardKPIs();">' + yearOptions + '</select>'
+    +       '<button class="dash-reset-btn" onclick="resetDashFilters()">↻ Reset</button>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div id="dash-kpi-zone"></div>'
+    + '</div>';
+
+  tab.innerHTML = html;
+  renderDashboardKPIs();
+}
+
+function resetDashFilters() {
+  dashFilters = {
+    commercial: '__all__',
+    month: String(new Date().getMonth() + 1),
+    year: String(new Date().getFullYear())
+  };
+  renderDashboardPage();
+}
+
+function _dashMatchPeriod(dateStr) {
+  if (!dateStr) return false;
+  var d;
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    d = new Date(dateStr);
+  } else if (/^\d{2}\/\d{2}\/\d{4}/.test(dateStr)) {
+    var parts = dateStr.split('/');
+    d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+  } else {
+    d = new Date(dateStr);
+  }
+  if (isNaN(d.getTime())) return false;
+  var yOk = (dashFilters.year === '__all__') || (String(d.getFullYear()) === dashFilters.year);
+  var mOk = (dashFilters.month === '__all__') || (String(d.getMonth() + 1) === dashFilters.month);
+  return yOk && mOk;
+}
+
+function _dashMatchCommercial(item) {
+  if (dashFilters.commercial === '__all__') return true;
+  return (item.commercial || '') === dashFilters.commercial;
+}
+
+function renderDashboardKPIs() {
+  var zone = document.getElementById('dash-kpi-zone');
+  if (!zone) return;
+
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var simulations = (typeof getHistory === 'function') ? getHistory() : [];
+  var sortants = (typeof getSortants === 'function') ? getSortants() : [];
+  var candidats = (typeof getCandidats === 'function') ? getCandidats() : [];
+
+  var placements = deals.filter(function(d) {
+    return d.etat !== 'Annulé' && _dashMatchCommercial(d) && _dashMatchPeriod(d.date_deal);
+  });
+  var nbPlacements = placements.length;
+
+  var starters = deals.filter(function(d) {
+    return d.etat !== 'Annulé' && _dashMatchCommercial(d) && _dashMatchPeriod(d.date_entree);
+  });
+  var nbStarters = starters.length;
+
+  var nbSortants = sortants.filter(function(s) {
+    if (dashFilters.commercial !== '__all__' && (s.commercial || '') !== dashFilters.commercial) return false;
+    return _dashMatchPeriod(s.date_sortie);
+  }).length;
+
+  var simsFiltered = simulations.filter(function(s) {
+    if (dashFilters.commercial !== '__all__' && (s.commercial || '') !== dashFilters.commercial) return false;
+    return _dashMatchPeriod(s.date);
+  });
+  var nbSimulations = simsFiltered.length;
+
+  var today = new Date();
+  today.setHours(0,0,0,0);
+  var portesActifs = deals.filter(function(d) {
+    if (!_dashMatchCommercial(d)) return false;
+    if (d.etat !== 'En cours' && d.etat !== 'Signé') return false;
+    if (!d.date_entree) return false;
+    var de = new Date(d.date_entree);
+    if (isNaN(de.getTime()) || de > today) return false;
+    if (d.date_fin) {
+      var df = new Date(d.date_fin);
+      if (!isNaN(df.getTime()) && df < today) return false;
+    }
+    return true;
+  });
+  var nbPortesActifs = portesActifs.length;
+
+  var tjmValues = placements.map(function(d){ return parseFloat(d.tjm) || 0; }).filter(function(v){ return v > 0; });
+  var avgTjm = tjmValues.length ? Math.round(tjmValues.reduce(function(a,b){ return a+b; }, 0) / tjmValues.length) : 0;
+
+  var fraisPct = placements.map(function(d){ return parseFloat(d.frais_gestion) || 0; }).filter(function(v){ return v > 0; });
+  var avgFraisPct = fraisPct.length ? (fraisPct.reduce(function(a,b){ return a+b; }, 0) / fraisPct.length).toFixed(1) : null;
+
+  var fraisEuros = placements.map(function(d) {
+    var tjm = parseFloat(d.tjm) || 0;
+    var marge = parseFloat(d.frais_gestion) || 0;
+    var nbJ = parseFloat(d.nb_jours) || 21;
+    return tjm * (marge/100) * nbJ;
+  }).filter(function(v){ return v > 0; });
+  var avgFraisEuros = fraisEuros.length ? Math.round(fraisEuros.reduce(function(a,b){ return a+b; }, 0) / fraisEuros.length) : 0;
+
+  var daysSimToDeal = [];
+  placements.forEach(function(d) {
+    if (!d.sim_ts || !d.date_deal) return;
+    var sim = simulations.find(function(s){ return s.timestamp === d.sim_ts; });
+    if (!sim || !sim.date) return;
+    var simDate;
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(sim.date)) {
+      var sp = sim.date.split('/');
+      simDate = new Date(parseInt(sp[2]), parseInt(sp[1])-1, parseInt(sp[0]));
+    } else {
+      simDate = new Date(sim.timestamp);
+    }
+    var dealDate = new Date(d.date_deal);
+    if (isNaN(simDate.getTime()) || isNaN(dealDate.getTime())) return;
+    var diff = Math.round((dealDate - simDate) / (1000*60*60*24));
+    if (diff >= 0 && diff <= 365) daysSimToDeal.push(diff);
+  });
+  var avgDaysSimToDeal = daysSimToDeal.length ? Math.round(daysSimToDeal.reduce(function(a,b){ return a+b; }, 0) / daysSimToDeal.length) : null;
+
+  var daysDealToSig = [];
+  deals.forEach(function(d) {
+    if (!_dashMatchCommercial(d)) return;
+    if (d.etat !== 'Signé' || !d.date_deal || !d.date_signature) return;
+    if (!_dashMatchPeriod(d.date_deal)) return;
+    var dd = new Date(d.date_deal);
+    var ds = new Date(d.date_signature);
+    if (isNaN(dd.getTime()) || isNaN(ds.getTime())) return;
+    var diff = Math.round((ds - dd) / (1000*60*60*24));
+    if (diff >= 0 && diff <= 365) daysDealToSig.push(diff);
+  });
+  var avgDaysDealToSig = daysDealToSig.length ? Math.round(daysDealToSig.reduce(function(a,b){ return a+b; }, 0) / daysDealToSig.length) : null;
+
+  var portesGD = portesActifs.filter(function(d){ return d.repas === 'GD'; });
+  var pctGD = nbPortesActifs > 0 ? Math.round((portesGD.length / nbPortesActifs) * 100) : 0;
+
+  var portesEtrangers = portesActifs.filter(function(d){ return d.salarie_etranger === true; });
+  var pctEtrangers = nbPortesActifs > 0 ? Math.round((portesEtrangers.length / nbPortesActifs) * 100) : 0;
+
+  var originCount = {};
+  placements.forEach(function(d){
+    var o = d.origine || 'Non renseigné';
+    originCount[o] = (originCount[o] || 0) + 1;
+  });
+  var originEntries = Object.entries(originCount).sort(function(a,b){ return b[1]-a[1]; });
+  var originTotal = originEntries.reduce(function(acc, e){ return acc + e[1]; }, 0);
+
+  var sortantsFiltered = sortants.filter(function(s) {
+    if (dashFilters.commercial !== '__all__' && (s.commercial || '') !== dashFilters.commercial) return false;
+    return _dashMatchPeriod(s.date_sortie);
+  });
+  var raisonCount = {};
+  sortantsFiltered.forEach(function(s){
+    var r = s.raison_sortie || 'Non renseignée';
+    raisonCount[r] = (raisonCount[r] || 0) + 1;
+  });
+  var raisonEntries = Object.entries(raisonCount).sort(function(a,b){ return b[1]-a[1]; });
+  var raisonTotal = raisonEntries.reduce(function(acc, e){ return acc + e[1]; }, 0);
+
+  var nbSansMission = 0, nbPerdus = 0, nbProspectsChauds = 0;
+  if (typeof computeCandStatutAuto === 'function') {
+    candidats.forEach(function(c) {
+      if (dashFilters.commercial !== '__all__') {
+        var lastSim = (c.simulations || [])[0];
+        if (!lastSim || (lastSim.commercial || '') !== dashFilters.commercial) return;
+      }
+      var statut;
+      try { statut = computeCandStatutAuto(c); } catch(e) { statut = c.statut_portage || ''; }
+      if (statut === 'Porté sans mission') nbSansMission++;
+      else if (statut === 'Perdu') nbPerdus++;
+      else if (statut === 'Prospect chaud') nbProspectsChauds++;
+    });
+  }
+
+  var clientsActifs = {};
+  portesActifs.forEach(function(d){
+    var ent = (d.entreprise || '').trim().toLowerCase();
+    if (ent) clientsActifs[ent] = 1;
+  });
+  var nbClientsActifs = Object.keys(clientsActifs).length;
+
+  // ─ Helpers rendu ─
+  function kpi(cls, icon, value, unit, label, sub) {
+    var u = unit ? '<span class="kpi-unit">' + unit + '</span>' : '';
+    var s = sub ? '<div class="kpi-sub">' + sub + '</div>' : '';
+    return '<div class="kpi-card ' + cls + '">'
+      + '<div class="kpi-icon">' + icon + '</div>'
+      + '<div class="kpi-value">' + value + u + '</div>'
+      + '<div class="kpi-label">' + label + '</div>'
+      + s
+      + '</div>';
+  }
+
+  function buildBars(entries, total, gradFrom, gradTo, glow) {
+    if (!entries.length) return '<div class="dash-empty">Aucune donnée sur la période sélectionnée</div>';
+    return entries.map(function(e, i) {
+      var pct = Math.round((e[1] / total) * 100);
+      // Dégradé d'intensité selon la position
+      var opacity = Math.max(0.4, 1 - (i * 0.12));
+      var barStyle = 'background:linear-gradient(90deg,' + gradFrom + ',' + gradTo + ');opacity:' + opacity + ';box-shadow:0 0 8px ' + glow + ';';
+      return '<div class="dash-bar-row">'
+        + '<div class="dash-bar-header">'
+        +   '<span class="bar-label">' + e[0] + '</span>'
+        +   '<span class="bar-stats">' + e[1] + '<span class="bar-pct">' + pct + '%</span></span>'
+        + '</div>'
+        + '<div class="dash-bar-track">'
+        +   '<div class="dash-bar-fill" style="width:' + pct + '%;' + barStyle + '"></div>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
+  var periodLabel = (dashFilters.month === '__all__' ? 'Toute l\'année' : ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'][parseInt(dashFilters.month)])
+    + ' ' + dashFilters.year
+    + (dashFilters.commercial === '__all__' ? ' · tous commerciaux' : ' · ' + dashFilters.commercial);
+
+  // ─ Fonction helper format nombre avec unité ─
+  function fmt(v) { return v === null || v === undefined ? '—' : v; }
+  function fmtEur(v) { return v ? v.toLocaleString('fr-FR') : '—'; }
+
+  var ui = ''
+    + '<div class="dash-period-banner">'
+    +   '<span style="font-size:16px;">📅</span>'
+    +   '<span>Période : <strong>' + periodLabel + '</strong></span>'
+    + '</div>'
+
+    + '<div class="dash-section-title">📊 Volumes du mois</div>'
+    + '<div class="dash-grid cols-4">'
+    +   kpi('kpi-violet', '📋', nbPlacements, '', 'Placements', 'créés dans la période')
+    +   kpi('kpi-green',  '🚀', nbStarters,   '', 'Starters',   'entrées effectives')
+    +   kpi('kpi-red',    '🚪', nbSortants,   '', 'Sortants',   'sorties enregistrées')
+    +   kpi('kpi-gold',   '📈', nbSimulations,'', 'Simulations','créées dans la période')
+    + '</div>'
+
+    + '<div class="dash-section-title">👥 Portefeuille actif (instant T)</div>'
+    + '<div class="dash-grid cols-4">'
+    +   kpi('kpi-violet', '👤', nbPortesActifs,  '', 'Portés actifs',    'Signés + En cours en mission')
+    +   kpi('kpi-purple', '🏢', nbClientsActifs, '', 'Clients actifs',   '≥1 porté actif')
+    +   kpi('kpi-blue',   '🌍', pctEtrangers,    '%', 'Étrangers',       '% portés avec titre de séjour')
+    +   kpi('kpi-gold',   '🧳', pctGD,           '%', 'Grand déplacement','% portés GD')
+    + '</div>'
+
+    + '<div class="dash-section-title">💰 Financier</div>'
+    + '<div class="dash-grid cols-3">'
+    +   kpi('kpi-violet', '💶', avgTjm ? avgTjm.toLocaleString('fr-FR') : '—',  avgTjm ? '€' : '',    'TJM moyen',             'sur placements période')
+    +   kpi('kpi-blue',   '📊', avgFraisPct === null ? '—' : avgFraisPct,       avgFraisPct === null ? '' : '%', 'Frais de gestion',      'moyenne pondérée')
+    +   kpi('kpi-green',  '💰', fmtEur(avgFraisEuros),                          avgFraisEuros ? '€' : '',        'Frais de gestion moyens', 'TJM × marge × jours (par placement)')
+    + '</div>'
+
+    + '<div class="dash-section-title">⏱ Délais de conversion</div>'
+    + '<div class="dash-grid cols-2">'
+    +   kpi('kpi-gold',  '⏳', fmt(avgDaysSimToDeal), avgDaysSimToDeal === null ? '' : ' j', 'Simu → Placement', 'temps moyen de conversion')
+    +   kpi('kpi-green', '⏳', fmt(avgDaysDealToSig), avgDaysDealToSig === null ? '' : ' j', 'Placement → Signé','délai contractualisation')
+    + '</div>'
+
+    + '<div class="dash-section-title">🎯 Statuts candidats (temps réel)</div>'
+    + '<div class="dash-grid cols-3">'
+    +   kpi('kpi-gold', '🔥', nbProspectsChauds, '', 'Prospects chauds', 'à convertir rapidement')
+    +   kpi('kpi-gold', '⛔', nbSansMission,     '', 'Sans mission',     'portés signés hors mission')
+    +   kpi('kpi-red',  '❌', nbPerdus,          '', 'Perdus',           'candidats abandonnés')
+    + '</div>'
+
+    + '<div class="dash-section-title">📈 Répartitions</div>'
+    + '<div class="dash-grid cols-2">'
+    +   '<div class="dash-repart-card">'
+    +     '<div class="repart-title">🎯 Origine des placements</div>'
+    +     '<div class="repart-count">' + originTotal + ' placement' + (originTotal > 1 ? 's' : '') + ' analysé' + (originTotal > 1 ? 's' : '') + '</div>'
+    +     buildBars(originEntries, originTotal, '#7343EE', '#4B36EC', 'rgba(115,67,238,0.35)')
+    +   '</div>'
+    +   '<div class="dash-repart-card">'
+    +     '<div class="repart-title">🚪 Raisons de sortie</div>'
+    +     '<div class="repart-count">' + raisonTotal + ' sortant' + (raisonTotal > 1 ? 's' : '') + ' analysé' + (raisonTotal > 1 ? 's' : '') + '</div>'
+    +     buildBars(raisonEntries, raisonTotal, '#E24B4A', '#A8322A', 'rgba(226,75,74,0.35)')
+    +   '</div>'
+    + '</div>';
+
+  zone.innerHTML = ui;
 }
 
 function setHistPeriodSelect(val) {
@@ -5100,6 +5707,43 @@ function openPlacementPopup(ts) {
   document.getElementById('pl-email-signataire').value = '';
   document.getElementById('pl-delai-paiement').value = '';
   document.getElementById('pl-banque').value = '';
+
+  // ── Pré-remplissage auto depuis le client existant (si trouvé par nom d'entreprise) ──
+  try {
+    var entName = (sim.entreprise || '').trim().toLowerCase();
+    if (entName) {
+      var existingClient = getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === entName; });
+      if (existingClient) {
+        // Champs client : adresse, délai, banque, signataire niveau client
+        if (existingClient.adresse) document.getElementById('pl-adresse-exec').value = existingClient.adresse;
+        if (existingClient.delai_paiement) document.getElementById('pl-delai-paiement').value = existingClient.delai_paiement;
+        if (existingClient.banque) document.getElementById('pl-banque').value = existingClient.banque;
+        // Signataire niveau client (prioritaire)
+        if (existingClient.nom_signataire) document.getElementById('pl-nom-signataire').value = existingClient.nom_signataire;
+        if (existingClient.tel_signataire) document.getElementById('pl-tel-signataire').value = existingClient.tel_signataire;
+        if (existingClient.email_signataire) document.getElementById('pl-email-signataire').value = existingClient.email_signataire;
+        // Si pas de signataire au niveau client, chercher manager correspondant
+        if (!document.getElementById('pl-nom-signataire').value && sim.manager) {
+          var mgrName = sim.manager.trim().toLowerCase();
+          var existingMgr = (existingClient.managers || []).find(function(m){
+            return (m.name||'').trim().toLowerCase() === mgrName;
+          });
+          if (existingMgr) {
+            document.getElementById('pl-nom-signataire').value = existingMgr.name || '';
+            document.getElementById('pl-tel-signataire').value = existingMgr.tel || '';
+            document.getElementById('pl-email-signataire').value = existingMgr.email || '';
+            // Tel/email client = tel/email manager par défaut si pas défini sur le client
+            if (!document.getElementById('pl-tel-client').value && existingMgr.tel) {
+              document.getElementById('pl-tel-client').value = existingMgr.tel;
+            }
+            if (!document.getElementById('pl-email-client').value && existingMgr.email) {
+              document.getElementById('pl-email-client').value = existingMgr.email;
+            }
+          }
+        }
+      }
+    }
+  } catch(e) { console.warn('[openPlacementPopup] Pré-remplissage client:', e); }
 
   // ── Deal ──
   document.getElementById('pl-commercial').value = sim.commercial || '';
@@ -5974,6 +6618,19 @@ function savePlacement() {
     date_created: idx >= 0 ? deals[idx].date_created : new Date().toLocaleDateString('fr-FR')
   };
 
+  // ── date_signature : enregistre la date quand l'état passe à "Signé" ──
+  // Préserve la date existante si déjà signé précédemment
+  if (deal.etat === 'Signé') {
+    if (idx >= 0 && deals[idx].date_signature) {
+      deal.date_signature = deals[idx].date_signature;
+    } else {
+      deal.date_signature = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    }
+  } else if (idx >= 0 && deals[idx].date_signature) {
+    // L'utilisateur a fait revenir l'état depuis Signé : on préserve quand même la date
+    deal.date_signature = deals[idx].date_signature;
+  }
+
   var isNewDeal = (idx < 0);
   if (idx >= 0) deals[idx] = deal; else deals.unshift(deal);
   saveDeals(deals);
@@ -6613,7 +7270,7 @@ function cancelSortie(sortantId) {
 // ── Onglet Tableau Deals ──
 function showDealsTab() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-deals');
@@ -7651,7 +8308,7 @@ function saveNewClient() {
 
 function showCandidatsTab() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-candidats');
@@ -7894,7 +8551,7 @@ function renderCandidats() {
 
 function mainNavTo(section) {
   // Mettre à jour tous les boutons de navigation
-  ['mission','historique','rh','candidats','clients','taches','commissions'].forEach(function(s) {
+  ['mission','dashboard','historique','rh','candidats','clients','taches','commissions'].forEach(function(s) {
     var btn = document.getElementById('mainnav-' + s);
     if (btn) btn.classList.toggle('active', s === section);
   });
@@ -7905,6 +8562,8 @@ function mainNavTo(section) {
   // Afficher la section demandée
   if (section === 'mission') {
     showTab('tab-mission');
+  } else if (section === 'dashboard') {
+    showDashboard();
   } else if (section === 'historique') {
     showHistorique();
   } else if (section === 'rh') {
@@ -7951,7 +8610,7 @@ function showRHSection(subtab) {
 // Vue Sortants : utilise le conteneur tab-deals pour cohérence d'emplacement
 function showSortantsView() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-deals');
@@ -8636,7 +9295,7 @@ function syncCooptationsDatesFromDeals() {
 // ── UI : vue principale Cooptations ──
 function showCooptationsView() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-deals');
@@ -9089,6 +9748,7 @@ function getAvances() {
 }
 function saveAvances(arr) {
   localStorage.setItem(AVANCES_KEY, JSON.stringify(arr));
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 function getAvancesConfig() {
   var defaults = {
@@ -9567,7 +10227,7 @@ function downloadAvanceEml(to, cc, subject, html, avance) {
 // ── Vue Suivi RH → Avances ──
 function showAvancesView() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-deals');
@@ -10038,7 +10698,7 @@ function injectRHSubNav() {
 function showRHPlaceholder(subtab) {
   // Afficher le conteneur tab-deals (même emplacement page)
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-deals');
@@ -10289,7 +10949,7 @@ function buildCandFicheHTML(cand) {
 
     // Colonne gauche : onglets
     + '<div style="flex:1;min-width:0;border-right:2px solid #F0EDF9;">'
-    + '<div style="display:flex;align-items:center;border-bottom:2px solid #E4E0FA;padding:0 20px;background:#fff;">'
+    + '<div style="display:flex;align-items:center;border-bottom:2px solid #E4E0FA;padding:0 20px;background:#fff;overflow-x:auto;white-space:nowrap;">'
     + '<button data-tab="simulations" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-simulations" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#7343EE;border-bottom:2px solid #7343EE;margin-bottom:-2px;cursor:pointer;">&#128200; Simulations (' + (cand.simulations||[]).length + ')</button>'
     + '<button data-tab="placements" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-placements" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128203; Placements (' + (function(){ var e=(cand.email||'').toLowerCase(); var fn=((cand.prenom||'')+' '+(cand.nom||'')).trim().toLowerCase(); return (typeof getDeals==='function' ? getDeals() : []).filter(function(d){ return (d.email||'').toLowerCase()===e || ((d.prenom||'')+' '+(d.nom||'')).trim().toLowerCase()===fn; }).length; })() + ')</button>'
     + '<button data-tab="avances" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-avances" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128182; Avances (' + (typeof getAvances==='function' ? getAvances().filter(function(a){ return a.candidat_id === cand.id; }).length : 0) + ')</button>'
@@ -11440,11 +12100,37 @@ function saveClientFromDeal(deal) {
 
 function showClientsTab() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-clients');
   if (tab) tab.style.display = 'block';
+
+  // FIX BUG : si le contenu a été écrasé par openClientPage, reconstruire le HTML du tab
+  if (tab && !document.getElementById('clients-list')) {
+    tab.innerHTML = ''
+      + '<div style="padding:0 0 12px;">'
+      +   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+      +     '<div style="display:flex;align-items:center;gap:8px;"><button class="back-btn" onclick="mainNavTo(\'mission\')">&#8592; Retour</button><div style="font-size:13px;font-weight:700;color:#1A1033;">&#127970; Clients</div></div>'
+      +     '<div style="display:flex;align-items:center;gap:10px;">'
+      +       '<span id="clients-count" style="font-size:11px;color:#6B5E9C;"></span>'
+      +       '<button onclick="openNewClientPopup()" style="padding:7px 14px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">+ Nouveau client</button>'
+      +     '</div>'
+      +   '</div>'
+      +   '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">'
+      +     '<div style="position:relative;flex:1;min-width:200px;">'
+      +       '<input id="clients-search" type="text" placeholder="Rechercher une entreprise..." oninput="renderClients()" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">'
+      +       '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>'
+      +     '</div>'
+      +     '<select id="clients-filter-commercial" onchange="renderClients()" style="padding:7px 10px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;background:#F5F3FF;cursor:pointer;color:#4B36EC;font-weight:600;min-width:150px;">'
+      +       '<option value="">Tous les commerciaux</option>'
+      +       '<option value="__mine__">👤 Mes clients</option>'
+      +     '</select>'
+      +   '</div>'
+      +   '<div id="clients-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;"></div>'
+      + '</div>';
+  }
+
   var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
   var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
   var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
@@ -11456,7 +12142,7 @@ function renderClients() {
   if (!el) return;
   var clients = getClients();
   var q = (document.getElementById('clients-search')?document.getElementById('clients-search').value:'').toLowerCase().trim();
-  var filtComm = document.getElementById('clients-filter-commercial') ? document.getElementById('clients-filter-commercial').value : '__mine__';
+  var filtComm = document.getElementById('clients-filter-commercial') ? document.getElementById('clients-filter-commercial').value : '';
   var countEl = document.getElementById('clients-count');
 
   // Peupler la dropdown commercial avec la liste distincte + "Mes clients"
@@ -11474,10 +12160,10 @@ function renderClients() {
     var needsRebuild = commList.some(function(c){ return existingVals.indexOf(c) < 0; });
     if (needsRebuild) {
       var currentVal = commEl.value;
-      var commOpts = '<option value="__mine__">👤 Mes clients</option><option value="">Tous les commerciaux</option>';
+      var commOpts = '<option value="">Tous les commerciaux</option><option value="__mine__">👤 Mes clients</option>';
       commList.forEach(function(c){ commOpts += '<option value="' + c + '">' + c + '</option>'; });
       commEl.innerHTML = commOpts;
-      commEl.value = currentVal || '__mine__';
+      commEl.value = currentVal || '';
     }
   }
 
@@ -12848,7 +13534,7 @@ function getMyRappels() {
 // ── Vue calendrier ──
 function showTachesTab() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-taches');
@@ -12877,6 +13563,7 @@ function getTaches() {
 }
 function saveTaches(arr) {
   localStorage.setItem(TACHES_KEY, JSON.stringify(arr));
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 // Liste des IDs d'alertes auto fermées manuellement (par exemple "av_avc_xxx" ou "coop_xxx")
 function getClosedAutoAlerts() {
@@ -14674,7 +15361,7 @@ function computeMonthlyCommission(commercial, year, month) {
 function showCommissionsSection(subtab) {
   currentCommSubTab = subtab || 'current';
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-commissions');
