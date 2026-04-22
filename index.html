@@ -3385,11 +3385,13 @@ function setDest(v) {
 
 function openEnvoiModal() {
   // ── Sécurité sauvegarde ──
-  if (getHistory().length > 0) {
+  // Si OneDrive est connecté, la sync fait office de sauvegarde (pas besoin d'export JSON)
+  // Sinon, on vérifie que la dernière sauvegarde manuelle date de moins de 7 jours
+  if (getHistory().length > 0 && !odToken) {
     var last = parseInt(localStorage.getItem(BACKUP_KEY) || '0');
     var daysSince = (Date.now() - last) / (24 * 3600 * 1000);
     if (daysSince > 7) {
-      var msg = 'Sauvegarde requise\n\nVotre dernière sauvegarde date de plus de 7 jours.\nVous devez exporter l\'historique avant d\'envoyer une nouvelle simulation.\n\nCliquez OK pour ouvrir l\'historique et exporter.';
+      var msg = 'Sauvegarde requise\n\nVotre dernière sauvegarde date de plus de 7 jours.\nVous devez exporter l\'historique avant d\'envoyer une nouvelle simulation.\n\nConnectez-vous à OneDrive (Paramètres) ou exportez manuellement.\n\nCliquez OK pour ouvrir l\'historique et exporter.';
       var go = confirm(msg);
       if (go) { showHistorique(); }
       return;
@@ -5407,7 +5409,29 @@ function odInit() {
 }
 
 function odConnect() {
-  if (!msalApp) { odSetStatus('MSAL non chargé', true); return; }
+  if (!msalApp) {
+    // Diagnostic précis selon la cause probable
+    var protocol = window.location.protocol;
+    var msg = '';
+    if (protocol === 'file:') {
+      msg = 'Le fichier doit être servi via http(s), pas ouvert en local.\n\n'
+          + 'Solution : Demandez à Norman le lien d\'accès en ligne, ou hébergez le fichier sur un serveur web.';
+    } else if (typeof msal === 'undefined') {
+      msg = 'La librairie Microsoft n\'arrive pas à se charger.\n\n'
+          + 'Causes possibles :\n'
+          + '• Bloqueur de pub / antivirus qui bloque alcdn.msauth.net\n'
+          + '• Réseau d\'entreprise restrictif\n'
+          + '• Connexion internet instable\n\n'
+          + 'Essayez : recharger la page (F5), désactiver les bloqueurs, ou utiliser un autre réseau.';
+    } else {
+      msg = 'MSAL est en cours de chargement. Patientez quelques secondes et réessayez.';
+      // Retry init
+      if (typeof odInit === 'function') odInit();
+    }
+    odSetStatus('⚠ Connexion impossible', true);
+    alert('⚠ Impossible de se connecter à OneDrive\n\n' + msg);
+    return;
+  }
   msalApp.loginPopup({
     scopes: ['Files.ReadWrite', 'User.Read', 'Sites.ReadWrite.All', 'Mail.Send']
   }).then(function(res) {
