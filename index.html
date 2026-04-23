@@ -5581,6 +5581,7 @@ var SYNC_ENTITIES = [
   { path: OD_TACHES_PATH,       key: 'taches',      label: 'Tâches',       merge: null, getData: null },
   { path: OD_DEMANDES_PATH,     key: 'demandes',    label: 'Demandes',     merge: null, getData: null },
   { path: OD_AVANTAGES_PATH,    key: 'avantages_sociaux', label: 'Avantages Sociaux', merge: null, getData: null },
+  { path: OD_FRAIS_PRO_PATH,    key: 'frais_pro',         label: 'Frais Pro',         merge: null, getData: null },
   { path: OD_APP_SETTINGS_PATH, key: 'app_settings',      label: 'Paramètres app',    merge: null, getData: null }
 ];
 // Les merge/getData sont attachés au moment du 1er usage (après chargement complet du script,
@@ -5598,6 +5599,7 @@ function _initSyncEntities() {
     taches:      { merge: mergeTaches,       getData: function(){ return {version:1,updated:new Date().toISOString(),taches:getTaches()}; } },
     demandes:    { merge: mergeDemandes,     getData: function(){ return {version:1,updated:new Date().toISOString(),demandes:getDemandes()}; } },
     avantages_sociaux: { merge: mergeAvantagesSociaux, getData: function(){ return {version:1,updated:new Date().toISOString(),avantages_sociaux:getAvantagesSociaux(),config:getAvantagesConfig()}; } },
+    frais_pro: { merge: mergeFraisPro, getData: function(){ return {version:1,updated:new Date().toISOString(),frais_pro:getFraisPro()}; } },
     app_settings: { merge: mergeAppSettings, getData: function(){ return Object.assign({version:1,updated:new Date().toISOString()}, getAppSettings()); } }
   };
   SYNC_ENTITIES.forEach(function(ent) {
@@ -10347,18 +10349,455 @@ function renderParamsAnalyseurAccordion() {
 }
 
 // ── Coquille vide : Frais Pro ──
+// ═══════════════════════════════════════════════════════════════════
+// FRAIS PRO — Suivi mensuel par porté actif (3 montants + total + ajust + BP)
+// ═══════════════════════════════════════════════════════════════════
+
+var FRAIS_PRO_KEY = 'sp_frais_pro_v1';
+var OD_FRAIS_PRO_PATH = '/General/Seven Portage Simlateur/SP_Frais_Pro_Global.json';
+
+// État local : mois affiché (réutilise avantagesCurrentMois ? non, on garde indépendant pour que chacun ait son mois)
+var fraisProCurrentMois = (function() {
+  var d = new Date();
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+})();
+
+// Tri + filtres + recherche
+var fraisProSort = { col: null, dir: 'asc' };
+var fraisProFilters = {
+  bp_fait: '',
+  sans_montant: false
+};
+var fraisProSearch = '';
+
+function setFraisProSort(col) {
+  if (fraisProSort.col === col) {
+    fraisProSort.dir = (fraisProSort.dir === 'asc') ? 'desc' : 'asc';
+  } else {
+    fraisProSort.col = col;
+    fraisProSort.dir = 'asc';
+  }
+  if (typeof renderFrais === 'function') renderFrais();
+}
+function setFraisProFilter(field, value) {
+  fraisProFilters[field] = value;
+  if (typeof renderFrais === 'function') renderFrais();
+}
+function setFraisProSearch(val) {
+  fraisProSearch = val || '';
+  if (typeof renderFrais === 'function') renderFrais();
+  setTimeout(function(){
+    var el = document.getElementById('fraispro-search-input');
+    if (el) { el.focus(); var v = el.value; el.value = ''; el.value = v; }
+  }, 30);
+}
+function resetFraisProFilters() {
+  fraisProFilters = { bp_fait: '', sans_montant: false };
+  fraisProSort = { col: null, dir: 'asc' };
+  fraisProSearch = '';
+  if (typeof renderFrais === 'function') renderFrais();
+}
+
+// ── Storage ──
+function getFraisPro() {
+  try { return JSON.parse(localStorage.getItem(FRAIS_PRO_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+function saveFraisPro(arr) {
+  localStorage.setItem(FRAIS_PRO_KEY, JSON.stringify(arr));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+function mergeFraisPro(remote) {
+  if (!Array.isArray(remote)) return;
+  var local = getFraisPro();
+  var byId = {};
+  local.forEach(function(a){ if (a && a.id) byId[a.id] = a; });
+  remote.forEach(function(a){
+    if (!a || !a.id) return;
+    var existing = byId[a.id];
+    if (!existing || (a.updated_ts || 0) > (existing.updated_ts || 0)) {
+      byId[a.id] = a;
+    }
+  });
+  var merged = Object.values(byId).sort(function(a,b){ return (b.id||0)-(a.id||0); });
+  // Écriture DIRECTE pour éviter boucle sync
+  localStorage.setItem(FRAIS_PRO_KEY, JSON.stringify(merged));
+}
+
+// ── Helpers calculs ──
+function computeFraisProTotal(fp) {
+  return (parseFloat(fp.montant_1) || 0) + (parseFloat(fp.montant_2) || 0) + (parseFloat(fp.montant_3) || 0);
+}
+function computeFraisProAjust(fp, coef) {
+  var c = coef || 1.46;
+  if (c <= 0) return 0;
+  return computeFraisProTotal(fp) / c;
+}
+
+// ── Vue Frais Pro ──
 function buildFraisProContent() {
+  var avantagesCfg = getAvantagesConfig();  // Réutilise le coefficient
+  var coef = avantagesCfg.coefficient_ajustement || 1.46;
+  var portes = getPortesActifsForMois(fraisProCurrentMois);
+  var allFP = getFraisPro();
+
+  // Filtrer pour le mois courant
+  var fpMois = allFP.filter(function(a){ return a.mois === fraisProCurrentMois; });
+
+  // Regrouper par deal_id (lignes standard) + isoler exceptionnelles
+  var fpByDeal = {};
+  var fpExceptionnels = [];
+  fpMois.forEach(function(a) {
+    if (a.exceptionnel) fpExceptionnels.push(a);
+    else fpByDeal[a.deal_id] = a;
+  });
+
+  // Items unifiés
+  var items = [];
+  portes.forEach(function(d) {
+    var existing = fpByDeal[d.id];
+    var prenomNom = ((d.prenom||'') + ' ' + (d.nom||'')).trim();
+    items.push({
+      deal: d,
+      data: existing || null,
+      isExceptionnel: false,
+      prenomNom: prenomNom,
+      totalVal: existing ? computeFraisProTotal(existing) : 0
+    });
+  });
+  fpExceptionnels.forEach(function(a) {
+    var deal = (typeof getDeals === 'function') ? getDeals().find(function(d){ return d.id === a.deal_id; }) : null;
+    var prenomNom = deal ? ((deal.prenom||'') + ' ' + (deal.nom||'')).trim() : (a.nom_consultant || '(inconnu)');
+    items.push({
+      deal: deal,
+      data: a,
+      isExceptionnel: true,
+      prenomNom: prenomNom,
+      totalVal: computeFraisProTotal(a)
+    });
+  });
+
+  // Appliquer filtres
+  var searchLc = (fraisProSearch || '').trim().toLowerCase();
+  var filteredItems = items.filter(function(it) {
+    var dt = it.data;
+    if (searchLc && (it.prenomNom || '').toLowerCase().indexOf(searchLc) < 0) return false;
+    if (fraisProFilters.bp_fait) {
+      var bp = dt ? (dt.bp_fait || 'Non') : 'Non';
+      if (bp !== fraisProFilters.bp_fait) return false;
+    }
+    if (fraisProFilters.sans_montant) {
+      if (it.totalVal > 0) return false;
+    }
+    return true;
+  });
+
+  // Tri
+  if (fraisProSort.col === 'nom') {
+    filteredItems.sort(function(a, b) {
+      var r = (a.prenomNom || '').localeCompare(b.prenomNom || '', 'fr', { sensitivity: 'base' });
+      return fraisProSort.dir === 'desc' ? -r : r;
+    });
+  } else if (fraisProSort.col === 'total') {
+    filteredItems.sort(function(a, b) {
+      var r = a.totalVal - b.totalVal;
+      return fraisProSort.dir === 'desc' ? -r : r;
+    });
+  }
+
+  // Rows
+  var rowsHtml = filteredItems.map(function(it) {
+    return buildFraisProRow(it.deal, it.data, coef, it.isExceptionnel, it.prenomNom);
+  }).join('');
+
+  // Dropdown mois
+  var monthOptions = '';
+  var now = new Date();
+  for (var i = 3; i >= -12; i--) {
+    var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    var v = d.getFullYear() + '-' + ('0' + (d.getMonth()+1)).slice(-2);
+    var lbl = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    lbl = lbl.charAt(0).toUpperCase() + lbl.slice(1);
+    var sel = (v === fraisProCurrentMois) ? ' selected' : '';
+    monthOptions += '<option value="' + v + '"' + sel + '>' + lbl + '</option>';
+  }
+
+  // Empty state
+  var emptyMsg = '';
+  if (!items.length) emptyMsg = 'Aucun porté actif sur le mois sélectionné.';
+  else if (!filteredItems.length) emptyMsg = 'Aucune ligne ne correspond aux filtres actifs.';
+  var emptyState = emptyMsg
+    ? '<tr><td colspan="9" style="padding:40px;text-align:center;color:#9E9E9E;font-size:12.5px;font-style:italic;">' + emptyMsg + '</td></tr>'
+    : '';
+
+  function sortArrow(col) {
+    if (fraisProSort.col !== col) return '<span style="color:#C0B8E0;font-size:10px;margin-left:4px;">▲▼</span>';
+    return fraisProSort.dir === 'asc'
+      ? '<span style="color:#4B36EC;font-size:10px;margin-left:4px;">▲</span>'
+      : '<span style="color:#4B36EC;font-size:10px;margin-left:4px;">▼</span>';
+  }
+
+  var filtersActive = !!(fraisProSearch || fraisProFilters.bp_fait || fraisProFilters.sans_montant || fraisProSort.col);
+
   return ''
-    + '<div style="background:#fff;border:1.5px dashed #E4E0FA;border-radius:12px;padding:60px 30px;text-align:center;">'
-    +   '<div style="font-size:40px;margin-bottom:14px;">💼</div>'
-    +   '<div style="font-size:16px;font-weight:700;color:#1A1033;margin-bottom:8px;">Frais Professionnels</div>'
-    +   '<div style="font-size:12.5px;color:#6B5E9C;max-width:480px;margin:0 auto 16px;">'
-    +     'Cette section est en cours de construction.'
+    // Barre haut
+    + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">'
+    +   '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    +     '<label style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Mois :</label>'
+    +     '<select onchange="fraisProCurrentMois=this.value;renderFrais();" style="padding:7px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;background:#fff;font-weight:600;cursor:pointer;font-family:inherit;">' + monthOptions + '</select>'
+    +     '<span style="font-size:11.5px;color:#6B5E9C;">· ' + filteredItems.length + ' ligne' + (filteredItems.length>1?'s':'') + (filteredItems.length !== items.length ? ' / ' + items.length : '') + '</span>'
     +   '</div>'
-    +   '<div style="font-size:11.5px;color:#9E94C4;max-width:480px;margin:0 auto;">'
-    +     'Elle permettra de suivre les frais professionnels des consultants : transport, repas, matériel, formation, grand déplacement, etc.'
+    +   '<button onclick="openFraisProExceptionnelPopup()" style="padding:8px 16px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">+ Ligne exceptionnelle</button>'
+    + '</div>'
+    // Barre recherche + filtres
+    + '<div style="background:#F5F3FF;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    +   '<div style="position:relative;flex:1;min-width:200px;max-width:280px;">'
+    +     '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E94C4;font-size:13px;pointer-events:none;">🔍</span>'
+    +     '<input id="fraispro-search-input" type="text" value="' + (fraisProSearch||'').replace(/"/g,'&quot;') + '" oninput="setFraisProSearch(this.value)" placeholder="Rechercher un candidat…" style="width:100%;padding:7px 10px 7px 32px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;font-family:inherit;">'
+    +   '</div>'
+    +   '<span style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Filtres :</span>'
+    +   '<select onchange="setFraisProFilter(\'bp_fait\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
+    +     '<option value=""' + (!fraisProFilters.bp_fait ? ' selected' : '') + '>Bulletin Paie : tous</option>'
+    +     '<option value="Oui"' + (fraisProFilters.bp_fait === 'Oui' ? ' selected' : '') + '>Bulletin Paie : Oui</option>'
+    +     '<option value="Non"' + (fraisProFilters.bp_fait === 'Non' ? ' selected' : '') + '>Bulletin Paie : Non</option>'
+    +   '</select>'
+    +   '<label style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:#4B36EC;font-weight:600;cursor:pointer;padding:5px 10px;background:#fff;border:1.5px solid #E4E0FA;border-radius:7px;">'
+    +     '<input type="checkbox"' + (fraisProFilters.sans_montant ? ' checked' : '') + ' onchange="setFraisProFilter(\'sans_montant\',this.checked)" style="cursor:pointer;">'
+    +     'Sans montant'
+    +   '</label>'
+    +   (filtersActive
+        ? '<button onclick="resetFraisProFilters()" style="margin-left:auto;padding:5px 12px;background:#fff;color:#E24B4A;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">✕ Réinitialiser</button>'
+        : '')
+    + '</div>'
+    // Tableau
+    + '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E4E0FA;overflow-x:auto;">'
+    +   '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1150px;">'
+    +     '<thead style="background:#F5F3FF;">'
+    +       '<tr style="border-bottom:2px solid #E4E0FA;">'
+    +         '<th onclick="setFraisProSort(\'nom\')" style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;cursor:pointer;user-select:none;" title="Trier par nom">Prénom Nom' + sortArrow('nom') + '</th>'
+    +         '<th style="padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;">Montant 1 (€)</th>'
+    +         '<th style="padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;">Montant 2 (€)</th>'
+    +         '<th style="padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;">Montant 3 (€)</th>'
+    +         '<th onclick="setFraisProSort(\'total\')" style="padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;cursor:pointer;user-select:none;" title="Trier par total">Montant total' + sortArrow('total') + '</th>'
+    +         '<th style="padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;">Ajustement (÷' + coef + ')</th>'
+    +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Commentaire</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Bulletin Paie fait</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Action</th>'
+    +       '</tr>'
+    +     '</thead>'
+    +     '<tbody>' + rowsHtml + emptyState + '</tbody>'
+    +   '</table>'
+    + '</div>';
+}
+
+function buildFraisProRow(deal, existing, coef, isExceptionnel, prenomNom) {
+  var recordId = existing ? existing.id : null;
+  var dealId = deal ? deal.id : (existing ? existing.deal_id : 0);
+  var m1 = existing ? (existing.montant_1 || 0) : '';
+  var m2 = existing ? (existing.montant_2 || 0) : '';
+  var m3 = existing ? (existing.montant_3 || 0) : '';
+  var comment = existing ? (existing.commentaire || '') : '';
+  var bpFait = existing ? (existing.bp_fait || 'Non') : 'Non';
+
+  // Calculs
+  var total = (parseFloat(m1) || 0) + (parseFloat(m2) || 0) + (parseFloat(m3) || 0);
+  var ajust = coef > 0 ? total / coef : 0;
+
+  // Highlight vert si BP = Oui
+  var rowBg = (bpFait === 'Oui') ? 'background:#81C784;' : '';
+  var trStyle = 'border-bottom:1px solid #F0EDF9;' + rowBg;
+
+  // Badge exceptionnel
+  var excBadge = isExceptionnel
+    ? '<span style="background:#F0A500;color:#fff;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;margin-left:6px;text-transform:uppercase;">Exceptionnel</span>'
+    : '';
+
+  // Action
+  var actionCell = isExceptionnel
+    ? '<button onclick="deleteFraisPro(' + recordId + ')" title="Supprimer cette ligne exceptionnelle" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;cursor:pointer;">✕</button>'
+    : '<span style="color:#C0B8E0;font-size:11px;">—</span>';
+
+  var inputStyle = 'padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:100px;text-align:right;';
+
+  return '<tr data-deal-id="' + dealId + '" style="' + trStyle + '">'
+    + '<td style="padding:10px 8px;font-weight:600;color:#1A1033;">' + prenomNom + excBadge + '</td>'
+    + '<td style="padding:10px 8px;text-align:right;">'
+    +   '<input type="number" min="0" step="0.01" value="' + (m1 || '') + '" onchange="updateFraisProField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'montant_1\',parseFloat(this.value)||0)" style="' + inputStyle + '">'
+    + '</td>'
+    + '<td style="padding:10px 8px;text-align:right;">'
+    +   '<input type="number" min="0" step="0.01" value="' + (m2 || '') + '" onchange="updateFraisProField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'montant_2\',parseFloat(this.value)||0)" style="' + inputStyle + '">'
+    + '</td>'
+    + '<td style="padding:10px 8px;text-align:right;">'
+    +   '<input type="number" min="0" step="0.01" value="' + (m3 || '') + '" onchange="updateFraisProField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'montant_3\',parseFloat(this.value)||0)" style="' + inputStyle + '">'
+    + '</td>'
+    + '<td style="padding:10px 8px;text-align:right;font-weight:700;color:#1A1033;">'
+    +   (total ? total.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €' : '—')
+    + '</td>'
+    + '<td style="padding:10px 8px;text-align:right;color:#4B36EC;font-weight:600;">'
+    +   (ajust ? ajust.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €' : '—')
+    + '</td>'
+    + '<td style="padding:10px 8px;">'
+    +   '<input type="text" value="' + (comment||'').replace(/"/g,'&quot;') + '" onchange="updateFraisProField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'commentaire\',this.value)" placeholder="Commentaire…" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:160px;">'
+    + '</td>'
+    + '<td style="padding:10px 8px;text-align:center;">'
+    +   '<select onchange="updateFraisProField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'bp_fait\',this.value)" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:80px;cursor:pointer;">'
+    +     '<option value="Non"' + (bpFait === 'Non' ? ' selected' : '') + '>Non</option>'
+    +     '<option value="Oui"' + (bpFait === 'Oui' ? ' selected' : '') + '>Oui</option>'
+    +   '</select>'
+    + '</td>'
+    + '<td style="padding:10px 8px;text-align:center;">' + actionCell + '</td>'
+    + '</tr>';
+}
+
+function updateFraisProField(dealId, recordId, isExceptionnel, field, value) {
+  var all = getFraisPro();
+  var idx = recordId ? all.findIndex(function(a){ return a.id === recordId; }) : -1;
+
+  if (idx < 0) {
+    var newEntry = {
+      id: Date.now(),
+      deal_id: dealId,
+      mois: fraisProCurrentMois,
+      montant_1: 0,
+      montant_2: 0,
+      montant_3: 0,
+      commentaire: '',
+      bp_fait: 'Non',
+      exceptionnel: !!isExceptionnel,
+      updated_ts: Date.now()
+    };
+    newEntry[field] = value;
+    all.unshift(newEntry);
+  } else {
+    all[idx][field] = value;
+    all[idx].updated_ts = Date.now();
+  }
+  saveFraisPro(all);
+  if (typeof renderFrais === 'function') renderFrais();
+}
+
+function deleteFraisPro(recordId) {
+  if (!recordId) return;
+  if (!confirm('Supprimer cette ligne exceptionnelle ?')) return;
+  var all = getFraisPro();
+  all = all.filter(function(a){ return a.id !== recordId; });
+  saveFraisPro(all);
+  if (typeof renderFrais === 'function') renderFrais();
+}
+
+// ── Popup ajout ligne exceptionnelle (recherche + liste) ──
+var _fraisProExcChoices = [];
+
+function openFraisProExceptionnelPopup() {
+  var ex = document.getElementById('modal-fraispro-exc');
+  if (ex) ex.remove();
+
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  _fraisProExcChoices = deals
+    .filter(function(d){ return d.etat !== 'Annulé' && (d.prenom || d.nom); })
+    .map(function(d){
+      var nom = ((d.prenom||'') + ' ' + (d.nom||'')).trim();
+      return {
+        id: d.id,
+        nom: nom,
+        entreprise: d.entreprise || '',
+        labelLc: (nom + ' ' + (d.entreprise || '')).toLowerCase()
+      };
+    })
+    .sort(function(a,b){ return a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' }); });
+
+  var modal = document.createElement('div');
+  modal.id = 'modal-fraispro-exc';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3000;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:14px;padding:24px;width:90%;max-width:480px;box-shadow:0 10px 40px rgba(0,0,0,0.25);">'
+    +   '<div style="font-size:16px;font-weight:700;color:#1A1033;margin-bottom:8px;">+ Ligne exceptionnelle — Frais Pro</div>'
+    +   '<div style="font-size:12px;color:#6B5E9C;margin-bottom:16px;line-height:1.5;">Ajouter une ligne de frais supplémentaire pour un consultant (en plus de sa ligne mensuelle standard).</div>'
+    +   '<label style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:4px;">Rechercher un consultant</label>'
+    +   '<div style="position:relative;margin-bottom:10px;">'
+    +     '<span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#9E94C4;font-size:14px;pointer-events:none;">🔍</span>'
+    +     '<input id="fraispro-exc-search" type="text" oninput="filterFraisProExcList(this.value)" placeholder="Nom, prénom ou entreprise…" style="width:100%;padding:9px 12px 9px 38px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;font-family:inherit;">'
+    +   '</div>'
+    +   '<div id="fraispro-exc-list" style="max-height:260px;overflow-y:auto;border:1px solid #E4E0FA;border-radius:8px;background:#FAF8FF;margin-bottom:14px;">'
+    +     buildFraisProExcListHtml(_fraisProExcChoices)
+    +   '</div>'
+    +   '<input type="hidden" id="fraispro-exc-deal-id" value="">'
+    +   '<div style="display:flex;gap:8px;justify-content:flex-end;">'
+    +     '<button onclick="document.getElementById(\'modal-fraispro-exc\').remove()" style="padding:8px 16px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">Annuler</button>'
+    +     '<button id="fraispro-exc-confirm-btn" onclick="confirmFraisProExceptionnel()" disabled style="padding:8px 16px;background:#C0B8E0;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:not-allowed;">Créer la ligne</button>'
     +   '</div>'
     + '</div>';
+  document.body.appendChild(modal);
+  setTimeout(function(){
+    var s = document.getElementById('fraispro-exc-search');
+    if (s) s.focus();
+  }, 100);
+}
+
+function buildFraisProExcListHtml(list) {
+  if (!list.length) {
+    return '<div style="padding:30px 15px;text-align:center;color:#9E94C4;font-size:12px;font-style:italic;">Aucun résultat.</div>';
+  }
+  return list.map(function(c) {
+    var initials = (c.nom || '').split(/\s+/).filter(Boolean).map(function(w){ return (w[0]||'').toUpperCase(); }).slice(0, 2).join('') || '?';
+    return '<div onclick="selectFraisProExc(' + c.id + ',this)" data-id="' + c.id + '" style="padding:10px 12px;border-bottom:1px solid #F0EDF9;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background 0.15s;" onmouseover="this.style.background=\'#F0EDFC\'" onmouseout="if(!this.classList.contains(\'selected\'))this.style.background=\'\'">'
+      +   '<div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">' + initials + '</div>'
+      +   '<div style="flex:1;min-width:0;">'
+      +     '<div style="font-size:12.5px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (c.nom || '(sans nom)').replace(/</g,'&lt;') + '</div>'
+      +     (c.entreprise ? '<div style="font-size:11px;color:#6B5E9C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + c.entreprise.replace(/</g,'&lt;') + '</div>' : '')
+      +   '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function filterFraisProExcList(q) {
+  var qLc = (q || '').trim().toLowerCase();
+  var filtered = qLc
+    ? _fraisProExcChoices.filter(function(c){ return c.labelLc.indexOf(qLc) >= 0; })
+    : _fraisProExcChoices;
+  var el = document.getElementById('fraispro-exc-list');
+  if (el) el.innerHTML = buildFraisProExcListHtml(filtered);
+}
+
+function selectFraisProExc(dealId, clickedEl) {
+  document.querySelectorAll('#fraispro-exc-list > div').forEach(function(d){
+    d.classList.remove('selected');
+    d.style.background = '';
+  });
+  if (clickedEl) {
+    clickedEl.classList.add('selected');
+    clickedEl.style.background = '#D9CFFA';
+  }
+  var hidden = document.getElementById('fraispro-exc-deal-id');
+  if (hidden) hidden.value = dealId;
+  var btn = document.getElementById('fraispro-exc-confirm-btn');
+  if (btn) {
+    btn.disabled = false;
+    btn.style.cursor = 'pointer';
+    btn.style.background = 'linear-gradient(135deg,#372EB6,#7343EE)';
+  }
+}
+
+function confirmFraisProExceptionnel() {
+  var hidden = document.getElementById('fraispro-exc-deal-id');
+  if (!hidden || !hidden.value) { alert('Veuillez sélectionner un consultant.'); return; }
+  var dealId = parseInt(hidden.value);
+  var all = getFraisPro();
+  all.unshift({
+    id: Date.now(),
+    deal_id: dealId,
+    mois: fraisProCurrentMois,
+    montant_1: 0,
+    montant_2: 0,
+    montant_3: 0,
+    commentaire: '',
+    bp_fait: 'Non',
+    exceptionnel: true,
+    updated_ts: Date.now()
+  });
+  saveFraisPro(all);
+  document.getElementById('modal-fraispro-exc').remove();
+  if (typeof renderFrais === 'function') renderFrais();
 }
 
 function showSortantsView() {
