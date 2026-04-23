@@ -5679,6 +5679,16 @@ function _applySharedConfigs(shared) {
   });
 }
 
+// Helper : parser une chaîne d'emails séparés par ; , ou espaces → tableau d'emails uniques, triés, valides
+function _splitEmails(str) {
+  if (!str) return [];
+  return String(str)
+    .split(/[;,\s]+/)
+    .map(function(s){ return s.trim(); })
+    .filter(function(s){ return s && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); })
+    .filter(function(e, i, arr){ return arr.indexOf(e) === i; });  // dédup
+}
+
 // Helper : marquer app_settings comme modifié (pour que le merge remote<->local détecte le changement)
 // À appeler dans chaque saveXConfig() d'une config partagée.
 function _touchAppSettings() {
@@ -7014,7 +7024,7 @@ var OD_SORTANTS_PATH = '/General/Seven Portage Simlateur/SP_Sortants_Global.json
 
 function getSortantsConfig() {
   var defaults = {
-    mail_fixe: 'norman@seven-portage.fr',
+    mail_fixe: '',  // Adresse(s) SUPPLÉMENTAIRE(S) optionnelle(s) en CC (les destinataires principaux Clémence/Marie/social sont hard-codés)
     commerciaux: []  // [{ nom: 'David', email: 'david@...' }, ...]
   };
   try {
@@ -7096,11 +7106,17 @@ function buildSortantsConfigCard(withCard, refreshCallback) {
     if (!configOpen) { html += '</div>'; return html; }
   }
 
-  // Email fixe
+  // Email fixe — ADRESSES SUPPLÉMENTAIRES (les principales Clémence/Marie/social sont hard-codées)
   html += '<div style="margin-bottom:18px;padding:' + (withCard ? '0' : '12px') + ';">'
-    +   '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Email de notification (destinataire principal)</label>'
-    +   '<input type="email" value="' + (cfg.mail_fixe||'').replace(/"/g,'&quot;') + '" onchange="updateSortantsConfigField(\'mail_fixe\', this.value);' + refreshFn + '();" placeholder="ex: norman@seven-portage.fr" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
-    +   '<div style="font-size:10.5px;color:#9E94C4;margin-top:5px;line-height:1.5;">Cette adresse reçoit chaque notification de sortie. Le commercial du deal est mis automatiquement en copie si son email est configuré dans <strong>✉️ Emails internes</strong> (par prénom).</div>'
+    +   '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Adresse(s) supplémentaire(s) en copie <span style="color:#9E94C4;font-weight:500;text-transform:none;">— optionnel</span></label>'
+    +   '<input type="text" value="' + (cfg.mail_fixe||'').replace(/"/g,'&quot;') + '" onchange="updateSortantsConfigField(\'mail_fixe\', this.value);' + refreshFn + '();" placeholder="ex: rh@autre-societe.fr ; compta@..." style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    +   '<div style="font-size:10.5px;color:#9E94C4;margin-top:4px;">💡 Plusieurs emails possibles, séparés par <code>;</code> ou <code>,</code>.</div>'
+    +   '<div style="margin-top:10px;padding:10px 12px;background:#F0F7FF;border:1.5px solid #B8D0F5;border-radius:8px;font-size:11px;color:#1A4F96;line-height:1.5;">'
+    +     '<strong>🔒 Règle prod (non modifiable) :</strong><br>'
+    +     '&bull; <strong>Clémence</strong> (A-H) ou <strong>Marie</strong> (I-Z) selon le nom du consultant<br>'
+    +     '&bull; <strong>social@seven-portage.fr</strong> systématiquement<br>'
+    +     '&bull; Le <strong>commercial du deal</strong> en copie (via Emails internes)'
+    +   '</div>'
     + '</div>';
 
   // Note explicative — annuaire récupéré depuis Emails internes
@@ -7368,17 +7384,40 @@ function saveSortie() {
 
 // Envoie un mail de notification via Microsoft Graph (compte connecté OneDrive).
 // Envoi 100% automatique sans intervention utilisateur, avec fallback .eml si Graph indispo.
+// Règle de routage (prod) :
+//   - Destinataire principal : Clémence (A-H) ou Marie (I-Z) selon le NOM du consultant
+//   - social@seven-portage.fr en destinataire systématique
+//   - Adresse(s) supplémentaire(s) de mail_fixe en copie (paramétrable)
+//   - Commercial du deal en copie
 function sendSortantNotificationEmail(sortant, deal, isEdit) {
   var cfg = getSortantsConfig();
-  var mailFixe = (cfg.mail_fixe || '').trim();
-  if (!mailFixe) {
-    console.warn('[Sortant] Pas d\'adresse mail fixe configurée — mail non envoyé');
+
+  // ── Destinataires principaux (hard-coded règle prod) ──
+  // Clémence ou Marie selon le NOM du consultant (A-H / I-Z)
+  var nomConsultant = ((deal.nom || sortant.nom || '') + '').trim();
+  var firstLetter = nomConsultant.charAt(0).toUpperCase();
+  var isAH = firstLetter >= 'A' && firstLetter <= 'H';
+  var emails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+  var rhEmail = isAH ? (emails.clemence || '') : (emails.marie || '');
+
+  // To = RH (Clémence/Marie) + social
+  var toList = [];
+  if (rhEmail) toList.push(rhEmail);
+  toList.push('social@seven-portage.fr');
+
+  // CC = adresse(s) configurable(s) (mail_fixe) + commercial du deal
+  var ccList = _splitEmails(cfg.mail_fixe || '');
+  var commercialEmail = findCommercialEmailByName(deal.commercial || sortant.commercial || '');
+  if (commercialEmail) ccList.push(commercialEmail);
+
+  // Dédupliquer
+  toList = toList.filter(function(e, i, a){ return e && a.indexOf(e) === i; });
+  ccList = ccList.filter(function(e, i, a){ return e && a.indexOf(e) === i && toList.indexOf(e) < 0; });
+
+  if (!toList.length) {
+    console.warn('[Sortant] Pas de destinataire principal — mail non envoyé');
     return;
   }
-
-  // Email du commercial DU DEAL (pas celui connecté) depuis l'annuaire configuré
-  // Si aucun email n'est renseigné pour ce commercial, pas de CC
-  var commercialEmail = findCommercialEmailByName(deal.commercial || sortant.commercial || '');
 
   var name = ((deal.prenom || '') + ' ' + (deal.nom || '')).trim() || '—';
   var entreprise = deal.entreprise || '—';
@@ -7432,8 +7471,8 @@ function sendSortantNotificationEmail(sortant, deal, isEdit) {
       message: {
         subject: subject,
         body: { contentType: 'HTML', content: html },
-        toRecipients: [{ emailAddress: { address: mailFixe } }],
-        ccRecipients: commercialEmail ? [{ emailAddress: { address: commercialEmail } }] : []
+        toRecipients: toList.map(function(e){ return { emailAddress: { address: e } }; }),
+        ccRecipients: ccList.map(function(e){ return { emailAddress: { address: e } }; })
       },
       saveToSentItems: true
     };
@@ -7453,17 +7492,17 @@ function sendSortantNotificationEmail(sortant, deal, isEdit) {
         });
         if (typeof showNotifToast === 'function') showNotifToast('Échec envoi mail (status ' + r.status + ') — génération .eml en fallback', true);
         // Fallback .eml en cas d'échec
-        downloadSortantEml(mailFixe, commercialEmail, subject, html, sortant);
+        downloadSortantEml(toList.join(';'), ccList.join(';'), subject, html, sortant);
       }
     }).catch(function(err){
       console.error('[Sortant] Erreur réseau Graph:', err);
       if (typeof showNotifToast === 'function') showNotifToast('Erreur réseau — génération .eml en fallback', true);
-      downloadSortantEml(mailFixe, commercialEmail, subject, html, sortant);
+      downloadSortantEml(toList.join(';'), ccList.join(';'), subject, html, sortant);
     });
   } else {
     // Pas connecté OneDrive → fallback .eml à télécharger
     console.warn('[Sortant] Pas de token Graph — fallback .eml');
-    downloadSortantEml(mailFixe, commercialEmail, subject, html, sortant);
+    downloadSortantEml(toList.join(';'), ccList.join(';'), subject, html, sortant);
   }
 }
 
@@ -9472,6 +9511,16 @@ function testSendProlongationRelance(dealId, niveau) {
   var cfg = getProlongConfig();
   var ccInfo = [];
   if (senderEmail) ccInfo.push(senderEmail + ' (expéditeur)');
+  // Règle prod : Clémence/Marie selon nom du consultant
+  try {
+    var _nom2 = ((deal.nom||'') + '').trim();
+    var _firstL2 = _nom2.charAt(0).toUpperCase();
+    var _intEmails2 = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+    var _rhEmail2 = (_firstL2 >= 'A' && _firstL2 <= 'H') ? (_intEmails2.clemence || '') : (_intEmails2.marie || '');
+    var _rhLabel = (_firstL2 >= 'A' && _firstL2 <= 'H') ? 'Clémence' : 'Marie';
+    if (_rhEmail2) ccInfo.push(_rhEmail2 + ' (' + _rhLabel + ')');
+  } catch(e){}
+  ccInfo.push('social@seven-portage.fr');
   (cfg.mails_cc_supplementaires || []).forEach(function(e){ if (e) ccInfo.push(e); });
   if (niveau === 2 && deal.email) ccInfo.push(deal.email + ' (consultant)');
 
@@ -9584,9 +9633,20 @@ function sendProlongationRelance(deal, niveau) {
   var ccList = [];
   // 1. Expéditeur (lui-même en copie pour archivage/traçabilité)
   if (senderEmail) ccList.push(senderEmail);
-  // 2. Personnes définies dans les paramètres
+  // 2. RÈGLE PROD : Clémence (A-H) ou Marie (I-Z) selon le nom du consultant
+  try {
+    var _nom = ((deal.nom||'') + '').trim();
+    var _firstL = _nom.charAt(0).toUpperCase();
+    var _isAH = _firstL >= 'A' && _firstL <= 'H';
+    var _intEmails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+    var _rhEmail = _isAH ? (_intEmails.clemence || '') : (_intEmails.marie || '');
+    if (_rhEmail) ccList.push(_rhEmail);
+  } catch(e) { console.warn('[Prolong] RH routing:', e); }
+  // 3. social@seven-portage.fr systématiquement
+  ccList.push('social@seven-portage.fr');
+  // 4. Personnes définies dans les paramètres (modifiable)
   (cfg.mails_cc_supplementaires || []).forEach(function(e){ if (e && e.trim()) ccList.push(e.trim()); });
-  // 3. Pour la relance 2 : ajouter le candidat (consultant)
+  // 5. Pour la relance 2 : ajouter le candidat (consultant)
   if (niveau === 2 && deal.email) ccList.push(deal.email);
   // Dé-doublonner
   var seen = {};
@@ -14035,7 +14095,7 @@ function getCooptationsConfig() {
   var defaults = {
     montant_defaut: 500,
     delai_jours: 60,
-    mail_fixe: 'norman@seven-portage.fr',
+    mail_fixe: 'social@seven-portage.fr',
     mails_cc: []
   };
   try {
@@ -14117,7 +14177,8 @@ function buildCooptationsConfigCard(withCard, refreshCallback) {
   // Email principal
   html += '<div style="margin-bottom:14px;padding:' + (withCard ? '0' : '0 12px') + ';">'
     +   '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Email de notification (destinataire principal)</label>'
-    +   '<input type="email" value="' + (cfg.mail_fixe||'').replace(/"/g,'&quot;') + '" onchange="updateCooptationsConfigField(\'mail_fixe\', this.value);' + refreshFn + '();" placeholder="ex: norman@seven-portage.fr" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    +   '<input type="text" value="' + (cfg.mail_fixe||'').replace(/"/g,'&quot;') + '" onchange="updateCooptationsConfigField(\'mail_fixe\', this.value);' + refreshFn + '();" placeholder="ex: rh@seven-portage.fr ; compta@seven-portage.fr" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    +   '<div style="font-size:10.5px;color:#9E94C4;margin-top:4px;">💡 Vous pouvez mettre <strong>plusieurs emails</strong> séparés par <code>;</code> ou <code>,</code>.</div>'
     + '</div>';
 
   // CC dynamiques
@@ -14157,37 +14218,31 @@ function buildDemandesConfigCard() {
 
   // En-tête explicatif
   html += '<div style="background:#F0FDF4;border:1px solid #9FE1CB;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:11.5px;color:#0F5132;line-height:1.5;">'
-    + '<strong>Workflow de validation</strong><br>'
-    + 'Quand un commercial fait une demande de congé/RTT/TT, les <strong>3 valideurs</strong> reçoivent un mail + une tâche dans leur dashboard. Le <strong>premier qui répond tranche</strong>.'
-    + '<br><br>Si <strong>congé accordé (CP/RTT)</strong> → mail à Marine + Salomé, demandeur en copie, ajout au calendrier équipe.'
+    + '<strong>Workflow de validation (1 seul niveau)</strong><br>'
+    + 'Quand un commercial fait une demande de congé/RTT/TT, les <strong>2 valideurs</strong> reçoivent un mail + une tâche dans leur dashboard. Le <strong>premier qui répond tranche</strong>.'
+    + '<br><br>Si <strong>congé accordé (CP/RTT)</strong> → mail à l\'email d\'accord ci-dessous (paie/planning), demandeur en copie.'
     + '<br>Si <strong>TT accordé</strong> → mail au demandeur, valideurs en copie, ajout au calendrier équipe.'
     + '<br>Si <strong>refusé</strong> → mail au demandeur uniquement.'
     + '</div>';
 
-  // 3 valideurs
+  // 2 valideurs
   html += '<div style="margin-bottom:18px;">'
-    + '<label style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:8px;">📋 Valideurs (3 personnes — premier qui répond tranche)</label>';
-  for (var i = 0; i < 3; i++) {
+    + '<label style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:8px;">📋 Valideurs (2 personnes — premier qui répond tranche)</label>';
+  for (var i = 0; i < 2; i++) {
     var v = (cfg.valideurs && cfg.valideurs[i]) || '';
     html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
       + '<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;background:#7343EE;color:#fff;border-radius:50%;font-size:11px;font-weight:700;flex-shrink:0;">' + (i+1) + '</span>'
       + '<input type="email" value="' + v.replace(/"/g,'&quot;') + '" placeholder="email@seven-portage.fr" onchange="updateDemandeValideur(' + i + ', this.value)" style="flex:1;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
       + '</div>';
   }
+  html += '<div style="font-size:10.5px;color:#9E94C4;margin-top:6px;">💡 Défaut prod : david@seven-portage.fr et joanne@seven-portage.fr</div>';
   html += '</div>';
 
-  // Marine
+  // Email d'accord (paie/planning)
   html += '<div style="padding-top:14px;border-top:1px solid #F0EDF9;margin-bottom:14px;">'
-    + '<label style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:5px;">📧 Email Marine (notification congé accordé)</label>'
-    + '<input type="email" value="' + (cfg.mail_marine || '').replace(/"/g,'&quot;') + '" placeholder="marine@seven-portage.fr" onchange="updateDemandeConfigField(\'mail_marine\', this.value)" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
-    + '<div style="font-size:10.5px;color:#9E94C4;margin-top:4px;">Reçoit le mail uniquement quand un congé (CP ou RTT) est accordé.</div>'
-    + '</div>';
-
-  // Salomé
-  html += '<div>'
-    + '<label style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:5px;">📧 Email Salomé (notification congé accordé)</label>'
-    + '<input type="email" value="' + (cfg.mail_salome || '').replace(/"/g,'&quot;') + '" placeholder="salome@seven-portage.fr" onchange="updateDemandeConfigField(\'mail_salome\', this.value)" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
-    + '<div style="font-size:10.5px;color:#9E94C4;margin-top:4px;">En copie du mail à Marine. <strong>Pas notifiée pour les TT exceptionnels.</strong></div>'
+    + '<label style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:5px;">📧 Email d\'accord (paie / planning)</label>'
+    + '<input type="email" value="' + (cfg.mail_accord || '').replace(/"/g,'&quot;') + '" placeholder="social@seven-portage.fr" onchange="updateDemandeConfigField(\'mail_accord\', this.value)" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    + '<div style="font-size:10.5px;color:#9E94C4;margin-top:4px;">Reçoit le mail uniquement quand un congé (CP ou RTT) est accordé, pour mise à jour paie/planning. <strong>Défaut : social@seven-portage.fr</strong></div>'
     + '</div>';
 
   return html;
@@ -14762,8 +14817,8 @@ function processCooptationReminders() {
 
 function sendCooptationReminderEmail(coop) {
   var cfg = getCooptationsConfig();
-  var to = (cfg.mail_fixe || '').trim();
-  if (!to) return;
+  var toList = _splitEmails(cfg.mail_fixe || '');
+  if (!toList.length) return;
   var ccArr = (cfg.mails_cc || []).filter(function(e){ return e && e.indexOf('@') > 0; });
   var porte = ((coop.porte_prenom||'') + ' ' + (coop.porte_nom||'')).trim() || '—';
   var coopteur = coop.coopteur_nom || '—';
@@ -14806,7 +14861,7 @@ function sendCooptationReminderEmail(coop) {
       message: {
         subject: subject,
         body: { contentType:'HTML', content: html },
-        toRecipients: [{ emailAddress:{ address: to } }],
+        toRecipients: toList.map(function(e){ return { emailAddress:{ address: e } }; }),
         ccRecipients: ccArr.map(function(e){ return { emailAddress:{ address: e } }; })
       },
       saveToSentItems: true
@@ -14857,7 +14912,7 @@ function saveAvances(arr) {
 }
 function getAvancesConfig() {
   var defaults = {
-    mail_fixe: 'norman@seven-portage.fr',
+    mail_fixe: 'social@seven-portage.fr ; joanne@seven-portage.fr',
     mails_cc: []
   };
   try {
@@ -14926,7 +14981,8 @@ function buildAvancesConfigCard(withCard, refreshCallback) {
   // Email principal
   html += '<div style="margin-bottom:14px;padding:' + (withCard ? '0' : '12px 12px 0') + ';">'
     +   '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Email de notification (destinataire principal)</label>'
-    +   '<input type="email" value="' + (cfg.mail_fixe||'').replace(/"/g,'&quot;') + '" onchange="updateAvancesConfigField(\'mail_fixe\', this.value);' + refreshFn + '();" placeholder="ex: norman@seven-portage.fr" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    +   '<input type="text" value="' + (cfg.mail_fixe||'').replace(/"/g,'&quot;') + '" onchange="updateAvancesConfigField(\'mail_fixe\', this.value);' + refreshFn + '();" placeholder="ex: rh@seven-portage.fr ; compta@seven-portage.fr" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    +   '<div style="font-size:10.5px;color:#9E94C4;margin-top:4px;">💡 Vous pouvez mettre <strong>plusieurs emails</strong> séparés par <code>;</code> ou <code>,</code>.</div>'
     + '</div>';
 
   // CC dynamiques
@@ -15228,8 +15284,8 @@ function deleteAvance(avanceId) {
 // ── Mail de notification à la création ──
 function sendAvanceNotificationEmail(avance) {
   var cfg = getAvancesConfig();
-  var to = (cfg.mail_fixe || '').trim();
-  if (!to) { console.warn('[Avance] Pas d\'email configuré — mail non envoyé'); return; }
+  var toList = _splitEmails(cfg.mail_fixe || '');
+  if (!toList.length) { console.warn('[Avance] Pas d\'email configuré — mail non envoyé'); return; }
   var ccArr = (cfg.mails_cc || []).filter(function(e){ return e && e.indexOf('@') > 0; });
 
   var name = ((avance.prenom||'') + ' ' + (avance.nom||'')).trim() || '—';
@@ -15276,7 +15332,7 @@ function sendAvanceNotificationEmail(avance) {
       message: {
         subject: subject,
         body: { contentType: 'HTML', content: html },
-        toRecipients: [{ emailAddress: { address: to } }],
+        toRecipients: toList.map(function(e){ return { emailAddress: { address: e } }; }),
         ccRecipients: ccArr.map(function(e){ return { emailAddress: { address: e } }; })
       },
       saveToSentItems: true
@@ -15291,18 +15347,18 @@ function sendAvanceNotificationEmail(avance) {
       } else {
         r.text().then(function(t){ console.error('[Avance] Échec envoi:', r.status, t); });
         if (typeof showNotifToast === 'function') showNotifToast('✗ Échec envoi mail (status ' + r.status + ') — fallback .eml', true);
-        downloadAvanceEml(to, ccArr.join(','), subject, html, avance);
+        downloadAvanceEml(toList.join(';'), ccArr.join(','), subject, html, avance);
       }
     }).catch(function(err){
       console.error('[Avance] Erreur réseau:', err);
       if (typeof showNotifToast === 'function') showNotifToast('✗ Erreur réseau — fallback .eml', true);
-      downloadAvanceEml(to, ccArr.join(','), subject, html, avance);
+      downloadAvanceEml(toList.join(';'), ccArr.join(','), subject, html, avance);
     });
   } else {
     // Pas de token Graph (utilisateur non connecté à OneDrive)
     console.warn('[Avance] Pas de token Graph — fallback .eml');
     if (typeof showNotifToast === 'function') showNotifToast('⚠ OneDrive non connecté — mail .eml généré à la place', true);
-    downloadAvanceEml(to, ccArr.join(','), subject, html, avance);
+    downloadAvanceEml(toList.join(';'), ccArr.join(','), subject, html, avance);
   }
 }
 
@@ -19559,15 +19615,35 @@ function saveDemandes(arr) {
 }
 function getDemandesConfig() {
   var defaults = {
-    valideurs: ['norman@seven-portage.fr', 'norman@seven-portage.fr', 'norman@seven-portage.fr'],
-    mail_marine: 'norman@seven-portage.fr',
-    mail_salome: 'norman@seven-portage.fr'
+    // 2 valideurs (1 seul niveau de validation, les 2 reçoivent le mail, le 1er qui répond tranche)
+    valideurs: ['david@seven-portage.fr', 'joanne@seven-portage.fr'],
+    // Email qui reçoit une notification quand la demande est ACCORDÉE (pour mise à jour paie/planning)
+    mail_accord: 'social@seven-portage.fr',
+    // Legacy (gardés pour rétro-compat, seront vides en neuf)
+    mail_marine: '',
+    mail_salome: ''
   };
   try {
     var saved = JSON.parse(localStorage.getItem(DEMANDES_CONFIG_KEY) || '{}');
     var merged = Object.assign({}, defaults, saved);
-    if (!Array.isArray(merged.valideurs) || merged.valideurs.length !== 3) {
+    // Migration : ancien modèle (3 valideurs) → nouveau modèle (2 valideurs)
+    if (!Array.isArray(merged.valideurs)) {
       merged.valideurs = defaults.valideurs;
+    } else if (merged.valideurs.length > 2) {
+      // On garde les 2 premiers non-vides, ou les defaults
+      var nonEmpty = merged.valideurs.filter(function(e){ return e && e.trim(); });
+      merged.valideurs = nonEmpty.length >= 2 ? nonEmpty.slice(0, 2) : defaults.valideurs;
+    } else if (merged.valideurs.length < 2) {
+      // Compléter avec defaults si < 2
+      while (merged.valideurs.length < 2) merged.valideurs.push(defaults.valideurs[merged.valideurs.length]);
+    }
+    // Migration : mail_marine/mail_salome (legacy) → mail_accord si non défini
+    if (!merged.mail_accord || merged.mail_accord === 'norman@seven-portage.fr') {
+      if (merged.mail_marine && merged.mail_marine !== 'norman@seven-portage.fr') {
+        merged.mail_accord = merged.mail_marine;
+      } else {
+        merged.mail_accord = defaults.mail_accord;
+      }
     }
     return merged;
   } catch(e) { return defaults; }
@@ -19904,9 +19980,10 @@ function sendDemandeDecisionMail(d) {
     to = demandeurEmail;
     statutBg = '#FCEBEB'; statutColor = '#A8322A'; statutText = '✗ Demande refusée';
   } else if (isCongeAccorde) {
-    // Mail à Marine + Salomé, demandeur en copie
+    // Mail à l'email d'accord (paie/planning), demandeur + valideurs en copie
     subject = '[Accordée] ' + typeIcon + ' ' + typeLbl + ' — ' + d.demandeur + ' (' + debutFR + ' → ' + finFR + ')';
-    to = (cfg.mail_marine || 'norman@seven-portage.fr');
+    to = (cfg.mail_accord || 'social@seven-portage.fr');
+    // Compat ascendante : si l'ancien mail_salome est rempli, on l'ajoute en CC
     if (cfg.mail_salome && cfg.mail_salome !== to) ccArr.push(cfg.mail_salome);
     if (demandeurEmail && demandeurEmail !== to && ccArr.indexOf(demandeurEmail) < 0) ccArr.push(demandeurEmail);
     statutBg = '#E8F5EE'; statutColor = '#0F5132'; statutText = '✓ Demande accordée';
