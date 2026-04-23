@@ -1005,6 +1005,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   <button class="main-nav-btn" id="mainnav-clients" onclick="mainNavTo('clients')">&#127970; Clients</button>
   <button class="main-nav-btn" id="mainnav-taches" onclick="mainNavTo('taches')">&#128197; Tâches</button>
   <button class="main-nav-btn" id="mainnav-commissions" onclick="mainNavTo('commissions')">&#128176; Commissions</button>
+  <button class="main-nav-btn" id="mainnav-analyseur" onclick="openAnalyseurPaie()" title="Ouvre l'analyseur de paie dans un nouvel onglet">&#128202; Analyseur de Paie</button>
 </div>
 
 <div class="app">
@@ -1552,6 +1553,16 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div id="params-prolongation-content" style="padding:12px;">Chargement…</div>
       </div>
 
+      <div class="params-acc-header" onclick="toggleAcc('acc-avantages-cfg')">&#127873; Paramètres Avantages Sociaux<span class="params-acc-arrow" id="acc-avantages-cfg-arrow">&#9658;</span></div>
+      <div class="params-acc-body" id="acc-avantages-cfg">
+        <div id="params-avantages-content" style="padding:12px;">Chargement…</div>
+      </div>
+
+      <div class="params-acc-header" onclick="toggleAcc('acc-analyseur-cfg')">&#128202; Analyseur de Paie<span class="params-acc-arrow" id="acc-analyseur-cfg-arrow">&#9658;</span></div>
+      <div class="params-acc-body" id="acc-analyseur-cfg">
+        <div id="params-analyseur-content" style="padding:12px;">Chargement…</div>
+      </div>
+
     </div><!-- /params-protected -->
 
     <div style="margin-top:10px; padding:10px 14px; background:#F5F3FF; border-radius:8px; font-size:11px; color:var(--muted);">
@@ -1931,6 +1942,9 @@ function showTab(id) {
     try { if (typeof renderParamsCooptationsAccordion === 'function') renderParamsCooptationsAccordion(); } catch(e){}
     try { if (typeof renderParamsDemandesAccordion === 'function') renderParamsDemandesAccordion(); } catch(e){}
     try { if (typeof renderParamsProlongationAccordion === 'function') renderParamsProlongationAccordion(); } catch(e){}
+    try { if (typeof renderParamsAvantagesAccordion === 'function') renderParamsAvantagesAccordion(); } catch(e){}
+    try { if (typeof renderParamsAnalyseurAccordion === 'function') renderParamsAnalyseurAccordion(); } catch(e){}
+    try { if (typeof renderParamsAvantagesAccordion === 'function') renderParamsAvantagesAccordion(); } catch(e){}
   }
   // Gérer les boutons actifs des sous-tabs Mission/Frais/Cotisations/Param
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
@@ -5565,7 +5579,9 @@ var SYNC_ENTITIES = [
   { path: OD_COOPTATIONS_PATH,  key: 'cooptations', label: 'Cooptations',  merge: null, getData: null },
   { path: OD_AVANCES_PATH,      key: 'avances',     label: 'Avances',      merge: null, getData: null },
   { path: OD_TACHES_PATH,       key: 'taches',      label: 'Tâches',       merge: null, getData: null },
-  { path: OD_DEMANDES_PATH,     key: 'demandes',    label: 'Demandes',     merge: null, getData: null }
+  { path: OD_DEMANDES_PATH,     key: 'demandes',    label: 'Demandes',     merge: null, getData: null },
+  { path: OD_AVANTAGES_PATH,    key: 'avantages_sociaux', label: 'Avantages Sociaux', merge: null, getData: null },
+  { path: OD_APP_SETTINGS_PATH, key: 'app_settings',      label: 'Paramètres app',    merge: null, getData: null }
 ];
 // Les merge/getData sont attachés au moment du 1er usage (après chargement complet du script,
 // car mergeHistorique etc. peuvent être définis plus loin dans le fichier)
@@ -5580,7 +5596,9 @@ function _initSyncEntities() {
     cooptations: { merge: mergeCooptations,  getData: function(){ return {version:1,updated:new Date().toISOString(),cooptations:getCooptations()}; } },
     avances:     { merge: mergeAvances,      getData: function(){ return {version:1,updated:new Date().toISOString(),avances:getAvances()}; } },
     taches:      { merge: mergeTaches,       getData: function(){ return {version:1,updated:new Date().toISOString(),taches:getTaches()}; } },
-    demandes:    { merge: mergeDemandes,     getData: function(){ return {version:1,updated:new Date().toISOString(),demandes:getDemandes()}; } }
+    demandes:    { merge: mergeDemandes,     getData: function(){ return {version:1,updated:new Date().toISOString(),demandes:getDemandes()}; } },
+    avantages_sociaux: { merge: mergeAvantagesSociaux, getData: function(){ return {version:1,updated:new Date().toISOString(),avantages_sociaux:getAvantagesSociaux(),config:getAvantagesConfig()}; } },
+    app_settings: { merge: mergeAppSettings, getData: function(){ return Object.assign({version:1,updated:new Date().toISOString()}, getAppSettings()); } }
   };
   SYNC_ENTITIES.forEach(function(ent) {
     if (!ent.merge && mapping[ent.key]) {
@@ -5623,7 +5641,17 @@ function odSilentFullSync() {
         })
         .then(function(data) {
           try {
-            if (data && data[ent.key]) ent.merge(data[ent.key]);
+            if (data) {
+              // Cas spécial avantages_sociaux : on passe l'objet complet (data + config)
+              if (ent.key === 'avantages_sociaux' && data[ent.key]) {
+                ent.merge({ avantages_sociaux: data[ent.key], config: data.config });
+              } else if (ent.key === 'app_settings') {
+                // Cas spécial app_settings : on passe l'objet data entier (les settings sont à plat)
+                ent.merge(data);
+              } else if (data[ent.key]) {
+                ent.merge(data[ent.key]);
+              }
+            }
           } catch(mergeErr) {
             console.error('[AutoSync merge] ' + ent.key, mergeErr);
             errors.push('merge ' + ent.key);
@@ -8624,6 +8652,77 @@ function renderCandidats() {
   el.innerHTML = html;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// ANALYSEUR DE PAIE — Lien vers l'outil externe (URL synchronisée entre tous les utilisateurs)
+// ═══════════════════════════════════════════════════════════════════
+var APP_SETTINGS_KEY = 'sp_app_settings_v1';  // storage local pour les paramètres synchronisés
+var OD_APP_SETTINGS_PATH = '/General/Seven Portage Simlateur/SP_App_Settings_Global.json';
+
+function getAppSettings() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(APP_SETTINGS_KEY) || '{}');
+    return saved || {};
+  } catch(e) { return {}; }
+}
+function saveAppSettings(obj) {
+  localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(obj || {}));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+function mergeAppSettings(remote) {
+  // Merge par timestamp : le plus récent gagne, champ par champ
+  if (!remote || typeof remote !== 'object') return;
+  var local = getAppSettings();
+  var localTs = local._updated_ts || 0;
+  var remoteTs = remote._updated_ts || 0;
+  var merged;
+  if (remoteTs > localTs) {
+    merged = Object.assign({}, local, remote);
+  } else {
+    merged = Object.assign({}, remote, local);
+  }
+  // Écriture DIRECTE pour éviter boucle de sync
+  localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(merged));
+}
+
+function getAnalyseurPaieUrl() {
+  var s = getAppSettings();
+  return (s && s.analyseur_paie_url) || '';
+}
+function saveAnalyseurPaieUrl(url) {
+  var s = getAppSettings();
+  s.analyseur_paie_url = (url || '').trim();
+  s._updated_ts = Date.now();
+  saveAppSettings(s);
+}
+function updateAnalyseurPaieUrl(val) {
+  saveAnalyseurPaieUrl(val);
+}
+
+function openAnalyseurPaie() {
+  var url = getAnalyseurPaieUrl();
+  if (!url) {
+    if (confirm('⚠️ Aucune URL configurée\n\nL\'URL de l\'analyseur de paie n\'a pas encore été renseignée.\n\nVoulez-vous aller dans les Paramètres pour la configurer ?')) {
+      mainNavTo('mission');
+      setTimeout(function(){
+        var paramsTab = document.querySelector('[onclick*="tab-params"]');
+        if (paramsTab) paramsTab.click();
+        setTimeout(function(){
+          var acc = document.getElementById('acc-analyseur-cfg');
+          if (acc && !acc.classList.contains('open')) {
+            var header = document.querySelector('[onclick*="acc-analyseur-cfg"]');
+            if (header) header.click();
+          }
+          var input = document.getElementById('analyseur-url-input');
+          if (input) input.focus();
+        }, 200);
+      }, 100);
+    }
+    return;
+  }
+  // Ouvrir dans un nouvel onglet
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 function mainNavTo(section) {
   // Mettre à jour tous les boutons de navigation
   ['mission','dashboard','historique','rh','candidats','clients','taches','commissions'].forEach(function(s) {
@@ -9502,19 +9601,749 @@ function renderFrais() {
   container.innerHTML = subnavHtml + content;
 }
 
-// ── Coquille vide : Avantages Sociaux ──
+// ═══════════════════════════════════════════════════════════════════
+// AVANTAGES SOCIAUX — Suivi mensuel par porté actif
+// ═══════════════════════════════════════════════════════════════════
+
+var AVANTAGES_KEY = 'sp_avantages_sociaux_v1';
+var AVANTAGES_CFG_KEY = 'sp_avantages_config_v1';
+var OD_AVANTAGES_PATH = '/General/Seven Portage Simlateur/SP_Avantages_Sociaux_Global.json';
+
+// État local : mois affiché (format YYYY-MM)
+var avantagesCurrentMois = (function() {
+  var d = new Date();
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+})();
+
+// État local : tri + filtres Avantages Sociaux
+var avantagesSort = { col: null, dir: 'asc' };  // col = 'nom' | 'montant'
+var avantagesFilters = {
+  type: '',          // filtre par type d'avantage
+  bp: '',            // filtre Ajustement BP : '' | 'Oui' | 'Non'
+  swile: '',         // filtre Chargement SWILE : '' | 'Oui' | 'Non'
+  sans_montant: false // filtre lignes sans montant
+};
+var avantagesSearch = '';  // recherche candidat (prenom/nom)
+
+function setAvantagesSearch(val) {
+  avantagesSearch = val || '';
+  // Re-render uniquement le tableau, pas toute la vue (pour garder le focus dans l'input)
+  if (typeof renderFrais === 'function') renderFrais();
+  // Restaurer le focus dans le champ de recherche
+  setTimeout(function(){
+    var el = document.getElementById('avantages-search-input');
+    if (el) {
+      el.focus();
+      var v = el.value;
+      el.value = '';
+      el.value = v; // remet le curseur en fin de champ
+    }
+  }, 30);
+}
+
+function setAvantagesSort(col) {
+  if (avantagesSort.col === col) {
+    avantagesSort.dir = (avantagesSort.dir === 'asc') ? 'desc' : 'asc';
+  } else {
+    avantagesSort.col = col;
+    avantagesSort.dir = 'asc';
+  }
+  if (typeof renderFrais === 'function') renderFrais();
+}
+function setAvantagesFilter(field, value) {
+  avantagesFilters[field] = value;
+  if (typeof renderFrais === 'function') renderFrais();
+}
+function resetAvantagesFilters() {
+  avantagesFilters = { type: '', bp: '', swile: '', sans_montant: false };
+  avantagesSort = { col: null, dir: 'asc' };
+  avantagesSearch = '';
+  if (typeof renderFrais === 'function') renderFrais();
+}
+
+function getAvantagesConfig() {
+  var defaultTypes = [
+    { nom: 'Vacances Hiver',    montant_max: 2700 },
+    { nom: 'Vacances Été',      montant_max: 2700 },
+    { nom: 'Culture',           montant_max: 2700 },
+    { nom: 'CESU',              montant_max: 2700 },
+    { nom: 'Rentrée Scolaire',  montant_max: 2700 },
+    { nom: 'Noël Enfant',       montant_max: 2700 },
+    { nom: 'Noël Adultes',      montant_max: 2700 }
+  ];
+  var defaults = {
+    coefficient_ajustement: 1.46,
+    types_avantages: defaultTypes
+  };
+  try {
+    var saved = JSON.parse(localStorage.getItem(AVANTAGES_CFG_KEY) || '{}');
+    var merged = Object.assign({}, defaults, saved);
+
+    // ── Migration : si types_avantages est un tableau de strings (ancien format), convertir en objets ──
+    if (Array.isArray(merged.types_avantages) && merged.types_avantages.length) {
+      var oldGlobalMax = (typeof saved.montant_max === 'number' && saved.montant_max > 0) ? saved.montant_max : 2700;
+      merged.types_avantages = merged.types_avantages.map(function(t) {
+        if (typeof t === 'string') {
+          return { nom: t, montant_max: oldGlobalMax };
+        }
+        // Déjà un objet : s'assurer qu'il a nom + montant_max
+        return {
+          nom: (t && t.nom) || '',
+          montant_max: (t && typeof t.montant_max === 'number' && t.montant_max > 0) ? t.montant_max : oldGlobalMax
+        };
+      });
+    } else {
+      merged.types_avantages = defaultTypes.slice();
+    }
+
+    // Supprimer l'ancien champ global (s'il existait)
+    delete merged.montant_max;
+
+    if (typeof merged.coefficient_ajustement !== 'number' || !merged.coefficient_ajustement) {
+      merged.coefficient_ajustement = defaults.coefficient_ajustement;
+    }
+    return merged;
+  } catch(e) { return defaults; }
+}
+function saveAvantagesConfig(cfg) {
+  // Nettoyer l'ancien champ global avant save
+  if (cfg && cfg.montant_max !== undefined) delete cfg.montant_max;
+  localStorage.setItem(AVANTAGES_CFG_KEY, JSON.stringify(cfg));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+function updateAvantagesConfigField(field, value) {
+  var cfg = getAvantagesConfig();
+  cfg[field] = value;
+  saveAvantagesConfig(cfg);
+}
+function addAvantageType() {
+  var cfg = getAvantagesConfig();
+  cfg.types_avantages.push({ nom: 'Nouveau type', montant_max: 2700 });
+  saveAvantagesConfig(cfg);
+  renderParamsAvantagesAccordion();
+}
+function updateAvantageType(idx, val) {
+  var cfg = getAvantagesConfig();
+  if (cfg.types_avantages[idx]) {
+    cfg.types_avantages[idx].nom = val;
+    saveAvantagesConfig(cfg);
+  }
+}
+function updateAvantageTypeMax(idx, val) {
+  var cfg = getAvantagesConfig();
+  if (cfg.types_avantages[idx]) {
+    cfg.types_avantages[idx].montant_max = parseFloat(val) || 0;
+    saveAvantagesConfig(cfg);
+  }
+}
+function removeAvantageType(idx) {
+  var cfg = getAvantagesConfig();
+  var tName = (cfg.types_avantages[idx] && cfg.types_avantages[idx].nom) || '(type)';
+  if (!confirm('Supprimer le type "' + tName + '" ?')) return;
+  cfg.types_avantages.splice(idx, 1);
+  saveAvantagesConfig(cfg);
+  renderParamsAvantagesAccordion();
+}
+
+function getAvantagesSociaux() {
+  try { return JSON.parse(localStorage.getItem(AVANTAGES_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+function saveAvantagesSociaux(arr) {
+  localStorage.setItem(AVANTAGES_KEY, JSON.stringify(arr));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+function mergeAvantagesSociaux(remote) {
+  // remote peut être soit un array (ancien format) soit un objet {avantages_sociaux, config}
+  var remoteArr = Array.isArray(remote) ? remote : (remote && Array.isArray(remote.avantages_sociaux) ? remote.avantages_sociaux : null);
+  if (!remoteArr) return;
+  var local = getAvantagesSociaux();
+  var byId = {};
+  local.forEach(function(a){ if (a && a.id) byId[a.id] = a; });
+  remoteArr.forEach(function(a){
+    if (!a || !a.id) return;
+    var existing = byId[a.id];
+    if (!existing || (a.updated_ts || 0) > (existing.updated_ts || 0)) {
+      byId[a.id] = a;
+    }
+  });
+  // Écriture DIRECTE pour éviter boucle de sync
+  var merged = Object.values(byId).sort(function(a,b){ return (b.id||0)-(a.id||0); });
+  localStorage.setItem(AVANTAGES_KEY, JSON.stringify(merged));
+
+  // Merger la config si présente dans le remote (par ex. types d'avantages modifiés par un collègue)
+  if (remote && typeof remote === 'object' && !Array.isArray(remote) && remote.config) {
+    try {
+      var localCfg = getAvantagesConfig();
+      var remoteCfg = remote.config;
+      // Politique "last-write-wins" simple sur la config (non versionnée)
+      var mergedCfg = Object.assign({}, localCfg, remoteCfg);
+      localStorage.setItem(AVANTAGES_CFG_KEY, JSON.stringify(mergedCfg));
+    } catch(e) { console.warn('[Avantages] merge config:', e); }
+  }
+}
+
+// ── Récupérer les portés actifs pour un mois donné (YYYY-MM) ──
+// Règle : deal.etat ∈ {En cours, Signé} ET date_entree ≤ dernier jour du mois
+// ET (pas de date_fin OU date_fin ≥ premier jour du mois)
+function getPortesActifsForMois(moisStr) {
+  var parts = moisStr.split('-');
+  var year = parseInt(parts[0]);
+  var month = parseInt(parts[1]) - 1; // 0-11
+  var firstDay = new Date(year, month, 1);
+  var lastDay = new Date(year, month + 1, 0);
+  lastDay.setHours(23, 59, 59, 999);
+
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  return deals.filter(function(d) {
+    if (d.etat !== 'En cours' && d.etat !== 'Signé') return false;
+    if (!d.date_entree) return false;
+    var de = new Date(d.date_entree);
+    if (isNaN(de.getTime()) || de > lastDay) return false;
+    if (d.date_fin) {
+      var df = new Date(d.date_fin);
+      if (!isNaN(df.getTime()) && df < firstDay) return false;
+    }
+    return true;
+  });
+}
+
+// ── Vue Avantages Sociaux ──
 function buildFraisAvantagesContent() {
+  var cfg = getAvantagesConfig();
+  var portes = getPortesActifsForMois(avantagesCurrentMois);
+  var allAvantages = getAvantagesSociaux();
+
+  // Filtrer avantages du mois sélectionné
+  var avantagesMois = allAvantages.filter(function(a){ return a.mois === avantagesCurrentMois; });
+
+  // Regrouper par deal_id (pour lignes standard) + isoler les lignes "exceptionnelles"
+  var avantagesByDeal = {};
+  var avantagesExceptionnels = [];
+  avantagesMois.forEach(function(a) {
+    if (a.exceptionnel) {
+      avantagesExceptionnels.push(a);
+    } else {
+      avantagesByDeal[a.deal_id] = a;
+    }
+  });
+
+  // ── Construire une liste unifiée d'items (standard + exceptionnel) ──
+  // Chaque item contient : { deal, data, isExceptionnel, prenomNom }
+  var items = [];
+  portes.forEach(function(d) {
+    var existing = avantagesByDeal[d.id];
+    var prenomNom = ((d.prenom||'') + ' ' + (d.nom||'')).trim();
+    items.push({
+      deal: d,
+      data: existing || null,
+      isExceptionnel: false,
+      prenomNom: prenomNom,
+      montantVal: existing ? (parseFloat(existing.montant) || 0) : 0
+    });
+  });
+  avantagesExceptionnels.forEach(function(a) {
+    var deal = (typeof getDeals === 'function') ? getDeals().find(function(d){ return d.id === a.deal_id; }) : null;
+    var prenomNom = deal ? ((deal.prenom||'') + ' ' + (deal.nom||'')).trim() : (a.nom_consultant || '(inconnu)');
+    items.push({
+      deal: deal,
+      data: a,
+      isExceptionnel: true,
+      prenomNom: prenomNom,
+      montantVal: parseFloat(a.montant) || 0
+    });
+  });
+
+  // ── Appliquer les filtres ──
+  var searchLc = (avantagesSearch || '').trim().toLowerCase();
+  var filteredItems = items.filter(function(it) {
+    var dt = it.data;
+    // Recherche candidat (prenom + nom)
+    if (searchLc) {
+      if ((it.prenomNom || '').toLowerCase().indexOf(searchLc) < 0) return false;
+    }
+    // Filtre type
+    if (avantagesFilters.type) {
+      var currentType = dt ? (dt.type_avantage || '') : '';
+      if (currentType !== avantagesFilters.type) return false;
+    }
+    // Filtre ajustement BP
+    if (avantagesFilters.bp) {
+      var bp = dt ? (dt.ajustement_bp || 'Non') : 'Non';
+      if (bp !== avantagesFilters.bp) return false;
+    }
+    // Filtre chargement SWILE
+    if (avantagesFilters.swile) {
+      var sw = dt ? (dt.chargement_swile || 'Non') : 'Non';
+      if (sw !== avantagesFilters.swile) return false;
+    }
+    // Filtre sans montant
+    if (avantagesFilters.sans_montant) {
+      if (it.montantVal > 0) return false;
+    }
+    return true;
+  });
+
+  // ── Appliquer le tri ──
+  if (avantagesSort.col === 'nom') {
+    filteredItems.sort(function(a, b) {
+      var r = (a.prenomNom || '').localeCompare(b.prenomNom || '', 'fr', { sensitivity: 'base' });
+      return avantagesSort.dir === 'desc' ? -r : r;
+    });
+  } else if (avantagesSort.col === 'montant') {
+    filteredItems.sort(function(a, b) {
+      var r = a.montantVal - b.montantVal;
+      return avantagesSort.dir === 'desc' ? -r : r;
+    });
+  }
+
+  // ── Construire les lignes ──
+  var rowsHtml = filteredItems.map(function(it) {
+    return buildAvantageRow(it.deal, it.data, cfg, it.isExceptionnel, it.prenomNom);
+  }).join('');
+
+  // Dropdown mois (12 derniers mois + 3 mois à venir)
+  var monthOptions = '';
+  var now = new Date();
+  for (var i = 3; i >= -12; i--) {
+    var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    var v = d.getFullYear() + '-' + ('0' + (d.getMonth()+1)).slice(-2);
+    var lbl = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    lbl = lbl.charAt(0).toUpperCase() + lbl.slice(1);
+    var sel = (v === avantagesCurrentMois) ? ' selected' : '';
+    monthOptions += '<option value="' + v + '"' + sel + '>' + lbl + '</option>';
+  }
+
+  // Empty state
+  var emptyMsg = '';
+  if (!items.length) {
+    emptyMsg = 'Aucun porté actif sur le mois sélectionné.';
+  } else if (!filteredItems.length) {
+    emptyMsg = 'Aucune ligne ne correspond aux filtres actifs.';
+  }
+  var emptyState = emptyMsg
+    ? '<tr><td colspan="8" style="padding:40px;text-align:center;color:#9E9E9E;font-size:12.5px;font-style:italic;">' + emptyMsg + '</td></tr>'
+    : '';
+
+  // Filtre Type : dropdown dynamique basé sur la config
+  var typeFilterOpts = '<option value="">Tous les types</option>'
+    + cfg.types_avantages.map(function(t) {
+        var nom = (t && t.nom) || '';
+        var s = (nom === avantagesFilters.type) ? ' selected' : '';
+        return '<option value="' + nom.replace(/"/g, '&quot;') + '"' + s + '>' + nom + '</option>';
+      }).join('');
+
+  // Helpers tri : flèche dans le header
+  function sortArrow(col) {
+    if (avantagesSort.col !== col) return '<span style="color:#C0B8E0;font-size:10px;margin-left:4px;">▲▼</span>';
+    return avantagesSort.dir === 'asc'
+      ? '<span style="color:#4B36EC;font-size:10px;margin-left:4px;">▲</span>'
+      : '<span style="color:#4B36EC;font-size:10px;margin-left:4px;">▼</span>';
+  }
+
+  var filtersActive = !!(avantagesSearch || avantagesFilters.type || avantagesFilters.bp || avantagesFilters.swile || avantagesFilters.sans_montant || avantagesSort.col);
+
   return ''
-    + '<div style="background:#fff;border:1.5px dashed #E4E0FA;border-radius:12px;padding:60px 30px;text-align:center;">'
-    +   '<div style="font-size:40px;margin-bottom:14px;">💰</div>'
-    +   '<div style="font-size:16px;font-weight:700;color:#1A1033;margin-bottom:8px;">Avantages Sociaux</div>'
-    +   '<div style="font-size:12.5px;color:#6B5E9C;max-width:480px;margin:0 auto 16px;">'
-    +     'Cette section est en cours de construction.'
+    // ── Barre du haut (mois + bouton exception) ──
+    + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">'
+    +   '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    +     '<label style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Mois :</label>'
+    +     '<select onchange="avantagesCurrentMois=this.value;renderFrais();" style="padding:7px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;background:#fff;font-weight:600;cursor:pointer;font-family:inherit;">' + monthOptions + '</select>'
+    +     '<span style="font-size:11.5px;color:#6B5E9C;">· ' + filteredItems.length + ' ligne' + (filteredItems.length>1?'s':'') + (filteredItems.length !== items.length ? ' / ' + items.length : '') + '</span>'
     +   '</div>'
-    +   '<div style="font-size:11.5px;color:#9E94C4;max-width:480px;margin:0 auto;">'
-    +     'Elle permettra de gérer les avantages sociaux des consultants : mutuelle, prévoyance, tickets restaurant, mobilité, etc.'
+    +   '<button onclick="openAvantageExceptionnelPopup()" style="padding:8px 16px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">+ Ligne exceptionnelle</button>'
+    + '</div>'
+    // ── Barre de recherche + filtres ──
+    + '<div style="background:#F5F3FF;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    +   '<div style="position:relative;flex:1;min-width:200px;max-width:280px;">'
+    +     '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E94C4;font-size:13px;pointer-events:none;">🔍</span>'
+    +     '<input id="avantages-search-input" type="text" value="' + (avantagesSearch||'').replace(/"/g,'&quot;') + '" oninput="setAvantagesSearch(this.value)" placeholder="Rechercher un candidat…" style="width:100%;padding:7px 10px 7px 32px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;font-family:inherit;">'
+    +   '</div>'
+    +   '<span style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Filtres :</span>'
+    +   '<select onchange="setAvantagesFilter(\'type\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">' + typeFilterOpts + '</select>'
+    +   '<select onchange="setAvantagesFilter(\'bp\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
+    +     '<option value=""' + (!avantagesFilters.bp ? ' selected' : '') + '>Ajustement BP : tous</option>'
+    +     '<option value="Oui"' + (avantagesFilters.bp === 'Oui' ? ' selected' : '') + '>Ajustement BP : Oui</option>'
+    +     '<option value="Non"' + (avantagesFilters.bp === 'Non' ? ' selected' : '') + '>Ajustement BP : Non</option>'
+    +   '</select>'
+    +   '<select onchange="setAvantagesFilter(\'swile\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
+    +     '<option value=""' + (!avantagesFilters.swile ? ' selected' : '') + '>SWILE : tous</option>'
+    +     '<option value="Oui"' + (avantagesFilters.swile === 'Oui' ? ' selected' : '') + '>SWILE : Oui</option>'
+    +     '<option value="Non"' + (avantagesFilters.swile === 'Non' ? ' selected' : '') + '>SWILE : Non</option>'
+    +   '</select>'
+    +   '<label style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:#4B36EC;font-weight:600;cursor:pointer;padding:5px 10px;background:#fff;border:1.5px solid #E4E0FA;border-radius:7px;">'
+    +     '<input type="checkbox"' + (avantagesFilters.sans_montant ? ' checked' : '') + ' onchange="setAvantagesFilter(\'sans_montant\',this.checked)" style="cursor:pointer;">'
+    +     'Sans montant'
+    +   '</label>'
+    +   (filtersActive
+        ? '<button onclick="resetAvantagesFilters()" style="margin-left:auto;padding:5px 12px;background:#fff;color:#E24B4A;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">✕ Réinitialiser</button>'
+        : '')
+    + '</div>'
+    // ── Tableau ──
+    + '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E4E0FA;overflow-x:auto;">'
+    +   '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1200px;">'
+    +     '<thead style="background:#F5F3FF;">'
+    +       '<tr style="border-bottom:2px solid #E4E0FA;">'
+    +         '<th onclick="setAvantagesSort(\'nom\')" style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;cursor:pointer;user-select:none;" title="Trier par nom">Prénom Nom' + sortArrow('nom') + '</th>'
+    +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Type d\'avantage</th>'
+    +         '<th onclick="setAvantagesSort(\'montant\')" style="padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;cursor:pointer;user-select:none;" title="Trier par montant">Montant (€)' + sortArrow('montant') + '</th>'
+    +         '<th style="padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;">Ajustement (÷' + cfg.coefficient_ajustement + ')</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Ajustement BP</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Chargement SWILE</th>'
+    +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Commentaire</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Action</th>'
+    +       '</tr>'
+    +     '</thead>'
+    +     '<tbody>' + rowsHtml + emptyState + '</tbody>'
+    +   '</table>'
+    + '</div>';
+}
+
+function buildAvantageRow(deal, existing, cfg, isExceptionnel, prenomNom) {
+  var recordId = existing ? existing.id : null;
+  var dealId = deal ? deal.id : (existing ? existing.deal_id : 0);
+  var typeSel = existing ? (existing.type_avantage || '') : '';
+  var montant = existing ? (existing.montant || 0) : '';
+  var ajustement = existing ? (existing.montant_ajustement || 0) : '';
+  var bpStatut = existing ? (existing.ajustement_bp || 'Non') : 'Non';
+  var swileStatut = existing ? (existing.chargement_swile || 'Non') : 'Non';
+  var comment = existing ? (existing.commentaire || '') : '';
+
+  // ── Max pour CE type d'avantage (cherche dans cfg.types_avantages) ──
+  var typeDef = (cfg.types_avantages || []).find(function(t){ return t.nom === typeSel; });
+  var currentMax = typeDef ? (typeDef.montant_max || 0) : 0;
+
+  // Classe warning si montant dépasse le max du type sélectionné
+  var montantOver = currentMax > 0 && (parseFloat(montant) || 0) > currentMax;
+  var montantStyle = 'padding:5px 8px;border:1.5px solid ' + (montantOver ? '#E24B4A' : '#E4E0FA') + ';border-radius:6px;font-size:11.5px;width:110px;text-align:right;'
+    + (montantOver ? 'background:#FDECEC;color:#A8322A;font-weight:700;' : '');
+
+  var typeOptions = '<option value="">— Choisir —</option>'
+    + cfg.types_avantages.map(function(t){
+        var nom = (t && t.nom) || '';
+        var s = (nom === typeSel) ? ' selected' : '';
+        var maxLbl = (t && t.montant_max) ? ' (max ' + t.montant_max + ' €)' : '';
+        return '<option value="' + nom.replace(/"/g,'&quot;') + '"' + s + '>' + nom + maxLbl + '</option>';
+      }).join('');
+
+  // Badge ligne exceptionnelle
+  var excBadge = isExceptionnel
+    ? '<span style="background:#F0A500;color:#fff;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;margin-left:6px;text-transform:uppercase;">Exceptionnel</span>'
+    : '';
+
+  // Action : supprimer si exceptionnel (les lignes normales sont auto-créées)
+  var actionCell = isExceptionnel
+    ? '<button onclick="deleteAvantage(' + recordId + ')" title="Supprimer cette ligne exceptionnelle" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;cursor:pointer;">✕</button>'
+    : '<span style="color:#C0B8E0;font-size:11px;">—</span>';
+
+  // Highlight vert selon avancement du traitement :
+  // - BP = Oui ET SWILE = Oui → vert foncé (ligne totalement traitée)
+  // - BP = Oui seul          → vert pâle (BP fait, SWILE à faire)
+  // - Sinon                  → fond par défaut
+  var rowBg = '';
+  if (bpStatut === 'Oui' && swileStatut === 'Oui') {
+    rowBg = 'background:#81C784;';  // vert Material 300 — bien visible
+  } else if (bpStatut === 'Oui') {
+    rowBg = 'background:#E8F5E9;';  // vert pâle
+  }
+  var trStyle = 'border-bottom:1px solid #F0EDF9;' + rowBg;
+
+  return '<tr data-deal-id="' + dealId + '" style="' + trStyle + '">'
+    + '<td style="padding:10px 8px;font-weight:600;color:#1A1033;">' + prenomNom + excBadge + '</td>'
+    + '<td style="padding:10px 8px;">'
+    +   '<select onchange="updateAvantageField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'type_avantage\',this.value)" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:150px;cursor:pointer;">' + typeOptions + '</select>'
+    + '</td>'
+    + '<td style="padding:10px 8px;text-align:right;">'
+    +   '<input type="number" min="0"' + (currentMax > 0 ? ' max="' + currentMax + '"' : '') + ' step="0.01" value="' + (montant || '') + '" onchange="updateAvantageField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'montant\',parseFloat(this.value)||0)" style="' + montantStyle + '">'
+    + '</td>'
+    + '<td style="padding:10px 8px;text-align:right;color:#4B36EC;font-weight:600;">'
+    +   (ajustement ? ajustement.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €' : '—')
+    + '</td>'
+    + '<td style="padding:10px 8px;text-align:center;">'
+    +   '<select onchange="updateAvantageField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'ajustement_bp\',this.value)" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:80px;cursor:pointer;">'
+    +     '<option value="Non"' + (bpStatut === 'Non' ? ' selected' : '') + '>Non</option>'
+    +     '<option value="Oui"' + (bpStatut === 'Oui' ? ' selected' : '') + '>Oui</option>'
+    +   '</select>'
+    + '</td>'
+    + '<td style="padding:10px 8px;text-align:center;">'
+    +   '<select onchange="updateAvantageField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'chargement_swile\',this.value)" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:80px;cursor:pointer;">'
+    +     '<option value="Non"' + (swileStatut === 'Non' ? ' selected' : '') + '>Non</option>'
+    +     '<option value="Oui"' + (swileStatut === 'Oui' ? ' selected' : '') + '>Oui</option>'
+    +   '</select>'
+    + '</td>'
+    + '<td style="padding:10px 8px;">'
+    +   '<input type="text" value="' + (comment||'').replace(/"/g,'&quot;') + '" onchange="updateAvantageField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'commentaire\',this.value)" placeholder="Commentaire…" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:160px;">'
+    + '</td>'
+    + '<td style="padding:10px 8px;text-align:center;">' + actionCell + '</td>'
+    + '</tr>';
+}
+
+function updateAvantageField(dealId, recordId, isExceptionnel, field, value) {
+  var cfg = getAvantagesConfig();
+  var all = getAvantagesSociaux();
+  var idx = recordId ? all.findIndex(function(a){ return a.id === recordId; }) : -1;
+
+  // ── Blocage si montant > max de la catégorie choisie ──
+  if (field === 'montant') {
+    var val = parseFloat(value) || 0;
+    // Récupérer le type sur CETTE ligne (déjà enregistré)
+    var typeSel = (idx >= 0) ? (all[idx].type_avantage || '') : '';
+    if (!typeSel) {
+      alert('⚠️ Type d\'avantage requis\n\nVeuillez d\'abord choisir un type d\'avantage avant de saisir un montant.');
+      if (typeof renderFrais === 'function') renderFrais();
+      return;
+    }
+    var typeDef = (cfg.types_avantages || []).find(function(t){ return t.nom === typeSel; });
+    var typeMax = typeDef ? (typeDef.montant_max || 0) : 0;
+    if (typeMax > 0 && val > typeMax) {
+      alert('⚠️ Montant refusé\n\nLe montant maximum pour "' + typeSel + '" est ' + typeMax + ' €.\n\nVous pouvez modifier ce plafond dans Paramètres → Paramètres Avantages Sociaux.');
+      if (typeof renderFrais === 'function') renderFrais();
+      return;
+    }
+  }
+
+  if (idx < 0) {
+    // Créer nouvelle entrée
+    var newEntry = {
+      id: Date.now(),
+      deal_id: dealId,
+      mois: avantagesCurrentMois,
+      type_avantage: '',
+      montant: 0,
+      montant_ajustement: 0,
+      ajustement_bp: 'Non',
+      chargement_swile: 'Non',
+      commentaire: '',
+      exceptionnel: !!isExceptionnel,
+      updated_ts: Date.now()
+    };
+    newEntry[field] = value;
+    // Recalculer ajustement si montant touché
+    if (field === 'montant') {
+      newEntry.montant_ajustement = cfg.coefficient_ajustement > 0 ? ((parseFloat(value) || 0) / cfg.coefficient_ajustement) : 0;
+    }
+    all.unshift(newEntry);
+  } else {
+    all[idx][field] = value;
+    all[idx].updated_ts = Date.now();
+    // Recalculer ajustement si montant touché
+    if (field === 'montant') {
+      all[idx].montant_ajustement = cfg.coefficient_ajustement > 0 ? ((parseFloat(value) || 0) / cfg.coefficient_ajustement) : 0;
+    }
+  }
+  saveAvantagesSociaux(all);
+  // Re-render pour refresh ajustement + warning rouge
+  if (typeof renderFrais === 'function') renderFrais();
+}
+
+function deleteAvantage(recordId) {
+  if (!recordId) return;
+  if (!confirm('Supprimer cette ligne exceptionnelle ?')) return;
+  var all = getAvantagesSociaux();
+  all = all.filter(function(a){ return a.id !== recordId; });
+  saveAvantagesSociaux(all);
+  if (typeof renderFrais === 'function') renderFrais();
+}
+
+// ── Popup pour ajouter un avantage exceptionnel (sélection du consultant) ──
+// Liste des consultants (construite 1 fois à l'ouverture du popup)
+var _avantageExcChoices = [];
+
+function openAvantageExceptionnelPopup() {
+  var ex = document.getElementById('modal-avantage-exc');
+  if (ex) ex.remove();
+
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  // Proposer tous les consultants (même sortis) pour flexibilité
+  _avantageExcChoices = deals
+    .filter(function(d){ return d.etat !== 'Annulé' && (d.prenom || d.nom); })
+    .map(function(d){
+      var nom = ((d.prenom||'') + ' ' + (d.nom||'')).trim();
+      return {
+        id: d.id,
+        nom: nom,
+        entreprise: d.entreprise || '',
+        labelLc: (nom + ' ' + (d.entreprise || '')).toLowerCase()
+      };
+    })
+    .sort(function(a,b){ return a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' }); });
+
+  var modal = document.createElement('div');
+  modal.id = 'modal-avantage-exc';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3000;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:14px;padding:24px;width:90%;max-width:480px;box-shadow:0 10px 40px rgba(0,0,0,0.25);">'
+    +   '<div style="font-size:16px;font-weight:700;color:#1A1033;margin-bottom:8px;">+ Ligne exceptionnelle</div>'
+    +   '<div style="font-size:12px;color:#6B5E9C;margin-bottom:16px;line-height:1.5;">Ajouter une ligne d\'avantage supplémentaire pour un consultant (en plus de sa ligne mensuelle standard).</div>'
+    +   '<label style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:4px;">Rechercher un consultant</label>'
+    +   '<div style="position:relative;margin-bottom:10px;">'
+    +     '<span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#9E94C4;font-size:14px;pointer-events:none;">🔍</span>'
+    +     '<input id="avantage-exc-search" type="text" oninput="filterAvantageExcList(this.value)" placeholder="Nom, prénom ou entreprise…" style="width:100%;padding:9px 12px 9px 38px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;font-family:inherit;">'
+    +   '</div>'
+    +   '<div id="avantage-exc-list" style="max-height:260px;overflow-y:auto;border:1px solid #E4E0FA;border-radius:8px;background:#FAF8FF;margin-bottom:14px;">'
+    +     buildAvantageExcListHtml(_avantageExcChoices)
+    +   '</div>'
+    +   '<input type="hidden" id="avantage-exc-deal-id" value="">'
+    +   '<div style="display:flex;gap:8px;justify-content:flex-end;">'
+    +     '<button onclick="document.getElementById(\'modal-avantage-exc\').remove()" style="padding:8px 16px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">Annuler</button>'
+    +     '<button id="avantage-exc-confirm-btn" onclick="confirmAvantageExceptionnel()" disabled style="padding:8px 16px;background:#C0B8E0;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:not-allowed;">Créer la ligne</button>'
     +   '</div>'
     + '</div>';
+  document.body.appendChild(modal);
+  setTimeout(function(){
+    var s = document.getElementById('avantage-exc-search');
+    if (s) s.focus();
+  }, 100);
+}
+
+function buildAvantageExcListHtml(list) {
+  if (!list.length) {
+    return '<div style="padding:30px 15px;text-align:center;color:#9E94C4;font-size:12px;font-style:italic;">Aucun résultat.</div>';
+  }
+  return list.map(function(c) {
+    var initials = (c.nom || '').split(/\s+/).filter(Boolean).map(function(w){ return (w[0]||'').toUpperCase(); }).slice(0, 2).join('') || '?';
+    return '<div onclick="selectAvantageExc(' + c.id + ',this)" data-id="' + c.id + '" style="padding:10px 12px;border-bottom:1px solid #F0EDF9;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background 0.15s;" onmouseover="this.style.background=\'#F0EDFC\'" onmouseout="if(!this.classList.contains(\'selected\'))this.style.background=\'\'">'
+      +   '<div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">' + initials + '</div>'
+      +   '<div style="flex:1;min-width:0;">'
+      +     '<div style="font-size:12.5px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (c.nom || '(sans nom)').replace(/</g,'&lt;') + '</div>'
+      +     (c.entreprise ? '<div style="font-size:11px;color:#6B5E9C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + c.entreprise.replace(/</g,'&lt;') + '</div>' : '')
+      +   '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function filterAvantageExcList(q) {
+  var qLc = (q || '').trim().toLowerCase();
+  var filtered = qLc
+    ? _avantageExcChoices.filter(function(c){ return c.labelLc.indexOf(qLc) >= 0; })
+    : _avantageExcChoices;
+  var el = document.getElementById('avantage-exc-list');
+  if (el) el.innerHTML = buildAvantageExcListHtml(filtered);
+}
+
+function selectAvantageExc(dealId, clickedEl) {
+  // Retirer la sélection précédente
+  document.querySelectorAll('#avantage-exc-list > div').forEach(function(d){
+    d.classList.remove('selected');
+    d.style.background = '';
+  });
+  // Marquer la ligne cliquée
+  if (clickedEl) {
+    clickedEl.classList.add('selected');
+    clickedEl.style.background = '#D9CFFA';
+  }
+  // Stocker l'ID sélectionné
+  var hidden = document.getElementById('avantage-exc-deal-id');
+  if (hidden) hidden.value = dealId;
+  // Activer le bouton
+  var btn = document.getElementById('avantage-exc-confirm-btn');
+  if (btn) {
+    btn.disabled = false;
+    btn.style.cursor = 'pointer';
+    btn.style.background = 'linear-gradient(135deg,#372EB6,#7343EE)';
+  }
+}
+
+function confirmAvantageExceptionnel() {
+  var hidden = document.getElementById('avantage-exc-deal-id');
+  if (!hidden || !hidden.value) { alert('Veuillez sélectionner un consultant.'); return; }
+  var dealId = parseInt(hidden.value);
+  var cfg = getAvantagesConfig();
+  var all = getAvantagesSociaux();
+  all.unshift({
+    id: Date.now(),
+    deal_id: dealId,
+    mois: avantagesCurrentMois,
+    type_avantage: '',
+    montant: 0,
+    montant_ajustement: 0,
+    ajustement_bp: 'Non',
+    chargement_swile: 'Non',
+    commentaire: '',
+    exceptionnel: true,
+    updated_ts: Date.now()
+  });
+  saveAvantagesSociaux(all);
+  document.getElementById('modal-avantage-exc').remove();
+  if (typeof renderFrais === 'function') renderFrais();
+}
+
+// ── Accordion Paramètres Avantages Sociaux ──
+function buildAvantagesConfigCard() {
+  var cfg = getAvantagesConfig();
+
+  // Header de la liste des types (2 colonnes : nom + max)
+  var typesListHeader = ''
+    + '<div style="display:grid;grid-template-columns:1fr 140px 36px;gap:8px;align-items:center;margin-bottom:6px;padding:0 4px;">'
+    +   '<div style="font-size:10.5px;color:#9E94C4;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Nom du type</div>'
+    +   '<div style="font-size:10.5px;color:#9E94C4;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;text-align:right;">Montant max (€)</div>'
+    +   '<div></div>'
+    + '</div>';
+
+  var typesHtml = cfg.types_avantages.map(function(t, i) {
+    var nom = (t && t.nom) || '';
+    var max = (t && t.montant_max) || 0;
+    return '<div style="display:grid;grid-template-columns:1fr 140px 36px;gap:8px;margin-bottom:6px;align-items:center;">'
+      +   '<input type="text" value="' + nom.replace(/"/g,'&quot;') + '" onchange="updateAvantageType(' + i + ',this.value)" placeholder="Nom du type" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;">'
+      +   '<input type="number" min="0" step="1" value="' + max + '" onchange="updateAvantageTypeMax(' + i + ',this.value)" placeholder="Max €" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;text-align:right;">'
+      +   '<button onclick="removeAvantageType(' + i + ')" title="Supprimer ce type" style="padding:6px 8px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;cursor:pointer;">✕</button>'
+      + '</div>';
+  }).join('');
+
+  return ''
+    // ── Coefficient d'ajustement uniquement (plus de max global) ──
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">'
+    +   '<div>'
+    +     '<label style="font-size:11px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Coefficient d\'ajustement</label>'
+    +     '<input type="number" min="0.01" step="0.01" value="' + cfg.coefficient_ajustement + '" onchange="updateAvantagesConfigField(\'coefficient_ajustement\',parseFloat(this.value)||1.46)" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;">'
+    +     '<div style="font-size:10.5px;color:#9E94C4;margin-top:4px;">Ajustement = Montant / ce coefficient</div>'
+    +   '</div>'
+    + '</div>'
+    // ── Liste des types + max par catégorie ──
+    + '<div style="margin-top:20px;padding-bottom:6px;border-bottom:1.5px solid #E4E0FA;font-size:12.5px;font-weight:700;color:#4B36EC;">Types d\'avantages (avec montant max par catégorie)</div>'
+    + '<div style="margin-top:12px;">'
+    +   typesListHeader
+    +   typesHtml
+    + '</div>'
+    + '<button onclick="addAvantageType()" style="margin-top:6px;padding:6px 12px;background:#F0EDFC;color:#4B36EC;border:1.5px solid #D9CFFA;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer;">+ Ajouter un type</button>'
+    + '<div style="margin-top:14px;padding:10px 12px;background:#F5F3FF;border-radius:8px;font-size:11px;color:#6B5E9C;line-height:1.5;">'
+    +   '💡 Chaque catégorie a son propre montant max. Le montant est bloqué à la saisie si ce plafond est dépassé. Les modifications sont automatiquement sauvegardées et synchronisées.'
+    + '</div>';
+}
+function renderParamsAvantagesAccordion() {
+  var el = document.getElementById('params-avantages-content');
+  if (el) el.innerHTML = buildAvantagesConfigCard();
+}
+
+// ── Accordion Paramètres Analyseur de Paie ──
+function buildAnalyseurConfigCard() {
+  var url = getAnalyseurPaieUrl();
+  var hasUrl = !!(url && url.trim());
+
+  return ''
+    + '<div style="display:flex;flex-direction:column;gap:12px;">'
+    +   '<div>'
+    +     '<label style="font-size:11px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em;">URL de l\'analyseur de paie</label>'
+    +     '<input id="analyseur-url-input" type="url" value="' + (url||'').replace(/"/g,'&quot;') + '" onchange="updateAnalyseurPaieUrl(this.value);renderParamsAnalyseurAccordion();" placeholder="https://sevenportage.sharepoint.com/..." style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;">'
+    +     '<div style="font-size:10.5px;color:#9E94C4;margin-top:5px;">📎 Collez ici le lien SharePoint (ou URL web) vers le fichier HTML de l\'analyseur de paie.</div>'
+    +   '</div>'
+    +   (hasUrl
+        ? '<div style="padding:10px 12px;background:#E8F5E9;border-left:3px solid #1D9E75;border-radius:6px;font-size:11.5px;color:#0F5132;">'
+          +   '✅ URL configurée. Le bouton <strong>"📊 Analyseur de Paie"</strong> dans la barre de navigation ouvrira cet outil dans un nouvel onglet.'
+          + '</div>'
+          + '<button onclick="openAnalyseurPaie()" style="padding:9px 16px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;align-self:flex-start;">🚀 Tester le lien</button>'
+        : '<div style="padding:10px 12px;background:#FFF4D6;border-left:3px solid #F0A500;border-radius:6px;font-size:11.5px;color:#8A5F00;">'
+          +   '⚠️ Aucune URL renseignée. Le bouton <strong>"📊 Analyseur de Paie"</strong> ne fonctionnera pas tant que cette URL ne sera pas configurée.'
+          + '</div>')
+    +   '<div style="padding:10px 12px;background:#F5F3FF;border-radius:8px;font-size:10.5px;color:#6B5E9C;line-height:1.55;">'
+    +     '🔄 <strong>URL synchronisée</strong> entre tous les utilisateurs via OneDrive. Si tu modifies l\'URL ici, elle sera automatiquement propagée à toute l\'équipe (Joanne, Clémence, Marie, commerciaux…) dès leur prochaine ouverture du simulateur.'
+    +   '</div>'
+    + '</div>';
+}
+function renderParamsAnalyseurAccordion() {
+  var el = document.getElementById('params-analyseur-content');
+  if (el) el.innerHTML = buildAnalyseurConfigCard();
 }
 
 // ── Coquille vide : Frais Pro ──
