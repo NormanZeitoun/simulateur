@@ -48,8 +48,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 }
 .field input:focus, .field select:focus { border-color: var(--brand); background: #fff; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.field-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
-
 /* TOGGLE */
 .toggle-group { display: flex; gap: 6px; flex-wrap: wrap; }
 .toggle-btn { padding: 5px 12px; border: 1.5px solid var(--border); border-radius: 20px; cursor: pointer; font-size: 12px; font-weight: 500; background: #F5F3FF; color: var(--muted); transition: all 0.15s; }
@@ -76,7 +74,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 
 /* BREAKDOWN TABLE */
 .breakdown { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; margin-bottom: 18px; }
-.breakdown-header { background: #F5F3FF; padding: 10px 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--brand); display: grid; grid-template-columns: 1fr auto auto; gap: 8px; }
 .breakdown-row { padding: 8px 16px; border-top: 1px solid #F0EDF9; display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 12px; }
 .breakdown-row.total { background: #F5F3FF; font-weight: 700; font-size: 13px; }
 .breakdown-row .pct { color: var(--muted); min-width: 50px; text-align: right; font-size: 11px; }
@@ -121,9 +118,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
 .btn-primary { background: var(--brand); color: #fff; }
 .btn-primary:hover { background: var(--brand2); }
-.btn-secondary { background: #F0EDF9; color: var(--brand); border: 1.5px solid var(--border); }
-.btn-sm { padding: 6px 12px; font-size: 12px; }
-
 /* SEUIL ALERT */
 .seuil-warning { background: #FFF8E1; border: 1px solid #FFD54F; border-radius: 7px; padding: 8px 12px; font-size: 11px; color: #7A4F00; margin-top: 8px; display: none; }
 .seuil-warning.show { display: block; }
@@ -135,8 +129,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 }
 
 /* TOOLTIP */
-.info-icon { display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: var(--border); color: var(--muted); font-size: 9px; text-align: center; line-height: 14px; cursor: help; font-weight: 700; }
-
 /* WATERMARK */
 .watermark { text-align: center; padding: 12px; color: var(--muted); font-size: 11px; opacity: 0.6; }
 
@@ -152,13 +144,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .hist-folder-body { display:none; padding:10px 12px; background:#fff; }
 .hist-folder-body.open { display:block; }
 /* Filtres par type */
-.hist-filters-group { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
-.hist-filter-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:#6B5E9C; margin-bottom:4px; }
 /* items */
 .hist-item { background:#FAFAFA; border:1.5px solid #E4E0FA; border-radius:10px; padding:14px 16px; margin-bottom:10px; transition:border-color .15s; }
 .hist-item:hover { border-color:#7343EE; }
 .hist-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
-.hist-name { font-size:14px; font-weight:600; color:#1A1033; }
 .hist-version { background:#F0EDFF; color:#7343EE; font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px; margin-left:8px; }
 .hist-date { font-size:11px; color:#9E9E9E; white-space:nowrap; }
 .hist-meta { display:flex; gap:14px; margin-bottom:8px; flex-wrap:wrap; }
@@ -172,7 +161,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .hist-btn.new-ver { background:#E8FFF4; color:#1D9E75; border:1.5px solid #9FE1CB; }
 .hist-btn.del { background:#FCEBEB; color:#E24B4A; border:1.5px solid #F0C0C0; }
 .hist-comm-badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px; margin-left:6px; }
-.hist-filter-row { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
 .hist-filter { padding:5px 12px; border-radius:20px; border:1.5px solid #E4E0FA; font-size:12px; cursor:pointer; background:#fff; color:#6B5E9C; }
 .hist-filter.active { background:#7343EE; color:#fff; border-color:#7343EE; }
 .hist-search-wrap { position:relative; margin-bottom:12px; }
@@ -191,7 +179,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .hist-stat.green .hist-stat-val { color:#1D9E75; }
 .hist-stat.gold  .hist-stat-val { color:#B8860B; }
 .hist-stat.blue  .hist-stat-val { color:#4B36EC; }
-.hist-period-filters { display:flex; gap:6px; margin-bottom:10px; }
 .hist-period-btn { padding:4px 12px; border-radius:20px; border:1.5px solid #E4E0FA; font-size:11px; font-weight:600; cursor:pointer; background:#fff; color:#6B5E9C; transition:all .15s; }
 .hist-period-btn.active { background:#7343EE; color:#fff; border-color:#7343EE; }
 .hist-dashboard-wrap { padding:12px 22px 0; border-bottom:1px solid #E4E0FA; background:#fff; flex-shrink:0; }
@@ -202,7 +189,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .cf-lbl { font-size:10px; font-weight:700; color:#9E9E9E; text-transform:uppercase; letter-spacing:0.4px; display:block; margin-bottom:3px; }
 .cf-inp { width:100%; padding:6px 9px; border:1.5px solid #E4E0FA; border-radius:7px; font-size:12px; box-sizing:border-box; outline:none; transition:border-color .15s; }
 .cf-inp:focus { border-color:#7343EE; }
-.cand-card-hover { border-color:#7343EE !important; box-shadow:0 4px 16px rgba(115,67,238,0.12) !important; }
 .cand-card { background:#fff; border:1.5px solid #E4E0FA; border-radius:10px; padding:12px; cursor:pointer; transition:all .15s; position:relative; overflow:hidden; width:190px; height:190px; display:flex; flex-direction:column; justify-content:space-between; box-sizing:border-box; }
 .cand-card:hover { border-color:#7343EE; box-shadow:0 4px 16px rgba(115,67,238,0.12); }
 .back-btn { display:inline-flex; align-items:center; gap:5px; padding:5px 12px; background:#F5F3FF; color:#7343EE; border:1.5px solid #E4E0FA; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; }
@@ -1019,7 +1005,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   <button class="main-nav-btn" id="mainnav-clients" onclick="mainNavTo('clients')">&#127970; Clients</button>
   <button class="main-nav-btn" id="mainnav-taches" onclick="mainNavTo('taches')">&#128197; Tâches</button>
   <button class="main-nav-btn" id="mainnav-commissions" onclick="mainNavTo('commissions')">&#128176; Commissions</button>
-  <button class="main-nav-btn" id="mainnav-entrees" onclick="mainNavTo('entrees')">&#127881; Entrées du mois</button>
   <button class="main-nav-btn" id="mainnav-analyseur" onclick="openAnalyseurPaie()" title="Ouvre l'analyseur de paie dans un nouvel onglet">&#128202; Analyseur de Paie</button>
 </div>
 
@@ -1050,6 +1035,28 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         </label>
       </div>
       <div class="field-row">
+        <div class="field" style="max-width:140px;flex:0 0 140px;">
+          <label>Civilité</label>
+          <select id="civilite" onchange="calc()" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;font-family:inherit;cursor:pointer;width:100%;">
+            <option value="">—</option>
+            <option value="M.">M.</option>
+            <option value="Mme">Mme</option>
+          </select>
+        </div>
+        <div class="field"><label>Origine Leads</label>
+          <select id="source_origine" onchange="calc();onSimCoopOriginChange()">
+            <option value="">-- S&eacute;lectionner --</option>
+            <option value="R&eacute;seau">R&eacute;seau</option>
+            <option value="LinkedIn">LinkedIn</option>
+            <option value="Job board">Job board</option>
+            <option value="Recommandation">Recommandation</option>
+            <option value="Cooptation Client">🤝 Cooptation Client</option>
+            <option value="Cooptation Candidat">🤝 Cooptation Candidat</option>
+            <option value="Autre">Autre</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
         <div class="field" style="position:relative;">
           <label>Prénom candidat</label>
           <input type="text" id="prenom" placeholder="Laurent" oninput="calc();filterSimCandidat()" onblur="setTimeout(hideSimCandidatDrop,200)" autocomplete="off">
@@ -1078,19 +1085,9 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       </div>
       <div class="field-row">
         <div class="field"><label>Téléphone candidat</label><input type="tel" id="tel" placeholder="06 XX XX XX XX" oninput="calc()"></div>
-        <div class="field"><label>Poste</label><input type="text" id="poste" placeholder="Dev Senior, Chef de projet..." oninput="calc()"></div>
-      </div>
-      <div class="field"><label>Source / Origine du deal</label>
-        <select id="source_origine" onchange="calc();onSimCoopOriginChange()">
-          <option value="">-- S&eacute;lectionner --</option>
-          <option value="R&eacute;seau">R&eacute;seau</option>
-          <option value="LinkedIn">LinkedIn</option>
-          <option value="Job board">Job board</option>
-          <option value="Recommandation">Recommandation</option>
-          <option value="Cooptation Client">🤝 Cooptation Client</option>
-          <option value="Cooptation Candidat">🤝 Cooptation Candidat</option>
-          <option value="Autre">Autre</option>
-        </select>
+        <div class="field" style="position:relative;"><label>Poste</label><input type="text" id="poste" placeholder="Dev Senior, Chef de projet..." oninput="calc();onPosteInputChange(this)" onfocus="onPosteInputChange(this)" onblur="setTimeout(function(){var d=document.getElementById('sim-poste-dropdown');if(d)d.style.display='none';},200)" autocomplete="off">
+          <div id="sim-poste-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:220px;overflow-y:auto;margin-top:2px;"></div>
+        </div>
       </div>
 
       <!-- Bloc recherche coopteur (affiché uniquement si Origine = Cooptation Client ou Candidat) -->
@@ -1732,9 +1729,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 
   <!-- TAB DASHBOARD -->
   <div id="tab-dashboard" style="display:none;"></div>
-
-  <!-- TAB ENTRÉES DU MOIS -->
-  <div id="tab-entrees" style="display:none;"></div>
 
   <!-- TAB CLIENTS -->
   <div id="tab-clients" style="display:none;">
@@ -3299,11 +3293,6 @@ window.addEventListener('DOMContentLoaded', () => {
 // ═══════════════════════════════════════════════════════════
 // PDFs — stockage localStorage + base64 par défaut
 // ═══════════════════════════════════════════════════════════
-var PDF_DEFAULTS = {
-  pdf1: { name: 'Seven_Portage_Avantages_Sociaux_2026.pdf', b64: null },
-  pdf2: { name: 'Seven_Portage_Tableau_Garanties_Henner.pdf', b64: null }
-};
-
 // Chargé de façon lazy pour ne pas bloquer le démarrage
 function getPDFb64(key, callback) {
   var stored = localStorage.getItem('sp_pdf_' + key);
@@ -3515,6 +3504,7 @@ function getSimData() {
     gd_lieu:       window.state ? window.state.gd_lieu : '',
     ik_1ere:       window.state ? window.state.ik_1ere : false,
     poste:         s('poste'),
+    civilite:      s('civilite'),
     entreprise:    s('entreprise'),
     manager:       s('manager'),
     email_client:  s('email_client'),
@@ -3787,10 +3777,6 @@ function _bpFmt(n, dec) {
   if (dec === undefined) dec = 2;
   if (n === null || n === undefined || isNaN(n)) return '';
   return Number(n).toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-}
-function _bpFmtEur(n, dec) {
-  if (n === null || n === undefined || isNaN(n) || Math.abs(n) < 0.005) return '';
-  return _bpFmt(n, dec) + ' €';
 }
 function _bpPct(n) {
   if (n === null || n === undefined || isNaN(n) || Math.abs(n) < 0.00001) return '';
@@ -4241,8 +4227,6 @@ function highlight(text, query) {
   var escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return String(text).replace(new RegExp('(' + escaped + ')', 'gi'), '<span class="hist-highlight">$1</span>');
 }
-
-
 
 function buildFolder(key, sims, q, isOpen) {
   var icon = '&#128100;';
@@ -4892,7 +4876,7 @@ function renderDashboardKPIs() {
     + '<div class="dash-section-title">📈 Répartitions</div>'
     + '<div class="dash-grid cols-2">'
     +   '<div class="dash-repart-card">'
-    +     '<div class="repart-title">🎯 Origine des placements</div>'
+    +     '<div class="repart-title">🎯 Origine Leads</div>'
     +     '<div class="repart-count">' + originTotal + ' placement' + (originTotal > 1 ? 's' : '') + ' analysé' + (originTotal > 1 ? 's' : '') + '</div>'
     +     buildBars(originEntries, originTotal, '#7343EE', '#4B36EC', 'rgba(115,67,238,0.35)')
     +   '</div>'
@@ -5027,6 +5011,7 @@ function saveHistorique(data, dest, email, consultantName) {
     consultant: name,
     commercial: data.commercial || '',
     poste: data.poste || '',
+    civilite: data.civilite || '',
     entreprise: data.entreprise || '',
     manager: data.manager || '',
     tjm: data.tjm,
@@ -5078,7 +5063,6 @@ function saveHistorique(data, dest, email, consultantName) {
       if (cmResult.created_client) msg.push('Client "' + entry.entreprise + '" créé');
       if (cmResult.created_manager) msg.push('Manager "' + (entry.manager || entry.email_client) + '" ajouté');
       if (typeof showNotifToast === 'function') showNotifToast('✓ ' + msg.join(' · '));
-      console.log('[saveHistorique] Upsert:', cmResult);
     }
   } catch(e) { console.error('[saveHistorique] saveClientManagerFromEntry:', e); }
   // Sync automatique OneDrive si connecté
@@ -5087,7 +5071,7 @@ function saveHistorique(data, dest, email, consultantName) {
 
 function captureSnapshotForHistory() {
   // Champs texte/number à capturer par valeur
-  var textIds = ['prenom','nom','email','email_client','entreprise','manager','poste','tel','source_origine',
+  var textIds = ['prenom','nom','email','email_client','entreprise','manager','poste','civilite','tel','source_origine',
     'tjm','nb_jours','marge','brut','brut_annuel','taux_impot',
     'km_aller','puissance_fiscale','jours_presentiels',
     'swile_val','abo_transport','abo_tel','abo_internet','abo_telnet',
@@ -5109,16 +5093,12 @@ function captureSnapshotForHistory() {
   });
   // Capturer aussi l'état global (mutuelle/cp/repas/tt/gd_lieu/ik_1ere/rtt)
   snap._state = window.state ? JSON.parse(JSON.stringify(window.state)) : {};
-  console.log('[CAPTURE] Snapshot complet:', JSON.parse(JSON.stringify(snap)));
-  console.log('[CAPTURE] State capturé:', JSON.parse(JSON.stringify(snap._state)));
   return snap;
 }
 
 function restoreSnapshot(snap) {
   if (!snap) return;
 
-  console.log('[RESTORE] Snapshot reçu:', JSON.parse(JSON.stringify(snap)));
-  console.log('[RESTORE] State à restaurer:', snap._state ? JSON.parse(JSON.stringify(snap._state)) : 'AUCUN');
 
   window._isRestoring = true;
 
@@ -5148,12 +5128,6 @@ function restoreSnapshot(snap) {
   //    Avec nb_jours déjà à la bonne valeur, setRTT(12) ne tombe plus dans son early-return,
   //    et setCP('CP') ne déclenche plus l'alert si nb_jours < 21.
   if (snap._state) {
-    console.log('[RESTORE] Appel setMutuelle(' + (snap._state.mutuelle || 'renoncement') + ')');
-    console.log('[RESTORE] Appel setCP(' + (snap._state.cp || 'Non') + ')');
-    console.log('[RESTORE] Appel setRepas(' + (snap._state.repas || 'Non') + ')');
-    console.log('[RESTORE] Appel setTT(' + (snap._state.tt || false) + ')');
-    console.log('[RESTORE] Appel setGDLieu(' + (snap._state.gd_lieu || 'IDF') + ')');
-    console.log('[RESTORE] Appel setRTT(' + (snap._state.rtt || 0) + ')');
     try { if (typeof setMutuelle === 'function') setMutuelle(snap._state.mutuelle || 'renoncement'); } catch(e){}
     try { if (typeof setCP       === 'function') setCP(snap._state.cp || 'Non'); } catch(e){}
     try { if (typeof setRepas    === 'function') setRepas(snap._state.repas || 'Non'); } catch(e){}
@@ -5175,12 +5149,6 @@ function restoreSnapshot(snap) {
   //    sans retoucher brut/tjm si lastEdited n'est pas redéfini.
   window._isRestoring = false;
   setTimeout(function() {
-    console.log('[RESTORE] État FINAL juste avant calc :', JSON.parse(JSON.stringify(window.state || {})));
-    console.log('[RESTORE] Valeurs champs finaux:');
-    ['brut','tjm','abo_tel','abo_internet','jours_tt','frais_formation','frais_materiel','km_aller','abo_transport','swile_val'].forEach(function(id){
-      var el = document.getElementById(id);
-      if (el) console.log('  ' + id + ' = ' + el.value);
-    });
     // Re-afficher le bloc cooptation si l'origine le demande + remettre le badge ✓ sélectionné
     if (typeof onSimCoopOriginChange === 'function') {
       onSimCoopOriginChange();
@@ -5276,20 +5244,6 @@ function hideBanner() {
 }
 
 // Raccourci depuis la roue ⚙️ de la nav principale : va sur Simulateur puis onglet Paramètres
-function openParamsShortcut() {
-  if (typeof mainNavTo === 'function') mainNavTo('mission');
-  setTimeout(function(){
-    if (typeof showTab === 'function') showTab('tab-params');
-    // Scroll vers la barre de verrou pour montrer où cliquer
-    setTimeout(function(){
-      var bar = document.getElementById('params-lock-bar');
-      if (bar && typeof bar.scrollIntoView === 'function') {
-        bar.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 100);
-  }, 50);
-}
-
 function toggleParamsLock() {
   // Le mot de passe est maintenant unifié avec celui de l'admin commissions.
   // Source unique : getCommParams().admin_password (défaut 'seven2026', modifiable depuis Commissions).
@@ -5492,9 +5446,6 @@ function odConnect() {
   });
 }
 
-
-
-
 function odLogout() {
   odToken = null; odAccount = null;
   if (msalApp) msalApp.logoutPopup();
@@ -5662,7 +5613,6 @@ function odSilentFullSync() {
     var errors = [];
     odSetStatus('Synchronisation...', false);
     var t0 = Date.now();
-    console.log('[AutoSync] Démarrage LOAD+MERGE+PUSH parallèle sur', entities.length, 'entités');
 
     // ═══ PHASE 1 : LOAD parallèle (toutes les entités en même temps) ═══
     var loadPromises = entities.map(function(ent) {
@@ -5701,7 +5651,6 @@ function odSilentFullSync() {
     });
 
     Promise.all(loadPromises).then(function() {
-      console.log('[AutoSync] LOAD terminé en', (Date.now() - t0) + 'ms');
 
       // ═══ PHASE 2 : PUSH parallèle (toutes les entités après merge) ═══
       var t1 = Date.now();
@@ -5726,7 +5675,6 @@ function odSilentFullSync() {
       });
 
       Promise.all(pushPromises).then(function() {
-        console.log('[AutoSync] PUSH terminé en', (Date.now() - t1) + 'ms · Total:', (Date.now() - t0) + 'ms');
         if (errors.length) {
           console.warn('[AutoSync] Terminé avec avertissements:', errors);
           odSetStatus('⚠ Sync partielle (' + errors.length + ')', true);
@@ -5767,7 +5715,6 @@ var currentPlacementTs = null;
 var dealFilterEtat = '__all__';
 var dealFilterComm = '__mine__';
 var dealFilterEtranger = '__all__';
-var dealFilterPeriod = '__all__';
 
 function getDeals() {
   try { return JSON.parse(localStorage.getItem(DEALS_KEY) || '[]'); } catch(e) { return []; }
@@ -5868,7 +5815,6 @@ function openPlacementPopup(ts) {
   var _cp       = _resolve('cp');
   var _gdLieu   = _resolve('gd_lieu');
   var _tt       = (sim.tt !== undefined && sim.tt !== null && sim.tt !== '') ? sim.tt : (sim.snapshot && sim.snapshot._state ? sim.snapshot._state.tt : false);
-  console.log('[Placement readonly] Résolution état:', { mutuelle: _mutuelle, repas: _repas, cp: _cp, gd_lieu: _gdLieu, tt: _tt });
 
   document.getElementById('pl-tjm').value = sim.tjm ? sim.tjm + ' €/j' : '—';
   document.getElementById('pl-nb-jours').value = sim.nb_jours ? sim.nb_jours + 'j' : '—';
@@ -6165,6 +6111,54 @@ function onSimCoopOriginChange() {
     if (dataEl) dataEl.value = '';
     if (badge) badge.style.display = 'none';
   }
+}
+
+// ── Autocomplete Poste : propose les postes déjà utilisés dans historique + deals ──
+function getAllPostesFromHistory() {
+  var set = {};
+  try {
+    var hist = (typeof getHistory === 'function') ? getHistory() : [];
+    hist.forEach(function(h){ if (h.poste) set[String(h.poste).trim()] = 1; });
+  } catch(e){}
+  try {
+    var deals = (typeof getDeals === 'function') ? getDeals() : [];
+    deals.forEach(function(d){ if (d.poste) set[String(d.poste).trim()] = 1; });
+  } catch(e){}
+  try {
+    var cands = (typeof getCandidats === 'function') ? getCandidats() : [];
+    cands.forEach(function(c){
+      (c.simulations || []).forEach(function(s){ if (s.poste) set[String(s.poste).trim()] = 1; });
+    });
+  } catch(e){}
+  return Object.keys(set).filter(Boolean).sort(function(a,b){ return a.localeCompare(b, 'fr', { sensitivity: 'base' }); });
+}
+
+function onPosteInputChange(inputEl) {
+  var drop = document.getElementById('sim-poste-dropdown');
+  if (!drop) return;
+  var q = (inputEl.value || '').trim().toLowerCase();
+  var allPostes = getAllPostesFromHistory();
+  var filtered = q
+    ? allPostes.filter(function(p){ return p.toLowerCase().indexOf(q) >= 0; })
+    : allPostes;
+  filtered = filtered.slice(0, 12);  // max 12 suggestions
+  if (!filtered.length) { drop.style.display = 'none'; return; }
+  drop.innerHTML = filtered.map(function(p) {
+    var safe = p.replace(/"/g,'&quot;').replace(/</g,'&lt;');
+    return '<div onmousedown="selectPosteSuggestion(this)" data-poste="' + safe + '" style="padding:8px 12px;font-size:12px;color:#1A1033;cursor:pointer;border-bottom:1px solid #F0EDF9;background:#fff;transition:background 0.1s;" onmouseover="this.style.background=\'#F5F3FF\'" onmouseout="this.style.background=\'#fff\'">' + safe + '</div>';
+  }).join('');
+  drop.style.display = 'block';
+}
+
+function selectPosteSuggestion(el) {
+  var val = el.getAttribute('data-poste') || '';
+  var input = document.getElementById('poste');
+  if (input) {
+    input.value = val;
+    if (typeof calc === 'function') calc();
+  }
+  var drop = document.getElementById('sim-poste-dropdown');
+  if (drop) drop.style.display = 'none';
 }
 
 function onSimCoopSearchInput() {
@@ -6664,6 +6658,7 @@ function savePlacement() {
     email: document.getElementById('pl-email').value,
     tel: document.getElementById('pl-tel').value,
     poste: document.getElementById('pl-poste').value,
+    civilite: (function(){ var el = document.getElementById('pl-civilite'); return el ? el.value : (sim ? (sim.civilite || '') : ''); })(),
     secteur: document.getElementById('pl-secteur').value,
     connait_tjm: document.getElementById('pl-connait-tjm').value,
     salarie_etranger: (function(){ var el=document.getElementById('pl-salarie-etranger'); return el ? el.checked : false; })(),
@@ -6846,53 +6841,7 @@ function findCommercialEmailByName(name) {
 }
 
 // Mutations de l'annuaire commerciaux
-function addCommercialToConfig() {
-  var cfg = getSortantsConfig();
-  cfg.commerciaux = cfg.commerciaux || [];
-  cfg.commerciaux.push({ nom: '', email: '' });
-  saveSortantsConfig(cfg);
-  renderSortants();
-}
-function updateCommercialInConfig(idx, field, value) {
-  var cfg = getSortantsConfig();
-  if (!cfg.commerciaux || !cfg.commerciaux[idx]) return;
-  cfg.commerciaux[idx][field] = (value || '').trim();
-  saveSortantsConfig(cfg);
-  if (typeof odAutoSync === 'function') odAutoSync();
-}
-function removeCommercialFromConfig(idx) {
-  var cfg = getSortantsConfig();
-  if (!cfg.commerciaux || !cfg.commerciaux[idx]) return;
-  var name = cfg.commerciaux[idx].nom || 'ce commercial';
-  if (!confirm('Retirer "' + name + '" de l\'annuaire ?')) return;
-  cfg.commerciaux.splice(idx, 1);
-  saveSortantsConfig(cfg);
-  renderSortants();
-}
 // Pré-remplit l'annuaire avec les noms des commerciaux détectés dans les deals
-function autofillCommerciauxFromDeals() {
-  var cfg = getSortantsConfig();
-  cfg.commerciaux = cfg.commerciaux || [];
-  var existingNames = {};
-  cfg.commerciaux.forEach(function(c){
-    if (c.nom) existingNames[(c.nom + '').trim().toLowerCase()] = 1;
-  });
-  var detected = (typeof getAllCommercialsFromDeals === 'function') ? getAllCommercialsFromDeals() : [];
-  var added = 0;
-  detected.forEach(function(name){
-    var k = (name + '').trim().toLowerCase();
-    if (k && !existingNames[k]) {
-      cfg.commerciaux.push({ nom: name, email: '' });
-      existingNames[k] = 1;
-      added++;
-    }
-  });
-  saveSortantsConfig(cfg);
-  renderSortants();
-  if (added === 0) alert('Tous les commerciaux détectés dans les deals sont déjà présents dans l\'annuaire.');
-  else alert('✓ ' + added + ' commercial' + (added > 1 ? 'iaux ajoutés' : ' ajouté') + ' à l\'annuaire. Il ne reste plus qu\'à renseigner leurs emails.');
-}
-
 // Construit le HTML de la carte de paramètres Sortants.
 // Réutilisé dans la vue RH (avec carte/header pliable) et dans l'onglet Paramètres (sans cadre).
 // Argument `withCard` : true → wrappé dans une carte pliable, false → contenu nu (pour accordéon Params)
@@ -7269,7 +7218,6 @@ function sendSortantNotificationEmail(sortant, deal, isEdit) {
       body: JSON.stringify(payload)
     }).then(function(r){
       if (r.ok || r.status === 202) {
-        console.log('[Sortant] Mail envoyé automatiquement via Graph à', mailFixe, commercialEmail ? '(CC: ' + commercialEmail + ')' : '');
         if (typeof showNotifToast === 'function') showNotifToast('✉ Mail de notification sortie envoyé');
       } else {
         r.text().then(function(txt){
@@ -7396,10 +7344,6 @@ function showDealsTab() {
   renderDeals();
 }
 
-
-
-
-
 function renderDeals() {
   var deals = getDeals();
   // Filtres
@@ -7471,7 +7415,44 @@ function renderDeals() {
     html += '</tr>';
   });
   html += '</tbody></table></div>';
+  // Préserver la position de scroll horizontale/verticale avant re-render
+  var scrollContainer = listEl.querySelector('.deals-table-wrap');
+  var savedScrollLeft = scrollContainer ? scrollContainer.scrollLeft : 0;
+  var savedScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+  // Si l'utilisateur avait un input/select actif, on note son identifiant (data-deal-id + data-field)
+  var activeEl = document.activeElement;
+  var activeInfo = null;
+  if (activeEl && listEl.contains(activeEl) && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'SELECT' || activeEl.tagName === 'TEXTAREA')) {
+    activeInfo = {
+      dealId: activeEl.getAttribute('data-deal-id') || activeEl.closest('tr') ? (activeEl.closest('tr').getAttribute('data-deal-id') || '') : '',
+      field: activeEl.getAttribute('data-field') || activeEl.id || '',
+      selectionStart: activeEl.selectionStart,
+      selectionEnd: activeEl.selectionEnd
+    };
+  }
   listEl.innerHTML = html;
+  // Restaurer la position de scroll
+  var newContainer = listEl.querySelector('.deals-table-wrap');
+  if (newContainer) {
+    newContainer.scrollLeft = savedScrollLeft;
+    newContainer.scrollTop = savedScrollTop;
+  }
+  // Restaurer le focus si possible
+  if (activeInfo && activeInfo.field) {
+    try {
+      var selector = activeInfo.dealId
+        ? 'tr[data-deal-id="' + activeInfo.dealId + '"] [data-field="' + activeInfo.field + '"]'
+        : '[data-field="' + activeInfo.field + '"]';
+      var toFocus = listEl.querySelector(selector);
+      if (!toFocus && activeInfo.field) toFocus = listEl.querySelector('#' + activeInfo.field);
+      if (toFocus) {
+        toFocus.focus();
+        if (toFocus.setSelectionRange && activeInfo.selectionStart != null) {
+          try { toFocus.setSelectionRange(activeInfo.selectionStart, activeInfo.selectionEnd); } catch(e){}
+        }
+      }
+    } catch(e){}
+  }
 }
 
 // Tooltip flottant pour commentaires (délégation d'événement, actif globalement)
@@ -8015,7 +7996,6 @@ window.addEventListener('mouseup', function(e) {
 // MODULE CANDIDATS
 // ═══════════════════════════════════════════════════════════
 var CAND_KEY = 'sp_candidats_v1';
-var candSearchVal = '';
 
 function candCard(id) {
   return '<div data-candid="' + id + '" onclick="openCandidatFiche(parseInt(this.dataset.candid))" class="cand-card">';
@@ -8648,8 +8628,6 @@ function renderCandidats() {
     var hasCv = cand.cv_name ? true : false;
     html += candCard(cand.id);
 
-
-
     html += '<div style="position:absolute;top:0;left:0;right:0;height:4px;background:' + scfg.color + ';border-radius:12px 12px 0 0;"></div>';
     // Appliquer le style de fond sur la carte active (injection d'un style inline via class spécifique)
     var cardMarker = 'data-candid="' + cand.id + '"';
@@ -8737,7 +8715,23 @@ function updateAnalyseurPaieUrl(val) {
   saveAnalyseurPaieUrl(val);
 }
 
+// Flag session analyseur de paie
+var _analyseurUnlocked = false;
+function isAnalyseurUnlocked() { return !!_analyseurUnlocked; }
+
 function openAnalyseurPaie() {
+  // Verrou : demande le mot de passe si pas encore débloqué
+  if (!isAnalyseurUnlocked()) {
+    promptGenericAdminPassword({
+      title: 'Analyseur de Paie',
+      subtitle: 'Cet outil est protégé. Saisissez le mot de passe administrateur pour y accéder.'
+    }, function() {
+      _analyseurUnlocked = true;
+      if (typeof showNotifToast === 'function') showNotifToast('🔓 Analyseur débloqué pour cette session');
+      openAnalyseurPaie();  // relance après déblocage
+    });
+    return;
+  }
   var url = getAnalyseurPaieUrl();
   if (!url) {
     if (confirm('⚠️ Aucune URL configurée\n\nL\'URL de l\'analyseur de paie n\'a pas encore été renseignée.\n\nVoulez-vous aller dans les Paramètres pour la configurer ?')) {
@@ -8790,7 +8784,7 @@ function mainNavTo(section) {
   } else if (section === 'commissions') {
     showCommissionsSection(currentCommSubTab || 'current');
   } else if (section === 'entrees') {
-    showEntreesView();
+    showRHSection('entrees');
   }
 }
 
@@ -8798,6 +8792,7 @@ function mainNavTo(section) {
 var currentRHSubTab = 'deals';
 var RH_SUBTABS = [
   { key: 'deals',        label: 'Tableau des deals', icon: '\u{1F4CB}', ready: true  },
+  { key: 'entrees',      label: 'Entrées du mois',   icon: '\u{1F389}', ready: true  },
   { key: 'prolongation', label: 'Prolongation',      icon: '\u{23F3}',  ready: true  },
   { key: 'avenants',     label: 'Avenants',          icon: '\u{1F4DD}', ready: false },
   { key: 'sortants',     label: 'Sortants',          icon: '\u{1F6AA}', ready: true  },
@@ -8825,6 +8820,8 @@ function showRHSection(subtab) {
     showCooptationsView();
   } else if (subtab === 'comptes_act') {
     showComptesActiviteView();
+  } else if (subtab === 'entrees') {
+    showEntreesView();
   } else {
     // Placeholder pour les sous-sections non encore implémentées
     showRHPlaceholder(subtab);
@@ -8988,15 +8985,6 @@ function emailWrapperClose() {
 
 // ── Helper : déterminer qui gère un consultant selon son nom (A-H / I-Z) ──
 // Même logique que getPlacementRecipients
-function getProlongationSender(nomCandidat) {
-  if (typeof getInternalEmails !== 'function') return null;
-  var emails = getInternalEmails();
-  var firstLetter = (nomCandidat||'').trim().charAt(0).toUpperCase();
-  var isAH = firstLetter >= 'A' && firstLetter <= 'H';
-  var mgrEmail = isAH ? emails.clemence : emails.marie;
-  return mgrEmail || null;
-}
-
 // ── Filtrer les deals concernés par la prolongation (date_fin ce mois-ci) ──
 function getProlongationDeals() {
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
@@ -9284,7 +9272,6 @@ function testSendProlongationRelance(dealId, niveau) {
 // Un flag LocalStorage "last_run_YYYY-MM" évite les doubles envois par jour.
 function checkAndSendProlongationRelances(force) {
   if (!odToken) {
-    console.log('[Prolongation] OneDrive non connecté, relances non envoyées');
     return;
   }
   var cfg = getProlongConfig();
@@ -9297,7 +9284,6 @@ function checkAndSendProlongationRelances(force) {
     var lastRun = localStorage.getItem(PROLONG_LAST_RUN_KEY) || '';
     var todayKey = today.toISOString().slice(0, 10);
     if (lastRun === todayKey) {
-      console.log('[Prolongation] Déjà vérifié aujourd\'hui');
       return;
     }
     localStorage.setItem(PROLONG_LAST_RUN_KEY, todayKey);
@@ -9324,7 +9310,6 @@ function checkAndSendProlongationRelances(force) {
   });
 
   if (sentCount > 0) {
-    console.log('[Prolongation] ' + sentCount + ' relance(s) envoyée(s)');
     if (typeof showNotifToast === 'function') {
       showNotifToast('✉ ' + sentCount + ' relance(s) prolongation envoyée(s)');
     }
@@ -9481,15 +9466,6 @@ function sendProlongationRelance(deal, niveau) {
 }
 
 // ── Reset des relances quand l'utilisateur modifie date_fin ──
-function resetProlongationFlagsIfDateFinChanged(deal, previousDateFin) {
-  if (!deal || !previousDateFin) return;
-  if (deal.date_fin !== previousDateFin) {
-    deal.relance1_prolong_ts = null;
-    deal.relance2_prolong_ts = null;
-    deal.date_fin_nouvelle = '';
-  }
-}
-
 // ── Accordion Paramètres Prolongation ──
 function buildProlongationConfigCard() {
   var cfg = getProlongConfig();
@@ -10470,12 +10446,6 @@ function mergeFraisPro(remote) {
 function computeFraisProTotal(fp) {
   return (parseFloat(fp.montant_1) || 0) + (parseFloat(fp.montant_2) || 0) + (parseFloat(fp.montant_3) || 0);
 }
-function computeFraisProAjust(fp, coef) {
-  var c = coef || 1.46;
-  if (c <= 0) return 0;
-  return computeFraisProTotal(fp) / c;
-}
-
 // ── Vue Frais Pro ──
 function buildFraisProContent() {
   var avantagesCfg = getAvantagesConfig();  // Réutilise le coefficient
@@ -10985,21 +10955,29 @@ function getPortesDemarrantDansMois(moisStr) {
 
 // ── Vue principale ──
 function showEntreesView() {
-  // Masquer tous les autres conteneurs
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
   ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
+  var tab = document.getElementById('tab-deals');
+  if (!tab) return;
+  tab.style.display = 'block';
   var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
   var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
   var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
-  var tab = document.getElementById('tab-entrees');
-  if (!tab) return;
-  tab.style.display = 'block';
+  if (typeof setDealsOriginalVisible === 'function') setDealsOriginalVisible(false);
+  injectRHSubNav();
+  var container = document.getElementById('rh-content-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'rh-content-container';
+    tab.appendChild(container);
+  }
   renderEntrees();
 }
 
 function renderEntrees() {
-  var el = document.getElementById('tab-entrees');
+  var el = document.getElementById('rh-content-container');
   if (!el) return;
   el.innerHTML = buildEntreesContent();
 }
@@ -11543,37 +11521,42 @@ function saveJoursPrestes(obj) {
 function mergeJoursPrestes(remote) {
   if (!remote || typeof remote !== 'object') return;
   var local = getJoursPrestes();
-  var ts_remote = remote._updated_ts || 0;
-  var ts_local = local._updated_ts || 0;
-  // Merge par deal : pour chaque deal, on prend les mois les plus récents
-  // Ici on simplifie : si remote est plus récent, on fusionne (les nouveaux mois distants gagnent)
   var merged = {};
-  // Copier local
-  Object.keys(local).forEach(function(k) {
-    if (k === '_updated_ts') return;
-    merged[k] = local[k];
+
+  // Collecter toutes les clés (deal_ids) des deux sources
+  var allDealIds = {};
+  Object.keys(local).forEach(function(k){ if (k !== '_updated_ts' && k !== 'version' && k !== 'updated') allDealIds[k] = 1; });
+  Object.keys(remote).forEach(function(k){ if (k !== '_updated_ts' && k !== 'version' && k !== 'updated') allDealIds[k] = 1; });
+
+  // Pour chaque deal, fusion profonde mois par mois : UNION des deux sources
+  // En cas de conflit sur un mois, on garde la valeur non-nulle (ou local en priorité si les deux existent)
+  Object.keys(allDealIds).forEach(function(dealId) {
+    var localData = local[dealId] || {};
+    var remoteData = remote[dealId] || {};
+    var mergedData = {};
+
+    // Toutes les clés de mois des 2 sources
+    var allMonths = {};
+    Object.keys(localData).forEach(function(m){ allMonths[m] = 1; });
+    Object.keys(remoteData).forEach(function(m){ allMonths[m] = 1; });
+
+    Object.keys(allMonths).forEach(function(mo) {
+      var lv = localData[mo];
+      var rv = remoteData[mo];
+      // Si local a une valeur saisie (même 0 si explicite), on la garde (local-first)
+      // Sinon on prend remote
+      if (lv !== undefined && lv !== null && lv !== '') mergedData[mo] = lv;
+      else if (rv !== undefined && rv !== null && rv !== '') mergedData[mo] = rv;
+    });
+
+    // Ne garder le deal_id que s'il a au moins un mois saisi
+    if (Object.keys(mergedData).length > 0) {
+      merged[dealId] = mergedData;
+    }
   });
-  // Superposer remote (écrase les conflits si plus récent)
-  if (ts_remote > ts_local) {
-    Object.keys(remote).forEach(function(k) {
-      if (k === '_updated_ts') return;
-      merged[k] = Object.assign({}, merged[k] || {}, remote[k] || {});
-    });
-  } else {
-    Object.keys(remote).forEach(function(k) {
-      if (k === '_updated_ts') return;
-      // Fusion non-destructive : ne pas écraser si local existe déjà
-      if (!merged[k]) merged[k] = remote[k];
-      else merged[k] = Object.assign({}, remote[k] || {}, merged[k]);
-    });
-  }
-  merged._updated_ts = Math.max(ts_remote, ts_local);
+
+  merged._updated_ts = Math.max(local._updated_ts || 0, remote._updated_ts || 0);
   localStorage.setItem(JOURS_PRESTES_KEY, JSON.stringify(merged));
-}
-function getJoursPresteForDeal(dealId, moisStr) {
-  var all = getJoursPrestes();
-  var forDeal = all[dealId] || {};
-  return forDeal[moisStr] || 0;
 }
 function setJoursPresteForDeal(dealId, moisStr, jours) {
   var all = getJoursPrestes();
@@ -11662,11 +11645,6 @@ function removeMatchingRejected(idx) {
   all.rejected.splice(idx, 1);
   saveMatchingJours(all);
 }
-function getMatchingForName(rawName) {
-  var all = getMatchingJours();
-  return all.validated[normalizeNomForMatch(rawName)] || null;
-}
-
 // ── Normalisation nom ──
 function normalizeNomForMatch(s) {
   if (!s) return '';
@@ -11720,7 +11698,7 @@ function computeMatchScore(searchName, dealName) {
 // ── Vue principale ──
 function showComptesActiviteView() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard','tab-entrees'].forEach(function(id){
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.style.display = 'none';
   });
   var tab = document.getElementById('tab-deals');
@@ -12624,10 +12602,24 @@ function generateCompteActiviteExcel(deal, startMonth) {
 
   // Construction de la feuille via aoa (array of arrays)
   var aoa = [];
-  // Lignes 1-8 : vide (entête décoratif)
-  for (var row = 0; row < 8; row++) aoa.push([]);
-  // Ligne 9 : Titre
-  aoa.push(['', 'COMPTE D\'ACTIVITE : ' + nom.toUpperCase()]);
+  // Ligne 1 : Bandeau principal SEVEN PORTAGE
+  aoa.push(['', 'SEVEN PORTAGE']);
+  // Ligne 2 : Slogan
+  aoa.push(['', 'Votre partenaire portage salarial · IT & Digital']);
+  // Ligne 3 : Séparateur (vide)
+  aoa.push([]);
+  // Ligne 4 : Type de document
+  aoa.push(['', 'COMPTE D\'ACTIVITÉ PROFESSIONNEL']);
+  // Ligne 5 : séparateur
+  aoa.push([]);
+  // Ligne 6 : Nom consultant
+  aoa.push(['', 'Consultant : ' + nom.toUpperCase()]);
+  // Ligne 7 : Entreprise + TJM
+  aoa.push(['', 'Client : ' + (deal.entreprise || '—') + '    |    TJM : ' + tjm + ' € HT    |    Date d\'édition : ' + new Date().toLocaleDateString('fr-FR')]);
+  // Ligne 8 : séparateur
+  aoa.push([]);
+  // Ligne 9 : titre de section (remplace l'ancien titre)
+  aoa.push(['', 'DÉTAIL MENSUEL DE L\'ACTIVITÉ']);
   aoa.push([]);
 
   // Ligne 11 : Mois Prestation
@@ -12836,21 +12828,82 @@ function generateCompteActiviteExcel(deal, startMonth) {
     }
   }
 
-  // Ligne 9 : Titre principal — grand, en-tête violette Seven
-  styleCell('B9', {
-    font: { bold: true, sz: 18, color: { rgb: C_WHITE }, name: 'Calibri' },
-    fill: { patternType: 'solid', fgColor: { rgb: C_PRIMARY } },
-    alignment: { horizontal: 'center', vertical: 'center' },
-    border: {
-      top: borderMedium, bottom: borderMedium,
-      left: borderMedium, right: borderMedium
-    }
-  });
-  // Étendre le style aux cellules mergées
+  // ═══ EN-TÊTE SEVEN PORTAGE (lignes 1-9) ═══
+  // Ligne 1 : SEVEN PORTAGE — bannière violet foncé
+  for (var hi = 1; hi <= months.length + 1; hi++) {
+    styleCell(colLetter(hi) + '1', {
+      font: { bold: true, sz: 22, color: { rgb: C_WHITE }, name: 'Calibri' },
+      fill: { patternType: 'solid', fgColor: { rgb: C_PRIMARY } },
+      alignment: { horizontal: 'center', vertical: 'center' }
+    });
+  }
+
+  // Ligne 2 : Slogan — bande violet clair
+  for (var hi2 = 1; hi2 <= months.length + 1; hi2++) {
+    styleCell(colLetter(hi2) + '2', {
+      font: { italic: true, sz: 11, color: { rgb: C_WHITE }, name: 'Calibri' },
+      fill: { patternType: 'solid', fgColor: { rgb: C_PRIMARY_LIGHT } },
+      alignment: { horizontal: 'center', vertical: 'center' }
+    });
+  }
+
+  // Ligne 3 : séparateur fin
+  for (var hi3 = 1; hi3 <= months.length + 1; hi3++) {
+    styleCell(colLetter(hi3) + '3', {
+      fill: { patternType: 'solid', fgColor: { rgb: C_BG_HEADER } }
+    });
+  }
+
+  // Ligne 4 : Type de document — fond violet très pâle, texte violet foncé
+  for (var hi4 = 1; hi4 <= months.length + 1; hi4++) {
+    styleCell(colLetter(hi4) + '4', {
+      font: { bold: true, sz: 16, color: { rgb: C_PRIMARY }, name: 'Calibri' },
+      fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFF' } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: {
+        top: { style: 'medium', color: { rgb: C_PRIMARY_LIGHT } },
+        bottom: { style: 'thin', color: { rgb: C_PRIMARY_LIGHT } }
+      }
+    });
+  }
+
+  // Ligne 5 : espaceur
+  for (var hi5 = 1; hi5 <= months.length + 1; hi5++) {
+    styleCell(colLetter(hi5) + '5', {
+      fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFF' } }
+    });
+  }
+
+  // Ligne 6 : Nom consultant
+  for (var hi6 = 1; hi6 <= months.length + 1; hi6++) {
+    styleCell(colLetter(hi6) + '6', {
+      font: { bold: true, sz: 13, color: { rgb: C_TEXT }, name: 'Calibri' },
+      fill: { patternType: 'solid', fgColor: { rgb: C_BG_TOTAL } },
+      alignment: { horizontal: 'center', vertical: 'center' }
+    });
+  }
+
+  // Ligne 7 : Entreprise + TJM + Date
+  for (var hi7 = 1; hi7 <= months.length + 1; hi7++) {
+    styleCell(colLetter(hi7) + '7', {
+      font: { sz: 11, color: { rgb: '6B5E9C' }, name: 'Calibri' },
+      fill: { patternType: 'solid', fgColor: { rgb: C_BG_TOTAL } },
+      alignment: { horizontal: 'center', vertical: 'center' }
+    });
+  }
+
+  // Ligne 8 : espaceur
+  for (var hi8 = 1; hi8 <= months.length + 1; hi8++) {
+    styleCell(colLetter(hi8) + '8', {
+      fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFF' } }
+    });
+  }
+
+  // Ligne 9 : Titre de section "DÉTAIL MENSUEL DE L'ACTIVITÉ"
   for (var mi = 1; mi <= months.length + 1; mi++) {
     styleCell(colLetter(mi) + '9', {
       fill: { patternType: 'solid', fgColor: { rgb: C_PRIMARY } },
-      font: { bold: true, sz: 18, color: { rgb: C_WHITE } },
+      font: { bold: true, sz: 14, color: { rgb: C_WHITE }, name: 'Calibri' },
       alignment: { horizontal: 'center', vertical: 'center' },
       border: { top: borderMedium, bottom: borderMedium, left: borderMedium, right: borderMedium }
     });
@@ -13004,34 +13057,41 @@ function generateCompteActiviteExcel(deal, startMonth) {
     });
   }
 
-  // Hauteurs de lignes
+  // Hauteurs de lignes — en-tête Seven riche
   ws['!rows'] = [];
-  // Lignes 1-7 vides : petites
-  for (var rh = 0; rh < 7; rh++) ws['!rows'].push({ hpt: 8 });
-  // Ligne 8 (idx 7) : espaceur
-  ws['!rows'][7] = { hpt: 10 };
-  // Ligne 9 (titre) : grande
-  ws['!rows'][8] = { hpt: 40 };
-  // Ligne 10 : espaceur
-  ws['!rows'][9] = { hpt: 10 };
-  // Ligne 11 (header mois) : 24
-  ws['!rows'][10] = { hpt: 24 };
-  // Ligne 13 (Jours) : 22 (plus haute pour saisie)
-  ws['!rows'][12] = { hpt: 22 };
-  // Ligne 15 vide : petite
-  ws['!rows'][14] = { hpt: 6 };
-  // Ligne 23 vide : petite
-  ws['!rows'][22] = { hpt: 6 };
-  // Ligne 24 (charges patronales, multi-ligne) : haute
-  ws['!rows'][23] = { hpt: 42 };
+  ws['!rows'][0] = { hpt: 42 };   // L1 : bannière SEVEN PORTAGE
+  ws['!rows'][1] = { hpt: 20 };   // L2 : slogan
+  ws['!rows'][2] = { hpt: 4 };    // L3 : séparateur fin
+  ws['!rows'][3] = { hpt: 32 };   // L4 : type de document
+  ws['!rows'][4] = { hpt: 8 };    // L5 : espaceur
+  ws['!rows'][5] = { hpt: 22 };   // L6 : nom consultant
+  ws['!rows'][6] = { hpt: 18 };   // L7 : entreprise/tjm
+  ws['!rows'][7] = { hpt: 10 };   // L8 : espaceur
+  ws['!rows'][8] = { hpt: 28 };   // L9 : titre section
+  ws['!rows'][9] = { hpt: 8 };    // L10 : espaceur
+  ws['!rows'][10] = { hpt: 24 };  // L11 : header mois
+  ws['!rows'][12] = { hpt: 24 };  // L13 : jours prestés (saisie)
+  ws['!rows'][14] = { hpt: 6 };   // L15 : espaceur
+  ws['!rows'][22] = { hpt: 6 };   // L23 : espaceur
+  ws['!rows'][23] = { hpt: 46 };  // L24 : charges patronales (multi-ligne)
 
-  // Largeurs colonnes (plus larges)
+  // Largeurs colonnes
   ws['!cols'] = [{ wch: 2 }, { wch: 48 }].concat(months.map(function(){ return { wch: 14.5 }; }));
 
-  // Merge pour le titre (ligne 9 colonne B jusqu'à dernière colonne)
-  ws['!merges'] = [{ s: { r: 8, c: 1 }, e: { r: 8, c: months.length + 1 } }];
+  // Merges : toutes les lignes d'en-tête fusionnées
+  ws['!merges'] = [
+    { s: { r: 0, c: 1 }, e: { r: 0, c: months.length + 1 } }, // L1
+    { s: { r: 1, c: 1 }, e: { r: 1, c: months.length + 1 } }, // L2
+    { s: { r: 2, c: 1 }, e: { r: 2, c: months.length + 1 } }, // L3
+    { s: { r: 3, c: 1 }, e: { r: 3, c: months.length + 1 } }, // L4
+    { s: { r: 4, c: 1 }, e: { r: 4, c: months.length + 1 } }, // L5
+    { s: { r: 5, c: 1 }, e: { r: 5, c: months.length + 1 } }, // L6
+    { s: { r: 6, c: 1 }, e: { r: 6, c: months.length + 1 } }, // L7
+    { s: { r: 7, c: 1 }, e: { r: 7, c: months.length + 1 } }, // L8
+    { s: { r: 8, c: 1 }, e: { r: 8, c: months.length + 1 } }  // L9
+  ];
 
-  // Freeze : la colonne B (labels) + les 2 premières lignes (titre + header mois)
+  // Freeze : colonne B + les 11 premières lignes
   ws['!views'] = [{ state: 'frozen', ySplit: 11, xSplit: 2 }];
 
   var wb = XLSX.utils.book_new();
@@ -13218,6 +13278,76 @@ function closeCompteActPwdModal() {
   style.textContent = '@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-8px)} 50%{transform:translateX(8px)} 75%{transform:translateX(-4px)} }';
   document.head.appendChild(style);
 })();
+
+// ── Popup admin générique réutilisable (stylée Seven) ──
+function promptGenericAdminPassword(opts, onSuccess) {
+  opts = opts || {};
+  var title = opts.title || 'Accès protégé';
+  var subtitle = opts.subtitle || 'Saisissez le mot de passe administrateur.';
+  var ex = document.getElementById('modal-generic-admin-pwd');
+  if (ex) ex.remove();
+  window._genericAdminPwdCallback = onSuccess || null;
+  var modal = document.createElement('div');
+  modal.id = 'modal-generic-admin-pwd';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.65);z-index:3500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:16px;padding:32px 36px;width:92%;max-width:420px;box-shadow:0 20px 60px rgba(26,16,51,0.4);text-align:center;">'
+    +   '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);width:80px;height:80px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;box-shadow:0 8px 24px rgba(115,67,238,0.35);">'
+    +     '<div style="font-size:38px;">🔒</div>'
+    +   '</div>'
+    +   '<div style="font-size:18px;font-weight:800;color:#1A1033;margin-bottom:6px;letter-spacing:-0.01em;">' + title + '</div>'
+    +   '<div style="font-size:12.5px;color:#6B5E9C;margin-bottom:22px;line-height:1.55;">' + subtitle + '</div>'
+    +   '<div style="position:relative;margin-bottom:16px;text-align:left;">'
+    +     '<label style="font-size:10.5px;color:#9E94C4;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:5px;">Mot de passe</label>'
+    +     '<input id="generic-admin-pwd-input" type="password" onkeydown="if(event.key===\'Enter\'){event.preventDefault();submitGenericAdminPassword();}" placeholder="••••••••" style="width:100%;padding:12px 14px;border:1.5px solid #E4E0FA;border-radius:10px;font-size:14px;font-family:inherit;box-sizing:border-box;outline:none;transition:border-color 0.15s;" onfocus="this.style.borderColor=\'#7343EE\'" onblur="this.style.borderColor=\'#E4E0FA\'">'
+    +   '</div>'
+    +   '<div id="generic-admin-pwd-error" style="display:none;padding:10px 12px;background:#FDECEC;border:1px solid #F5B5B5;border-radius:8px;font-size:12px;color:#A8322A;margin-bottom:14px;font-weight:600;">❌ Mot de passe incorrect</div>'
+    +   '<div style="display:flex;gap:10px;">'
+    +     '<button onclick="closeGenericAdminPwdModal()" style="flex:1;padding:11px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:10px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;" onmouseover="this.style.background=\'#FAF8FF\'" onmouseout="this.style.background=\'#fff\'">Annuler</button>'
+    +     '<button onclick="submitGenericAdminPassword()" style="flex:2;padding:11px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 4px 12px rgba(115,67,238,0.25);">🔓 Débloquer</button>'
+    +   '</div>'
+    +   '<div style="margin-top:16px;font-size:10.5px;color:#9E94C4;line-height:1.4;">💡 Le déblocage est valable pour toute la session en cours.</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+  setTimeout(function(){
+    var input = document.getElementById('generic-admin-pwd-input');
+    if (input) input.focus();
+  }, 100);
+}
+
+function submitGenericAdminPassword() {
+  var input = document.getElementById('generic-admin-pwd-input');
+  var errDiv = document.getElementById('generic-admin-pwd-error');
+  if (!input) return;
+  var pwd = input.value;
+  var adminPwd = (typeof getCommParams === 'function') ? (getCommParams().admin_password || 'seven2026') : 'seven2026';
+  if (pwd === adminPwd) {
+    var cb = window._genericAdminPwdCallback;
+    window._genericAdminPwdCallback = null;
+    closeGenericAdminPwdModal();
+    if (cb) cb();
+  } else {
+    if (errDiv) errDiv.style.display = 'block';
+    input.style.borderColor = '#E24B4A';
+    input.value = '';
+    var modal = document.getElementById('modal-generic-admin-pwd');
+    if (modal) {
+      var card = modal.querySelector('div');
+      if (card) {
+        card.style.animation = 'none';
+        card.offsetHeight;
+        card.style.animation = 'shake 0.4s';
+      }
+    }
+    setTimeout(function(){ input.focus(); }, 50);
+  }
+}
+
+function closeGenericAdminPwdModal() {
+  var modal = document.getElementById('modal-generic-admin-pwd');
+  if (modal) modal.remove();
+  window._genericAdminPwdCallback = null;
+}
 
 function buildCandCompteActiviteHTML(cand) {
   // Verrou par mot de passe : onglet visible mais contenu masqué tant que pas débloqué
@@ -14382,7 +14512,6 @@ function processCooptationReminders() {
     }
   });
   if (toSend.length === 0) return;
-  console.log('[Cooptations] ' + toSend.length + ' rappel(s) à envoyer');
   toSend.forEach(function(c){
     sendCooptationReminderEmail(c);
     c.mail_60j_envoye_ts = Date.now();
@@ -14449,7 +14578,6 @@ function sendCooptationReminderEmail(coop) {
       body: JSON.stringify(payload)
     }).then(function(r){
       if (r.ok || r.status === 202) {
-        console.log('[Cooptations] Rappel envoyé pour', coop.id, 'à', to);
         if (typeof showNotifToast === 'function') showNotifToast('✉ Rappel cooptation envoyé : ' + porte);
       } else {
         r.text().then(function(t){ console.error('[Cooptations] Échec envoi:', r.status, t); });
@@ -14918,7 +15046,6 @@ function sendAvanceNotificationEmail(avance) {
       body: JSON.stringify(payload)
     }).then(function(r){
       if (r.ok || r.status === 202) {
-        console.log('[Avance] Mail envoyé à', to);
         if (typeof showNotifToast === 'function') showNotifToast('✉ Notification avance envoyée');
       } else {
         r.text().then(function(t){ console.error('[Avance] Échec envoi:', r.status, t); });
@@ -15635,7 +15762,7 @@ function buildCandFicheHTML(cand) {
     statutBadgeColor = '#4B36EC'; statutBadgeBg = '#E8E4FC';
   }
 
-  return '<div style="background:#fff;border-radius:14px;width:98%;max-width:950px;margin:auto;box-shadow:0 8px 40px ' + shadowColor + ';">'
+  return '<div style="background:#fff;border-radius:14px;width:98%;max-width:1120px;margin:auto;box-shadow:0 8px 40px ' + shadowColor + ';">'
 
     // ── Header ──
     + '<div style="background:' + headerGradient + ';padding:16px 22px;border-radius:14px 14px 0 0;">'
@@ -16062,7 +16189,6 @@ function buildCandSimsHTML(cand) {
   }).join('');
 }
 
-var DEFAULT_DOCS = ['CV','CNI / Passeport','Carte Vitale','RIB','Justificatif domicile','Dernier bulletin de salaire'];
 
 function buildCandDocsHTML(cand) {
   var docs = cand.documents || {};
@@ -16262,7 +16388,6 @@ function setSyncProgress(msg, done) {
 }
 
 function runFullSync(btn) {
-  console.log('[runFullSync] Début - odToken:', odToken ? 'présent' : 'NULL');
   if (!odToken) {
     alert('OneDrive non connecté. Allez dans Paramètres pour vous connecter.');
     return;
@@ -16310,7 +16435,6 @@ function runFullSync(btn) {
   });
 
   Promise.all(loadPromises).then(function() {
-    console.log('[Sync] LOAD terminé en', (Date.now() - t0) + 'ms');
 
     // ═══ PHASE 2 : PUSH parallèle ═══
     setSyncProgress('↑ Envoi des ' + total + ' entités...');
@@ -16342,7 +16466,6 @@ function runFullSync(btn) {
 
     Promise.all(pushPromises).then(function() {
       var totalMs = Date.now() - t0;
-      console.log('[Sync] PUSH terminé en', (Date.now() - t1) + 'ms · Total:', totalMs + 'ms');
       var msg = errors.length
         ? ('⚠ Terminé avec ' + errors.length + ' avertissement(s) (' + totalMs + 'ms)')
         : ('✓ Synchronisation terminée en ' + totalMs + 'ms !');
@@ -17755,7 +17878,6 @@ function sendPlacementNotificationEmail(deal) {
     body: JSON.stringify(payload)
   }).then(function(r){
     if (r.ok || r.status === 202) {
-      console.log('[Notification] Mail envoyé à', recipients.join(', '));
       showNotifToast('Notification envoyée à ' + recipients.join(', '));
     } else {
       r.text().then(function(txt){ console.error('[Notification] Échec:', r.status, txt); });
@@ -17870,7 +17992,6 @@ function sendPlacementCommercialEmail(deal) {
           htmlBody: htmlBody,
           attachments: attachments
         }, function() {
-          console.log('[PlacementCommercial] Mail envoyé à', commEmail);
           if (typeof showNotifToast === 'function') showNotifToast('✉ Mail placement envoyé à ' + deal.commercial);
         }, function(err) {
           console.error('[PlacementCommercial] Échec:', err);
@@ -17948,7 +18069,6 @@ function sendWelcomeEmailToCandidate(deal) {
           { name: name2 || 'Garanties_Henner.pdf', contentType: 'application/pdf', contentBytesB64: b64_2 }
         ]
       }, function() {
-        console.log('[Welcome] Mail envoyé à', deal.email);
         if (typeof showNotifToast === 'function') showNotifToast('✉ Mail bienvenue envoyé à ' + candidat);
       }, function(err) {
         console.error('[Welcome] Échec:', err);
@@ -18114,7 +18234,6 @@ function uploadCandDoc(input) {
       // Encoder chaque segment du chemin séparément (garder les / littéraux)
       var filePathSegments = filePath.split('/').filter(Boolean).map(function(p){return encodeURIComponent(p);}).join('/');
       var putUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:/' + filePathSegments + ':/content';
-      console.log('[Upload PUT] URL:', putUrl);
       fetch(putUrl, {
         method: 'PUT',
         headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': file.type || 'application/octet-stream' },
@@ -18171,13 +18290,11 @@ function ensureOdFolder(folderPath, cb) {
 
     // 1. GET : le dossier existe-t-il déjà ?
     var checkUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + currentPath;
-    console.log('[ensureOdFolder] GET existence:', folderName, '→', checkUrl);
 
     fetch(checkUrl, { headers: { 'Authorization': 'Bearer ' + odToken } })
       .then(function(r) {
         if (r.ok) {
           // Déjà présent → ne rien faire, passer au niveau suivant
-          console.log('[ensureOdFolder] Existe déjà:', folderName);
           processNext();
           return;
         }
@@ -18191,7 +18308,6 @@ function ensureOdFolder(folderPath, cb) {
         var createUrl = parentPath === ''
           ? 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root/children'
           : 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + parentPath + ':/children';
-        console.log('[ensureOdFolder] POST création:', folderName, 'dans', (parentPath || '/'));
 
         return fetch(createUrl, {
           method: 'POST',
@@ -18203,13 +18319,11 @@ function ensureOdFolder(folderPath, cb) {
           })
         }).then(function(cr) {
           if (cr.ok) {
-            console.log('[ensureOdFolder] Créé:', folderName);
             processNext();
             return;
           }
           // Race condition : créé entre notre GET et notre POST → continuer quand même
           if (cr.status === 409) {
-            console.log('[ensureOdFolder] Conflit (race), dossier existe:', folderName);
             processNext();
             return;
           }
@@ -18242,7 +18356,6 @@ function viewCandDoc(candId, docKey) {
     .map(function(p){ return encodeURIComponent(p); }).join('/');
   var getUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE
     + '/root:/' + segments + ':/content';
-  console.log('[viewCandDoc] GET:', getUrl);
 
   // Télécharger le fichier comme blob pour l'afficher inline (évite les blocages CORS/CSP)
   fetch(getUrl, {
@@ -18463,8 +18576,6 @@ function toggleDocRecu(input) {
   saveCandidatsArr(cands);
 }
 
-
-
 // ═══════════════════════════════════════════════════════════
 // MODULE TÂCHES / RAPPELS / CALENDRIER
 // ═══════════════════════════════════════════════════════════
@@ -18568,12 +18679,6 @@ function saveClosedAutoAlerts(obj) {
 function closeAutoAlert(alertId) {
   var c = getClosedAutoAlerts();
   c[alertId] = Date.now();
-  saveClosedAutoAlerts(c);
-  renderTachesDashboard();
-}
-function reopenAutoAlert(alertId) {
-  var c = getClosedAutoAlerts();
-  delete c[alertId];
   saveClosedAutoAlerts(c);
   renderTachesDashboard();
 }
@@ -19405,7 +19510,6 @@ function _sendDemandeMail(to, ccArr, subject, html, demande, kind, callback) {
     body: JSON.stringify(payload)
   }).then(function(r){
     if (r.ok || r.status === 202) {
-      console.log('[Demande mail] Envoyé à', to, 'CC:', ccArr.join(','));
       if (typeof showNotifToast === 'function') showNotifToast('✉ Mail envoyé à ' + to);
       cb(true);
     } else {
@@ -20835,19 +20939,6 @@ function resetCommGoal(commercial, year) {
 }
 
 // Helpers v1 conservés pour compat (ne plus utilisés activement mais certains appels indirects pourraient rester)
-function updateCommGoal(commercial, year, field, value) {
-  if (value === '' || value === null) {
-    setGoalFor(commercial, year, field, null);
-  } else {
-    var num = parseFloat(value);
-    if (isNaN(num)) return;
-    setGoalFor(commercial, year, field, num);
-  }
-}
-function updateCommGoalText(commercial, year, field, value) {
-  setGoalFor(commercial, year, field, (value || '').trim() || null);
-}
-
 
 function updateCommParam(key, value) {
   var p = getCommParams();
@@ -21050,15 +21141,6 @@ function updateCommExclusionComment(dealId, comment) {
 var COMM_MANUAL_KEY = 'sp_commission_manual_prime_v1';
 
 // Stockage : { "Commercial|Year" : { amount: 500, comment: "..." } }
-function getCommManualPrimes() {
-  try { return JSON.parse(localStorage.getItem(COMM_MANUAL_KEY) || '{}'); }
-  catch(e) { return {}; }
-}
-function saveCommManualPrimes(obj) {
-  localStorage.setItem(COMM_MANUAL_KEY, JSON.stringify(obj));
-  if (typeof odAutoSync === 'function') odAutoSync();
-}
-
 // Parser une date au format "YYYY-MM-DD" (date_entree / date_sortie)
 function parseIsoDate(s) {
   if (!s) return null;
@@ -21069,25 +21151,6 @@ function parseIsoDate(s) {
 // Compte les portés actifs en décembre de l'année pour un commercial
 // "Actif en décembre" = date_entree ≤ 31/12/year ET (date_sortie vide OU date_sortie ≥ 01/12/year)
 // ET état ≠ 'Annulé'
-function countActiveConsultantsInDecember(commercial, year) {
-  var all = (typeof getDeals === 'function') ? getDeals() : [];
-  var wanted = (commercial || '').trim().toLowerCase();
-  var decStart = new Date(year, 11, 1);    // 01/12
-  var yearEnd  = new Date(year, 11, 31);   // 31/12
-
-  return all.filter(function(d) {
-    var dealComm = (d.commercial || '').trim().toLowerCase();
-    if (wanted && dealComm !== wanted) return false;
-    if (d.etat === 'Annulé') return false;
-    var entree = parseIsoDate(d.date_entree);
-    if (!entree) return false;  // Sans date d'entrée, impossible de savoir
-    if (entree > yearEnd) return false;  // Pas encore arrivé fin année
-    var sortie = parseIsoDate(d.date_sortie);
-    if (sortie && sortie < decStart) return false;  // Déjà parti avant décembre
-    return true;
-  }).length;
-}
-
 // Calcule la commission annuelle complète pour un commercial × année
 // Nouveau modèle : liste de primes manuelles. Total = Σ (tarif × nb_deals) pour primes validées.
 function computeAnnualCommission(commercial, year) {
@@ -21883,8 +21946,6 @@ function exportCommHistCSV() {
   document.body.appendChild(a); a.click();
   document.body.removeChild(a); URL.revokeObjectURL(url);
 }
-
-
 
 </script>
 <!-- ═══ MODAL ENVOI ═══ -->
