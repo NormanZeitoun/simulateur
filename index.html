@@ -980,7 +980,20 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 </style>
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// Tentative chargement xlsx-js-style (avec support des styles) puis fallback vers xlsx classique
+(function(){
+  var script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+  script.onerror = function(){
+    console.warn('[XLSX] xlsx-js-style indisponible, fallback vers xlsx classique (styles limités)');
+    var fallback = document.createElement('script');
+    fallback.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    document.head.appendChild(fallback);
+  };
+  document.head.appendChild(script);
+})();
+</script>
 </head>
 <body>
 
@@ -11575,24 +11588,83 @@ function setJoursPresteForDeal(dealId, moisStr, jours) {
 }
 
 // ── Storage matching ──
-// Format : { "downing_david": deal_id, ... }
+// Format v2 : { validated:{norm_name:deal_id}, pending:[...], rejected:[...], _updated_ts }
+// Migration ascendante depuis v1 (format plat {norm_name:deal_id})
 function getMatchingJours() {
-  try { return JSON.parse(localStorage.getItem(MATCHING_JOURS_KEY) || '{}'); }
-  catch(e) { return {}; }
+  try {
+    var raw = JSON.parse(localStorage.getItem(MATCHING_JOURS_KEY) || '{}');
+    // Détection v1 (format plat) : pas de clé "validated"
+    if (!raw.validated && !raw.pending && !raw.rejected) {
+      // Migration : tout ce qui n'est pas _updated_ts est considéré comme validated
+      var validated = {};
+      Object.keys(raw).forEach(function(k) {
+        if (k !== '_updated_ts') validated[k] = raw[k];
+      });
+      return { validated: validated, pending: [], rejected: [], _updated_ts: raw._updated_ts || Date.now() };
+    }
+    // v2 : compléter les champs manquants
+    return {
+      validated: raw.validated || {},
+      pending: Array.isArray(raw.pending) ? raw.pending : [],
+      rejected: Array.isArray(raw.rejected) ? raw.rejected : [],
+      _updated_ts: raw._updated_ts || Date.now()
+    };
+  } catch(e) {
+    return { validated: {}, pending: [], rejected: [], _updated_ts: Date.now() };
+  }
 }
 function saveMatchingJours(obj) {
+  obj._updated_ts = Date.now();
   localStorage.setItem(MATCHING_JOURS_KEY, JSON.stringify(obj));
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 function setMatchingKey(rawName, dealId) {
   var all = getMatchingJours();
-  all[normalizeNomForMatch(rawName)] = dealId;
-  all._updated_ts = Date.now();
+  all.validated[normalizeNomForMatch(rawName)] = dealId;
+  // Retirer ce nom des pending/rejected s'il y était
+  var norm = normalizeNomForMatch(rawName);
+  all.pending = all.pending.filter(function(p){ return normalizeNomForMatch(p.raw_name) !== norm; });
+  all.rejected = all.rejected.filter(function(p){ return normalizeNomForMatch(p.raw_name) !== norm; });
+  saveMatchingJours(all);
+}
+function removeMatchingKey(normName) {
+  var all = getMatchingJours();
+  delete all.validated[normName];
+  saveMatchingJours(all);
+}
+function addMatchingPending(rawName, candidates) {
+  var all = getMatchingJours();
+  var norm = normalizeNomForMatch(rawName);
+  // Éviter doublons
+  all.pending = all.pending.filter(function(p){ return normalizeNomForMatch(p.raw_name) !== norm; });
+  all.pending.push({
+    raw_name: rawName,
+    candidates: candidates.map(function(c){ return { deal_id: c.deal.id, deal_name: c.deal.fullName, entreprise: c.deal.entreprise, score: c.score }; }),
+    seen_ts: Date.now()
+  });
+  saveMatchingJours(all);
+}
+function addMatchingRejected(rawName) {
+  var all = getMatchingJours();
+  var norm = normalizeNomForMatch(rawName);
+  // Éviter doublons
+  all.rejected = all.rejected.filter(function(p){ return normalizeNomForMatch(p.raw_name) !== norm; });
+  all.rejected.push({ raw_name: rawName, seen_ts: Date.now() });
+  saveMatchingJours(all);
+}
+function removeMatchingPending(idx) {
+  var all = getMatchingJours();
+  all.pending.splice(idx, 1);
+  saveMatchingJours(all);
+}
+function removeMatchingRejected(idx) {
+  var all = getMatchingJours();
+  all.rejected.splice(idx, 1);
   saveMatchingJours(all);
 }
 function getMatchingForName(rawName) {
   var all = getMatchingJours();
-  return all[normalizeNomForMatch(rawName)] || null;
+  return all.validated[normalizeNomForMatch(rawName)] || null;
 }
 
 // ── Normalisation nom ──
@@ -11793,7 +11865,7 @@ function buildComptesActiviteContent() {
     +   '</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
     +     '<input type="file" id="import-jours-file" accept=".xlsx,.xls" style="display:none;" onchange="handleImportJoursFile(event)">'
-    +     '<button onclick="document.getElementById(\'import-jours-file\').click()" style="padding:8px 16px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">📥 Importer Excel</button>'
+    +     '<button onclick="triggerImportJoursClick()" style="padding:8px 16px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">📥 Importer Excel</button>'
     +   '</div>'
     + '</div>'
     // Filtres
@@ -11803,10 +11875,13 @@ function buildComptesActiviteContent() {
     +     '<input id="comptes-act-search-input" type="text" value="' + (comptesActSearch||'').replace(/"/g,'&quot;') + '" oninput="setComptesActSearch(this.value)" placeholder="Rechercher un candidat…" style="width:100%;padding:7px 10px 7px 32px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;font-family:inherit;">'
     +   '</div>'
     +   '<select onchange="setComptesActFilter(\'commercial\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">' + commOpts + '</select>'
+    +   buildMatchingsButton()
     +   (filtersActive
         ? '<button onclick="resetComptesActFilters()" style="margin-left:auto;padding:5px 12px;background:#fff;color:#E24B4A;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">✕ Réinitialiser</button>'
         : '')
     + '</div>'
+    // Panneau Matchings (caché par défaut)
+    + '<div id="matchings-panel" style="display:none;margin-bottom:12px;">' + buildMatchingsPanel() + '</div>'
     // Tableau
     + '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E4E0FA;overflow-x:auto;">'
     +   '<table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:1100px;">'
@@ -11828,6 +11903,24 @@ function buildComptesActiviteContent() {
 }
 
 // ── Import Excel avec matching intelligent ──
+function triggerImportJoursClick() {
+  // Force reset avant de rouvrir le picker (évite problème de re-sélection du même fichier)
+  // et reset les variables globales d'un éventuel import précédent incomplet
+  window._importJoursResults = null;
+  window._importJoursMois = null;
+  // Nettoyer les popups potentiellement orphelines
+  ['modal-import-jours','modal-import-confirm'].forEach(function(mid){
+    var m = document.getElementById(mid); if (m) m.remove();
+  });
+  var fileInput = document.getElementById('import-jours-file');
+  if (!fileInput) {
+    alert('Erreur : champ d\'import introuvable. Rechargez la page.');
+    return;
+  }
+  fileInput.value = '';  // reset avant click pour permettre même fichier
+  fileInput.click();
+}
+
 function handleImportJoursFile(event) {
   var file = event.target.files && event.target.files[0];
   if (!file) return;
@@ -11930,8 +12023,8 @@ function processImportedJours(rows) {
   var matchingSaved = getMatchingJours();
 
   var results = lines.map(function(line) {
-    // 1. Vérifier matching pré-existant
-    var savedId = matchingSaved[normalizeNomForMatch(line.name)];
+    // 1. Vérifier matching pré-existant (dans validated)
+    var savedId = matchingSaved.validated[normalizeNomForMatch(line.name)];
     if (savedId) {
       var savedDeal = candidatesByDeal.find(function(c){ return c.id === savedId; });
       if (savedDeal) {
@@ -11947,12 +12040,19 @@ function processImportedJours(rows) {
     if (best.score >= 90) status = 'auto';
     else if (best.score >= 60) status = 'confirm';
     else status = 'reject';
+    var topCandidates = scored.slice(0, 5).filter(function(s){ return s.score >= 30; });
+
+    // Tracker automatiquement les rejets
+    if (status === 'reject') {
+      addMatchingRejected(line.name);
+    }
+
     return {
       line: line,
       bestDeal: best.deal,
       score: best.score,
       status: status,
-      candidates: scored.slice(0, 5).filter(function(s){ return s.score >= 30; }),
+      candidates: topCandidates,
       fromSaved: false
     };
   });
@@ -12031,8 +12131,13 @@ function proceedImportJours() {
     }
   });
 
-  // 2. Confirmer les cas douteux un par un
+  // 2. Pré-tracer les cas douteux comme "pending" (retirés de la liste au fur et à mesure de la confirmation)
   var toConfirm = results.filter(function(r){ return r.status === 'confirm'; });
+  toConfirm.forEach(function(r) {
+    addMatchingPending(r.line.name, r.candidates);
+  });
+
+  // 3. Confirmer un par un
   if (toConfirm.length) {
     openImportConfirmDialog(toConfirm, 0);
   } else {
@@ -12094,8 +12199,16 @@ function confirmImportMatch(idx) {
   if (selectedId && selectedId !== '__skip__') {
     var dealId = parseInt(selectedId);
     setJoursPresteForDeal(dealId, mois, r.line.jours);
-    // Mémoriser matching pour les prochains imports
+    // Mémoriser matching pour les prochains imports (retire aussi de pending/rejected)
     setMatchingKey(r.line.name, dealId);
+  } else if (selectedId === '__skip__') {
+    // L'utilisateur a choisi d'ignorer : tracer comme rejeté
+    addMatchingRejected(r.line.name);
+    // Retirer des pending
+    var cur = getMatchingJours();
+    var norm = normalizeNomForMatch(r.line.name);
+    cur.pending = cur.pending.filter(function(p){ return normalizeNomForMatch(p.raw_name) !== norm; });
+    saveMatchingJours(cur);
   }
 
   var modal = document.getElementById('modal-import-confirm');
@@ -12124,6 +12237,343 @@ function finalizeImportJours() {
   window._importJoursResults = null;
   window._importJoursMois = null;
   renderComptesActivite();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PANNEAU MATCHINGS — 3 accordéons + édition manuelle
+// ═══════════════════════════════════════════════════════════════════
+
+var matchingsPanelOpen = false;
+var matchingsAccState = { validated: true, pending: false, rejected: false };
+
+function toggleMatchingsPanel() {
+  matchingsPanelOpen = !matchingsPanelOpen;
+  var panel = document.getElementById('matchings-panel');
+  if (panel) panel.style.display = matchingsPanelOpen ? 'block' : 'none';
+  // Mettre à jour le bouton
+  var btn = document.getElementById('btn-matchings-toggle');
+  if (btn) {
+    btn.style.background = matchingsPanelOpen ? '#4B36EC' : '#fff';
+    btn.style.color = matchingsPanelOpen ? '#fff' : '#4B36EC';
+  }
+  if (matchingsPanelOpen) refreshMatchingsPanel();
+}
+
+function toggleMatchingAcc(key) {
+  matchingsAccState[key] = !matchingsAccState[key];
+  refreshMatchingsPanel();
+}
+
+function refreshMatchingsPanel() {
+  var panel = document.getElementById('matchings-panel');
+  if (panel) panel.innerHTML = buildMatchingsPanel();
+}
+
+function buildMatchingsButton() {
+  var all = getMatchingJours();
+  var vCount = Object.keys(all.validated || {}).length;
+  var pCount = (all.pending || []).length;
+  var rCount = (all.rejected || []).length;
+  var total = vCount + pCount + rCount;
+
+  return '<button id="btn-matchings-toggle" onclick="toggleMatchingsPanel()" style="padding:6px 12px;border:1.5px solid #4B36EC;background:#fff;color:#4B36EC;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-family:inherit;">'
+    + '🎯 Matchings'
+    + (total > 0 ? ' <span style="background:#4B36EC;color:#fff;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;">' + total + '</span>' : '')
+    + '</button>';
+}
+
+function buildMatchingsPanel() {
+  var all = getMatchingJours();
+  var validated = all.validated || {};
+  var pending = all.pending || [];
+  var rejected = all.rejected || [];
+
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var dealsById = {};
+  deals.forEach(function(d){ dealsById[d.id] = d; });
+
+  // Reconstituer la liste validated avec les infos deal
+  var validatedEntries = Object.keys(validated).map(function(normName) {
+    var deal = dealsById[validated[normName]];
+    return {
+      norm: normName,
+      dealId: validated[normName],
+      dealName: deal ? ((deal.prenom||'') + ' ' + (deal.nom||'')).trim() : '(deal supprimé)',
+      entreprise: deal ? (deal.entreprise || '') : ''
+    };
+  }).sort(function(a, b){ return a.norm.localeCompare(b.norm); });
+
+  var validatedHtml = validatedEntries.length
+    ? validatedEntries.map(function(v) {
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fff;border-radius:7px;margin-bottom:5px;border:1px solid #E4E0FA;">'
+          +   '<div style="flex:1;min-width:0;">'
+          +     '<div style="font-size:12px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+          +       '<span style="color:#4B36EC;">' + v.norm.replace(/</g,'&lt;') + '</span>'
+          +       ' <span style="color:#9E94C4;font-weight:400;">→</span> '
+          +       '<span>' + v.dealName.replace(/</g,'&lt;') + '</span>'
+          +     '</div>'
+          +     (v.entreprise ? '<div style="font-size:10.5px;color:#6B5E9C;">' + v.entreprise.replace(/</g,'&lt;') + '</div>' : '')
+          +   '</div>'
+          +   '<button onclick="forgetMatchingValidated(\'' + v.norm.replace(/'/g,"\\'") + '\')" title="Oublier cette correspondance" style="padding:4px 8px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:5px;font-size:10px;cursor:pointer;font-weight:700;">✕</button>'
+          + '</div>';
+      }).join('')
+    : '<div style="padding:20px;text-align:center;color:#9E94C4;font-size:11.5px;font-style:italic;">Aucune correspondance mémorisée. Importez un fichier Excel pour commencer, ou créez-en une manuellement ci-dessus.</div>';
+
+  var pendingHtml = pending.length
+    ? pending.map(function(p, i) {
+        var candHtml = (p.candidates || []).slice(0, 3).map(function(c) {
+          return '<span style="display:inline-block;padding:2px 7px;background:#F5F3FF;border-radius:10px;font-size:10px;color:#4B36EC;margin-right:4px;">' + c.deal_name.replace(/</g,'&lt;') + ' (' + c.score + '%)</span>';
+        }).join('');
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fff;border-radius:7px;margin-bottom:5px;border:1px solid #FFE0B2;">'
+          +   '<div style="flex:1;min-width:0;">'
+          +     '<div style="font-size:12px;font-weight:700;color:#1A1033;">📄 ' + p.raw_name.replace(/</g,'&lt;') + '</div>'
+          +     '<div style="margin-top:3px;">' + (candHtml || '<span style="font-size:10.5px;color:#9E94C4;">Aucun candidat proposé</span>') + '</div>'
+          +   '</div>'
+          +   '<button onclick="resolvePendingMatch(' + i + ')" style="padding:5px 10px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:5px;font-size:10.5px;cursor:pointer;font-weight:700;">Valider</button>'
+          +   '<button onclick="discardPendingMatch(' + i + ')" title="Retirer sans décision" style="padding:5px 8px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:5px;font-size:10px;cursor:pointer;">✕</button>'
+          + '</div>';
+      }).join('')
+    : '<div style="padding:20px;text-align:center;color:#9E94C4;font-size:11.5px;font-style:italic;">Aucune ligne en attente.</div>';
+
+  var rejectedHtml = rejected.length
+    ? rejected.map(function(r, i) {
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fff;border-radius:7px;margin-bottom:5px;border:1px solid #FDECEC;">'
+          +   '<div style="flex:1;min-width:0;">'
+          +     '<div style="font-size:12px;font-weight:700;color:#1A1033;">❌ ' + r.raw_name.replace(/</g,'&lt;') + '</div>'
+          +     '<div style="font-size:10.5px;color:#6B5E9C;">Pas de correspondance trouvée</div>'
+          +   '</div>'
+          +   '<button onclick="retryRejectedMatch(' + i + ')" title="Créer une correspondance manuelle" style="padding:5px 10px;background:#4B36EC;color:#fff;border:none;border-radius:5px;font-size:10.5px;cursor:pointer;font-weight:700;">🔄 Associer</button>'
+          +   '<button onclick="discardRejectedMatch(' + i + ')" title="Retirer de la liste" style="padding:5px 8px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:5px;font-size:10px;cursor:pointer;">✕</button>'
+          + '</div>';
+      }).join('')
+    : '<div style="padding:20px;text-align:center;color:#9E94C4;font-size:11.5px;font-style:italic;">Aucune ligne rejetée.</div>';
+
+  // Accordéons
+  function accHeader(key, icon, title, count, color) {
+    var open = matchingsAccState[key];
+    return '<div onclick="toggleMatchingAcc(\'' + key + '\')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:' + color.bg + ';border:1.5px solid ' + color.border + ';border-radius:8px;cursor:pointer;user-select:none;' + (open ? 'border-bottom-left-radius:0;border-bottom-right-radius:0;' : '') + '">'
+      + '<span style="font-size:14px;">' + icon + '</span>'
+      + '<span style="flex:1;font-size:12.5px;font-weight:700;color:' + color.text + ';">' + title + '</span>'
+      + '<span style="background:' + color.text + ';color:#fff;padding:2px 8px;border-radius:10px;font-size:10.5px;font-weight:700;">' + count + '</span>'
+      + '<span style="font-size:11px;color:' + color.text + ';margin-left:4px;">' + (open ? '▼' : '▶') + '</span>'
+      + '</div>';
+  }
+  function accBody(key, contentHtml, color) {
+    var open = matchingsAccState[key];
+    if (!open) return '';
+    return '<div style="padding:10px 12px;background:' + color.bgLight + ';border:1.5px solid ' + color.border + ';border-top:none;border-radius:0 0 8px 8px;margin-bottom:8px;">' + contentHtml + '</div>';
+  }
+
+  var colorV = { bg: '#E8F5E9', bgLight: '#F5FBF5', border: '#A5D6A7', text: '#0F6E56' };
+  var colorP = { bg: '#FFF4D6', bgLight: '#FFFBEA', border: '#FFD980', text: '#8A5F00' };
+  var colorR = { bg: '#FDECEC', bgLight: '#FFF5F5', border: '#F5B5B5', text: '#A8322A' };
+
+  return ''
+    + '<div style="background:#fff;border:1.5px solid #E4E0FA;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(115,67,238,0.06);">'
+    +   '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap;">'
+    +     '<div>'
+    +       '<div style="font-size:14px;font-weight:800;color:#1A1033;">🎯 Gestion des matchings</div>'
+    +       '<div style="font-size:11px;color:#6B5E9C;margin-top:2px;">Correspondances entre noms du fichier Excel et vos deals</div>'
+    +     '</div>'
+    +     '<div style="display:flex;gap:8px;">'
+    +       '<button onclick="openManualMatchingDialog()" style="padding:7px 14px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;">+ Créer une correspondance</button>'
+    +       '<button onclick="toggleMatchingsPanel()" style="padding:7px 10px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11px;cursor:pointer;">✕</button>'
+    +     '</div>'
+    +   '</div>'
+    +   accHeader('validated', '✅', 'Matchings validés', validatedEntries.length, colorV)
+    +   accBody('validated', validatedHtml, colorV)
+    +   accHeader('pending', '⚠️', 'En attente de confirmation', pending.length, colorP)
+    +   accBody('pending', pendingHtml, colorP)
+    +   accHeader('rejected', '❌', 'Rejetés / Non-matchés', rejected.length, colorR)
+    +   accBody('rejected', rejectedHtml, colorR)
+    + '</div>';
+}
+
+function forgetMatchingValidated(normName) {
+  if (!confirm('Oublier cette correspondance mémorisée ?\n\nLa prochaine fois que ce nom apparaîtra dans un import, il ne sera plus auto-matché.')) return;
+  removeMatchingKey(normName);
+  refreshMatchingsPanel();
+  var btn = document.getElementById('btn-matchings-toggle');
+  if (btn && btn.parentNode) {
+    btn.outerHTML = buildMatchingsButton();
+    // Re-attach handler
+    var newBtn = document.getElementById('btn-matchings-toggle');
+    if (newBtn) newBtn.style.background = '#4B36EC', newBtn.style.color = '#fff';
+  }
+}
+
+function resolvePendingMatch(idx) {
+  var all = getMatchingJours();
+  var p = all.pending[idx];
+  if (!p) return;
+  openManualMatchingDialog(p.raw_name, function() {
+    // Callback après validation : retirer de pending
+    var cur = getMatchingJours();
+    cur.pending = cur.pending.filter(function(x, i){ return i !== idx; });
+    saveMatchingJours(cur);
+    refreshMatchingsPanel();
+  });
+}
+
+function discardPendingMatch(idx) {
+  if (!confirm('Retirer cette ligne de la liste "En attente" sans prendre de décision ?')) return;
+  removeMatchingPending(idx);
+  refreshMatchingsPanel();
+}
+
+function retryRejectedMatch(idx) {
+  var all = getMatchingJours();
+  var r = all.rejected[idx];
+  if (!r) return;
+  openManualMatchingDialog(r.raw_name, function() {
+    // Callback : retirer de rejected
+    var cur = getMatchingJours();
+    cur.rejected = cur.rejected.filter(function(x, i){ return i !== idx; });
+    saveMatchingJours(cur);
+    refreshMatchingsPanel();
+  });
+}
+
+function discardRejectedMatch(idx) {
+  if (!confirm('Retirer cette ligne de la liste "Rejetés" ?')) return;
+  removeMatchingRejected(idx);
+  refreshMatchingsPanel();
+}
+
+// ── Popup édition manuelle ──
+var _manualMatchingChoices = [];
+var _manualMatchingCallback = null;
+
+function openManualMatchingDialog(prefillName, onSuccess) {
+  var ex = document.getElementById('modal-manual-matching');
+  if (ex) ex.remove();
+
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  _manualMatchingChoices = deals
+    .filter(function(d){ return d.etat !== 'Annulé' && (d.prenom || d.nom); })
+    .map(function(d){
+      var nom = ((d.prenom||'') + ' ' + (d.nom||'')).trim();
+      return {
+        id: d.id,
+        nom: nom,
+        entreprise: d.entreprise || '',
+        labelLc: (nom + ' ' + (d.entreprise || '')).toLowerCase()
+      };
+    })
+    .sort(function(a,b){ return a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' }); });
+
+  _manualMatchingCallback = onSuccess || null;
+
+  var prefilled = prefillName ? String(prefillName) : '';
+
+  var modal = document.createElement('div');
+  modal.id = 'modal-manual-matching';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3100;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:14px;padding:24px;width:92%;max-width:520px;box-shadow:0 10px 40px rgba(0,0,0,0.25);">'
+    +   '<div style="font-size:16px;font-weight:800;color:#1A1033;margin-bottom:6px;">🎯 Créer une correspondance</div>'
+    +   '<div style="font-size:12px;color:#6B5E9C;margin-bottom:16px;line-height:1.5;">Associez un nom du fichier Excel à un consultant de votre base. La correspondance sera mémorisée pour tous les futurs imports.</div>'
+    +   '<label style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:4px;">Nom tel qu\'il apparaît dans le fichier Excel</label>'
+    +   '<input id="manual-matching-raw-name" type="text" value="' + prefilled.replace(/"/g,'&quot;') + '" placeholder="Ex: DOWNING David" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;margin-bottom:16px;font-family:inherit;">'
+    +   '<label style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:4px;">Rechercher et sélectionner le consultant</label>'
+    +   '<div style="position:relative;margin-bottom:10px;">'
+    +     '<span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#9E94C4;font-size:14px;pointer-events:none;">🔍</span>'
+    +     '<input id="manual-matching-search" type="text" oninput="filterManualMatchingList(this.value)" placeholder="Nom, prénom ou entreprise…" style="width:100%;padding:9px 12px 9px 38px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;font-family:inherit;">'
+    +   '</div>'
+    +   '<div id="manual-matching-list" style="max-height:260px;overflow-y:auto;border:1px solid #E4E0FA;border-radius:8px;background:#FAF8FF;margin-bottom:14px;">'
+    +     buildManualMatchingListHtml(_manualMatchingChoices)
+    +   '</div>'
+    +   '<input type="hidden" id="manual-matching-deal-id" value="">'
+    +   '<div style="display:flex;gap:8px;justify-content:flex-end;">'
+    +     '<button onclick="document.getElementById(\'modal-manual-matching\').remove()" style="padding:8px 16px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">Annuler</button>'
+    +     '<button id="manual-matching-confirm-btn" onclick="confirmManualMatching()" disabled style="padding:8px 16px;background:#C0B8E0;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:not-allowed;">Créer la correspondance</button>'
+    +   '</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+  setTimeout(function(){
+    var el = prefilled ? document.getElementById('manual-matching-search') : document.getElementById('manual-matching-raw-name');
+    if (el) el.focus();
+    // Si pré-rempli, pré-filtrer la liste avec le nom
+    if (prefilled) {
+      var searchEl = document.getElementById('manual-matching-search');
+      if (searchEl) { searchEl.value = prefilled; filterManualMatchingList(prefilled); }
+    }
+  }, 100);
+}
+
+function buildManualMatchingListHtml(list) {
+  if (!list.length) {
+    return '<div style="padding:30px 15px;text-align:center;color:#9E94C4;font-size:12px;font-style:italic;">Aucun résultat.</div>';
+  }
+  return list.map(function(c) {
+    var initials = (c.nom || '').split(/\s+/).filter(Boolean).map(function(w){ return (w[0]||'').toUpperCase(); }).slice(0, 2).join('') || '?';
+    return '<div onclick="selectManualMatching(' + c.id + ',this)" data-id="' + c.id + '" style="padding:10px 12px;border-bottom:1px solid #F0EDF9;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background 0.15s;" onmouseover="this.style.background=\'#F0EDFC\'" onmouseout="if(!this.classList.contains(\'selected\'))this.style.background=\'\'">'
+      +   '<div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">' + initials + '</div>'
+      +   '<div style="flex:1;min-width:0;">'
+      +     '<div style="font-size:12.5px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (c.nom || '(sans nom)').replace(/</g,'&lt;') + '</div>'
+      +     (c.entreprise ? '<div style="font-size:11px;color:#6B5E9C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + c.entreprise.replace(/</g,'&lt;') + '</div>' : '')
+      +   '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function filterManualMatchingList(q) {
+  var qLc = (q || '').trim().toLowerCase();
+  var filtered = qLc
+    ? _manualMatchingChoices.filter(function(c){ return c.labelLc.indexOf(qLc) >= 0; })
+    : _manualMatchingChoices;
+  var el = document.getElementById('manual-matching-list');
+  if (el) el.innerHTML = buildManualMatchingListHtml(filtered);
+}
+
+function selectManualMatching(dealId, clickedEl) {
+  document.querySelectorAll('#manual-matching-list > div').forEach(function(d){
+    d.classList.remove('selected');
+    d.style.background = '';
+  });
+  if (clickedEl) {
+    clickedEl.classList.add('selected');
+    clickedEl.style.background = '#D9CFFA';
+  }
+  var hidden = document.getElementById('manual-matching-deal-id');
+  if (hidden) hidden.value = dealId;
+  updateManualMatchingBtnState();
+}
+
+function updateManualMatchingBtnState() {
+  var btn = document.getElementById('manual-matching-confirm-btn');
+  var rawName = document.getElementById('manual-matching-raw-name');
+  var dealIdEl = document.getElementById('manual-matching-deal-id');
+  if (!btn) return;
+  var valid = !!(rawName && rawName.value.trim() && dealIdEl && dealIdEl.value);
+  btn.disabled = !valid;
+  btn.style.cursor = valid ? 'pointer' : 'not-allowed';
+  btn.style.background = valid ? 'linear-gradient(135deg,#372EB6,#7343EE)' : '#C0B8E0';
+}
+
+// Réagit à la saisie du champ "raw name"
+document.addEventListener('input', function(e) {
+  if (e.target && e.target.id === 'manual-matching-raw-name') updateManualMatchingBtnState();
+});
+
+function confirmManualMatching() {
+  var rawEl = document.getElementById('manual-matching-raw-name');
+  var hidden = document.getElementById('manual-matching-deal-id');
+  if (!rawEl || !rawEl.value.trim()) { alert('Veuillez saisir le nom tel qu\'il apparaît dans le fichier Excel.'); return; }
+  if (!hidden || !hidden.value) { alert('Veuillez sélectionner un consultant.'); return; }
+
+  var rawName = rawEl.value.trim();
+  var dealId = parseInt(hidden.value);
+  setMatchingKey(rawName, dealId);
+
+  if (typeof showNotifToast === 'function') showNotifToast('✅ Correspondance créée');
+
+  var cb = _manualMatchingCallback;
+  _manualMatchingCallback = null;
+  document.getElementById('modal-manual-matching').remove();
+
+  if (cb) cb();
+  else refreshMatchingsPanel();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -12349,11 +12799,240 @@ function generateCompteActiviteExcel(deal, startMonth) {
     }
   });
 
-  // Largeurs colonnes
-  ws['!cols'] = [{ wch: 2 }, { wch: 45 }].concat(months.map(function(){ return { wch: 14 }; }));
+  // ═══ STYLES (si xlsx-js-style dispo, sinon ignoré silencieusement) ═══
+  var hasStyles = typeof XLSX !== 'undefined';
 
-  // Merge pour le titre
+  // Couleurs Seven Portage
+  var C_PRIMARY = '372EB6';       // Violet foncé
+  var C_PRIMARY_LIGHT = '7343EE'; // Violet clair
+  var C_BG_HEADER = 'E8E4FA';     // Violet très pâle pour headers
+  var C_BG_TOTAL = 'F5F3FF';      // Fond des lignes de total
+  var C_BG_BRUT = 'FFF4D6';       // Jaune pâle (salaire/charges)
+  var C_BG_FACT = 'E3F2FD';       // Bleu pâle (facturation)
+  var C_BG_FRAIS = 'E8F5E9';      // Vert pâle (frais)
+  var C_BG_RESULT = 'FFF9C4';     // Jaune doré (résultats)
+  var C_WHITE = 'FFFFFF';
+  var C_TEXT = '1A1033';
+  var C_BORDER = 'D9CFFA';
+
+  var borderThin = { style: 'thin', color: { rgb: C_BORDER } };
+  var borderMedium = { style: 'medium', color: { rgb: C_PRIMARY } };
+  var allBorders = { top: borderThin, bottom: borderThin, left: borderThin, right: borderThin };
+
+  // Helpers pour styliser une cellule (crée la cellule si vide)
+  function ensureCell(addr) {
+    if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+    if (!ws[addr].s) ws[addr].s = {};
+    return ws[addr];
+  }
+  function styleCell(addr, style) {
+    var c = ensureCell(addr);
+    c.s = Object.assign({}, c.s, style);
+  }
+  function styleRow(rowNum, colsCount, style) {
+    for (var i = 0; i < colsCount; i++) {
+      var col = colLetter(1 + i);  // B (idx 1) à Q (idx 16)
+      styleCell(col + rowNum, style);
+    }
+  }
+
+  // Ligne 9 : Titre principal — grand, en-tête violette Seven
+  styleCell('B9', {
+    font: { bold: true, sz: 18, color: { rgb: C_WHITE }, name: 'Calibri' },
+    fill: { patternType: 'solid', fgColor: { rgb: C_PRIMARY } },
+    alignment: { horizontal: 'center', vertical: 'center' },
+    border: {
+      top: borderMedium, bottom: borderMedium,
+      left: borderMedium, right: borderMedium
+    }
+  });
+  // Étendre le style aux cellules mergées
+  for (var mi = 1; mi <= months.length + 1; mi++) {
+    styleCell(colLetter(mi) + '9', {
+      fill: { patternType: 'solid', fgColor: { rgb: C_PRIMARY } },
+      font: { bold: true, sz: 18, color: { rgb: C_WHITE } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: { top: borderMedium, bottom: borderMedium, left: borderMedium, right: borderMedium }
+    });
+  }
+
+  // Ligne 11 : Header mois — fond violet pâle, centré, gras
+  var totalCols = months.length + 1;  // B + 15 mois
+  for (var k = 1; k <= totalCols; k++) {
+    var colK = colLetter(k);
+    styleCell(colK + '11', {
+      font: { bold: true, sz: 11, color: { rgb: C_PRIMARY }, name: 'Calibri' },
+      fill: { patternType: 'solid', fgColor: { rgb: C_BG_HEADER } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: allBorders
+    });
+  }
+
+  // Ligne 12 (TJM) : fond gris clair, bordures
+  for (var k2 = 1; k2 <= totalCols; k2++) {
+    styleCell(colLetter(k2) + '12', {
+      font: { sz: 10, color: { rgb: C_TEXT }, name: 'Calibri', bold: k2 === 1 },
+      fill: { patternType: 'solid', fgColor: { rgb: 'FAFAFA' } },
+      alignment: k2 === 1 ? { horizontal: 'left', vertical: 'center' } : { horizontal: 'right', vertical: 'center' },
+      border: allBorders
+    });
+  }
+
+  // Ligne 13 : Jours prestés — input saisie, fond blanc, gras
+  for (var k3 = 1; k3 <= totalCols; k3++) {
+    styleCell(colLetter(k3) + '13', {
+      font: { sz: 10, color: { rgb: C_TEXT }, name: 'Calibri', bold: true },
+      fill: { patternType: 'solid', fgColor: { rgb: C_WHITE } },
+      alignment: k3 === 1 ? { horizontal: 'left', vertical: 'center' } : { horizontal: 'center', vertical: 'center' },
+      border: allBorders
+    });
+  }
+
+  // Ligne 14 : Facturé HT — mise en avant, bleu pâle, gras
+  for (var k4 = 1; k4 <= totalCols; k4++) {
+    styleCell(colLetter(k4) + '14', {
+      font: { sz: 11, color: { rgb: C_PRIMARY }, name: 'Calibri', bold: true },
+      fill: { patternType: 'solid', fgColor: { rgb: C_BG_FACT } },
+      alignment: k4 === 1 ? { horizontal: 'left', vertical: 'center' } : { horizontal: 'right', vertical: 'center' },
+      border: allBorders
+    });
+  }
+
+  // Lignes 16-19 : Frais (vert pâle)
+  [16, 17, 18, 19].forEach(function(rowN) {
+    for (var kk = 1; kk <= totalCols; kk++) {
+      styleCell(colLetter(kk) + rowN, {
+        font: { sz: 10, color: { rgb: C_TEXT }, name: 'Calibri', bold: kk === 1 },
+        fill: { patternType: 'solid', fgColor: { rgb: C_BG_FRAIS } },
+        alignment: kk === 1 ? { horizontal: 'left', vertical: 'center' } : { horizontal: 'right', vertical: 'center' },
+        border: allBorders
+      });
+    }
+  });
+
+  // Ligne 20 : Total Frais versés (vert un peu plus foncé, gras)
+  for (var k20 = 1; k20 <= totalCols; k20++) {
+    styleCell(colLetter(k20) + '20', {
+      font: { sz: 11, color: { rgb: '0F6E56' }, name: 'Calibri', bold: true },
+      fill: { patternType: 'solid', fgColor: { rgb: 'C8E6C9' } },
+      alignment: k20 === 1 ? { horizontal: 'left', vertical: 'center' } : { horizontal: 'right', vertical: 'center' },
+      border: allBorders
+    });
+  }
+
+  // Ligne 21 : Marge Seven 4% — fond rouge pâle (ça identifie la marge)
+  for (var k21 = 1; k21 <= totalCols; k21++) {
+    styleCell(colLetter(k21) + '21', {
+      font: { sz: 10, color: { rgb: 'C24141' }, name: 'Calibri', bold: true },
+      fill: { patternType: 'solid', fgColor: { rgb: 'FDECEC' } },
+      alignment: k21 === 1 ? { horizontal: 'left', vertical: 'center' } : { horizontal: 'right', vertical: 'center' },
+      border: allBorders
+    });
+  }
+
+  // Ligne 22 : Montant disponible
+  for (var k22 = 1; k22 <= totalCols; k22++) {
+    styleCell(colLetter(k22) + '22', {
+      font: { sz: 11, color: { rgb: C_PRIMARY }, name: 'Calibri', bold: true },
+      fill: { patternType: 'solid', fgColor: { rgb: C_BG_TOTAL } },
+      alignment: k22 === 1 ? { horizontal: 'left', vertical: 'center' } : { horizontal: 'right', vertical: 'center' },
+      border: allBorders
+    });
+  }
+
+  // Ligne 24 : Charges patronales (fond orange pâle, texte wrapped)
+  for (var k24 = 1; k24 <= totalCols; k24++) {
+    styleCell(colLetter(k24) + '24', {
+      font: { sz: k24 === 1 ? 9 : 10, color: { rgb: '8A5F00' }, name: 'Calibri', bold: k24 === 1 },
+      fill: { patternType: 'solid', fgColor: { rgb: 'FFE0B2' } },
+      alignment: k24 === 1 ? { horizontal: 'left', vertical: 'center', wrapText: true } : { horizontal: 'right', vertical: 'center' },
+      border: allBorders
+    });
+  }
+
+  // Lignes 25-26 : Brut + Charges sal (fond jaune pâle)
+  [25, 26].forEach(function(rowN) {
+    for (var kk = 1; kk <= totalCols; kk++) {
+      styleCell(colLetter(kk) + rowN, {
+        font: { sz: 10, color: { rgb: C_TEXT }, name: 'Calibri', bold: kk === 1 || rowN === 25 },
+        fill: { patternType: 'solid', fgColor: { rgb: C_BG_BRUT } },
+        alignment: kk === 1 ? { horizontal: 'left', vertical: 'center' } : { horizontal: 'right', vertical: 'center' },
+        border: allBorders
+      });
+    }
+  });
+
+  // Ligne 27 : Coût global (gris foncé, gras)
+  for (var k27 = 1; k27 <= totalCols; k27++) {
+    styleCell(colLetter(k27) + '27', {
+      font: { sz: 11, color: { rgb: C_WHITE }, name: 'Calibri', bold: true },
+      fill: { patternType: 'solid', fgColor: { rgb: '6B5E9C' } },
+      alignment: k27 === 1 ? { horizontal: 'left', vertical: 'center' } : { horizontal: 'right', vertical: 'center' },
+      border: allBorders
+    });
+  }
+
+  // Ligne 28-29 : Total versé (résultats — doré)
+  [28, 29].forEach(function(rowN) {
+    for (var kk = 1; kk <= totalCols; kk++) {
+      styleCell(colLetter(kk) + rowN, {
+        font: { sz: 11, color: { rgb: '5D4037' }, name: 'Calibri', bold: true },
+        fill: { patternType: 'solid', fgColor: { rgb: C_BG_RESULT } },
+        alignment: kk === 1 ? { horizontal: 'left', vertical: 'center' } : { horizontal: 'right', vertical: 'center' },
+        border: allBorders
+      });
+    }
+  });
+
+  // Ligne 30 : Solde (gris clair)
+  for (var k30 = 1; k30 <= totalCols; k30++) {
+    styleCell(colLetter(k30) + '30', {
+      font: { sz: 10, color: { rgb: '666' }, name: 'Calibri', italic: true, bold: k30 === 1 },
+      fill: { patternType: 'solid', fgColor: { rgb: 'F0F0F0' } },
+      alignment: k30 === 1 ? { horizontal: 'left', vertical: 'center' } : { horizontal: 'right', vertical: 'center' },
+      border: allBorders
+    });
+  }
+
+  // Ligne 31 : Taux de restitution (violet, gras)
+  for (var k31 = 1; k31 <= totalCols; k31++) {
+    styleCell(colLetter(k31) + '31', {
+      font: { sz: 11, color: { rgb: C_WHITE }, name: 'Calibri', bold: true },
+      fill: { patternType: 'solid', fgColor: { rgb: C_PRIMARY_LIGHT } },
+      alignment: k31 === 1 ? { horizontal: 'left', vertical: 'center' } : { horizontal: 'right', vertical: 'center' },
+      border: allBorders
+    });
+  }
+
+  // Hauteurs de lignes
+  ws['!rows'] = [];
+  // Lignes 1-7 vides : petites
+  for (var rh = 0; rh < 7; rh++) ws['!rows'].push({ hpt: 8 });
+  // Ligne 8 (idx 7) : espaceur
+  ws['!rows'][7] = { hpt: 10 };
+  // Ligne 9 (titre) : grande
+  ws['!rows'][8] = { hpt: 40 };
+  // Ligne 10 : espaceur
+  ws['!rows'][9] = { hpt: 10 };
+  // Ligne 11 (header mois) : 24
+  ws['!rows'][10] = { hpt: 24 };
+  // Ligne 13 (Jours) : 22 (plus haute pour saisie)
+  ws['!rows'][12] = { hpt: 22 };
+  // Ligne 15 vide : petite
+  ws['!rows'][14] = { hpt: 6 };
+  // Ligne 23 vide : petite
+  ws['!rows'][22] = { hpt: 6 };
+  // Ligne 24 (charges patronales, multi-ligne) : haute
+  ws['!rows'][23] = { hpt: 42 };
+
+  // Largeurs colonnes (plus larges)
+  ws['!cols'] = [{ wch: 2 }, { wch: 48 }].concat(months.map(function(){ return { wch: 14.5 }; }));
+
+  // Merge pour le titre (ligne 9 colonne B jusqu'à dernière colonne)
   ws['!merges'] = [{ s: { r: 8, c: 1 }, e: { r: 8, c: months.length + 1 } }];
+
+  // Freeze : la colonne B (labels) + les 2 premières lignes (titre + header mois)
+  ws['!views'] = [{ state: 'frozen', ySplit: 11, xSplit: 2 }];
 
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Compte d\'activité professionnel');
@@ -12430,7 +13109,131 @@ function listComptesActiviteForDeal(deal, callback) {
 }
 
 // ── Onglet "Compte d'activité" dans la fiche candidat ──
+// Flag session : une fois débloqué, ne redemande plus pendant la session
+var _compteActUnlocked = false;
+
+function isCompteActUnlocked() {
+  return !!_compteActUnlocked;
+}
+
+function relockCompteAct() {
+  if (!confirm('🔒 Re-verrouiller l\'accès aux comptes d\'activité ?\n\nLe mot de passe sera à nouveau demandé pour y accéder.')) return;
+  _compteActUnlocked = false;
+  if (typeof showNotifToast === 'function') showNotifToast('🔒 Compte d\'activité verrouillé');
+  // Rafraîchir la vue de l'onglet actif sur la fiche candidat ouverte
+  var ctContent = document.querySelector('[id^="ct-content-"]');
+  if (ctContent) {
+    var cidMatch = ctContent.id.match(/ct-content-(\d+)/);
+    if (cidMatch) {
+      var candId = parseInt(cidMatch[1]);
+      // Re-render l'onglet compte d'activité (affichera l'écran de verrou)
+      if (typeof switchCandTab === 'function') switchCandTab(candId, 'compte_act');
+    }
+  }
+}
+
+function promptCompteActPassword(onSuccess) {
+  var ex = document.getElementById('modal-compte-act-pwd');
+  if (ex) ex.remove();
+
+  // Stocker le callback dans une variable globale temporaire
+  window._compteActPwdCallback = onSuccess || null;
+
+  var modal = document.createElement('div');
+  modal.id = 'modal-compte-act-pwd';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.65);z-index:3500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:16px;padding:32px 36px;width:92%;max-width:420px;box-shadow:0 20px 60px rgba(26,16,51,0.4);text-align:center;">'
+    // En-tête avec dégradé violet Seven
+    +   '<div style="background:linear-gradient(135deg,#372EB6,#7343EE);width:80px;height:80px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;box-shadow:0 8px 24px rgba(115,67,238,0.35);">'
+    +     '<div style="font-size:38px;">🔒</div>'
+    +   '</div>'
+    +   '<div style="font-size:18px;font-weight:800;color:#1A1033;margin-bottom:6px;letter-spacing:-0.01em;">Accès protégé</div>'
+    +   '<div style="font-size:12.5px;color:#6B5E9C;margin-bottom:22px;line-height:1.55;">Cet espace contient des informations confidentielles.<br>Saisissez le mot de passe administrateur.</div>'
+    // Champ mot de passe
+    +   '<div style="position:relative;margin-bottom:16px;text-align:left;">'
+    +     '<label style="font-size:10.5px;color:#9E94C4;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:5px;">Mot de passe</label>'
+    +     '<input id="compte-act-pwd-input" type="password" onkeydown="if(event.key===\'Enter\'){event.preventDefault();submitCompteActPassword();}" placeholder="••••••••" style="width:100%;padding:12px 14px;border:1.5px solid #E4E0FA;border-radius:10px;font-size:14px;font-family:inherit;box-sizing:border-box;outline:none;transition:border-color 0.15s;" onfocus="this.style.borderColor=\'#7343EE\'" onblur="this.style.borderColor=\'#E4E0FA\'">'
+    +   '</div>'
+    // Message d'erreur (caché par défaut)
+    +   '<div id="compte-act-pwd-error" style="display:none;padding:10px 12px;background:#FDECEC;border:1px solid #F5B5B5;border-radius:8px;font-size:12px;color:#A8322A;margin-bottom:14px;font-weight:600;">❌ Mot de passe incorrect</div>'
+    // Boutons
+    +   '<div style="display:flex;gap:10px;">'
+    +     '<button onclick="closeCompteActPwdModal()" style="flex:1;padding:11px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:10px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:background 0.15s;" onmouseover="this.style.background=\'#FAF8FF\'" onmouseout="this.style.background=\'#fff\'">Annuler</button>'
+    +     '<button onclick="submitCompteActPassword()" style="flex:2;padding:11px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:10px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 4px 12px rgba(115,67,238,0.25);">🔓 Débloquer</button>'
+    +   '</div>'
+    +   '<div style="margin-top:16px;font-size:10.5px;color:#9E94C4;line-height:1.4;">💡 Le déblocage est valable pour toute la session en cours.</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+  setTimeout(function(){
+    var input = document.getElementById('compte-act-pwd-input');
+    if (input) input.focus();
+  }, 100);
+}
+
+function submitCompteActPassword() {
+  var input = document.getElementById('compte-act-pwd-input');
+  var errDiv = document.getElementById('compte-act-pwd-error');
+  if (!input) return;
+  var pwd = input.value;
+  var adminPwd = (typeof getCommParams === 'function') ? (getCommParams().admin_password || 'seven2026') : 'seven2026';
+
+  if (pwd === adminPwd) {
+    _compteActUnlocked = true;
+    var cb = window._compteActPwdCallback;
+    window._compteActPwdCallback = null;
+    closeCompteActPwdModal();
+    if (typeof showNotifToast === 'function') showNotifToast('🔓 Compte d\'activité débloqué pour cette session');
+    if (cb) cb();
+  } else {
+    // Animation shake + message d'erreur
+    if (errDiv) errDiv.style.display = 'block';
+    input.style.borderColor = '#E24B4A';
+    input.value = '';
+    // Shake animation
+    var modal = document.getElementById('modal-compte-act-pwd');
+    if (modal) {
+      var card = modal.querySelector('div');
+      if (card) {
+        card.style.animation = 'none';
+        card.offsetHeight; // force reflow
+        card.style.animation = 'shake 0.4s';
+      }
+    }
+    setTimeout(function(){ input.focus(); }, 50);
+  }
+}
+
+function closeCompteActPwdModal() {
+  var modal = document.getElementById('modal-compte-act-pwd');
+  if (modal) modal.remove();
+  window._compteActPwdCallback = null;
+}
+
+// Injection CSS animation shake (une seule fois)
+(function injectCompteActCSS() {
+  if (document.getElementById('compte-act-css')) return;
+  var style = document.createElement('style');
+  style.id = 'compte-act-css';
+  style.textContent = '@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-8px)} 50%{transform:translateX(8px)} 75%{transform:translateX(-4px)} }';
+  document.head.appendChild(style);
+})();
+
 function buildCandCompteActiviteHTML(cand) {
+  // Verrou par mot de passe : onglet visible mais contenu masqué tant que pas débloqué
+  if (!isCompteActUnlocked()) {
+    return ''
+      + '<div style="padding:50px 30px;text-align:center;">'
+      +   '<div style="display:inline-block;background:#F5F3FF;border:2px solid #D9CFFA;border-radius:16px;padding:40px 50px;max-width:420px;">'
+      +     '<div style="font-size:48px;margin-bottom:14px;">🔒</div>'
+      +     '<div style="font-size:16px;font-weight:800;color:#1A1033;margin-bottom:8px;">Accès protégé</div>'
+      +     '<div style="font-size:12.5px;color:#6B5E9C;margin-bottom:22px;line-height:1.5;">Les comptes d\'activité sont des documents confidentiels. Saisissez le mot de passe administrateur pour y accéder.</div>'
+      +     '<button onclick="promptCompteActPassword(function(){ switchCandTab(' + cand.id + ',\'compte_act\'); })" style="padding:10px 22px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">🔓 Débloquer</button>'
+      +     '<div style="margin-top:16px;font-size:10.5px;color:#9E94C4;">Le déblocage est valable jusqu\'à la fermeture de l\'onglet navigateur.</div>'
+      +   '</div>'
+      + '</div>';
+  }
+
   // Trouver le deal actif du candidat
   var deals = getDeals();
   var candDeals = deals.filter(function(d) {
@@ -12455,10 +13258,15 @@ function buildCandCompteActiviteHTML(cand) {
   return ''
     + '<div style="padding:20px;">'
     +   '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap;">'
+    +   '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap;">'
     +     '<div>'
-    +       '<div style="font-size:14px;font-weight:700;color:#1A1033;">Compte d\'activité</div>'
+    +       '<div style="display:flex;align-items:center;gap:8px;">'
+    +         '<div style="font-size:14px;font-weight:700;color:#1A1033;">Compte d\'activité</div>'
+    +         '<span title="Session débloquée" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:#E8F5E9;border:1px solid #A5D6A7;border-radius:10px;font-size:10px;font-weight:700;color:#0F6E56;">🔓 DÉBLOQUÉ</span>'
+    +       '</div>'
     +       '<div style="font-size:11.5px;color:#6B5E9C;margin-top:2px;">Génération Excel à partir des données TJM, jours prestés, avantages, frais pro et simulateur.</div>'
     +     '</div>'
+    +     '<button onclick="relockCompteAct()" title="Re-verrouiller l\'accès" style="padding:6px 12px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:4px;">🔒 Verrouiller</button>'
     +   '</div>'
     +   '<div style="background:#F5F3FF;border-radius:10px;padding:16px;margin-bottom:16px;">'
     +     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;">'
@@ -15188,16 +15996,18 @@ function switchCandTab(id, tab) {
   else if (tab === 'documents') { cont.innerHTML = buildCandDocsHTML(cand); setupCandDocsDragDrop(cand); }
   else if (tab === 'compte_act') {
     cont.innerHTML = buildCandCompteActiviteHTML(cand);
-    // Charger la liste des fichiers existants
-    var deals = getDeals();
-    var candName = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim().toLowerCase();
-    var candDeals = deals.filter(function(d) {
-      var dealName = ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase();
-      return candName === dealName && d.etat !== 'Annulé';
-    });
-    if (candDeals.length) {
-      var primary = candDeals.find(function(d){ return d.etat === 'En cours' || d.etat === 'Signé'; }) || candDeals[0];
-      refreshCandCompteActList(primary);
+    // Charger la liste des fichiers existants seulement si débloqué
+    if (typeof isCompteActUnlocked === 'function' && isCompteActUnlocked()) {
+      var deals = getDeals();
+      var candName = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim().toLowerCase();
+      var candDeals = deals.filter(function(d) {
+        var dealName = ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase();
+        return candName === dealName && d.etat !== 'Annulé';
+      });
+      if (candDeals.length) {
+        var primary = candDeals.find(function(d){ return d.etat === 'En cours' || d.etat === 'Signé'; }) || candDeals[0];
+        refreshCandCompteActList(primary);
+      }
     }
   }
   else if (tab === 'rappels') cont.innerHTML = buildCandRappelsHTML(cand);
