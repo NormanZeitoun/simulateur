@@ -3292,6 +3292,9 @@ function getCommercialData() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  // Purger les tombstones anciens (>60j) pour ne pas grossir localStorage indéfiniment
+  try { if (typeof purgeOldTombstones === 'function') purgeOldTombstones(); } catch(e) {}
+
   // Restore params from localStorage
   const saved = localStorage.getItem('sp_params_v2');
   if (saved) {
@@ -5224,6 +5227,7 @@ function deleteSim(ts) {
   if (!confirm('Supprimer cette simulation ?')) return;
   var hist = getHistory().filter(function(h) { return h.timestamp !== ts; });
   saveHistoryArr(hist);
+  if (typeof addTombstone === 'function') addTombstone('simulations', ts);
   renderHistorique();
 }
 
@@ -5655,7 +5659,8 @@ var _SHARED_CONFIG_KEYS = [
   { ls: 'sp_commission_params_v1',   field: 'commission_params' },
   { ls: 'sp_commission_exclusions_v1', field: 'commission_exclusions' },
   { ls: 'sp_commission_goals_v1',    field: 'commission_goals' },
-  { ls: 'sp_matching_jours_v1',      field: 'matching_jours' }
+  { ls: 'sp_matching_jours_v1',      field: 'matching_jours' },
+  { ls: 'sp_tombstones_v1',          field: 'tombstones' }
 ];
 
 function _collectSharedConfigs() {
@@ -5672,11 +5677,105 @@ function _collectSharedConfigs() {
 function _applySharedConfigs(shared) {
   if (!shared || typeof shared !== 'object') return;
   _SHARED_CONFIG_KEYS.forEach(function(c) {
-    if (shared[c.field] !== undefined && shared[c.field] !== null) {
-      try { localStorage.setItem(c.ls, JSON.stringify(shared[c.field])); }
-      catch(e) { console.warn('[app_settings apply] ' + c.field, e); }
+    if (shared[c.field] === undefined || shared[c.field] === null) return;
+    // CAS SPÉCIAL TOMBSTONES : merge UNION avec les tombstones locaux
+    // (pour ne pas écraser les suppressions locales avec celles du remote)
+    if (c.field === 'tombstones') {
+      try {
+        var remote = shared[c.field] || {};
+        var local = {};
+        try { local = JSON.parse(localStorage.getItem(c.ls) || '{}') || {}; } catch(e){}
+        var merged = {};
+        var allEntities = {};
+        Object.keys(local).forEach(function(k){ allEntities[k] = 1; });
+        Object.keys(remote).forEach(function(k){ allEntities[k] = 1; });
+        Object.keys(allEntities).forEach(function(ent){
+          merged[ent] = {};
+          var lIds = local[ent] || {};
+          var rIds = remote[ent] || {};
+          var allIds = {};
+          Object.keys(lIds).forEach(function(i){ allIds[i] = 1; });
+          Object.keys(rIds).forEach(function(i){ allIds[i] = 1; });
+          Object.keys(allIds).forEach(function(i){
+            // Prendre le timestamp max (le plus récent)
+            merged[ent][i] = Math.max(lIds[i] || 0, rIds[i] || 0);
+          });
+        });
+        localStorage.setItem(c.ls, JSON.stringify(merged));
+      } catch(e) { console.warn('[tombstones merge]', e); }
+      return;
     }
+    // Cas normal : on écrase avec la version remote
+    try { localStorage.setItem(c.ls, JSON.stringify(shared[c.field])); }
+    catch(e) { console.warn('[app_settings apply] ' + c.field, e); }
   });
+}
+
+// ═══════════════════════════════════════════════════════════
+// TOMBSTONES — suppressions synchronisées entre utilisateurs
+// ═══════════════════════════════════════════════════════════
+// Quand on supprime une entité (simulation, deal, candidat…), on ajoute son ID
+// à une liste "tombstones" avec un timestamp. Cette liste est synchronisée via
+// app_settings._shared.tombstones pour que tous les users respectent la suppression.
+// Au merge remote, toute entité dont l'ID est dans la liste tombstones est ignorée
+// (elle ne sera pas "redécouverte" et réimportée).
+// Les tombstones > 60 jours sont purgés automatiquement pour ne pas grossir indéfiniment.
+var TOMBSTONES_KEY = 'sp_tombstones_v1';
+var TOMBSTONE_RETENTION_MS = 60 * 24 * 3600 * 1000;  // 60 jours
+
+function getTombstones() {
+  try { return JSON.parse(localStorage.getItem(TOMBSTONES_KEY) || '{}') || {}; }
+  catch(e) { return {}; }
+}
+
+function saveTombstones(obj) {
+  try { localStorage.setItem(TOMBSTONES_KEY, JSON.stringify(obj || {})); } catch(e){}
+}
+
+// Ajoute une suppression : entity = 'simulations' | 'deals' | 'candidats' | ... ; id = identifiant unique
+function addTombstone(entity, id) {
+  if (!entity || id === undefined || id === null) return;
+  var all = getTombstones();
+  if (!all[entity]) all[entity] = {};
+  all[entity][String(id)] = Date.now();
+  saveTombstones(all);
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+// Vérifie si un ID est supprimé
+function isTombstoned(entity, id) {
+  if (!entity || id === undefined || id === null) return false;
+  var all = getTombstones();
+  return !!(all[entity] && all[entity][String(id)]);
+}
+
+// Filtre un array en retirant les éléments tombstonés (par propriété idKey, ex: 'id' ou 'timestamp')
+function filterTombstoned(entity, arr, idKey) {
+  if (!Array.isArray(arr) || !entity) return arr;
+  idKey = idKey || 'id';
+  var all = getTombstones();
+  var tombs = all[entity] || {};
+  if (!Object.keys(tombs).length) return arr;
+  return arr.filter(function(item) {
+    if (!item || item[idKey] === undefined || item[idKey] === null) return true;
+    return !tombs[String(item[idKey])];
+  });
+}
+
+// Purger les tombstones anciens (>60j) — appelé au chargement
+function purgeOldTombstones() {
+  var all = getTombstones();
+  var cutoff = Date.now() - TOMBSTONE_RETENTION_MS;
+  var changed = false;
+  Object.keys(all).forEach(function(entity) {
+    var ids = all[entity] || {};
+    Object.keys(ids).forEach(function(id) {
+      if (ids[id] < cutoff) { delete ids[id]; changed = true; }
+    });
+    if (!Object.keys(ids).length) { delete all[entity]; changed = true; }
+  });
+  if (changed) saveTombstones(all);
 }
 
 // Helper : parser une chaîne d'emails séparés par ; , ou espaces → tableau d'emails uniques, triés, valides
@@ -7173,6 +7272,7 @@ function mergeSortants(remote) {
   var byId = {};
   local.forEach(function(s){ if (s && s.id) byId[s.id] = s; });
   remote.forEach(function(s){
+    if (typeof isTombstoned === 'function' && s && isTombstoned('sortants', s.id)) return;
     if (!s || !s.id) return;
     var existing = byId[s.id];
     if (!existing || (s.updated_ts || 0) > (existing.updated_ts || 0)) {
@@ -7544,6 +7644,7 @@ function deleteSortant(sortantId) {
   if (!confirm('Supprimer la fiche sortant de ' + name + ' ?\n\nLe deal reste en l\'état. Cette action est irréversible sur la fiche sortant.')) return;
   sortants = sortants.filter(function(x){ return x.id !== sortantId; });
   saveSortants(sortants);
+  if (typeof addTombstone === 'function') addTombstone('sortants', sortantId);
   if (typeof renderSortants === 'function') renderSortants();
   if (typeof odAutoSync === 'function') odAutoSync();
 }
@@ -7772,6 +7873,7 @@ function deleteDeal(id) {
   if (!confirm('Supprimer ce deal ?')) return;
   var deals = getDeals().filter(function(d) { return d.id !== id; });
   saveDeals(deals);
+  if (typeof addTombstone === 'function') addTombstone('deals', id);
   renderDeals();
 }
 
@@ -14259,6 +14361,7 @@ function mergeCooptations(remote) {
   var byId = {};
   local.forEach(function(c){ if (c && c.id) byId[c.id] = c; });
   remote.forEach(function(c){
+    if (typeof isTombstoned === 'function' && c && isTombstoned('cooptations', c.id)) return;
     if (!c || !c.id) return;
     var existing = byId[c.id];
     if (!existing || (c.updated_ts || 0) > (existing.updated_ts || 0)) {
@@ -14733,6 +14836,7 @@ function deleteCooptation(coopId) {
   if (!confirm('Supprimer la cooptation de ' + name + ' ?\n\nCette action est irréversible.')) return;
   cs = cs.filter(function(x){ return x.id !== coopId; });
   saveCooptations(cs);
+  if (typeof addTombstone === 'function') addTombstone('cooptations', coopId);
   renderCooptations();
   if (typeof odAutoSync === 'function') odAutoSync();
 }
@@ -15021,6 +15125,7 @@ function mergeAvances(remote) {
   var byId = {};
   local.forEach(function(a){ if (a && a.id) byId[a.id] = a; });
   remote.forEach(function(a){
+    if (typeof isTombstoned === 'function' && a && isTombstoned('avances', a.id)) return;
     if (!a || !a.id) return;
     var existing = byId[a.id];
     if (!existing || (a.updated_ts || 0) > (existing.updated_ts || 0)) {
@@ -15276,6 +15381,7 @@ function deleteAvance(avanceId) {
   if (!confirm('Supprimer l\'avance de ' + name + ' (' + (a.montant||0) + ' €) ?\n\nCette action est irréversible.')) return;
   all = all.filter(function(x){ return x.id !== avanceId; });
   saveAvances(all);
+  if (typeof addTombstone === 'function') addTombstone('avances', avanceId);
   renderAvances();
   refreshCandFicheAvancesIfOpen(a.candidat_id);
   if (typeof odAutoSync === 'function') odAutoSync();
@@ -16273,7 +16379,7 @@ function cancelFicheEditMode(kind, entityId, extraId) {
   if (typeof showNotifToast === 'function') showNotifToast('↶ Modifications annulées');
 }
 
-// Génère le HTML de la barre d'édition (boutons Éditer OU Enregistrer+Annuler)
+// Génère le HTML de la barre d'édition (boutons Éditer OU Enregistrer+Annuler+Supprimer)
 function _renderFicheEditBar(barEl, kind, entityId, extraId, isEditMode) {
   var idArg = kind === 'manager'
     ? entityId + ',' + extraId
@@ -16281,14 +16387,65 @@ function _renderFicheEditBar(barEl, kind, entityId, extraId, isEditMode) {
   var kindLabel = kind === 'candidat' ? 'le candidat' : (kind === 'client' ? 'le client' : 'le manager');
 
   if (isEditMode) {
+    var deleteBtn = '';
+    // Bouton Supprimer uniquement pour les candidats (protection mot de passe + tombstone)
+    if (kind === 'candidat') {
+      deleteBtn = '<button class="fiche-edit-btn" onclick="deleteCandidatFromFiche(' + entityId + ')" title="Supprimer définitivement ce candidat (mot de passe admin requis)" style="background:#FCEBEB;color:#A8322A;border-color:#F5B5B5;">🗑 Supprimer</button>';
+    }
     barEl.innerHTML = ''
       + '<button class="fiche-edit-btn fiche-edit-btn-save" onclick="saveFicheEditMode(\'' + kind + '\',' + idArg + ')">💾 Enregistrer</button>'
-      + '<button class="fiche-edit-btn fiche-edit-btn-cancel" onclick="cancelFicheEditMode(\'' + kind + '\',' + idArg + ')">✗ Annuler</button>';
+      + '<button class="fiche-edit-btn fiche-edit-btn-cancel" onclick="cancelFicheEditMode(\'' + kind + '\',' + idArg + ')">✗ Annuler</button>'
+      + deleteBtn;
   } else {
     barEl.innerHTML = ''
       + '<span class="fiche-lock-badge">🔒 Lecture seule</span>'
       + '<button class="fiche-edit-btn fiche-edit-btn-edit" onclick="enterFicheEditMode(\'' + kind + '\',' + idArg + ')" title="Déverrouiller ' + kindLabel + ' pour modifier">✎ Éditer</button>';
   }
+}
+
+// Suppression d'un candidat depuis la fiche (en mode édition)
+// Protégée par mot de passe admin + tombstone synchronisé
+function deleteCandidatFromFiche(candId) {
+  var cands = getCandidats();
+  var cand = cands.find(function(c){ return c.id === candId; });
+  if (!cand) { alert('⚠ Candidat introuvable.'); return; }
+  var name = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim() || 'ce candidat';
+  var email = (cand.email || '').trim().toLowerCase();
+
+  // Étape 1 : mot de passe admin
+  if (typeof promptGenericAdminPassword !== 'function') {
+    alert('⚠ Fonction de mot de passe admin indisponible.');
+    return;
+  }
+  promptGenericAdminPassword({
+    title: '🗑 Supprimer un candidat',
+    subtitle: 'Suppression définitive de ' + name + '. Le mot de passe administrateur est requis.'
+  }, function() {
+    // Étape 2 : confirmation explicite
+    var nbSims = (cand.simulations || []).length;
+    var warn = 'Supprimer définitivement ' + name + ' ?\n\n';
+    warn += '• Le candidat sera retiré du tableau\n';
+    warn += '• Ses ' + nbSims + ' simulation(s) liée(s) seront également perdues\n';
+    warn += '• La suppression est propagée à tous les utilisateurs\n';
+    warn += '• Cette action est IRRÉVERSIBLE\n\n';
+    warn += 'Continuer ?';
+    if (!confirm(warn)) return;
+
+    // Étape 3 : suppression + tombstone
+    var all = getCandidats().filter(function(c){ return c.id !== candId; });
+    saveCandidatsArr(all);
+    // Tombstone par email (clé utilisée par mergeCandidats)
+    if (email && typeof addTombstone === 'function') {
+      addTombstone('candidats', email);
+    }
+    // Fermer la fiche
+    var modal = document.getElementById('modal-cand-fiche');
+    if (modal) modal.remove();
+    // Refresh
+    if (typeof renderCandidats === 'function') renderCandidats();
+    if (typeof showNotifToast === 'function') showNotifToast('🗑 ' + name + ' supprimé(e)');
+    if (typeof odAutoSync === 'function') odAutoSync();
+  });
 }
 
 // Construit le HTML initial de la barre (à insérer dans les headers des fiches)
@@ -16781,7 +16938,11 @@ function mergeHistorique(remote) {
   var local = getHistory();
   var tsMap = {};
   local.forEach(function(s) { tsMap[s.timestamp] = s; });
-  remote.forEach(function(s) { if (!tsMap[s.timestamp]) tsMap[s.timestamp] = s; });
+  // Filtrer les tombstones : ne pas réimporter les simus supprimées
+  remote.forEach(function(s) {
+    if (typeof isTombstoned === 'function' && isTombstoned('simulations', s.timestamp)) return;
+    if (!tsMap[s.timestamp]) tsMap[s.timestamp] = s;
+  });
   var merged = Object.values(tsMap).sort(function(a,b){ return (b.timestamp||0)-(a.timestamp||0); });
   saveHistoryArr(merged);
   if (typeof renderHistorique === 'function') renderHistorique();
@@ -16795,14 +16956,19 @@ function mergeCandidats(remote) {
   remote.forEach(function(rc) {
     var key = (rc.email||'').toLowerCase();
     if (!key) return;
+    // Skip les candidats tombstonés (supprimés par un autre user)
+    if (typeof isTombstoned === 'function' && isTombstoned('candidats', key)) return;
     if (!emailMap[key]) {
       emailMap[key] = rc;
     } else {
-      // Fusionner simulations
+      // Fusionner simulations (en respectant les tombstones simulations)
       var sims = emailMap[key].simulations || [];
       var tsSet = {};
       sims.forEach(function(s) { tsSet[s.timestamp] = 1; });
-      (rc.simulations||[]).forEach(function(s) { if (!tsSet[s.timestamp]) sims.push(s); });
+      (rc.simulations||[]).forEach(function(s) {
+        if (typeof isTombstoned === 'function' && isTombstoned('simulations', s.timestamp)) return;
+        if (!tsSet[s.timestamp]) sims.push(s);
+      });
       sims.sort(function(a,b){ return (b.timestamp||0)-(a.timestamp||0); });
       emailMap[key].simulations = sims;
       // Garder le SP-ID si absent
@@ -16817,7 +16983,8 @@ function mergeDeals(remote) {
   var local = getDeals();
   var idMap = {};
   local.forEach(function(d) { idMap[d.id] = d; });
-  remote.forEach(function(d) { if (!idMap[d.id]) idMap[d.id] = d; });
+  remote.forEach(function(d) {
+    if (typeof isTombstoned === 'function' && d && isTombstoned('deals', d.id)) return; if (!idMap[d.id]) idMap[d.id] = d; });
   var merged = Object.values(idMap).sort(function(a,b){ return (b.id||0)-(a.id||0); });
   saveDeals(merged);
   if (typeof renderDeals === 'function') renderDeals();
@@ -19021,6 +19188,7 @@ function mergeTaches(remote) {
   var byId = {};
   local.forEach(function(t){ if (t && t.id) byId[t.id] = t; });
   remote.forEach(function(t){
+    if (typeof isTombstoned === 'function' && t && isTombstoned('taches', t.id)) return;
     if (!t || !t.id) return;
     var existing = byId[t.id];
     if (!existing || (t.updated_ts || 0) > (existing.updated_ts || 0)) {
@@ -19429,6 +19597,7 @@ function deleteTask(taskId) {
   if (!t) return;
   if (!confirm('Supprimer la tâche "' + (t.title||'sans titre') + '" ?')) return;
   saveTaches(tasks.filter(function(x){ return x.id !== taskId; }));
+  if (typeof addTombstone === 'function') addTombstone('taches', taskId);
   renderTachesDashboard();
   if (typeof odAutoSync === 'function') odAutoSync();
 }
@@ -19669,6 +19838,7 @@ function mergeDemandes(remote) {
   var byId = {};
   local.forEach(function(d){ if (d && d.id) byId[d.id] = d; });
   remote.forEach(function(d){
+    if (typeof isTombstoned === 'function' && d && isTombstoned('demandes', d.id)) return;
     if (!d || !d.id) return;
     var existing = byId[d.id];
     if (!existing || (d.updated_ts || 0) > (existing.updated_ts || 0)) {
