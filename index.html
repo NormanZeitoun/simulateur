@@ -5822,7 +5822,10 @@ function _getEmptyPayloadForEntity(key) {
     case 'frais_pro':          return Object.assign(base, { frais_pro: [] });
     case 'demarrages':         return Object.assign(base, { demarrages: [] });
     case 'jours_prestes':      return Object.assign(base, { _updated_ts: Date.now() });  // objet à plat, pas de clés deal
-    case 'app_settings':       return base;  // settings à plat, rien = reset complet
+    case 'app_settings':       return Object.assign(base, {
+      _last_reset_ts: window._currentResetTs || Date.now(),
+      _reset_by: window._currentResetBy || _getCurrentUserName()
+    });  // marqueur de reset synchronisé
     default: return base;
   }
 }
@@ -5862,6 +5865,13 @@ function confirmResetTotal() {
 // Exécution : upload des 15 fichiers vides sur OneDrive, puis clear local + reload
 function doResetTotalOneDrive() {
   _initSyncEntities();
+  // Timestamp partagé : utilisé à la fois dans app_settings._last_reset_ts
+  // ET dans LAST_RESET_SEEN_KEY après le reload pour ne pas se re-déclencher chez soi
+  var resetTs = Date.now();
+  var resetBy = _getCurrentUserName();
+  window._currentResetTs = resetTs;
+  window._currentResetBy = resetBy;
+
   odWithToken(function(token) {
     if (typeof showNotifToast === 'function') showNotifToast('🔥 Reset en cours... (ne fermez pas la page)');
     odSetStatus('Reset OneDrive en cours...', false);
@@ -5917,11 +5927,25 @@ function doResetTotalOneDrive() {
       if (errors.length) {
         alert('⚠️ Reset partiel : ' + (total - errors.length) + '/' + total + ' fichiers vidés.\n\nErreurs sur : ' + errors.join(', ') + '\n\nVotre navigateur va quand même être vidé pour partir sur une base propre.');
       } else {
-        alert('✓ Reset OneDrive terminé : ' + total + ' fichiers vidés.\n\nVotre navigateur va maintenant être vidé et la page rechargée.\n\n➤ Prévenez vos collègues de recharger leur page pour prendre en compte le reset.');
+        alert('✓ Reset OneDrive terminé : ' + total + ' fichiers vidés.\n\nVotre navigateur va maintenant être vidé et la page rechargée.\n\n➤ Vos collègues seront automatiquement synchronisés au prochain sync (leur navigateur sera vidé et rechargé).');
       }
       try {
+        // Préserver l'auth MSAL pour ne pas avoir à se reconnecter
+        var msalKeys = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && (k.indexOf('msal.') === 0 || k.indexOf('msal-') === 0 || k.indexOf('login.') === 0)) msalKeys.push(k);
+        }
+        var preserved = {};
+        msalKeys.forEach(function(k){ preserved[k] = localStorage.getItem(k); });
         localStorage.clear();
         sessionStorage.clear();
+        // Restaurer MSAL
+        Object.keys(preserved).forEach(function(k){
+          if (preserved[k] !== null) localStorage.setItem(k, preserved[k]);
+        });
+        // Marquer le reset comme "déjà vu" côté Norman pour ne pas re-déclencher la détection au reload
+        localStorage.setItem(LAST_RESET_SEEN_KEY, String(resetTs));
       } catch(e) {}
       location.reload();
     });
@@ -9054,9 +9078,60 @@ function saveAppSettings(obj) {
   localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(obj || {}));
   if (typeof odAutoSync === 'function') odAutoSync();
 }
+// Nom du user courant (pour traçabilité du reset)
+function _getCurrentUserName() {
+  try {
+    var p = JSON.parse(localStorage.getItem('sp_params_v2') || '{}');
+    return (p.p_commercial_nom || p.p_commercial_email || 'inconnu').trim();
+  } catch(e) { return 'inconnu'; }
+}
+
+// Clé locale : dernier reset "vu" par ce user (pour détecter les nouveaux resets)
+var LAST_RESET_SEEN_KEY = 'sp_last_reset_seen_ts';
+
 function mergeAppSettings(remote) {
   // Merge par timestamp : le plus récent gagne, champ par champ
   if (!remote || typeof remote !== 'object') return;
+
+  // ═══ DÉTECTION D'UN RESET DISTANT ═══
+  // Si quelqu'un d'autre a fait un reset total, on purge notre localStorage aussi
+  // pour ne pas réinjecter nos anciennes données sur OneDrive.
+  try {
+    var remoteResetTs = remote._last_reset_ts || 0;
+    var lastSeenTs = parseInt(localStorage.getItem(LAST_RESET_SEEN_KEY) || '0', 10) || 0;
+    if (remoteResetTs > 0 && remoteResetTs > lastSeenTs) {
+      var whoReset = remote._reset_by || 'un administrateur';
+      var resetDate = new Date(remoteResetTs).toLocaleString('fr-FR');
+      console.warn('[Reset distant détecté]', whoReset, resetDate);
+      // Préserver : auth MSAL, paramètres personnels, flag reset seen
+      var msalKeys = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && (k.indexOf('msal.') === 0 || k.indexOf('msal-') === 0 || k.indexOf('login.') === 0)) msalKeys.push(k);
+      }
+      var preserved = {
+        'sp_params_v2': localStorage.getItem('sp_params_v2'),
+        'sp_user_signature_v1': localStorage.getItem('sp_user_signature_v1')
+      };
+      msalKeys.forEach(function(k){ preserved[k] = localStorage.getItem(k); });
+      // Purge totale
+      localStorage.clear();
+      // Restaurer les clés préservées
+      Object.keys(preserved).forEach(function(k){
+        if (preserved[k] !== null) localStorage.setItem(k, preserved[k]);
+      });
+      // Marquer ce reset comme "vu"
+      localStorage.setItem(LAST_RESET_SEEN_KEY, String(remoteResetTs));
+      // Alerter l'utilisateur et recharger
+      alert('🔄 Remise à zéro effectuée par ' + whoReset + '\n\n' +
+        'Tous les fichiers de données ont été vidés le ' + resetDate + '.\n\n' +
+        'Votre navigateur va être rechargé pour prendre en compte cette remise à zéro.\n\n' +
+        'Vos paramètres personnels (commercial, signature) sont préservés.');
+      setTimeout(function(){ location.reload(); }, 500);
+      return;  // Stop la suite du merge
+    }
+  } catch(e) { console.warn('[Check remote reset]', e); }
+
   var local = getAppSettings();
   var localTs = local._updated_ts || 0;
   var remoteTs = remote._updated_ts || 0;
