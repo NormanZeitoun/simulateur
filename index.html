@@ -10973,6 +10973,7 @@ function showEntreesView() {
     container.id = 'rh-content-container';
     tab.appendChild(container);
   }
+  container.style.display = 'block';
   renderEntrees();
 }
 
@@ -11715,6 +11716,7 @@ function showComptesActiviteView() {
     container.id = 'rh-content-container';
     tab.appendChild(container);
   }
+  container.style.display = 'block';
   renderComptesActivite();
 }
 
@@ -15598,7 +15600,7 @@ function setDealsOriginalVisible(visible) {
   if (!tab) return;
   // Tous les enfants directs qui ne sont ni la sub-nav ni les conteneurs de sous-sections RH
   Array.prototype.forEach.call(tab.children, function(child) {
-    if (child.id === 'rh-subnav' || child.id === 'rh-placeholder' || child.id === 'sortants-container' || child.id === 'cooptations-container' || child.id === 'avances-container' || child.id === 'prolongation-container' || child.id === 'frais-container') return;
+    if (child.id === 'rh-subnav' || child.id === 'rh-placeholder' || child.id === 'rh-content-container' || child.id === 'sortants-container' || child.id === 'cooptations-container' || child.id === 'avances-container' || child.id === 'prolongation-container' || child.id === 'frais-container') return;
     child.style.display = visible ? '' : 'none';
   });
   // Masquer toutes les sous-sections RH systématiquement.
@@ -15614,6 +15616,8 @@ function setDealsOriginalVisible(visible) {
   if (pc) pc.style.display = 'none';
   var fc = document.getElementById('frais-container');
   if (fc) fc.style.display = 'none';
+  var rc = document.getElementById('rh-content-container');
+  if (rc) rc.style.display = 'none';
 }
 
 
