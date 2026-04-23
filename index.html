@@ -5620,7 +5620,16 @@ function _initSyncEntities() {
     frais_pro: { merge: mergeFraisPro, getData: function(){ return {version:1,updated:new Date().toISOString(),frais_pro:getFraisPro()}; } },
     demarrages: { merge: mergeDemarrages, getData: function(){ return {version:1,updated:new Date().toISOString(),demarrages:getDemarrages()}; } },
     jours_prestes: { merge: mergeJoursPrestes, getData: function(){ return Object.assign({version:1,updated:new Date().toISOString()}, getJoursPrestes()); } },
-    app_settings: { merge: mergeAppSettings, getData: function(){ return Object.assign({version:1,updated:new Date().toISOString()}, getAppSettings()); } }
+    app_settings: { merge: mergeAppSettings, getData: function(){
+      // Payload app_settings enrichi : inclut TOUTES les configs partagées
+      // pour que Norman (admin) puisse configurer pour toute l'équipe
+      var payload = Object.assign({version:1, updated:new Date().toISOString()}, getAppSettings());
+      try {
+        var sharedConfigs = _collectSharedConfigs();
+        payload._shared = sharedConfigs;
+      } catch(e) { console.warn('[app_settings] collect shared configs:', e); }
+      return payload;
+    } }
   };
   SYNC_ENTITIES.forEach(function(ent) {
     if (!ent.merge && mapping[ent.key]) {
@@ -5628,6 +5637,56 @@ function _initSyncEntities() {
       ent.getData = mapping[ent.key].getData;
     }
   });
+}
+
+// ═══ CONFIGS PARTAGÉES : collecte et application ═══
+// Ces configs ont leur propre clé localStorage mais on les synchronise
+// via app_settings pour que tous les users aient la même configuration.
+var _SHARED_CONFIG_KEYS = [
+  { ls: 'sp_internal_emails_v1',     field: 'internal_emails' },
+  { ls: 'sp_sortants_config_v1',     field: 'sortants_config' },
+  { ls: 'sp_cooptations_config_v1',  field: 'cooptations_config' },
+  { ls: 'sp_avances_config_v1',      field: 'avances_config' },
+  { ls: 'sp_prolong_cfg_v1',         field: 'prolong_cfg' },
+  { ls: 'sp_avantages_config_v1',    field: 'avantages_config' },
+  { ls: 'sp_custom_lists_v1',        field: 'custom_lists' },
+  { ls: 'sp_rappel_types_v1',        field: 'rappel_types' },
+  { ls: 'sp_demandes_config_v1',     field: 'demandes_config' },
+  { ls: 'sp_commission_params_v1',   field: 'commission_params' },
+  { ls: 'sp_commission_exclusions_v1', field: 'commission_exclusions' },
+  { ls: 'sp_commission_goals_v1',    field: 'commission_goals' },
+  { ls: 'sp_matching_jours_v1',      field: 'matching_jours' }
+];
+
+function _collectSharedConfigs() {
+  var shared = {};
+  _SHARED_CONFIG_KEYS.forEach(function(c) {
+    try {
+      var raw = localStorage.getItem(c.ls);
+      if (raw) shared[c.field] = JSON.parse(raw);
+    } catch(e) { /* ignore */ }
+  });
+  return shared;
+}
+
+function _applySharedConfigs(shared) {
+  if (!shared || typeof shared !== 'object') return;
+  _SHARED_CONFIG_KEYS.forEach(function(c) {
+    if (shared[c.field] !== undefined && shared[c.field] !== null) {
+      try { localStorage.setItem(c.ls, JSON.stringify(shared[c.field])); }
+      catch(e) { console.warn('[app_settings apply] ' + c.field, e); }
+    }
+  });
+}
+
+// Helper : marquer app_settings comme modifié (pour que le merge remote<->local détecte le changement)
+// À appeler dans chaque saveXConfig() d'une config partagée.
+function _touchAppSettings() {
+  try {
+    var s = getAppSettings();
+    s._updated_ts = Date.now();
+    localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(s));
+  } catch(e) { /* ignore */ }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -6967,6 +7026,8 @@ function getSortantsConfig() {
 }
 function saveSortantsConfig(cfg) {
   localStorage.setItem(SORTANTS_CONFIG_KEY, JSON.stringify(cfg));
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 function updateSortantsConfigField(field, value) {
   var cfg = getSortantsConfig();
@@ -8866,6 +8927,11 @@ function mergeAppSettings(remote) {
   }
   // Écriture DIRECTE pour éviter boucle de sync
   localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(merged));
+  // Appliquer les configs partagées si remote est plus récent
+  // (pour éviter qu'un user qui n'a jamais touché aux configs écrase celles de Norman)
+  if (remote._shared && remoteTs >= localTs) {
+    try { _applySharedConfigs(remote._shared); } catch(e) { console.warn('[mergeAppSettings] shared:', e); }
+  }
 }
 
 function getAnalyseurPaieUrl() {
@@ -9031,6 +9097,7 @@ function getProlongConfig() {
 }
 function saveProlongConfig(cfg) {
   localStorage.setItem(PROLONG_CFG_KEY, JSON.stringify(cfg));
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 function updateProlongConfigField(field, value) {
@@ -9896,6 +9963,7 @@ function saveAvantagesConfig(cfg) {
   // Nettoyer l'ancien champ global avant save
   if (cfg && cfg.montant_max !== undefined) delete cfg.montant_max;
   localStorage.setItem(AVANTAGES_CFG_KEY, JSON.stringify(cfg));
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 function updateAvantagesConfigField(field, value) {
@@ -13979,6 +14047,8 @@ function getCooptationsConfig() {
 }
 function saveCooptationsConfig(cfg) {
   localStorage.setItem(COOPTATIONS_CONFIG_KEY, JSON.stringify(cfg));
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 function updateCooptationsConfigField(field, value) {
   var cfg = getCooptationsConfig();
@@ -14799,6 +14869,8 @@ function getAvancesConfig() {
 }
 function saveAvancesConfig(cfg) {
   localStorage.setItem(AVANCES_CONFIG_KEY, JSON.stringify(cfg));
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 function updateAvancesConfigField(field, value) {
   var cfg = getAvancesConfig();
@@ -17943,6 +18015,7 @@ function getInternalEmails() {
 
 function saveInternalEmails(obj) {
   localStorage.setItem(INTERNAL_EMAILS_KEY, JSON.stringify(obj));
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 
@@ -18280,7 +18353,11 @@ function getCustomLists() {
   try { return JSON.parse(localStorage.getItem(CUSTOM_LISTS_KEY)||'null') || JSON.parse(JSON.stringify(DEFAULT_LISTS)); }
   catch(e) { return JSON.parse(JSON.stringify(DEFAULT_LISTS)); }
 }
-function saveCustomLists(obj) { localStorage.setItem(CUSTOM_LISTS_KEY, JSON.stringify(obj)); }
+function saveCustomLists(obj) {
+  localStorage.setItem(CUSTOM_LISTS_KEY, JSON.stringify(obj));
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
 
 function renderCustomLists() {
   var el = document.getElementById('custom-lists-container');
@@ -18783,6 +18860,7 @@ function getRappelTypes() {
 }
 function saveRappelTypes(arr) {
   localStorage.setItem(RAPPEL_TYPES_KEY, JSON.stringify(arr));
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 
@@ -19496,6 +19574,7 @@ function getDemandesConfig() {
 }
 function saveDemandesConfig(cfg) {
   localStorage.setItem(DEMANDES_CONFIG_KEY, JSON.stringify(cfg));
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 function updateDemandeValideur(idx, value) {
@@ -20542,6 +20621,7 @@ function getCommParams() {
 }
 function saveCommParams(p) {
   localStorage.setItem(COMM_PARAMS_KEY, JSON.stringify(p));
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 
@@ -20552,6 +20632,7 @@ function getCommExclusions() {
 }
 function saveCommExclusions(obj) {
   localStorage.setItem(COMM_EXCLUSIONS_KEY, JSON.stringify(obj));
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 
@@ -21170,6 +21251,7 @@ function getCommGoals() {
 }
 function saveCommGoals(obj) {
   localStorage.setItem(COMM_GOALS_KEY, JSON.stringify(obj));
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 // Retourne les objectifs appliqués à (commercial, year), avec fallback sur défaut global
