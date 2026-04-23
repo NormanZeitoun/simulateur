@@ -5703,7 +5703,9 @@ function doResetTotalOneDrive() {
     var done = 0;
     var errors = [];
 
-    var uploadPromises = entities.map(function(ent) {
+    // PUT séquentiel avec retry exponentiel pour éviter le rate-limit Microsoft Graph
+    function putOne(ent, attempt) {
+      attempt = attempt || 1;
       var payload = _getEmptyPayloadForEntity(ent.key);
       var url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(ent.path) + ':/content';
       return fetch(url, {
@@ -5711,16 +5713,39 @@ function doResetTotalOneDrive() {
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       }).then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        done++;
-        odSetStatus('Reset ' + done + '/' + total + ' fichiers...', false);
+        if (r.ok) {
+          done++;
+          odSetStatus('Reset ' + done + '/' + total + ' fichiers... (' + ent.key + ')', false);
+          return;
+        }
+        // Rate limiting / unavailable → retry avec backoff jusqu'à 3 fois
+        if ((r.status === 429 || r.status === 503 || r.status === 504) && attempt < 4) {
+          var wait = attempt * 1500;  // 1.5s, 3s, 4.5s
+          console.warn('[Reset] ' + ent.key + ' HTTP ' + r.status + ' - retry dans ' + wait + 'ms (tentative ' + attempt + ')');
+          return new Promise(function(resolve){ setTimeout(resolve, wait); }).then(function(){ return putOne(ent, attempt + 1); });
+        }
+        // Autre erreur → échec définitif pour cette entité
+        console.error('[Reset] Échec ' + ent.key + ' HTTP ' + r.status);
+        errors.push(ent.key + ' (HTTP ' + r.status + ')');
       }).catch(function(err) {
-        console.error('[Reset] Erreur upload ' + ent.key, err);
-        errors.push(ent.key);
+        if (attempt < 4) {
+          var wait = attempt * 1500;
+          console.warn('[Reset] ' + ent.key + ' erreur réseau - retry dans ' + wait + 'ms');
+          return new Promise(function(resolve){ setTimeout(resolve, wait); }).then(function(){ return putOne(ent, attempt + 1); });
+        }
+        console.error('[Reset] Échec ' + ent.key, err);
+        errors.push(ent.key + ' (réseau)');
       });
+    }
+
+    // Enchaîner les PUT un par un avec 250ms entre chaque (respecte le rate-limit Graph)
+    var chain = Promise.resolve();
+    entities.forEach(function(ent) {
+      chain = chain.then(function(){ return putOne(ent); })
+                   .then(function(){ return new Promise(function(resolve){ setTimeout(resolve, 250); }); });
     });
 
-    Promise.all(uploadPromises).then(function() {
+    chain.then(function() {
       if (errors.length) {
         alert('⚠️ Reset partiel : ' + (total - errors.length) + '/' + total + ' fichiers vidés.\n\nErreurs sur : ' + errors.join(', ') + '\n\nVotre navigateur va quand même être vidé pour partir sur une base propre.');
       } else {
@@ -18795,6 +18820,34 @@ function showTachesTab() {
   // Auto-report des tâches non-rayées au jour suivant + render dashboard
   try { rolloverOpenTasks(); } catch(e) { console.warn('[Taches] rollover error', e); }
   try { renderTachesDashboard(); } catch(e) { console.warn('[Taches] dashboard error', e); }
+  // Auto-sync OneDrive pour récupérer les dernières tâches affectées par d'autres
+  if (typeof odToken !== 'undefined' && odToken && typeof odSilentFullSync === 'function') {
+    setTimeout(function(){
+      try { odSilentFullSync(); } catch(e){ console.warn('[Taches] auto-sync error', e); }
+      // Re-render après sync pour afficher les nouvelles tâches
+      setTimeout(function(){
+        try { renderTachesDashboard(); } catch(e){}
+      }, 1500);
+    }, 300);
+  }
+}
+
+// Bouton "🔄 Sync" : force une sync immédiate pour récupérer les tâches
+function forceSyncTaches() {
+  if (typeof odToken === 'undefined' || !odToken) {
+    if (typeof showNotifToast === 'function') showNotifToast('⚠ OneDrive non connecté', true);
+    else alert('⚠️ OneDrive non connecté. Connectez-vous d\'abord.');
+    return;
+  }
+  if (typeof showNotifToast === 'function') showNotifToast('🔄 Synchronisation en cours...');
+  if (typeof odSilentFullSync === 'function') {
+    odSilentFullSync();
+    // Re-render après sync
+    setTimeout(function(){
+      try { renderTachesDashboard(); } catch(e){}
+      if (typeof showNotifToast === 'function') showNotifToast('✓ Tâches synchronisées');
+    }, 1800);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -19018,6 +19071,15 @@ function renderTachesDashboard() {
   var mine = (view === 'mine');
 
   var allTaches = getTaches();
+  // Compteurs : non-faites, en "mine" et en "all"
+  var nbMinePending = 0;
+  var nbAllPending = 0;
+  allTaches.forEach(function(t){
+    if (t.done) return;
+    nbAllPending++;
+    if (currentUser && _sameCommercial(t.assigned_to, currentUser)) nbMinePending++;
+  });
+
   var taches = allTaches.filter(function(t){
     if (!mine || !currentUser) return true;
     return _sameCommercial(t.assigned_to, currentUser);
@@ -19047,12 +19109,16 @@ function renderTachesDashboard() {
     +     '<div style="font-size:13px;font-weight:800;color:#1A1033;">📋 Tâches &amp; Alertes</div>'
     +     '<div style="font-size:10.5px;color:#9E94C4;margin-top:2px;">' + pendingTaches + ' tâche' + (pendingTaches>1?'s':'') + ' en cours · ' + totalAlerts + ' alerte' + (totalAlerts>1?'s':'') + ' active' + (totalAlerts>1?'s':'') + '</div>'
     +   '</div>'
-    +   '<div style="display:flex;gap:4px;background:#F5F3FF;padding:3px;border-radius:7px;">'
-    +     '<button onclick="window._tachesView=\'mine\';renderTachesDashboard();" style="padding:5px 11px;border:none;background:' + (mine?'#7343EE':'transparent') + ';color:' + (mine?'#fff':'#6B5E9C') + ';border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;">Mes tâches</button>'
-    +     '<button onclick="window._tachesView=\'all\';renderTachesDashboard();" style="padding:5px 11px;border:none;background:' + (!mine?'#7343EE':'transparent') + ';color:' + (!mine?'#fff':'#6B5E9C') + ';border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;">Toutes</button>'
+    +   '<div style="display:flex;align-items:center;gap:8px;">'
+    +     '<button onclick="forceSyncTaches()" title="Forcer la synchro avec OneDrive pour récupérer les dernières tâches" style="padding:5px 10px;background:#fff;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;">🔄 Sync</button>'
+    +     '<div style="display:flex;gap:4px;background:#F5F3FF;padding:3px;border-radius:7px;">'
+    +       '<button onclick="window._tachesView=\'mine\';renderTachesDashboard();" style="padding:5px 11px;border:none;background:' + (mine?'#7343EE':'transparent') + ';color:' + (mine?'#fff':'#6B5E9C') + ';border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;">Mes tâches (' + nbMinePending + ')</button>'
+    +       '<button onclick="window._tachesView=\'all\';renderTachesDashboard();" style="padding:5px 11px;border:none;background:' + (!mine?'#7343EE':'transparent') + ';color:' + (!mine?'#fff':'#6B5E9C') + ';border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;">Toutes (' + nbAllPending + ')</button>'
+    +     '</div>'
     +   '</div>'
     + '</div>'
     + (mine && !currentUser ? '<div style="margin-top:8px;padding:7px 10px;background:#FFF8E1;border:1px solid #F0D98A;border-radius:6px;font-size:11px;color:#8A5F00;">⚠ Renseignez votre prénom dans Paramètres → Commercial Seven Portage pour activer le filtre "Mes tâches".</div>' : '')
+    + (mine && currentUser && nbMinePending === 0 && nbAllPending > 0 ? '<div style="margin-top:8px;padding:8px 12px;background:#EEF4FF;border:1.5px solid #B8D0F5;border-radius:6px;font-size:11px;color:#1A4F96;display:flex;align-items:center;gap:8px;"><span>💡</span><span>Aucune tâche à votre nom, mais <strong>' + nbAllPending + ' autre' + (nbAllPending>1?'s':'') + '</strong> existe' + (nbAllPending>1?'nt':'') + '. Cliquez sur <strong>Toutes</strong> pour les voir, ou <strong>🔄 Sync</strong> si vous attendez une affectation de votre responsable.</span></div>' : '')
     + '</div>';
 
   // ── Mes tâches en premier ──
