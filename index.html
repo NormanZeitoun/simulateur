@@ -1614,6 +1614,20 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
             </div>
             <button onclick="confirmResetTotal()" style="padding:10px 18px;background:linear-gradient(135deg,#A8322A,#E24B4A);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 4px 12px rgba(226,75,74,0.3);">&#128293; Reset total</button>
           </div>
+
+          <!-- BLOC : Forcer purge des autres navigateurs (ne touche pas OneDrive) -->
+          <div style="background:#FFF8E1;border:1.5px solid #F0A500;border-radius:10px;padding:16px 18px;margin-top:14px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+              <span style="font-size:20px;">&#128296;</span>
+              <div style="font-size:13px;font-weight:700;color:#8A5F00;">Forcer la purge des autres navigateurs</div>
+              <span style="font-size:10px;font-weight:700;padding:3px 8px;background:#FFF4D6;color:#8A5F00;border-radius:6px;">ADMIN</span>
+            </div>
+            <div style="font-size:11.5px;color:#6B5E9C;line-height:1.55;margin-bottom:12px;">
+              <strong>Ne touche PAS aux fichiers OneDrive.</strong> Pousse juste un signal qui vide le navigateur des autres utilisateurs à leur prochain sync.<br>
+              &#128161; Utile si vos données locales sont à jour et déjà synchronisées, mais que les navigateurs de vos collègues ont encore d'anciennes données qui risquent de réécraser les vôtres.
+            </div>
+            <button onclick="confirmForcePurgeOthers()" style="padding:9px 16px;background:#fff;color:#8A5F00;border:1.5px solid #F0A500;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;" onmouseover="this.style.background='#FFF4D6'" onmouseout="this.style.background='#fff'">&#128296; Forcer la purge des autres</button>
+          </div>
         </div>
       </div>
 
@@ -5859,6 +5873,76 @@ function confirmResetTotal() {
       return;
     }
     doResetTotalOneDrive();
+  });
+}
+
+// 🔨 FORCER LA PURGE DES NAVIGATEURS DES AUTRES
+// À utiliser quand OneDrive est déjà dans l'état voulu (ton état local est propre et poussé)
+// mais les navigateurs des collègues ont encore des anciennes données qu'ils risquent de repousser.
+// Pose juste un nouveau _last_reset_ts dans app_settings → leur navigateur se purge au prochain sync.
+function confirmForcePurgeOthers() {
+  if (!odToken) {
+    alert('⚠️ Vous devez être connecté à OneDrive.');
+    return;
+  }
+  promptGenericAdminPassword({
+    title: '🔨 Forcer la purge des navigateurs des collègues',
+    subtitle: 'Cette action va vider le navigateur de tous les autres utilisateurs au prochain sync. OneDrive N\'EST PAS touché.'
+  }, function() {
+    if (!confirm('🔨 Forcer la purge des navigateurs des autres utilisateurs ?\n\n' +
+      '• OneDrive n\'est PAS modifié (les fichiers restent en l\'état)\n' +
+      '• Les navigateurs des autres utilisateurs seront vidés à leur prochain sync\n' +
+      '• Ils rapatrieront ensuite l\'état actuel de OneDrive\n' +
+      '• VOUS n\'êtes PAS impacté\n\n' +
+      '💡 Utile quand vos données locales sont propres et déjà poussées, mais que les collègues ont d\'anciennes données qui risquent d\'écraser les vôtres.\n\n' +
+      'Continuer ?')) return;
+    doForcePurgeOthers();
+  });
+}
+
+function doForcePurgeOthers() {
+  var resetTs = Date.now();
+  var resetBy = _getCurrentUserName();
+  odSetStatus('Push marqueur de purge...', false);
+
+  odWithToken(function(token) {
+    // On charge d'abord app_settings actuel pour préserver les autres champs
+    var path = '/General/Seven Portage Simlateur/SP_App_Settings_Global.json';
+    var getUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(path) + ':/content';
+    var putUrl = getUrl;
+
+    fetch(getUrl, { headers: { 'Authorization': 'Bearer ' + token } })
+      .then(function(r){ return r.ok ? r.json() : {}; })
+      .catch(function(){ return {}; })
+      .then(function(existing) {
+        var payload = Object.assign({}, existing || {}, {
+          version: 1,
+          updated: new Date().toISOString(),
+          _last_reset_ts: resetTs,
+          _reset_by: resetBy
+        });
+        return fetch(putUrl, {
+          method: 'PUT',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      })
+      .then(function(r){
+        if (!r || !r.ok) {
+          alert('⚠️ Erreur lors du push du marqueur (HTTP ' + (r ? r.status : '?') + ').');
+          return;
+        }
+        // Chez soi, marquer comme "déjà vu" pour ne pas se re-purger
+        try { localStorage.setItem(LAST_RESET_SEEN_KEY, String(resetTs)); } catch(e){}
+        alert('✓ Marqueur de purge envoyé.\n\n' +
+          'Les navigateurs des autres utilisateurs seront vidés à leur prochain sync OneDrive.\n\n' +
+          '💡 Dites-leur de cliquer sur "🔄 Sync" s\'ils veulent l\'effet immédiat.');
+        odSetStatus('✓ Marqueur purge envoyé', false);
+      })
+      .catch(function(err){
+        console.error('[Force purge]', err);
+        alert('⚠️ Erreur réseau : ' + err.message);
+      });
   });
 }
 
