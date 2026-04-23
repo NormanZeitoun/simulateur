@@ -980,6 +980,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 </style>
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -1005,6 +1006,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   <button class="main-nav-btn" id="mainnav-clients" onclick="mainNavTo('clients')">&#127970; Clients</button>
   <button class="main-nav-btn" id="mainnav-taches" onclick="mainNavTo('taches')">&#128197; Tâches</button>
   <button class="main-nav-btn" id="mainnav-commissions" onclick="mainNavTo('commissions')">&#128176; Commissions</button>
+  <button class="main-nav-btn" id="mainnav-entrees" onclick="mainNavTo('entrees')">&#127881; Entrées du mois</button>
   <button class="main-nav-btn" id="mainnav-analyseur" onclick="openAnalyseurPaie()" title="Ouvre l'analyseur de paie dans un nouvel onglet">&#128202; Analyseur de Paie</button>
 </div>
 
@@ -1558,6 +1560,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div id="params-avantages-content" style="padding:12px;">Chargement…</div>
       </div>
 
+      <div class="params-acc-header" onclick="toggleAcc('acc-premier-mois-cfg')">&#127881; Entrées / Premier mois<span class="params-acc-arrow" id="acc-premier-mois-cfg-arrow">&#9658;</span></div>
+      <div class="params-acc-body" id="acc-premier-mois-cfg">
+        <div id="params-premier-mois-content" style="padding:12px;">Chargement…</div>
+      </div>
+
       <div class="params-acc-header" onclick="toggleAcc('acc-analyseur-cfg')">&#128202; Analyseur de Paie<span class="params-acc-arrow" id="acc-analyseur-cfg-arrow">&#9658;</span></div>
       <div class="params-acc-body" id="acc-analyseur-cfg">
         <div id="params-analyseur-content" style="padding:12px;">Chargement…</div>
@@ -1712,6 +1719,9 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 
   <!-- TAB DASHBOARD -->
   <div id="tab-dashboard" style="display:none;"></div>
+
+  <!-- TAB ENTRÉES DU MOIS -->
+  <div id="tab-entrees" style="display:none;"></div>
 
   <!-- TAB CLIENTS -->
   <div id="tab-clients" style="display:none;">
@@ -1943,6 +1953,7 @@ function showTab(id) {
     try { if (typeof renderParamsDemandesAccordion === 'function') renderParamsDemandesAccordion(); } catch(e){}
     try { if (typeof renderParamsProlongationAccordion === 'function') renderParamsProlongationAccordion(); } catch(e){}
     try { if (typeof renderParamsAvantagesAccordion === 'function') renderParamsAvantagesAccordion(); } catch(e){}
+    try { if (typeof renderParamsPremierMoisAccordion === 'function') renderParamsPremierMoisAccordion(); } catch(e){}
     try { if (typeof renderParamsAnalyseurAccordion === 'function') renderParamsAnalyseurAccordion(); } catch(e){}
     try { if (typeof renderParamsAvantagesAccordion === 'function') renderParamsAvantagesAccordion(); } catch(e){}
   }
@@ -3504,6 +3515,8 @@ function getSimData() {
     frais_materiel:  s('frais_materiel'),
     net_avant:     fmt('r-net-brut'),
     cout_global:   fmt('r-cout-global'),
+    total_pat:     fmt('r-pat'),
+    total_sal:     fmt('r-sal'),
     taux_restitution: (function() {
       var el = document.getElementById('r-taux-restitution');
       if (!el) return '';
@@ -5012,6 +5025,8 @@ function saveHistorique(data, dest, email, consultantName) {
     frais_jour: data.frais_jour || '',
     facturation: data.facturation || '',
     cout_global: data.cout_global || '',
+    total_pat: data.total_pat || '',
+    total_sal: data.total_sal || '',
     taux_restitution: data.taux_restitution || '',
     taux_impot: data.taux_impot || '',
     mutuelle: data.mutuelle,
@@ -5582,6 +5597,8 @@ var SYNC_ENTITIES = [
   { path: OD_DEMANDES_PATH,     key: 'demandes',    label: 'Demandes',     merge: null, getData: null },
   { path: OD_AVANTAGES_PATH,    key: 'avantages_sociaux', label: 'Avantages Sociaux', merge: null, getData: null },
   { path: OD_FRAIS_PRO_PATH,    key: 'frais_pro',         label: 'Frais Pro',         merge: null, getData: null },
+  { path: OD_DEMARRAGES_PATH,   key: 'demarrages',        label: 'Entrées du mois',   merge: null, getData: null },
+  { path: OD_JOURS_PATH,        key: 'jours_prestes',     label: 'Jours prestés',     merge: null, getData: null },
   { path: OD_APP_SETTINGS_PATH, key: 'app_settings',      label: 'Paramètres app',    merge: null, getData: null }
 ];
 // Les merge/getData sont attachés au moment du 1er usage (après chargement complet du script,
@@ -5600,6 +5617,8 @@ function _initSyncEntities() {
     demandes:    { merge: mergeDemandes,     getData: function(){ return {version:1,updated:new Date().toISOString(),demandes:getDemandes()}; } },
     avantages_sociaux: { merge: mergeAvantagesSociaux, getData: function(){ return {version:1,updated:new Date().toISOString(),avantages_sociaux:getAvantagesSociaux(),config:getAvantagesConfig()}; } },
     frais_pro: { merge: mergeFraisPro, getData: function(){ return {version:1,updated:new Date().toISOString(),frais_pro:getFraisPro()}; } },
+    demarrages: { merge: mergeDemarrages, getData: function(){ return {version:1,updated:new Date().toISOString(),demarrages:getDemarrages()}; } },
+    jours_prestes: { merge: mergeJoursPrestes, getData: function(){ return Object.assign({version:1,updated:new Date().toISOString()}, getJoursPrestes()); } },
     app_settings: { merge: mergeAppSettings, getData: function(){ return Object.assign({version:1,updated:new Date().toISOString()}, getAppSettings()); } }
   };
   SYNC_ENTITIES.forEach(function(ent) {
@@ -5649,6 +5668,9 @@ function odSilentFullSync() {
                 ent.merge({ avantages_sociaux: data[ent.key], config: data.config });
               } else if (ent.key === 'app_settings') {
                 // Cas spécial app_settings : on passe l'objet data entier (les settings sont à plat)
+                ent.merge(data);
+              } else if (ent.key === 'jours_prestes') {
+                // Cas spécial jours_prestes : le format est { deal_id: { mois: jours }, ... } à plat
                 ent.merge(data);
               } else if (data[ent.key]) {
                 ent.merge(data[ent.key]);
@@ -6666,6 +6688,8 @@ function savePlacement() {
     net_payer: sim ? sim.net_payer : '',
     net_avant: sim ? sim.net_avant : '',
     cout_global: sim ? sim.cout_global : '',
+    total_pat: sim ? (sim.total_pat || '') : '',
+    total_sal: sim ? (sim.total_sal || '') : '',
     taux_restitution: sim ? sim.taux_restitution : '',
     frais_gestion: sim ? (sim.marge || '') : '',
     mutuelle: sim ? (sim.mutuelle || '') : '',
@@ -8727,7 +8751,7 @@ function openAnalyseurPaie() {
 
 function mainNavTo(section) {
   // Mettre à jour tous les boutons de navigation
-  ['mission','dashboard','historique','rh','candidats','clients','taches','commissions'].forEach(function(s) {
+  ['mission','dashboard','historique','rh','candidats','clients','taches','commissions','entrees'].forEach(function(s) {
     var btn = document.getElementById('mainnav-' + s);
     if (btn) btn.classList.toggle('active', s === section);
   });
@@ -8752,6 +8776,8 @@ function mainNavTo(section) {
     showTachesTab();
   } else if (section === 'commissions') {
     showCommissionsSection(currentCommSubTab || 'current');
+  } else if (section === 'entrees') {
+    showEntreesView();
   }
 }
 
@@ -8764,6 +8790,7 @@ var RH_SUBTABS = [
   { key: 'sortants',     label: 'Sortants',          icon: '\u{1F6AA}', ready: true  },
   { key: 'avances',      label: 'Avances',           icon: '\u{1F4B6}', ready: true  },
   { key: 'frais',        label: 'Frais',             icon: '\u{1F4C4}', ready: true  },
+  { key: 'comptes_act',  label: 'Comptes d\'activité', icon: '\u{1F4CA}', ready: true  },
   { key: 'cooptation',   label: 'Cooptation',        icon: '\u{1F91D}', ready: true  }
 ];
 
@@ -8783,6 +8810,8 @@ function showRHSection(subtab) {
     showAvancesView();
   } else if (subtab === 'cooptation') {
     showCooptationsView();
+  } else if (subtab === 'comptes_act') {
+    showComptesActiviteView();
   } else {
     // Placeholder pour les sous-sections non encore implémentées
     showRHPlaceholder(subtab);
@@ -10799,6 +10828,1713 @@ function confirmFraisProExceptionnel() {
   document.getElementById('modal-fraispro-exc').remove();
   if (typeof renderFrais === 'function') renderFrais();
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// ENTRÉES DU MOIS — Suivi des nouveaux démarrages (onglet dédié)
+// ═══════════════════════════════════════════════════════════════════
+
+var DEMARRAGES_KEY = 'sp_demarrages_v1';
+var OD_DEMARRAGES_PATH = '/General/Seven Portage Simlateur/SP_Demarrages_Global.json';
+
+var entreesCurrentMois = (function() {
+  var d = new Date();
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+})();
+
+var entreesSort = { col: null, dir: 'asc' };
+var entreesFilters = { contacte: '', signature: '', mutuelle: '' };
+var entreesSearch = '';
+
+function setEntreesSort(col) {
+  if (entreesSort.col === col) {
+    entreesSort.dir = (entreesSort.dir === 'asc') ? 'desc' : 'asc';
+  } else {
+    entreesSort.col = col;
+    entreesSort.dir = 'asc';
+  }
+  renderEntrees();
+}
+function setEntreesFilter(field, value) {
+  entreesFilters[field] = value;
+  renderEntrees();
+}
+function setEntreesSearch(val) {
+  entreesSearch = val || '';
+  renderEntrees();
+  setTimeout(function(){
+    var el = document.getElementById('entrees-search-input');
+    if (el) { el.focus(); var v = el.value; el.value = ''; el.value = v; }
+  }, 30);
+}
+function resetEntreesFilters() {
+  entreesFilters = { contacte: '', signature: '', mutuelle: '' };
+  entreesSort = { col: null, dir: 'asc' };
+  entreesSearch = '';
+  renderEntrees();
+}
+
+// ── Storage ──
+function getDemarrages() {
+  try { return JSON.parse(localStorage.getItem(DEMARRAGES_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+function saveDemarrages(arr) {
+  localStorage.setItem(DEMARRAGES_KEY, JSON.stringify(arr));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+function mergeDemarrages(remote) {
+  if (!Array.isArray(remote)) return;
+  var local = getDemarrages();
+  var byId = {};
+  local.forEach(function(a){ if (a && a.id) byId[a.id] = a; });
+  remote.forEach(function(a){
+    if (!a || !a.id) return;
+    var existing = byId[a.id];
+    if (!existing || (a.updated_ts || 0) > (existing.updated_ts || 0)) {
+      byId[a.id] = a;
+    }
+  });
+  var merged = Object.values(byId).sort(function(a,b){ return (b.id||0)-(a.id||0); });
+  localStorage.setItem(DEMARRAGES_KEY, JSON.stringify(merged));
+}
+
+// ── Récupère l'état démarrage pour un deal donné (ou null) ──
+function getDemarrageForDeal(dealId) {
+  var all = getDemarrages();
+  return all.find(function(a){ return a.deal_id === dealId; }) || null;
+}
+
+// ── Config "Premier mois" (dans app_settings, sync globale) ──
+function getPremierMoisConfig() {
+  var s = getAppSettings() || {};
+  return {
+    sender: s.premier_mois_sender || 'norman@seven-portage.fr',
+    sujet: s.premier_mois_sujet || 'SEVEN PORTAGE : Premier mois',
+    signature: s.premier_mois_signature || '',
+    pj_list: Array.isArray(s.premier_mois_pj_list) ? s.premier_mois_pj_list : [],
+    corps: s.premier_mois_corps || ''
+  };
+}
+function updatePremierMoisConfig(field, value) {
+  var s = getAppSettings() || {};
+  var keyMap = {
+    sender: 'premier_mois_sender',
+    sujet: 'premier_mois_sujet',
+    signature: 'premier_mois_signature',
+    pj_list: 'premier_mois_pj_list',
+    corps: 'premier_mois_corps'
+  };
+  var k = keyMap[field];
+  if (!k) return;
+  s[k] = value;
+  s._updated_ts = Date.now();
+  saveAppSettings(s);
+}
+function addPremierMoisPJ() {
+  var cfg = getPremierMoisConfig();
+  if (cfg.pj_list.length >= 4) { alert('Maximum 4 pièces jointes.'); return; }
+  cfg.pj_list.push({ nom: 'Nouveau document.pdf', url: '' });
+  updatePremierMoisConfig('pj_list', cfg.pj_list);
+  renderParamsPremierMoisAccordion();
+}
+function updatePremierMoisPJField(idx, field, val) {
+  var cfg = getPremierMoisConfig();
+  if (!cfg.pj_list[idx]) return;
+  cfg.pj_list[idx][field] = val;
+  updatePremierMoisConfig('pj_list', cfg.pj_list);
+}
+function removePremierMoisPJ(idx) {
+  var cfg = getPremierMoisConfig();
+  if (!confirm('Supprimer cette pièce jointe ?')) return;
+  cfg.pj_list.splice(idx, 1);
+  updatePremierMoisConfig('pj_list', cfg.pj_list);
+  renderParamsPremierMoisAccordion();
+}
+
+// ── Récupère les portés qui démarrent dans le mois donné (YYYY-MM) ──
+function getPortesDemarrantDansMois(moisStr) {
+  var parts = moisStr.split('-');
+  var year = parseInt(parts[0]);
+  var month = parseInt(parts[1]) - 1;
+  var firstDay = new Date(year, month, 1);
+  var lastDay = new Date(year, month + 1, 0);
+  lastDay.setHours(23, 59, 59, 999);
+
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  return deals.filter(function(d) {
+    if (d.etat === 'Annulé') return false;
+    if (!d.date_entree) return false;
+    var de = new Date(d.date_entree);
+    if (isNaN(de.getTime())) return false;
+    return de >= firstDay && de <= lastDay;
+  });
+}
+
+// ── Vue principale ──
+function showEntreesView() {
+  // Masquer tous les autres conteneurs
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+  var tab = document.getElementById('tab-entrees');
+  if (!tab) return;
+  tab.style.display = 'block';
+  renderEntrees();
+}
+
+function renderEntrees() {
+  var el = document.getElementById('tab-entrees');
+  if (!el) return;
+  el.innerHTML = buildEntreesContent();
+}
+
+function buildEntreesContent() {
+  var portes = getPortesDemarrantDansMois(entreesCurrentMois);
+
+  // Items : 1 ligne par porté avec son état démarrage (créé à la volée si inexistant)
+  var items = portes.map(function(d) {
+    var etat = getDemarrageForDeal(d.id) || {};
+    var prenomNom = ((d.prenom||'') + ' ' + (d.nom||'')).trim();
+    return {
+      deal: d,
+      etat: etat,
+      prenomNom: prenomNom
+    };
+  });
+
+  // Filtres
+  var searchLc = (entreesSearch || '').trim().toLowerCase();
+  var filteredItems = items.filter(function(it) {
+    if (searchLc && (it.prenomNom || '').toLowerCase().indexOf(searchLc) < 0) return false;
+    if (entreesFilters.contacte) {
+      var c = it.etat.contacte || '-';
+      if (c !== entreesFilters.contacte) return false;
+    }
+    if (entreesFilters.signature) {
+      var s = it.etat.signature_contrat ? 'Complété' : 'Vide';
+      if (s !== entreesFilters.signature) return false;
+    }
+    if (entreesFilters.mutuelle) {
+      if ((it.etat.mutuelle || 'En Attente') !== entreesFilters.mutuelle) return false;
+    }
+    return true;
+  });
+
+  // Tri
+  if (entreesSort.col === 'nom') {
+    filteredItems.sort(function(a, b) {
+      var r = (a.prenomNom || '').localeCompare(b.prenomNom || '', 'fr', { sensitivity: 'base' });
+      return entreesSort.dir === 'desc' ? -r : r;
+    });
+  } else if (entreesSort.col === 'date') {
+    filteredItems.sort(function(a, b) {
+      var da = new Date(a.deal.date_entree).getTime() || 0;
+      var db = new Date(b.deal.date_entree).getTime() || 0;
+      return entreesSort.dir === 'desc' ? db - da : da - db;
+    });
+  }
+
+  // Rows
+  var rowsHtml = filteredItems.map(buildEntreeRow).join('');
+
+  // Dropdown mois
+  var monthOptions = '';
+  var now = new Date();
+  for (var i = 3; i >= -12; i--) {
+    var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    var v = d.getFullYear() + '-' + ('0' + (d.getMonth()+1)).slice(-2);
+    var lbl = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    lbl = lbl.charAt(0).toUpperCase() + lbl.slice(1);
+    var sel = (v === entreesCurrentMois) ? ' selected' : '';
+    monthOptions += '<option value="' + v + '"' + sel + '>' + lbl + '</option>';
+  }
+
+  var emptyMsg = '';
+  if (!items.length) emptyMsg = 'Aucun démarrage prévu ce mois.';
+  else if (!filteredItems.length) emptyMsg = 'Aucune ligne ne correspond aux filtres actifs.';
+  var emptyState = emptyMsg
+    ? '<tr><td colspan="17" style="padding:40px;text-align:center;color:#9E9E9E;font-size:12.5px;font-style:italic;">' + emptyMsg + '</td></tr>'
+    : '';
+
+  function sortArrow(col) {
+    if (entreesSort.col !== col) return '<span style="color:#C0B8E0;font-size:10px;margin-left:4px;">▲▼</span>';
+    return entreesSort.dir === 'asc'
+      ? '<span style="color:#4B36EC;font-size:10px;margin-left:4px;">▲</span>'
+      : '<span style="color:#4B36EC;font-size:10px;margin-left:4px;">▼</span>';
+  }
+
+  var filtersActive = !!(entreesSearch || entreesFilters.contacte || entreesFilters.signature || entreesFilters.mutuelle || entreesSort.col);
+
+  return ''
+    // Titre + mois
+    + '<div style="margin-bottom:18px;">'
+    +   '<h2 style="font-size:20px;font-weight:800;color:#1A1033;margin:0 0 4px;letter-spacing:-0.01em;">🎉 Entrées du mois</h2>'
+    +   '<div style="font-size:12.5px;color:#6B5E9C;">Suivi des nouveaux démarrages · Envoi automatique du mail "Premier mois" si Contacté = Non</div>'
+    + '</div>'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">'
+    +   '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    +     '<label style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Mois :</label>'
+    +     '<select onchange="entreesCurrentMois=this.value;renderEntrees();" style="padding:7px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;background:#fff;font-weight:600;cursor:pointer;font-family:inherit;">' + monthOptions + '</select>'
+    +     '<span style="font-size:11.5px;color:#6B5E9C;">· ' + filteredItems.length + ' entrée' + (filteredItems.length>1?'s':'') + (filteredItems.length !== items.length ? ' / ' + items.length : '') + '</span>'
+    +   '</div>'
+    + '</div>'
+    // Barre recherche + filtres
+    + '<div style="background:#F5F3FF;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    +   '<div style="position:relative;flex:1;min-width:200px;max-width:280px;">'
+    +     '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E94C4;font-size:13px;pointer-events:none;">🔍</span>'
+    +     '<input id="entrees-search-input" type="text" value="' + (entreesSearch||'').replace(/"/g,'&quot;') + '" oninput="setEntreesSearch(this.value)" placeholder="Rechercher un candidat…" style="width:100%;padding:7px 10px 7px 32px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;font-family:inherit;">'
+    +   '</div>'
+    +   '<span style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Filtres :</span>'
+    +   '<select onchange="setEntreesFilter(\'contacte\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
+    +     '<option value="">Contacté : tous</option>'
+    +     '<option value="Oui"' + (entreesFilters.contacte === 'Oui' ? ' selected' : '') + '>Contacté : Oui</option>'
+    +     '<option value="Non"' + (entreesFilters.contacte === 'Non' ? ' selected' : '') + '>Contacté : Non</option>'
+    +     '<option value="-"' + (entreesFilters.contacte === '-' ? ' selected' : '') + '>Contacté : non défini</option>'
+    +   '</select>'
+    +   '<select onchange="setEntreesFilter(\'signature\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
+    +     '<option value="">Signature : tous</option>'
+    +     '<option value="Complété"' + (entreesFilters.signature === 'Complété' ? ' selected' : '') + '>Signature : Complétée</option>'
+    +     '<option value="Vide"' + (entreesFilters.signature === 'Vide' ? ' selected' : '') + '>Signature : Manquante</option>'
+    +   '</select>'
+    +   '<select onchange="setEntreesFilter(\'mutuelle\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
+    +     '<option value="">Mutuelle : tous</option>'
+    +     '<option value="Affilié"' + (entreesFilters.mutuelle === 'Affilié' ? ' selected' : '') + '>Affilié</option>'
+    +     '<option value="Dispensé"' + (entreesFilters.mutuelle === 'Dispensé' ? ' selected' : '') + '>Dispensé</option>'
+    +     '<option value="En Attente"' + (entreesFilters.mutuelle === 'En Attente' ? ' selected' : '') + '>En Attente</option>'
+    +   '</select>'
+    +   (filtersActive
+        ? '<button onclick="resetEntreesFilters()" style="margin-left:auto;padding:5px 12px;background:#fff;color:#E24B4A;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">✕ Réinitialiser</button>'
+        : '')
+    + '</div>'
+    // Tableau
+    + '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E4E0FA;overflow-x:auto;">'
+    +   '<table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:1800px;">'
+    +     '<thead style="background:#F5F3FF;">'
+    +       '<tr style="border-bottom:2px solid #E4E0FA;">'
+    +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Civilité</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Contacté</th>'
+    +         '<th onclick="setEntreesSort(\'nom\')" style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;cursor:pointer;user-select:none;">Nom' + sortArrow('nom') + '</th>'
+    +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Prénom</th>'
+    +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Email</th>'
+    +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Téléphone</th>'
+    +         '<th onclick="setEntreesSort(\'date\')" style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;cursor:pointer;user-select:none;">Date d\'entrée' + sortArrow('date') + '</th>'
+    +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Commercial</th>'
+    +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Client</th>'
+    +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Manager</th>'
+    +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Mail manager</th>'
+    +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Commentaire</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Signature contrat</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Mutuelle</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">SWILE</th>'
+    +         '<th style="padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;">Forfait repas</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Grand dép.</th>'
+    +       '</tr>'
+    +     '</thead>'
+    +     '<tbody>' + rowsHtml + emptyState + '</tbody>'
+    +   '</table>'
+    + '</div>'
+    + '<div style="margin-top:14px;padding:10px 14px;background:#F5F3FF;border-radius:8px;font-size:11px;color:#6B5E9C;line-height:1.55;">'
+    +   '💡 <strong>Contacté = Non</strong> déclenche <u>immédiatement</u> l\'envoi du mail "Premier mois" au consultant (avec le commercial en CC). Le template, les pièces jointes et l\'expéditeur se configurent dans <strong>Paramètres → 🎉 Entrées / Premier mois</strong>.'
+    + '</div>';
+}
+
+function buildEntreeRow(item) {
+  var deal = item.deal;
+  var etat = item.etat || {};
+  var dealId = deal.id;
+
+  var contacte = etat.contacte || '-';
+  var signature = etat.signature_contrat || '';
+  var mutuelle = etat.mutuelle || 'En Attente';
+  var commentaire = etat.commentaire || '';
+
+  // Lookup manager email
+  var managerEmail = '';
+  try {
+    var entName = (deal.entreprise || '').trim().toLowerCase();
+    var cl = getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === entName; });
+    if (cl && deal.manager) {
+      var mgr = (cl.managers || []).find(function(m){ return (m.name||'').trim().toLowerCase() === (deal.manager||'').trim().toLowerCase(); });
+      if (mgr && mgr.email) managerEmail = mgr.email;
+    }
+  } catch(e){}
+
+  // Lookup SWILE et forfait repas depuis deal.repas
+  var swileStatut = '—';
+  var forfaitRepas = '—';
+  if (deal.repas === 'Swile' || deal.repas === 'SWILE') {
+    swileStatut = 'Oui';
+  } else if (deal.repas === 'GD' || deal.repas === 'Grand Déplacement') {
+    swileStatut = 'Non';
+  } else if (deal.repas) {
+    swileStatut = deal.repas;
+  }
+  if (deal.montant_repas) forfaitRepas = deal.montant_repas + ' €';
+  var grandDep = (deal.repas === 'GD' || deal.repas === 'Grand Déplacement') ? 'Oui' : 'Non';
+
+  // Highlight ligne selon Contacté
+  var rowBg = '';
+  if (contacte === 'Oui') rowBg = 'background:#E8F5E9;';
+  else if (contacte === 'Non') rowBg = 'background:#E3F2FD;';
+
+  // Cellule signature colorée
+  var signatureCellBg = signature ? '#E8F5E9' : '#FDECEC';
+  var signatureCellColor = signature ? '#0F6E56' : '#C24141';
+
+  var trStyle = 'border-bottom:1px solid #F0EDF9;' + rowBg;
+  var civilite = etat.civilite || deal.civilite || '';
+
+  return '<tr data-deal-id="' + dealId + '" style="' + trStyle + '">'
+    // 1. Civilité (manuel, stocké dans état)
+    + '<td style="padding:9px 8px;">'
+    +   '<select onchange="updateDemarrageField(' + dealId + ',\'civilite\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:#fff;">'
+    +     '<option value=""' + (civilite === '' ? ' selected' : '') + '>—</option>'
+    +     '<option value="M."' + (civilite === 'M.' ? ' selected' : '') + '>M.</option>'
+    +     '<option value="Mme"' + (civilite === 'Mme' ? ' selected' : '') + '>Mme</option>'
+    +   '</select>'
+    + '</td>'
+    // 2. Contacté (déclenche envoi mail si Non)
+    + '<td style="padding:9px 8px;text-align:center;">'
+    +   '<select onchange="updateDemarrageField(' + dealId + ',\'contacte\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:#fff;font-weight:600;">'
+    +     '<option value="-"' + (contacte === '-' ? ' selected' : '') + '>—</option>'
+    +     '<option value="Oui"' + (contacte === 'Oui' ? ' selected' : '') + '>Oui</option>'
+    +     '<option value="Non"' + (contacte === 'Non' ? ' selected' : '') + '>Non</option>'
+    +   '</select>'
+    + '</td>'
+    // 3. Nom
+    + '<td style="padding:9px 8px;font-weight:600;color:#1A1033;">' + (deal.nom || '').replace(/</g,'&lt;') + '</td>'
+    // 4. Prénom
+    + '<td style="padding:9px 8px;color:#1A1033;">' + (deal.prenom || '').replace(/</g,'&lt;') + '</td>'
+    // 5. Email
+    + '<td style="padding:9px 8px;color:#6B5E9C;font-size:10.5px;">' + (deal.email || '—').replace(/</g,'&lt;') + '</td>'
+    // 6. Téléphone
+    + '<td style="padding:9px 8px;color:#6B5E9C;">' + (deal.telephone || deal.tel || '—').replace(/</g,'&lt;') + '</td>'
+    // 7. Date d'entrée
+    + '<td style="padding:9px 8px;color:#1A1033;font-weight:600;">' + (deal.date_entree ? new Date(deal.date_entree).toLocaleDateString('fr-FR') : '—') + '</td>'
+    // 8. Commercial
+    + '<td style="padding:9px 8px;color:#6B5E9C;">' + (deal.commercial || '—') + '</td>'
+    // 9. Client
+    + '<td style="padding:9px 8px;color:#1A1033;">' + (deal.entreprise || '—').replace(/</g,'&lt;') + '</td>'
+    // 10. Manager
+    + '<td style="padding:9px 8px;color:#6B5E9C;">' + (deal.manager || '—').replace(/</g,'&lt;') + '</td>'
+    // 11. Mail manager
+    + '<td style="padding:9px 8px;color:#6B5E9C;font-size:10.5px;">' + (managerEmail || '—').replace(/</g,'&lt;') + '</td>'
+    // 12. Commentaire
+    + '<td style="padding:9px 8px;">'
+    +   '<input type="text" value="' + (commentaire||'').replace(/"/g,'&quot;') + '" onchange="updateDemarrageField(' + dealId + ',\'commentaire\',this.value)" placeholder="…" style="padding:4px 7px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;width:140px;font-family:inherit;">'
+    + '</td>'
+    // 13. Signature contrat (vert si complété / rouge si vide)
+    + '<td style="padding:6px 6px;background:' + signatureCellBg + ';">'
+    +   '<input type="date" value="' + (signature||'') + '" onchange="updateDemarrageField(' + dealId + ',\'signature_contrat\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;width:120px;background:#fff;color:' + signatureCellColor + ';font-weight:600;">'
+    + '</td>'
+    // 14. Mutuelle
+    + '<td style="padding:9px 8px;text-align:center;">'
+    +   '<select onchange="updateDemarrageField(' + dealId + ',\'mutuelle\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:#fff;">'
+    +     '<option value="En Attente"' + (mutuelle === 'En Attente' ? ' selected' : '') + '>En Attente</option>'
+    +     '<option value="Affilié"' + (mutuelle === 'Affilié' ? ' selected' : '') + '>Affilié</option>'
+    +     '<option value="Dispensé"' + (mutuelle === 'Dispensé' ? ' selected' : '') + '>Dispensé</option>'
+    +   '</select>'
+    + '</td>'
+    // 15. SWILE (auto)
+    + '<td style="padding:9px 8px;text-align:center;color:#4B36EC;font-weight:600;">' + swileStatut + '</td>'
+    // 16. Forfait repas (auto)
+    + '<td style="padding:9px 8px;text-align:right;color:#1A1033;font-weight:600;">' + forfaitRepas + '</td>'
+    // 17. Grand déplacement (auto)
+    + '<td style="padding:9px 8px;text-align:center;color:#4B36EC;font-weight:600;">' + grandDep + '</td>'
+    + '</tr>';
+}
+
+function updateDemarrageField(dealId, field, value) {
+  var all = getDemarrages();
+  var idx = all.findIndex(function(a){ return a.deal_id === dealId; });
+
+  if (idx < 0) {
+    var newEntry = {
+      id: Date.now(),
+      deal_id: dealId,
+      civilite: '',
+      contacte: '-',
+      commentaire: '',
+      signature_contrat: '',
+      mutuelle: 'En Attente',
+      premier_mois_mail_sent_ts: 0,
+      updated_ts: Date.now()
+    };
+    newEntry[field] = value;
+    all.unshift(newEntry);
+    idx = 0;
+  } else {
+    all[idx][field] = value;
+    all[idx].updated_ts = Date.now();
+  }
+  saveDemarrages(all);
+
+  // ── Déclenchement auto du mail si Contacté passe à "Non" ──
+  if (field === 'contacte' && value === 'Non') {
+    // Protection contre double envoi
+    if (!all[idx].premier_mois_mail_sent_ts) {
+      var deal = getDeals().find(function(d){ return d.id === dealId; });
+      if (deal) {
+        sendPremierMoisEmail(deal, function onSuccess() {
+          // Marquer comme envoyé
+          var cur = getDemarrages();
+          var i = cur.findIndex(function(a){ return a.deal_id === dealId; });
+          if (i >= 0) {
+            cur[i].premier_mois_mail_sent_ts = Date.now();
+            saveDemarrages(cur);
+            if (typeof showNotifToast === 'function') showNotifToast('✉ Mail "Premier mois" envoyé à ' + ((deal.prenom||'') + ' ' + (deal.nom||'')).trim());
+          }
+          renderEntrees();
+        });
+      }
+    }
+  }
+
+  renderEntrees();
+}
+
+// ── Envoi du mail "Premier mois" ──
+function sendPremierMoisEmail(deal, onSuccess) {
+  if (!odToken) {
+    alert('⚠️ OneDrive non connecté\n\nLe mail "Premier mois" ne peut pas être envoyé. Connectez-vous à OneDrive et le mail partira automatiquement lors de la prochaine modification.');
+    return;
+  }
+  if (!deal || !deal.email) {
+    console.warn('[PremierMois] Pas d\'email candidat pour deal', deal && deal.id);
+    if (typeof showNotifToast === 'function') showNotifToast('⚠ Pas d\'email candidat, mail non envoyé', true);
+    return;
+  }
+
+  var cfg = getPremierMoisConfig();
+  var candidat = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
+  var prenom = (deal.prenom || '').trim();
+
+  // CC commercial
+  var ccList = [];
+  if (deal.commercial && typeof getInternalEmails === 'function') {
+    var emails = getInternalEmails();
+    var commKey = deal.commercial.trim().toLowerCase();
+    if (emails[commKey]) ccList.push(emails[commKey]);
+  }
+
+  // Corps : template par défaut si vide dans config, sinon celui de la config
+  var defaultCorps = ''
+    + '<p>Hello <strong>' + prenom + '</strong>,</p>'
+    + '<p>J\'espère que tu vas bien.</p>'
+    + '<p>J\'ai tenté de te joindre afin de faire un point avec toi, puisqu\'il s\'agit de ton <strong>premier mois chez Seven Portage</strong> !</p>'
+    + '<p>Ce rendez-vous est l\'occasion d\'échanger sur ton démarrage, de répondre à tes éventuelles questions et de nous assurer que tout se passe bien. N\'hésite pas à me proposer un créneau si tu es disponible cette semaine.</p>'
+    + '<p>En parallèle, voici quelques éléments que je voulais vérifier avec toi :</p>'
+    + '<ol style="padding-left:20px;margin:14px 0;">'
+    +   '<li style="margin-bottom:14px;">'
+    +     '<strong>Déclaration et Validation du CRA (Compte Rendu d\'Activité) sur LAYA :</strong><br>'
+    +     'As-tu pu activer ton espace personnel pour effectuer ta déclaration ? Rencontres-tu des difficultés pour faire ton CRA ? Si besoin, je suis là pour t\'accompagner !'
+    +     '<div style="background:#FFF4D6;border-left:3px solid #F0A500;padding:10px 12px;border-radius:4px;margin-top:8px;font-size:13px;color:#8A5F00;">'
+    +       '⚠️ Le premier mois de votre mission, nous vous demanderons en plus de la saisie de votre nombre de jours travaillés, une validation de votre client afin d\'effectuer le virement de votre salaire.'
+    +     '</div>'
+    +   '</li>'
+    +   '<li style="margin-bottom:14px;">'
+    +     '<strong>Carte SWILE :</strong><br>'
+    +     'As-tu bien reçu ta carte (elle sert notamment pour les paniers repas mais aussi pour les avantages sociaux) ? Si ce n\'est pas encore le cas, merci de me le faire savoir.'
+    +   '</li>'
+    +   '<li style="margin-bottom:14px;">'
+    +     '<strong>Affiliation à la mutuelle :</strong>'
+    +     '<ul style="margin-top:6px;padding-left:20px;">'
+    +       '<li>Si tu souhaites adhérer, as-tu bien reçu le lien d\'affiliation ?</li>'
+    +       '<li>Si tu choisis de ne pas y souscrire, merci de nous transmettre ta demande de dispense accompagnée des justificatifs requis. Sans retour, la cotisation sera automatiquement appliquée.</li>'
+    +     '</ul>'
+    +   '</li>'
+    +   '<li style="margin-bottom:10px;">'
+    +     '<strong>Taux d\'imposition :</strong><br>'
+    +     'Comme il s\'agit de ton premier mois, le taux d\'imposition appliqué sur ta fiche de paie est <em>non personnalisé</em>, ce qui est tout à fait normal. Il sera automatiquement mis à jour avec ton taux personnalisé dès le mois prochain, une fois que l\'administration fiscale nous l\'aura communiqué.'
+    +   '</li>'
+    + '</ol>'
+    + '<p>Tu trouveras en pièces jointes le <strong>Guide utilisateur LAYA</strong> si besoin, ainsi que les mails de communication (date limite et calendrier de paiement) pour ta <strong>première déclaration de CRA</strong>.</p>'
+    + '<p style="margin-top:18px;">Bonne journée,</p>';
+
+  var corps = (cfg.corps && cfg.corps.trim()) ? cfg.corps : defaultCorps;
+  corps = corps
+    .replace(/\{prenom\}/g, prenom)
+    .replace(/\{nom\}/g, deal.nom || '')
+    .replace(/\{nom_complet\}/g, candidat)
+    .replace(/\{commercial\}/g, deal.commercial || '')
+    .replace(/\{entreprise\}/g, deal.entreprise || '');
+
+  // Signature
+  var signatureHtml = cfg.signature
+    ? '<div style="margin-top:8px;color:#555;font-size:13px;white-space:pre-wrap;">' + cfg.signature.replace(/</g,'&lt;').replace(/\n/g,'<br>') + '</div>'
+    : '';
+
+  // Sujet
+  var sujet = cfg.sujet || 'SEVEN PORTAGE : Premier mois';
+
+  // ── Préparer les PJ (téléchargement async depuis URL config) ──
+  var pjUrls = (cfg.pj_list || []).filter(function(p){ return p && p.url && p.url.trim(); });
+
+  function buildAndSend(attachments) {
+    var htmlBody = ''
+      + emailWrapperOpen()
+      + buildEmailHeader({ title: '🎉 Ton premier mois chez Seven Portage', subtitle: candidat })
+      + emailBodyOpen()
+      +   corps
+      +   signatureHtml
+      + emailBodyClose()
+      + emailWrapperClose();
+
+    sendMailViaGraph({
+      to: [deal.email],
+      cc: ccList,
+      subject: sujet,
+      htmlBody: htmlBody,
+      from: cfg.sender || undefined,  // override sender si supporté côté compte
+      attachments: attachments
+    }, function() {
+      if (onSuccess) onSuccess();
+    }, function(err) {
+      console.error('[PremierMois] Échec envoi:', err);
+      if (typeof showNotifToast === 'function') showNotifToast('⚠ Échec envoi mail Premier mois', true);
+    });
+  }
+
+  // Télécharger les PJ puis envoyer
+  if (!pjUrls.length) {
+    buildAndSend([]);
+    return;
+  }
+
+  var loaded = [];
+  var pending = pjUrls.length;
+  pjUrls.forEach(function(pj) {
+    fetch(pj.url).then(function(r){
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.blob();
+    }).then(function(blob){
+      return new Promise(function(res, rej){
+        var reader = new FileReader();
+        reader.onloadend = function(){
+          var b64 = (reader.result || '').split(',')[1];
+          res({ name: pj.nom || 'document.pdf', contentType: blob.type || 'application/pdf', contentBytesB64: b64 });
+        };
+        reader.onerror = rej;
+        reader.readAsDataURL(blob);
+      });
+    }).then(function(att){
+      loaded.push(att);
+    }).catch(function(err){
+      console.warn('[PremierMois] PJ non chargée: ' + pj.url, err);
+    }).finally(function(){
+      pending--;
+      if (pending === 0) buildAndSend(loaded);
+    });
+  });
+}
+
+// ── Accordion Paramètres "Premier mois" ──
+function buildPremierMoisConfigCard() {
+  var cfg = getPremierMoisConfig();
+
+  var pjHtml = cfg.pj_list.map(function(p, i) {
+    return '<div style="display:grid;grid-template-columns:1fr 2fr 36px;gap:8px;margin-bottom:6px;align-items:center;">'
+      +   '<input type="text" value="' + (p.nom||'').replace(/"/g,'&quot;') + '" onchange="updatePremierMoisPJField(' + i + ',\'nom\',this.value)" placeholder="Nom affiché (ex: Guide LAYA.pdf)" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;font-family:inherit;">'
+      +   '<input type="url" value="' + (p.url||'').replace(/"/g,'&quot;') + '" onchange="updatePremierMoisPJField(' + i + ',\'url\',this.value)" placeholder="https://sevenportage.sharepoint.com/…" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;font-family:inherit;">'
+      +   '<button onclick="removePremierMoisPJ(' + i + ')" title="Supprimer" style="padding:6px 8px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;cursor:pointer;">✕</button>'
+      + '</div>';
+  }).join('') || '<div style="font-size:11px;color:#9E94C4;font-style:italic;padding:4px 0;">Aucune pièce jointe configurée.</div>';
+
+  var inputStyle = 'width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-family:inherit;';
+  var textareaStyle = inputStyle + 'min-height:180px;resize:vertical;line-height:1.5;';
+  var sectionTitleStyle = 'font-size:12.5px;font-weight:700;color:#4B36EC;margin:18px 0 8px;padding-bottom:6px;border-bottom:1.5px solid #E4E0FA;';
+
+  return ''
+    + '<div style="' + sectionTitleStyle + '">📧 Expéditeur</div>'
+    + '<label style="font-size:11px;color:#6B5E9C;font-weight:600;display:block;margin-bottom:3px;">Email expéditeur</label>'
+    + '<input type="email" value="' + (cfg.sender||'').replace(/"/g,'&quot;') + '" onchange="updatePremierMoisConfig(\'sender\',this.value)" placeholder="norman@seven-portage.fr" style="' + inputStyle + '">'
+    + '<div style="font-size:10.5px;color:#9E94C4;margin-top:4px;">📝 Utilisé comme "From" du mail. Défaut : norman@seven-portage.fr. Pour envoyer depuis une autre adresse, le compte Microsoft connecté doit avoir les droits "Send As" ou "Send On Behalf".</div>'
+
+    + '<div style="' + sectionTitleStyle + '">✍️ Signature expéditeur</div>'
+    + '<textarea onchange="updatePremierMoisConfig(\'signature\',this.value)" placeholder="Norman Zeitoun&#10;Dirigeant — Seven Portage&#10;📞 06 XX XX XX XX" style="' + textareaStyle.replace('min-height:180px','min-height:90px') + '">' + (cfg.signature||'').replace(/</g,'&lt;') + '</textarea>'
+
+    + '<div style="' + sectionTitleStyle + '">📎 Pièces jointes (max 4)</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 2fr 36px;gap:8px;margin-bottom:6px;padding:0 4px;">'
+    +   '<div style="font-size:10.5px;color:#9E94C4;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Nom fichier</div>'
+    +   '<div style="font-size:10.5px;color:#9E94C4;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">URL SharePoint / direct</div>'
+    +   '<div></div>'
+    + '</div>'
+    + pjHtml
+    + (cfg.pj_list.length < 4
+        ? '<button onclick="addPremierMoisPJ()" style="margin-top:6px;padding:6px 12px;background:#F0EDFC;color:#4B36EC;border:1.5px solid #D9CFFA;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer;">+ Ajouter une pièce jointe</button>'
+        : '<div style="font-size:11px;color:#9E94C4;margin-top:6px;">Limite de 4 pièces jointes atteinte.</div>')
+    + '<div style="font-size:10.5px;color:#9E94C4;margin-top:6px;">📝 L\'URL doit pointer directement vers le fichier PDF. Le fichier est téléchargé puis attaché au mail au moment de l\'envoi. Les fichiers SharePoint publics ou accessibles avec vos droits fonctionnent.</div>'
+
+    + '<div style="' + sectionTitleStyle + '">✉️ Objet du mail</div>'
+    + '<input type="text" value="' + (cfg.sujet||'').replace(/"/g,'&quot;') + '" onchange="updatePremierMoisConfig(\'sujet\',this.value)" style="' + inputStyle + '">'
+
+    + '<div style="' + sectionTitleStyle + '">📝 Corps du mail</div>'
+    + '<div style="font-size:11px;color:#6B5E9C;margin-bottom:6px;">Variables : <code>{prenom}</code>, <code>{nom}</code>, <code>{nom_complet}</code>, <code>{commercial}</code>, <code>{entreprise}</code>. Laissez vide pour utiliser le template par défaut.</div>'
+    + '<textarea onchange="updatePremierMoisConfig(\'corps\',this.value)" placeholder="Laissez vide pour utiliser le template complet par défaut" style="' + textareaStyle + '">' + (cfg.corps||'').replace(/</g,'&lt;') + '</textarea>'
+
+    + '<div style="margin-top:14px;padding:10px 12px;background:#F5F3FF;border-radius:8px;font-size:11px;color:#6B5E9C;line-height:1.55;">'
+    +   '🔄 <strong>Config synchronisée</strong> entre tous les utilisateurs via OneDrive. Si tu modifies ici, les autres l\'auront dès leur prochaine ouverture du simulateur.'
+    + '</div>';
+}
+function renderParamsPremierMoisAccordion() {
+  var el = document.getElementById('params-premier-mois-content');
+  if (el) el.innerHTML = buildPremierMoisConfigCard();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// COMPTES D'ACTIVITÉ — Saisie des jours prestés + import Excel + génération
+// ═══════════════════════════════════════════════════════════════════
+
+var JOURS_PRESTES_KEY = 'sp_jours_prestes_v1';
+var MATCHING_JOURS_KEY = 'sp_matching_jours_v1';
+var OD_JOURS_PATH = '/General/Seven Portage Simlateur/SP_Jours_Prestes_Global.json';
+
+// Année actuelle pour l'affichage (année civile)
+var comptesActYear = (function() { return new Date().getFullYear(); })();
+
+// Filtres + recherche
+var comptesActSearch = '';
+var comptesActFilters = { commercial: '' };
+
+function setComptesActSearch(val) {
+  comptesActSearch = val || '';
+  renderComptesActivite();
+  setTimeout(function(){
+    var el = document.getElementById('comptes-act-search-input');
+    if (el) { el.focus(); var v = el.value; el.value = ''; el.value = v; }
+  }, 30);
+}
+function setComptesActFilter(field, value) {
+  comptesActFilters[field] = value;
+  renderComptesActivite();
+}
+function resetComptesActFilters() {
+  comptesActFilters = { commercial: '' };
+  comptesActSearch = '';
+  renderComptesActivite();
+}
+
+// ── Storage jours prestés ──
+// Format : { deal_id: { '2026-01': 22, '2026-02': 15, ... }, ... }
+function getJoursPrestes() {
+  try { return JSON.parse(localStorage.getItem(JOURS_PRESTES_KEY) || '{}'); }
+  catch(e) { return {}; }
+}
+function saveJoursPrestes(obj) {
+  localStorage.setItem(JOURS_PRESTES_KEY, JSON.stringify(obj));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+function mergeJoursPrestes(remote) {
+  if (!remote || typeof remote !== 'object') return;
+  var local = getJoursPrestes();
+  var ts_remote = remote._updated_ts || 0;
+  var ts_local = local._updated_ts || 0;
+  // Merge par deal : pour chaque deal, on prend les mois les plus récents
+  // Ici on simplifie : si remote est plus récent, on fusionne (les nouveaux mois distants gagnent)
+  var merged = {};
+  // Copier local
+  Object.keys(local).forEach(function(k) {
+    if (k === '_updated_ts') return;
+    merged[k] = local[k];
+  });
+  // Superposer remote (écrase les conflits si plus récent)
+  if (ts_remote > ts_local) {
+    Object.keys(remote).forEach(function(k) {
+      if (k === '_updated_ts') return;
+      merged[k] = Object.assign({}, merged[k] || {}, remote[k] || {});
+    });
+  } else {
+    Object.keys(remote).forEach(function(k) {
+      if (k === '_updated_ts') return;
+      // Fusion non-destructive : ne pas écraser si local existe déjà
+      if (!merged[k]) merged[k] = remote[k];
+      else merged[k] = Object.assign({}, remote[k] || {}, merged[k]);
+    });
+  }
+  merged._updated_ts = Math.max(ts_remote, ts_local);
+  localStorage.setItem(JOURS_PRESTES_KEY, JSON.stringify(merged));
+}
+function getJoursPresteForDeal(dealId, moisStr) {
+  var all = getJoursPrestes();
+  var forDeal = all[dealId] || {};
+  return forDeal[moisStr] || 0;
+}
+function setJoursPresteForDeal(dealId, moisStr, jours) {
+  var all = getJoursPrestes();
+  if (!all[dealId]) all[dealId] = {};
+  if (!jours && jours !== 0) {
+    delete all[dealId][moisStr];
+  } else {
+    all[dealId][moisStr] = parseFloat(jours) || 0;
+  }
+  all._updated_ts = Date.now();
+  saveJoursPrestes(all);
+}
+
+// ── Storage matching ──
+// Format : { "downing_david": deal_id, ... }
+function getMatchingJours() {
+  try { return JSON.parse(localStorage.getItem(MATCHING_JOURS_KEY) || '{}'); }
+  catch(e) { return {}; }
+}
+function saveMatchingJours(obj) {
+  localStorage.setItem(MATCHING_JOURS_KEY, JSON.stringify(obj));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+function setMatchingKey(rawName, dealId) {
+  var all = getMatchingJours();
+  all[normalizeNomForMatch(rawName)] = dealId;
+  all._updated_ts = Date.now();
+  saveMatchingJours(all);
+}
+function getMatchingForName(rawName) {
+  var all = getMatchingJours();
+  return all[normalizeNomForMatch(rawName)] || null;
+}
+
+// ── Normalisation nom ──
+function normalizeNomForMatch(s) {
+  if (!s) return '';
+  return s.toString()
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // retirer accents
+    .replace(/[-'']/g, ' ')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// ── Distance de Levenshtein ──
+function levenshtein(a, b) {
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  var matrix = [];
+  for (var i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (var j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (i = 1; i <= b.length; i++) {
+    for (j = 1; j <= a.length; j++) {
+      if (b.charAt(i-1) === a.charAt(j-1)) matrix[i][j] = matrix[i-1][j-1];
+      else matrix[i][j] = Math.min(matrix[i-1][j-1] + 1, matrix[i][j-1] + 1, matrix[i-1][j] + 1);
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
+// ── Score de matching (0-100) ──
+function computeMatchScore(searchName, dealName) {
+  var a = normalizeNomForMatch(searchName);
+  var b = normalizeNomForMatch(dealName);
+  if (!a || !b) return 0;
+  if (a === b) return 100;
+  // Match par tokens (ordre inversé : "Downing David" vs "David Downing")
+  var tokensA = a.split(' ').filter(Boolean).sort();
+  var tokensB = b.split(' ').filter(Boolean).sort();
+  if (tokensA.join(' ') === tokensB.join(' ')) return 100;
+  // Partial : un contient l'autre
+  if (b.indexOf(a) >= 0 || a.indexOf(b) >= 0) {
+    var lenRatio = Math.min(a.length, b.length) / Math.max(a.length, b.length);
+    return Math.round(60 + 30 * lenRatio);  // 60-90
+  }
+  // Levenshtein
+  var dist = levenshtein(a, b);
+  var maxLen = Math.max(a.length, b.length);
+  var simRatio = 1 - dist / maxLen;
+  return Math.round(simRatio * 100);
+}
+
+// ── Vue principale ──
+function showComptesActiviteView() {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard','tab-entrees'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-deals');
+  if (!tab) return;
+  tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+  if (typeof setDealsOriginalVisible === 'function') setDealsOriginalVisible(false);
+  injectRHSubNav();
+  var container = document.getElementById('rh-content-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'rh-content-container';
+    tab.appendChild(container);
+  }
+  renderComptesActivite();
+}
+
+function renderComptesActivite() {
+  var container = document.getElementById('rh-content-container');
+  if (!container) return;
+  container.innerHTML = buildComptesActiviteContent();
+}
+
+function buildComptesActiviteContent() {
+  var deals = getDeals().filter(function(d) {
+    return d.etat !== 'Annulé' && (d.prenom || d.nom) && d.date_entree;
+  });
+
+  // Filtrer par année : on garde les deals ayant été actifs au moins un mois dans l'année
+  var yearStart = new Date(comptesActYear, 0, 1);
+  var yearEnd = new Date(comptesActYear, 11, 31, 23, 59, 59);
+  var items = deals.filter(function(d) {
+    var de = d.date_entree ? new Date(d.date_entree) : null;
+    if (!de || isNaN(de.getTime())) return false;
+    if (de > yearEnd) return false;  // pas encore commencé cette année
+    if (d.date_fin) {
+      var df = new Date(d.date_fin);
+      if (!isNaN(df.getTime()) && df < yearStart) return false;  // déjà terminé avant l'année
+    }
+    return true;
+  }).map(function(d) {
+    return {
+      deal: d,
+      prenomNom: ((d.prenom||'') + ' ' + (d.nom||'')).trim()
+    };
+  });
+
+  // Filtres
+  var searchLc = (comptesActSearch || '').trim().toLowerCase();
+  var filtered = items.filter(function(it) {
+    if (searchLc && (it.prenomNom || '').toLowerCase().indexOf(searchLc) < 0) return false;
+    if (comptesActFilters.commercial && (it.deal.commercial || '') !== comptesActFilters.commercial) return false;
+    return true;
+  });
+  filtered.sort(function(a, b) {
+    return (a.prenomNom || '').localeCompare(b.prenomNom || '', 'fr', { sensitivity: 'base' });
+  });
+
+  // Dropdown années
+  var currYear = new Date().getFullYear();
+  var yearOpts = '';
+  for (var y = currYear - 2; y <= currYear + 1; y++) {
+    yearOpts += '<option value="' + y + '"' + (y === comptesActYear ? ' selected' : '') + '>' + y + '</option>';
+  }
+
+  // Dropdown commerciaux (distincts)
+  var commercials = {};
+  items.forEach(function(it){ if (it.deal.commercial) commercials[it.deal.commercial] = 1; });
+  var commList = Object.keys(commercials).sort();
+  var commOpts = '<option value="">Tous commerciaux</option>' + commList.map(function(c) {
+    return '<option value="' + c.replace(/"/g,'&quot;') + '"' + (c === comptesActFilters.commercial ? ' selected' : '') + '>' + c + '</option>';
+  }).join('');
+
+  // En-têtes mois
+  var monthNames = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Aoû','Sep','Oct','Nov','Déc'];
+  var monthHeaders = monthNames.map(function(m, i) {
+    return '<th style="padding:9px 4px;text-align:center;color:#4B36EC;font-weight:700;min-width:48px;">' + m + '</th>';
+  }).join('');
+
+  // Rows
+  var rowsHtml = filtered.map(function(it) {
+    var d = it.deal;
+    var joursForDeal = getJoursPrestes()[d.id] || {};
+    var cells = '';
+    var totalJours = 0;
+    for (var mo = 0; mo < 12; mo++) {
+      var moKey = comptesActYear + '-' + String(mo+1).padStart(2, '0');
+      var val = joursForDeal[moKey] || '';
+      if (val) totalJours += parseFloat(val) || 0;
+
+      // Vérifier si le mois est dans la période d'activité du deal
+      var moStart = new Date(comptesActYear, mo, 1);
+      var moEnd = new Date(comptesActYear, mo + 1, 0);
+      var de = d.date_entree ? new Date(d.date_entree) : null;
+      var df = d.date_fin ? new Date(d.date_fin) : null;
+      var isActive = true;
+      if (de && de > moEnd) isActive = false;
+      if (df && !isNaN(df.getTime()) && df < moStart) isActive = false;
+
+      var cellStyle = 'width:44px;padding:3px 4px;border:1px solid #E4E0FA;border-radius:4px;font-size:11px;text-align:center;font-family:inherit;';
+      if (!isActive) cellStyle += 'background:#F5F5F5;color:#ccc;';
+
+      cells += '<td style="padding:4px 3px;text-align:center;">'
+        + '<input type="number" min="0" max="31" step="0.5" value="' + val + '"'
+        + (isActive ? '' : ' disabled')
+        + ' onchange="setJoursPresteForDeal(' + d.id + ',\'' + moKey + '\',this.value);renderComptesActivite();" style="' + cellStyle + '">'
+        + '</td>';
+    }
+
+    return '<tr style="border-bottom:1px solid #F0EDF9;">'
+      + '<td style="padding:9px 10px;font-weight:600;color:#1A1033;white-space:nowrap;">' + it.prenomNom + '</td>'
+      + '<td style="padding:9px 10px;color:#6B5E9C;font-size:10.5px;white-space:nowrap;">' + (d.entreprise || '—').replace(/</g,'&lt;') + '</td>'
+      + '<td style="padding:9px 10px;color:#6B5E9C;font-size:10.5px;">' + (d.commercial || '—') + '</td>'
+      + cells
+      + '<td style="padding:9px 10px;text-align:right;color:#4B36EC;font-weight:700;">' + (totalJours || '—') + '</td>'
+      + '</tr>';
+  }).join('');
+
+  var emptyMsg = '';
+  if (!items.length) emptyMsg = 'Aucun consultant actif sur l\'année ' + comptesActYear + '.';
+  else if (!filtered.length) emptyMsg = 'Aucune ligne ne correspond aux filtres.';
+  var emptyState = emptyMsg
+    ? '<tr><td colspan="15" style="padding:40px;text-align:center;color:#9E9E9E;font-size:12.5px;font-style:italic;">' + emptyMsg + '</td></tr>'
+    : '';
+
+  var filtersActive = !!(comptesActSearch || comptesActFilters.commercial);
+
+  return ''
+    // Titre + année
+    + '<div style="margin-bottom:18px;">'
+    +   '<h2 style="font-size:20px;font-weight:800;color:#1A1033;margin:0 0 4px;letter-spacing:-0.01em;">📊 Comptes d\'activité</h2>'
+    +   '<div style="font-size:12.5px;color:#6B5E9C;">Saisie manuelle des jours prestés par consultant × mois. Importez un fichier Excel pour remplir plusieurs lignes en une fois.</div>'
+    + '</div>'
+    // Barre haut : année + import + actions
+    + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">'
+    +   '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    +     '<label style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Année :</label>'
+    +     '<select onchange="comptesActYear=parseInt(this.value);renderComptesActivite();" style="padding:7px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;background:#fff;font-weight:600;cursor:pointer;font-family:inherit;">' + yearOpts + '</select>'
+    +     '<span style="font-size:11.5px;color:#6B5E9C;">· ' + filtered.length + ' consultant' + (filtered.length>1?'s':'') + (filtered.length !== items.length ? ' / ' + items.length : '') + '</span>'
+    +   '</div>'
+    +   '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+    +     '<input type="file" id="import-jours-file" accept=".xlsx,.xls" style="display:none;" onchange="handleImportJoursFile(event)">'
+    +     '<button onclick="document.getElementById(\'import-jours-file\').click()" style="padding:8px 16px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">📥 Importer Excel</button>'
+    +   '</div>'
+    + '</div>'
+    // Filtres
+    + '<div style="background:#F5F3FF;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    +   '<div style="position:relative;flex:1;min-width:200px;max-width:280px;">'
+    +     '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E94C4;font-size:13px;pointer-events:none;">🔍</span>'
+    +     '<input id="comptes-act-search-input" type="text" value="' + (comptesActSearch||'').replace(/"/g,'&quot;') + '" oninput="setComptesActSearch(this.value)" placeholder="Rechercher un candidat…" style="width:100%;padding:7px 10px 7px 32px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;font-family:inherit;">'
+    +   '</div>'
+    +   '<select onchange="setComptesActFilter(\'commercial\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">' + commOpts + '</select>'
+    +   (filtersActive
+        ? '<button onclick="resetComptesActFilters()" style="margin-left:auto;padding:5px 12px;background:#fff;color:#E24B4A;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">✕ Réinitialiser</button>'
+        : '')
+    + '</div>'
+    // Tableau
+    + '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E4E0FA;overflow-x:auto;">'
+    +   '<table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:1100px;">'
+    +     '<thead style="background:#F5F3FF;">'
+    +       '<tr style="border-bottom:2px solid #E4E0FA;">'
+    +         '<th style="padding:9px 10px;text-align:left;color:#4B36EC;font-weight:700;">Consultant</th>'
+    +         '<th style="padding:9px 10px;text-align:left;color:#4B36EC;font-weight:700;">Client</th>'
+    +         '<th style="padding:9px 10px;text-align:left;color:#4B36EC;font-weight:700;">Commercial</th>'
+    +         monthHeaders
+    +         '<th style="padding:9px 10px;text-align:right;color:#4B36EC;font-weight:700;">Total</th>'
+    +       '</tr>'
+    +     '</thead>'
+    +     '<tbody>' + rowsHtml + emptyState + '</tbody>'
+    +   '</table>'
+    + '</div>'
+    + '<div style="margin-top:14px;padding:10px 14px;background:#F5F3FF;border-radius:8px;font-size:11px;color:#6B5E9C;line-height:1.55;">'
+    +   '💡 Cellules grises : hors période d\'activité du consultant. Boutons <strong>📥 Importer Excel</strong> : chargez un fichier avec nom + jours, le système détecte les colonnes automatiquement et fait le matching avec vos consultants.'
+    + '</div>';
+}
+
+// ── Import Excel avec matching intelligent ──
+function handleImportJoursFile(event) {
+  var file = event.target.files && event.target.files[0];
+  if (!file) return;
+  if (typeof XLSX === 'undefined') {
+    alert('⚠️ Librairie Excel (SheetJS) non chargée. Rechargez la page et réessayez.');
+    return;
+  }
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      var ws = wb.Sheets[wb.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      processImportedJours(rows);
+    } catch(err) {
+      console.error('[Import Jours] Erreur:', err);
+      alert('⚠️ Erreur lors de la lecture du fichier : ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  // Reset le champ pour permettre de réimporter le même fichier
+  event.target.value = '';
+}
+
+function processImportedJours(rows) {
+  if (!rows || !rows.length) { alert('Le fichier est vide.'); return; }
+
+  // Détection des colonnes : on scanne les headers (première ligne non vide)
+  var headerRow = null;
+  var headerRowIdx = -1;
+  for (var i = 0; i < Math.min(rows.length, 5); i++) {
+    var row = rows[i];
+    if (!row || !row.length) continue;
+    // Header si au moins 1 cellule contient un mot-clé
+    var hasKw = row.some(function(c) {
+      var s = (c || '').toString().toLowerCase();
+      return s.indexOf('nom') >= 0 || s.indexOf('prenom') >= 0 || s.indexOf('prénom') >= 0 || s.indexOf('jour') >= 0 || s.indexOf('consultant') >= 0 || s.indexOf('porté') >= 0;
+    });
+    if (hasKw) { headerRow = row; headerRowIdx = i; break; }
+  }
+  if (!headerRow) {
+    alert('⚠️ Impossible de détecter les colonnes.\n\nLe fichier doit contenir au minimum une colonne avec "Nom", "Prénom" ou "Consultant" et une colonne "Jours".');
+    return;
+  }
+
+  // Index des colonnes
+  var colNom = -1, colPrenom = -1, colFullName = -1, colJours = -1;
+  headerRow.forEach(function(c, idx) {
+    var s = (c || '').toString().toLowerCase().trim();
+    if (colJours < 0 && (s.indexOf('jour') >= 0 || s.indexOf('presté') >= 0 || s === 'nb')) colJours = idx;
+    else if (colFullName < 0 && (s === 'consultant' || s === 'porté' || s === 'nom prenom' || s === 'nom prénom' || s === 'nom et prenom' || s === 'nom et prénom' || s.indexOf('nom porté') >= 0)) colFullName = idx;
+    else if (colNom < 0 && (s === 'nom' || s === 'nom de famille' || s === 'lastname' || s === 'last name')) colNom = idx;
+    else if (colPrenom < 0 && (s === 'prenom' || s === 'prénom' || s === 'firstname' || s === 'first name')) colPrenom = idx;
+  });
+
+  if (colJours < 0) {
+    alert('⚠️ Colonne "Jours" introuvable.\n\nVotre fichier doit contenir une colonne dont le nom contient "Jours" ou "presté".');
+    return;
+  }
+  if (colFullName < 0 && colNom < 0 && colPrenom < 0) {
+    alert('⚠️ Colonnes "Nom"/"Prénom" introuvables.\n\nVotre fichier doit contenir au moins une colonne "Nom", "Prénom" ou "Consultant".');
+    return;
+  }
+
+  // Parcourir les lignes suivantes
+  var lines = [];
+  for (var r = headerRowIdx + 1; r < rows.length; r++) {
+    var row = rows[r];
+    if (!row || !row.length) continue;
+    var fullName = '';
+    if (colFullName >= 0) fullName = (row[colFullName] || '').toString().trim();
+    else {
+      var nomVal = colNom >= 0 ? (row[colNom] || '').toString().trim() : '';
+      var prenomVal = colPrenom >= 0 ? (row[colPrenom] || '').toString().trim() : '';
+      fullName = (prenomVal + ' ' + nomVal).trim();
+    }
+    var joursVal = row[colJours];
+    if (!fullName && !joursVal) continue;  // ligne vide
+    if (!fullName) continue;
+    var joursNum = parseFloat(String(joursVal).replace(',', '.')) || 0;
+    lines.push({ name: fullName, jours: joursNum });
+  }
+
+  if (!lines.length) {
+    alert('⚠️ Aucune ligne de données trouvée dans le fichier.');
+    return;
+  }
+
+  // Matching
+  var deals = getDeals();
+  var candidatesByDeal = deals.map(function(d) {
+    return {
+      id: d.id,
+      fullName: ((d.prenom||'') + ' ' + (d.nom||'')).trim(),
+      entreprise: d.entreprise || ''
+    };
+  });
+
+  var matchingSaved = getMatchingJours();
+
+  var results = lines.map(function(line) {
+    // 1. Vérifier matching pré-existant
+    var savedId = matchingSaved[normalizeNomForMatch(line.name)];
+    if (savedId) {
+      var savedDeal = candidatesByDeal.find(function(c){ return c.id === savedId; });
+      if (savedDeal) {
+        return { line: line, bestDeal: savedDeal, score: 100, status: 'auto', candidates: [], fromSaved: true };
+      }
+    }
+    // 2. Calcul score pour chaque deal
+    var scored = candidatesByDeal.map(function(c) {
+      return { deal: c, score: computeMatchScore(line.name, c.fullName) };
+    }).sort(function(a, b) { return b.score - a.score; });
+    var best = scored[0] || { deal: null, score: 0 };
+    var status;
+    if (best.score >= 90) status = 'auto';
+    else if (best.score >= 60) status = 'confirm';
+    else status = 'reject';
+    return {
+      line: line,
+      bestDeal: best.deal,
+      score: best.score,
+      status: status,
+      candidates: scored.slice(0, 5).filter(function(s){ return s.score >= 30; }),
+      fromSaved: false
+    };
+  });
+
+  // Choix du mois cible
+  openImportJoursMonthDialog(results);
+}
+
+function openImportJoursMonthDialog(results) {
+  var ex = document.getElementById('modal-import-jours');
+  if (ex) ex.remove();
+
+  var auto = results.filter(function(r){ return r.status === 'auto'; });
+  var confirm_ = results.filter(function(r){ return r.status === 'confirm'; });
+  var reject = results.filter(function(r){ return r.status === 'reject'; });
+
+  // Dropdown mois (12 mois actuels)
+  var now = new Date();
+  var moOpts = '';
+  for (var i = 11; i >= -3; i--) {
+    var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    var v = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2, '0');
+    var lbl = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    lbl = lbl.charAt(0).toUpperCase() + lbl.slice(1);
+    var sel = (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) ? ' selected' : '';
+    moOpts += '<option value="' + v + '"' + sel + '>' + lbl + '</option>';
+  }
+
+  var modal = document.createElement('div');
+  modal.id = 'modal-import-jours';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.65);z-index:3000;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:14px;padding:24px 28px;width:92%;max-width:560px;box-shadow:0 10px 40px rgba(0,0,0,0.25);">'
+    +   '<div style="font-size:17px;font-weight:800;color:#1A1033;margin-bottom:10px;">📥 Import des jours prestés</div>'
+    +   '<div style="font-size:12.5px;color:#6B5E9C;margin-bottom:18px;line-height:1.55;">'
+    +     '<strong>' + results.length + ' lignes</strong> détectées dans le fichier :'
+    +     '<div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;">'
+    +       '<div style="padding:7px 10px;background:#E8F5E9;border-radius:6px;color:#0F6E56;font-weight:600;">✅ ' + auto.length + ' auto-validée' + (auto.length>1?'s':'') + ' (score ≥ 90%)</div>'
+    +       (confirm_.length ? '<div style="padding:7px 10px;background:#FFF4D6;border-radius:6px;color:#8A5F00;font-weight:600;">⚠️ ' + confirm_.length + ' à confirmer (score 60-90%)</div>' : '')
+    +       (reject.length ? '<div style="padding:7px 10px;background:#FDECEC;border-radius:6px;color:#A8322A;font-weight:600;">❌ ' + reject.length + ' rejetée' + (reject.length>1?'s':'') + ' (score < 60%)</div>' : '')
+    +     '</div>'
+    +   '</div>'
+    +   '<label style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:4px;">Mois à importer</label>'
+    +   '<select id="import-jours-mois" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;margin-bottom:18px;font-family:inherit;">' + moOpts + '</select>'
+    +   '<div style="padding:10px 12px;background:#F5F3FF;border-radius:8px;font-size:11px;color:#6B5E9C;margin-bottom:16px;line-height:1.5;">'
+    +     '💡 Si des jours sont déjà saisis pour ces consultants ce mois, ils seront <strong>écrasés</strong> par les nouvelles valeurs.'
+    +   '</div>'
+    +   '<div style="display:flex;gap:8px;justify-content:flex-end;">'
+    +     '<button onclick="document.getElementById(\'modal-import-jours\').remove()" style="padding:8px 16px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">Annuler</button>'
+    +     '<button onclick="proceedImportJours()" style="padding:8px 20px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">Continuer →</button>'
+    +   '</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+
+  // Stocker results pour la suite
+  window._importJoursResults = results;
+}
+
+function proceedImportJours() {
+  var sel = document.getElementById('import-jours-mois');
+  if (!sel) return;
+  var mois = sel.value;
+  var modal = document.getElementById('modal-import-jours');
+  if (modal) modal.remove();
+
+  var results = window._importJoursResults || [];
+  window._importJoursMois = mois;
+
+  // 1. Auto-validés : importer directement
+  var auto = results.filter(function(r){ return r.status === 'auto' && r.bestDeal; });
+  auto.forEach(function(r) {
+    setJoursPresteForDeal(r.bestDeal.id, mois, r.line.jours);
+    // Mémoriser matching si score = 100% et non-déjà-mémorisé
+    if (!r.fromSaved && r.score >= 90) {
+      setMatchingKey(r.line.name, r.bestDeal.id);
+    }
+  });
+
+  // 2. Confirmer les cas douteux un par un
+  var toConfirm = results.filter(function(r){ return r.status === 'confirm'; });
+  if (toConfirm.length) {
+    openImportConfirmDialog(toConfirm, 0);
+  } else {
+    finalizeImportJours();
+  }
+}
+
+function openImportConfirmDialog(toConfirm, idx) {
+  if (idx >= toConfirm.length) {
+    finalizeImportJours();
+    return;
+  }
+
+  var r = toConfirm[idx];
+  var ex = document.getElementById('modal-import-confirm');
+  if (ex) ex.remove();
+
+  var optionsHtml = r.candidates.map(function(c, i) {
+    var checked = i === 0 ? ' checked' : '';
+    return '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid #E4E0FA;border-radius:8px;cursor:pointer;margin-bottom:6px;background:#FAF8FF;">'
+      +   '<input type="radio" name="import-match" value="' + c.deal.id + '"' + checked + ' style="cursor:pointer;">'
+      +   '<div style="flex:1;">'
+      +     '<div style="font-size:13px;font-weight:700;color:#1A1033;">' + c.deal.fullName.replace(/</g,'&lt;') + '</div>'
+      +     (c.deal.entreprise ? '<div style="font-size:11px;color:#6B5E9C;">' + c.deal.entreprise.replace(/</g,'&lt;') + '</div>' : '')
+      +   '</div>'
+      +   '<div style="font-size:11px;font-weight:700;color:' + (c.score >= 80 ? '#0F6E56' : (c.score >= 60 ? '#8A5F00' : '#A8322A')) + ';padding:3px 8px;background:#fff;border-radius:10px;">' + c.score + '%</div>'
+      + '</label>';
+  }).join('');
+  optionsHtml += '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid #FDECEC;border-radius:8px;cursor:pointer;margin-bottom:6px;background:#FFF8F8;">'
+    +   '<input type="radio" name="import-match" value="__skip__" style="cursor:pointer;">'
+    +   '<div style="font-size:12.5px;color:#A8322A;font-weight:600;">❌ Ignorer cette ligne (pas d\'import)</div>'
+    + '</label>';
+
+  var modal = document.createElement('div');
+  modal.id = 'modal-import-confirm';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.65);z-index:3001;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:14px;padding:24px 28px;width:92%;max-width:520px;box-shadow:0 10px 40px rgba(0,0,0,0.3);">'
+    +   '<div style="font-size:12px;color:#9E94C4;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Confirmation ' + (idx+1) + ' / ' + toConfirm.length + '</div>'
+    +   '<div style="font-size:16px;font-weight:800;color:#1A1033;margin-bottom:4px;">Nom du fichier : <span style="color:#4B36EC;">' + r.line.name.replace(/</g,'&lt;') + '</span></div>'
+    +   '<div style="font-size:12.5px;color:#6B5E9C;margin-bottom:16px;"><strong>' + r.line.jours + '</strong> jours prestés</div>'
+    +   '<div style="font-size:12px;color:#6B5E9C;margin-bottom:10px;">Sélectionnez le bon consultant :</div>'
+    +   '<div>' + optionsHtml + '</div>'
+    +   '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">'
+    +     '<button onclick="confirmImportMatch(' + idx + ')" style="padding:8px 20px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">Valider →</button>'
+    +   '</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+}
+
+function confirmImportMatch(idx) {
+  var toConfirm = window._importJoursResults.filter(function(r){ return r.status === 'confirm'; });
+  var r = toConfirm[idx];
+  var mois = window._importJoursMois;
+  var radios = document.querySelectorAll('input[name="import-match"]');
+  var selectedId = null;
+  radios.forEach(function(radio) { if (radio.checked) selectedId = radio.value; });
+
+  if (selectedId && selectedId !== '__skip__') {
+    var dealId = parseInt(selectedId);
+    setJoursPresteForDeal(dealId, mois, r.line.jours);
+    // Mémoriser matching pour les prochains imports
+    setMatchingKey(r.line.name, dealId);
+  }
+
+  var modal = document.getElementById('modal-import-confirm');
+  if (modal) modal.remove();
+
+  openImportConfirmDialog(toConfirm, idx + 1);
+}
+
+function finalizeImportJours() {
+  var results = window._importJoursResults || [];
+  var mois = window._importJoursMois;
+  var auto = results.filter(function(r){ return r.status === 'auto' && r.bestDeal; }).length;
+  var confirmed = results.filter(function(r){ return r.status === 'confirm'; }).length;
+  var rejected = results.filter(function(r){ return r.status === 'reject'; }).length;
+
+  if (typeof showNotifToast === 'function') {
+    showNotifToast('✅ Import terminé · ' + auto + ' auto + ' + confirmed + ' confirmés, ' + rejected + ' rejetés');
+  } else {
+    alert('✅ Import terminé\n\n'
+      + auto + ' lignes auto-validées\n'
+      + confirmed + ' lignes confirmées manuellement\n'
+      + rejected + ' lignes rejetées\n\n'
+      + 'Mois : ' + mois);
+  }
+
+  window._importJoursResults = null;
+  window._importJoursMois = null;
+  renderComptesActivite();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GÉNÉRATION COMPTE D'ACTIVITÉ EXCEL + UPLOAD SHAREPOINT
+// ═══════════════════════════════════════════════════════════════════
+
+// Génère le fichier Excel compte d'activité pour un deal donné
+// startMonth = { year, month } ex: {year:2025, month:1} ; 15 mois affichés par défaut
+function generateCompteActiviteExcel(deal, startMonth) {
+  if (typeof XLSX === 'undefined') {
+    alert('⚠️ Librairie Excel (SheetJS) non chargée. Rechargez la page et réessayez.');
+    return null;
+  }
+
+  var tjm = parseFloat(deal.tjm) || 0;
+  var brut = parseFloat(String(deal.brut || '').replace(/[^\d.,]/g,'').replace(',','.')) || 0;
+  var totalPat = parseFloat(String(deal.total_pat || '').replace(/[^\d.,]/g,'').replace(',','.')) || 0;
+  var totalSal = parseFloat(String(deal.total_sal || '').replace(/[^\d.,]/g,'').replace(',','.')) || 0;
+  var nom = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
+
+  // Si pas de total_pat dispo, fallback : ~47% du brut (ordre de grandeur)
+  if (!totalPat && brut) totalPat = brut * 0.47;
+  // Si pas de total_sal, fallback : ~22% du brut
+  if (!totalSal && brut) totalSal = brut * 0.22;
+
+  // 15 mois glissants
+  var monthsCount = 15;
+  var months = [];
+  for (var i = 0; i < monthsCount; i++) {
+    var d = new Date(startMonth.year, startMonth.month - 1 + i, 1);
+    months.push({
+      year: d.getFullYear(),
+      month: d.getMonth() + 1,
+      key: d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2, '0'),
+      date: d
+    });
+  }
+
+  // Récupération des données par mois
+  var joursAll = getJoursPrestes();
+  var joursForDeal = joursAll[deal.id] || {};
+  var avantagesAll = (typeof getAvantagesSociaux === 'function') ? getAvantagesSociaux() : [];
+  var fraisProAll = (typeof getFraisPro === 'function') ? getFraisPro() : [];
+
+  // Montant repas (Swile) et GD par jour
+  var forfaitRepas = parseFloat(deal.montant_repas || 0) || 11;  // défaut 11 €
+  var forfaitGD = (deal.repas === 'GD' || deal.repas === 'Grand Déplacement') ? (parseFloat(deal.frais_jour) || 18) : 18;
+
+  // Construction de la feuille via aoa (array of arrays)
+  var aoa = [];
+  // Lignes 1-8 : vide (entête décoratif)
+  for (var row = 0; row < 8; row++) aoa.push([]);
+  // Ligne 9 : Titre
+  aoa.push(['', 'COMPTE D\'ACTIVITE : ' + nom.toUpperCase()]);
+  aoa.push([]);
+
+  // Ligne 11 : Mois Prestation
+  var headerMois = ['', 'Mois Prestation'];
+  months.forEach(function(m) { headerMois.push(m.date); });
+  aoa.push(headerMois);
+
+  // Ligne 12 : TJM HT
+  var rowTJM = ['', 'TJM HT '];
+  months.forEach(function(){ rowTJM.push(tjm); });
+  aoa.push(rowTJM);
+
+  // Ligne 13 : Nbre de jours prestés (manuel)
+  var rowJours = ['', 'Nbre de jours prestés'];
+  months.forEach(function(m) { rowJours.push(parseFloat(joursForDeal[m.key]) || 0); });
+  aoa.push(rowJours);
+
+  // Ligne 14 : Montant Facturé HT = TJM × jours
+  var rowFact = ['', 'Montant Facturé HT'];
+  months.forEach(function(m) {
+    var j = parseFloat(joursForDeal[m.key]) || 0;
+    rowFact.push({ f: 'C12*C13' });  // placeholder, on va recréer après
+  });
+  aoa.push(rowFact);
+
+  // Ligne 15 : vide
+  aoa.push([]);
+
+  // Ligne 16 : Titres restaurant = jours × forfait si repas = Swile
+  var isSwile = (deal.repas === 'Swile' || deal.repas === 'SWILE' || !deal.repas);
+  var rowTR = ['', 'Titres restaurant'];
+  months.forEach(function(m) {
+    var j = parseFloat(joursForDeal[m.key]) || 0;
+    rowTR.push(isSwile ? j * forfaitRepas : 0);
+  });
+  aoa.push(rowTR);
+
+  // Ligne 17 : Avantages sociaux
+  var rowAS = ['', 'Avantages sociaux'];
+  months.forEach(function(m) {
+    var total = avantagesAll
+      .filter(function(a){ return a.deal_id === deal.id && a.mois === m.key; })
+      .reduce(function(acc, a){ return acc + (parseFloat(a.montant) || 0); }, 0);
+    rowAS.push(total);
+  });
+  aoa.push(rowAS);
+
+  // Ligne 18 : Frais professionnels
+  var rowFP = ['', 'Frais professionnels'];
+  months.forEach(function(m) {
+    var total = fraisProAll
+      .filter(function(a){ return a.deal_id === deal.id && a.mois === m.key; })
+      .reduce(function(acc, a){
+        return acc + (parseFloat(a.montant_1)||0) + (parseFloat(a.montant_2)||0) + (parseFloat(a.montant_3)||0);
+      }, 0);
+    rowFP.push(total);
+  });
+  aoa.push(rowFP);
+
+  // Ligne 19 : Frais journaliers = jours × forfait GD
+  var rowFJ = ['', 'Frais journaliers'];
+  var isGD = (deal.repas === 'GD' || deal.repas === 'Grand Déplacement');
+  months.forEach(function(m) {
+    var j = parseFloat(joursForDeal[m.key]) || 0;
+    rowFJ.push(isGD ? j * forfaitGD : j * 18);  // 18€/j par défaut
+  });
+  aoa.push(rowFJ);
+
+  // Ligne 20 : Total Frais versés
+  var rowTF = ['', 'Total Frais versés'];
+  months.forEach(function(){ rowTF.push(0); });  // formule ajoutée après
+  aoa.push(rowTF);
+
+  // Ligne 21 : Marge Seven 4%
+  var rowMS = ['', 'Marge Seven 4%'];
+  months.forEach(function(){ rowMS.push(0); });
+  aoa.push(rowMS);
+
+  // Ligne 22 : Montant disponible
+  var rowMD = ['', 'Montant disponible'];
+  months.forEach(function(){ rowMD.push(0); });
+  aoa.push(rowMD);
+
+  // Ligne 23 : vide
+  aoa.push([]);
+
+  // Ligne 24 : Charges patronales (calculé à partir du brut × taux_pat/brut = taux)
+  var tauxPat = brut > 0 ? (totalPat / brut) : 0.47;
+  var rowCP = ['', 'Charges patronales\nAutres cotisations dues par le porté\n(CVAE, Médecine du travail, AGEFIPH..)'];
+  months.forEach(function(m) {
+    var j = parseFloat(joursForDeal[m.key]) || 0;
+    // Brut au prorata des jours / 21 (base mensuelle)
+    var brutMois = j > 0 ? (brut * j / 21) : 0;
+    rowCP.push(brutMois * tauxPat);
+  });
+  aoa.push(rowCP);
+
+  // Ligne 25 : Salaire Brut versé (proratisé)
+  var rowBrut = ['', 'Salaire Brut versé'];
+  months.forEach(function(m) {
+    var j = parseFloat(joursForDeal[m.key]) || 0;
+    rowBrut.push(j > 0 ? (brut * j / 21) : 0);
+  });
+  aoa.push(rowBrut);
+
+  // Ligne 26 : Charges salariales
+  var tauxSal = brut > 0 ? (totalSal / brut) : 0.22;
+  var rowCS = ['', 'Charges salariales'];
+  months.forEach(function(m) {
+    var j = parseFloat(joursForDeal[m.key]) || 0;
+    var brutMois = j > 0 ? (brut * j / 21) : 0;
+    rowCS.push(brutMois * tauxSal);
+  });
+  aoa.push(rowCS);
+
+  // Ligne 27 : Coût global
+  aoa.push(['', 'Coût global Salarié porté'].concat(months.map(function(){ return 0; })));
+  // Ligne 28 : Total versé avant impôt
+  aoa.push(['', 'Total Versé au porté (avant impôt)'].concat(months.map(function(){ return 0; })));
+  // Ligne 29 : Total versé sur paie
+  aoa.push(['', 'Total Versé au porté (sur paie)'].concat(months.map(function(){ return 0; })));
+  // Ligne 30 : Solde disponible
+  aoa.push(['', 'Solde disponible'].concat(months.map(function(){ return 0; })));
+  // Ligne 31 : Taux de Restitution
+  aoa.push(['', 'Taux de Restitution (% Total versé /CA)'].concat(months.map(function(){ return 0; })));
+
+  var ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // Appliquer les formules (colonnes C à Q = 15 colonnes de mois)
+  var colLetter = function(idx) {
+    // idx 0 = A ; on veut à partir de C (idx 2)
+    return String.fromCharCode(65 + idx);
+  };
+  // Les mois sont dans les colonnes C (idx 2) à Q (idx 16)
+  for (var m = 0; m < months.length; m++) {
+    var col = colLetter(2 + m);  // C, D, E, ...
+    // Ligne 14 Facturé = TJM * jours
+    ws[col + '14'] = { t: 'n', f: col + '12*' + col + '13' };
+    // Ligne 20 Total Frais = SUM(16:19)
+    ws[col + '20'] = { t: 'n', f: 'SUM(' + col + '16:' + col + '19)' };
+    // Ligne 21 Marge = Facturé * 4%
+    ws[col + '21'] = { t: 'n', f: col + '14*0.04' };
+    // Ligne 22 Dispo = Facturé - Marge
+    ws[col + '22'] = { t: 'n', f: col + '14-' + col + '21' };
+    // Ligne 27 Coût = Brut + Patr + Frais
+    ws[col + '27'] = { t: 'n', f: col + '25+' + col + '24+' + col + '20' };
+    // Ligne 28 Versé avant impôt = Brut - Salariales + Frais
+    ws[col + '28'] = { t: 'n', f: col + '25-' + col + '26+' + col + '20' };
+    // Ligne 29 Versé sur paie = Versé avant - (TR + Avantages)
+    ws[col + '29'] = { t: 'n', f: col + '28-(' + col + '16+' + col + '17)' };
+    // Ligne 30 Solde = Dispo - Coût
+    ws[col + '30'] = { t: 'n', f: col + '22-' + col + '27' };
+    // Ligne 31 Taux = Versé / Facturé (si Facturé != 0)
+    ws[col + '31'] = { t: 'n', f: 'IF(' + col + '14=0,0,' + col + '28/' + col + '14)', z: '0.00%' };
+  }
+
+  // Format dates ligne 11
+  for (var m2 = 0; m2 < months.length; m2++) {
+    var col2 = colLetter(2 + m2);
+    if (ws[col2 + '11']) ws[col2 + '11'].z = 'mmm yyyy';
+  }
+
+  // Format monétaire pour les montants
+  var moneyRows = [12, 14, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28, 29, 30];
+  moneyRows.forEach(function(r) {
+    for (var m3 = 0; m3 < months.length; m3++) {
+      var col3 = colLetter(2 + m3);
+      if (ws[col3 + r]) ws[col3 + r].z = '#,##0.00\\ "€"';
+    }
+  });
+
+  // Largeurs colonnes
+  ws['!cols'] = [{ wch: 2 }, { wch: 45 }].concat(months.map(function(){ return { wch: 14 }; }));
+
+  // Merge pour le titre
+  ws['!merges'] = [{ s: { r: 8, c: 1 }, e: { r: 8, c: months.length + 1 } }];
+
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Compte d\'activité professionnel');
+  return wb;
+}
+
+// Télécharge le fichier Excel généré
+function downloadCompteActivite(deal, startMonth) {
+  var wb = generateCompteActiviteExcel(deal, startMonth);
+  if (!wb) return;
+  var nom = ((deal.prenom||'') + '_' + (deal.nom||'')).trim().replace(/\s+/g,'_');
+  var filename = 'Compte_activite_' + nom + '_' + startMonth.year + '.xlsx';
+  XLSX.writeFile(wb, filename);
+}
+
+// Upload sur OneDrive dans le dossier du candidat
+function uploadCompteActiviteToSharePoint(deal, startMonth, onSuccess, onError) {
+  if (!odToken) {
+    alert('⚠️ OneDrive non connecté\n\nConnectez-vous à OneDrive pour pouvoir sauvegarder le fichier.');
+    return;
+  }
+  var wb = generateCompteActiviteExcel(deal, startMonth);
+  if (!wb) return;
+
+  var wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  var blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+  var nom = ((deal.prenom||'') + '_' + (deal.nom||'')).trim().replace(/\s+/g,'_');
+  var ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+  var filename = 'Compte_activite_' + startMonth.year + '_' + ts + '.xlsx';
+
+  // Dossier cible : /General/Seven Portage Simlateur/Comptes_activite/{nom}/
+  var folderPath = '/General/Seven Portage Simlateur/Comptes_activite/' + nom;
+  var fullPath = folderPath + '/' + filename;
+
+  var uploadUrl = 'https://graph.microsoft.com/v1.0' + (typeof OD_DRIVE_BASE !== 'undefined' ? OD_DRIVE_BASE : '/me/drive') + '/root:' + encodeURIComponent(fullPath) + ':/content';
+
+  fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    body: blob
+  }).then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function(result) {
+    if (typeof showNotifToast === 'function') showNotifToast('✅ Compte d\'activité sauvegardé sur SharePoint');
+    if (onSuccess) onSuccess(result);
+  }).catch(function(err) {
+    console.error('[Upload compte act]', err);
+    if (typeof showNotifToast === 'function') showNotifToast('⚠ Échec upload SharePoint', true);
+    if (onError) onError(err);
+  });
+}
+
+// Liste les comptes d'activité d'un candidat depuis SharePoint
+function listComptesActiviteForDeal(deal, callback) {
+  if (!odToken) { callback([]); return; }
+  var nom = ((deal.prenom||'') + '_' + (deal.nom||'')).trim().replace(/\s+/g,'_');
+  var folderPath = '/General/Seven Portage Simlateur/Comptes_activite/' + nom;
+  var listUrl = 'https://graph.microsoft.com/v1.0' + (typeof OD_DRIVE_BASE !== 'undefined' ? OD_DRIVE_BASE : '/me/drive') + '/root:' + encodeURIComponent(folderPath) + ':/children';
+  fetch(listUrl, {
+    headers: { 'Authorization': 'Bearer ' + odToken }
+  }).then(function(r) {
+    if (r.status === 404) return { value: [] };
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function(data) {
+    var files = (data.value || []).filter(function(f){ return f.name && f.name.toLowerCase().endsWith('.xlsx'); });
+    callback(files);
+  }).catch(function(err) {
+    console.error('[List comptes act]', err);
+    callback([]);
+  });
+}
+
+// ── Onglet "Compte d'activité" dans la fiche candidat ──
+function buildCandCompteActiviteHTML(cand) {
+  // Trouver le deal actif du candidat
+  var deals = getDeals();
+  var candDeals = deals.filter(function(d) {
+    var candName = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim().toLowerCase();
+    var dealName = ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase();
+    return candName === dealName && d.etat !== 'Annulé';
+  });
+
+  if (!candDeals.length) {
+    return '<div style="padding:30px;text-align:center;color:#9E94C4;font-size:13px;font-style:italic;">Aucun placement actif pour ce candidat.</div>';
+  }
+
+  // Si plusieurs deals, prendre le plus récent "En cours" ou "Signé"
+  var primaryDeal = candDeals.find(function(d){ return d.etat === 'En cours' || d.etat === 'Signé'; }) || candDeals[0];
+
+  var currYear = new Date().getFullYear();
+  var yearOpts = '';
+  for (var y = currYear - 2; y <= currYear + 1; y++) {
+    yearOpts += '<option value="' + y + '"' + (y === currYear ? ' selected' : '') + '>' + y + '</option>';
+  }
+
+  return ''
+    + '<div style="padding:20px;">'
+    +   '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap;">'
+    +     '<div>'
+    +       '<div style="font-size:14px;font-weight:700;color:#1A1033;">Compte d\'activité</div>'
+    +       '<div style="font-size:11.5px;color:#6B5E9C;margin-top:2px;">Génération Excel à partir des données TJM, jours prestés, avantages, frais pro et simulateur.</div>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div style="background:#F5F3FF;border-radius:10px;padding:16px;margin-bottom:16px;">'
+    +     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;">'
+    +       '<div>'
+    +         '<div style="font-size:10px;color:#9E94C4;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px;">Année de référence</div>'
+    +         '<select id="cand-compte-act-year" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;background:#fff;font-family:inherit;">' + yearOpts + '</select>'
+    +       '</div>'
+    +       '<div>'
+    +         '<div style="font-size:10px;color:#9E94C4;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px;">Deal associé</div>'
+    +         '<div style="font-size:12.5px;color:#1A1033;font-weight:600;padding:7px 10px;background:#fff;border-radius:8px;border:1.5px solid #E4E0FA;">' + (primaryDeal.entreprise || '—').replace(/</g,'&lt;') + ' · TJM ' + (primaryDeal.tjm || '—') + '€</div>'
+    +       '</div>'
+    +     '</div>'
+    +     '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">'
+    +       '<button onclick="generateAndSaveCompteAct(' + primaryDeal.id + ')" style="padding:9px 16px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;">📊 Générer + Sauvegarder</button>'
+    +       '<button onclick="downloadCompteActDirect(' + primaryDeal.id + ')" style="padding:9px 16px;background:#fff;color:#4B36EC;border:1.5px solid #D9CFFA;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;">⬇ Télécharger</button>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div style="font-size:12px;color:#1A1033;font-weight:700;margin:16px 0 8px;padding-bottom:6px;border-bottom:1.5px solid #E4E0FA;">📂 Fichiers stockés sur SharePoint</div>'
+    +   '<div id="cand-compte-act-list" style="color:#9E94C4;font-size:12px;font-style:italic;">Chargement…</div>'
+    + '</div>';
+}
+
+function generateAndSaveCompteAct(dealId) {
+  var deal = getDeals().find(function(d){ return d.id === dealId; });
+  if (!deal) return;
+  var yrEl = document.getElementById('cand-compte-act-year');
+  var year = yrEl ? parseInt(yrEl.value) : new Date().getFullYear();
+  var startMonth = { year: year, month: 1 };
+
+  uploadCompteActiviteToSharePoint(deal, startMonth, function() {
+    // Refresh liste
+    refreshCandCompteActList(deal);
+  });
+}
+
+function downloadCompteActDirect(dealId) {
+  var deal = getDeals().find(function(d){ return d.id === dealId; });
+  if (!deal) return;
+  var yrEl = document.getElementById('cand-compte-act-year');
+  var year = yrEl ? parseInt(yrEl.value) : new Date().getFullYear();
+  downloadCompteActivite(deal, { year: year, month: 1 });
+}
+
+function refreshCandCompteActList(deal) {
+  var container = document.getElementById('cand-compte-act-list');
+  if (!container) return;
+  container.innerHTML = '<div style="color:#9E94C4;font-size:12px;font-style:italic;">Chargement…</div>';
+  listComptesActiviteForDeal(deal, function(files) {
+    if (!files.length) {
+      container.innerHTML = '<div style="padding:20px;text-align:center;color:#9E94C4;font-size:12px;font-style:italic;">Aucun compte d\'activité sauvegardé pour ce candidat.</div>';
+      return;
+    }
+    // Tri du plus récent au plus ancien
+    files.sort(function(a, b){ return new Date(b.lastModifiedDateTime) - new Date(a.lastModifiedDateTime); });
+    container.innerHTML = files.map(function(f) {
+      var dt = f.lastModifiedDateTime ? new Date(f.lastModifiedDateTime).toLocaleString('fr-FR') : '—';
+      var size = f.size ? (f.size / 1024).toFixed(0) + ' Ko' : '';
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#FAF8FF;border-radius:8px;margin-bottom:6px;border:1px solid #E4E0FA;">'
+        +   '<div style="font-size:22px;">📊</div>'
+        +   '<div style="flex:1;min-width:0;">'
+        +     '<div style="font-size:12.5px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + f.name + '</div>'
+        +     '<div style="font-size:10.5px;color:#6B5E9C;">' + dt + (size ? ' · ' + size : '') + '</div>'
+        +   '</div>'
+        +   '<button onclick="previewCompteAct(\'' + (f.webUrl||'').replace(/"/g,'&quot;') + '\')" title="Visualiser" style="padding:6px 10px;background:#fff;color:#4B36EC;border:1.5px solid #D9CFFA;border-radius:6px;font-size:11px;cursor:pointer;">👁️ Voir</button>'
+        +   '<a href="' + (f['@microsoft.graph.downloadUrl'] || '') + '" download="' + f.name + '" style="padding:6px 10px;background:#7343EE;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;text-decoration:none;">⬇ Télécharger</a>'
+        + '</div>';
+    }).join('');
+  });
+}
+
+function previewCompteAct(webUrl) {
+  if (!webUrl) { alert('URL de visualisation indisponible.'); return; }
+  // Ouvrir SharePoint viewer dans un nouvel onglet
+  window.open(webUrl, '_blank', 'noopener,noreferrer');
+}
+
 
 function showSortantsView() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
@@ -13147,6 +14883,7 @@ function buildCandFicheHTML(cand) {
     + '<button data-tab="placements" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-placements" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128203; Placements (' + (function(){ var e=(cand.email||'').toLowerCase(); var fn=((cand.prenom||'')+' '+(cand.nom||'')).trim().toLowerCase(); return (typeof getDeals==='function' ? getDeals() : []).filter(function(d){ return (d.email||'').toLowerCase()===e || ((d.prenom||'')+' '+(d.nom||'')).trim().toLowerCase()===fn; }).length; })() + ')</button>'
     + '<button data-tab="avances" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-avances" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128182; Avances (' + (typeof getAvances==='function' ? getAvances().filter(function(a){ return a.candidat_id === cand.id; }).length : 0) + ')</button>'
     + '<button data-tab="documents" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-documents" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128196; Documents</button>'
+    + '<button data-tab="compte_act" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-compte_act" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128202; Compte d\'activité</button>'
     + '<button data-tab="rappels" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-rappels" class="ct-btn-rappels" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128276; Rappels</button>'
     + '</div>'
     + '<div id="ct-content-' + cand.id + '" style="padding:16px 20px;min-height:280px;max-height:42vh;overflow-y:auto;"></div>'
@@ -13432,7 +15169,7 @@ function switchCandTab(id, tab) {
   var cand = cands.find(function(c) { return c.id === id; });
   if (!cand) return;
   // Mettre à jour les boutons
-  ['simulations','placements','avances','documents','rappels'].forEach(function(t) {
+  ['simulations','placements','avances','documents','compte_act','rappels'].forEach(function(t) {
     var btn = document.getElementById('ct-btn-' + t);
     if (!btn) return;
     var active = t === tab;
@@ -13449,6 +15186,20 @@ function switchCandTab(id, tab) {
     if (typeof renderCandAvances === 'function') renderCandAvances(id);
   }
   else if (tab === 'documents') { cont.innerHTML = buildCandDocsHTML(cand); setupCandDocsDragDrop(cand); }
+  else if (tab === 'compte_act') {
+    cont.innerHTML = buildCandCompteActiviteHTML(cand);
+    // Charger la liste des fichiers existants
+    var deals = getDeals();
+    var candName = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim().toLowerCase();
+    var candDeals = deals.filter(function(d) {
+      var dealName = ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase();
+      return candName === dealName && d.etat !== 'Annulé';
+    });
+    if (candDeals.length) {
+      var primary = candDeals.find(function(d){ return d.etat === 'En cours' || d.etat === 'Signé'; }) || candDeals[0];
+      refreshCandCompteActList(primary);
+    }
+  }
   else if (tab === 'rappels') cont.innerHTML = buildCandRappelsHTML(cand);
   else if (tab === 'commentaires') cont.innerHTML = buildCandCommsHTML(cand);
 }
