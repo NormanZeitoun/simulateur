@@ -5908,7 +5908,9 @@ function doForcePurgeOthers() {
   odWithToken(function(token) {
     // On charge d'abord app_settings actuel pour préserver les autres champs
     var path = '/General/Seven Portage Simlateur/SP_App_Settings_Global.json';
-    var getUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(path) + ':/content';
+    // Encoding : segments seulement, slashes littéraux
+    var encodedPath = path.split('/').map(function(seg){ return seg ? encodeURIComponent(seg) : ''; }).join('/');
+    var getUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodedPath + ':/content';
     var putUrl = getUrl;
 
     fetch(getUrl, { headers: { 'Authorization': 'Bearer ' + token } })
@@ -5969,7 +5971,10 @@ function doResetTotalOneDrive() {
     function putOne(ent, attempt) {
       attempt = attempt || 1;
       var payload = _getEmptyPayloadForEntity(ent.key);
-      var url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(ent.path) + ':/content';
+      // ENCODING CORRECT : Microsoft Graph attend /root:/Folder/File.json:/content
+      // avec les "/" LITTÉRAUX (pas encodés en %2F). On encode seulement chaque segment.
+      var encodedPath = ent.path.split('/').map(function(seg){ return seg ? encodeURIComponent(seg) : ''; }).join('/');
+      var url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodedPath + ':/content';
       return fetch(url, {
         method: 'PUT',
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
@@ -5980,15 +5985,25 @@ function doResetTotalOneDrive() {
           odSetStatus('Reset ' + done + '/' + total + ' fichiers... (' + ent.key + ')', false);
           return;
         }
-        // Rate limiting / unavailable → retry avec backoff jusqu'à 3 fois
-        if ((r.status === 429 || r.status === 503 || r.status === 504) && attempt < 4) {
+        // Rate limiting / unavailable / bad request (transient) → retry avec backoff jusqu'à 3 fois
+        // Note: Microsoft Graph retourne parfois 400 pour des problèmes transitoires de création de fichier
+        if ((r.status === 429 || r.status === 503 || r.status === 504 || r.status === 400) && attempt < 4) {
           var wait = attempt * 1500;  // 1.5s, 3s, 4.5s
           console.warn('[Reset] ' + ent.key + ' HTTP ' + r.status + ' - retry dans ' + wait + 'ms (tentative ' + attempt + ')');
           return new Promise(function(resolve){ setTimeout(resolve, wait); }).then(function(){ return putOne(ent, attempt + 1); });
         }
-        // Autre erreur → échec définitif pour cette entité
-        console.error('[Reset] Échec ' + ent.key + ' HTTP ' + r.status);
-        errors.push(ent.key + ' (HTTP ' + r.status + ')');
+        // Échec définitif — log le détail de la réponse Graph pour diagnostic
+        return r.text().then(function(txt) {
+          console.error('[Reset] Échec ' + ent.key + ' HTTP ' + r.status + ' - body:', txt);
+          var detail = '';
+          try {
+            var j = JSON.parse(txt);
+            if (j.error && j.error.message) detail = ' — ' + j.error.message.substring(0, 80);
+          } catch(e){}
+          errors.push(ent.key + ' (HTTP ' + r.status + detail + ')');
+        }).catch(function(){
+          errors.push(ent.key + ' (HTTP ' + r.status + ')');
+        });
       }).catch(function(err) {
         if (attempt < 4) {
           var wait = attempt * 1500;
