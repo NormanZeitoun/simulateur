@@ -5623,22 +5623,22 @@ function odPush() {
 // Utilisée par odSilentFullSync (auto) et runFullSync (manuel)
 // ═══════════════════════════════════════════════════════════
 var SYNC_ENTITIES = [
-  { path: OD_FILE_PATH,         key: 'simulations', label: 'Historique',   merge: null, getData: null },
-  { path: OD_CAND_PATH,         key: 'candidats',   label: 'Candidats',    merge: null, getData: null },
-  { path: OD_DEALS_PATH,        key: 'deals',       label: 'Deals',        merge: null, getData: null },
-  { path: OD_CLIENTS_PATH,      key: 'clients',     label: 'Clients',      merge: null, getData: null },
-  { path: OD_COMM_HISTORY_PATH, key: 'commissions', label: 'Commissions',  merge: null, getData: null },
-  { path: OD_SORTANTS_PATH,     key: 'sortants',    label: 'Sortants',     merge: null, getData: null },
-  { path: OD_COOPTATIONS_PATH,  key: 'cooptations', label: 'Cooptations',  merge: null, getData: null },
-  { path: OD_AVANCES_PATH,      key: 'avances',     label: 'Avances',      merge: null, getData: null },
-  { path: OD_TACHES_PATH,       key: 'taches',      label: 'Tâches',       merge: null, getData: null },
-  { path: OD_DEMANDES_PATH,     key: 'demandes',    label: 'Demandes',     merge: null, getData: null },
-  { path: OD_AVANTAGES_PATH,    key: 'avantages_sociaux', label: 'Avantages Sociaux', merge: null, getData: null },
-  { path: OD_FRAIS_PRO_PATH,    key: 'frais_pro',         label: 'Frais Pro',         merge: null, getData: null },
-  { path: OD_DEMARRAGES_PATH,   key: 'demarrages',        label: 'Entrées du mois',   merge: null, getData: null },
-  { path: OD_JOURS_PATH,        key: 'jours_prestes',     label: 'Jours prestés',     merge: null, getData: null },
-  { path: OD_APP_SETTINGS_PATH, key: 'app_settings',      label: 'Paramètres app',    merge: null, getData: null },
-  { path: '/General/Seven Portage Simlateur/SP_Impayes_Global.json', key: 'impayes', label: 'Impayés', merge: null, getData: null }
+  { path: '/General/Seven Portage Simlateur/SP_Historique_Global.json',        key: 'simulations', label: 'Historique',   merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Candidats_Global.json',         key: 'candidats',   label: 'Candidats',    merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Deals_Global.json',             key: 'deals',       label: 'Deals',        merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Clients_Global.json',           key: 'clients',     label: 'Clients',      merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Commissions_Historique.json',   key: 'commissions', label: 'Commissions',  merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Sortants_Global.json',          key: 'sortants',    label: 'Sortants',     merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Cooptations_Global.json',       key: 'cooptations', label: 'Cooptations',  merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Avances_Global.json',           key: 'avances',     label: 'Avances',      merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Taches_Global.json',            key: 'taches',      label: 'Tâches',       merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Demandes_Global.json',          key: 'demandes',    label: 'Demandes',     merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Avantages_Sociaux_Global.json', key: 'avantages_sociaux', label: 'Avantages Sociaux', merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Frais_Pro_Global.json',         key: 'frais_pro',         label: 'Frais Pro',         merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Demarrages_Global.json',        key: 'demarrages',        label: 'Entrées du mois',   merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Jours_Prestes_Global.json',     key: 'jours_prestes',     label: 'Jours prestés',     merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_App_Settings_Global.json',      key: 'app_settings',      label: 'Paramètres app',    merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Impayes_Global.json',           key: 'impayes',           label: 'Impayés',           merge: null, getData: null }
 ];
 // Les merge/getData sont attachés au moment du 1er usage (après chargement complet du script,
 // car mergeHistorique etc. peuvent être définis plus loin dans le fichier)
