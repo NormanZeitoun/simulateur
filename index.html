@@ -3318,6 +3318,11 @@ function getCommercialData() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  // BLOCAGE INITIAL : empêcher tout auto-sync (push) avant le premier silentFullSync.
+  // Sinon, après un reload (notamment après reset), l'app peut pousser un état local vide
+  // et écraser des données valides sur OneDrive (ex: le marqueur _last_reset_ts).
+  window._initialSyncDone = false;
+
   // Purger les tombstones anciens (>60j) pour ne pas grossir localStorage indéfiniment
   try { if (typeof purgeOldTombstones === 'function') purgeOldTombstones(); } catch(e) {}
 
@@ -5587,34 +5592,53 @@ function odLoad() {
 function odPush() {
   odWithToken(function(token) {
     odSetStatus('Synchronisation...', false);
-    var hist = getHistory();
     var path = _odEncPath(OD_FILE_PATH);
-    fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + path + ':/content', {
-      headers: { 'Authorization': 'Bearer ' + token }
-    }).then(function(r) {
-      return r.status === 404 ? null : r.json();
-    }).then(function(remote) {
-      var remoteSims = remote ? (remote.simulations || (Array.isArray(remote) ? remote : [])) : [];
-      var tsMap = {};
-      hist.forEach(function(s) { tsMap[s.timestamp] = s; });
-      remoteSims.forEach(function(s) { if (!tsMap[s.timestamp]) tsMap[s.timestamp] = s; });
-      var merged = Object.values(tsMap);
-      merged.sort(function(a,b) { return (b.timestamp||0)-(a.timestamp||0); });
-      var content = JSON.stringify({ version: 1, updated: new Date().toISOString(), simulations: merged });
-      return fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + path + ':/content', {
-        method: 'PUT',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: content
+    var url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + path + ':/content';
+
+    // Boucle avec retry sur 412 (etag mismatch dû à conflit de sync simultanée).
+    // À chaque retry, on re-télécharge le remote pour rebaser nos changements dessus,
+    // puis on re-pushe. C'est le fix classique pour collaboration sans verrou serveur.
+    function syncOnce(attempt) {
+      attempt = attempt || 1;
+      var hist = getHistory();
+      return fetch(url, {
+        headers: { 'Authorization': 'Bearer ' + token }
       }).then(function(r) {
-        if (r.ok) {
-          saveHistoryArr(merged);
-          odBuildCommercialSelect(merged);
-          odSetStatus('✓ Sync OK — ' + merged.length + ' simulation(s)', false);
-        } else {
+        return r.status === 404 ? null : r.json();
+      }).then(function(remote) {
+        var remoteSims = remote ? (remote.simulations || (Array.isArray(remote) ? remote : [])) : [];
+        var tsMap = {};
+        hist.forEach(function(s) { tsMap[s.timestamp] = s; });
+        remoteSims.forEach(function(s) {
+          if (typeof isTombstoned === 'function' && isTombstoned('simulations', s.timestamp)) return;
+          if (!tsMap[s.timestamp]) tsMap[s.timestamp] = s;
+        });
+        var merged = Object.values(tsMap);
+        merged.sort(function(a,b) { return (b.timestamp||0)-(a.timestamp||0); });
+        var content = JSON.stringify({ version: 1, updated: new Date().toISOString(), simulations: merged });
+        return fetch(url, {
+          method: 'PUT',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: content
+        }).then(function(r) {
+          if (r.ok) {
+            saveHistoryArr(merged);
+            odBuildCommercialSelect(merged);
+            odSetStatus('✓ Sync OK — ' + merged.length + ' simulation(s)', false);
+            return;
+          }
+          // 412 = etag mismatch → quelqu'un a écrit pendant qu'on lisait → on rebase et réessaye
+          // 409 = conflit, 429 = rate limit, 503/504 = serveur indispo
+          if ((r.status === 412 || r.status === 409 || r.status === 429 || r.status === 503 || r.status === 504) && attempt < 4) {
+            var wait = attempt * 800;  // 800ms, 1.6s, 2.4s
+            odSetStatus('Conflit de sync, rebase... (' + attempt + '/3)', false);
+            return new Promise(function(resolve){ setTimeout(resolve, wait); }).then(function(){ return syncOnce(attempt + 1); });
+          }
           r.json().then(function(e) { odSetStatus('Erreur upload : ' + (e.error && e.error.message || r.status), true); });
-        }
+        });
       });
-    }).catch(function(e) { odSetStatus('Erreur : ' + e.message, true); });
+    }
+    syncOnce().catch(function(e) { odSetStatus('Erreur : ' + e.message, true); });
   });
 }
 
@@ -6222,6 +6246,12 @@ function odAutoSync() {
     console.warn('[odAutoSync] bloqué : reset en cours');
     return;
   }
+  // SÉCURITÉ : ne rien pousser tant que le premier load OneDrive n'a pas eu lieu
+  // (sinon on risque d'écraser des données valides avec un état local vide après reload)
+  if (window._initialSyncDone === false) {
+    console.warn('[odAutoSync] reporté : sync initiale pas encore faite');
+    return;
+  }
   // Debounce : si plusieurs appels s'enchaînent (ex: simu + placement dans la foulée),
   // on annule le précédent timeout et on relance — un seul aller-retour réseau au lieu de N.
   if (window._odAutoSyncTimer) { clearTimeout(window._odAutoSyncTimer); }
@@ -6275,6 +6305,10 @@ function odSilentFullSync() {
     });
 
     Promise.all(loadPromises).then(function() {
+
+      // Le premier load OneDrive est terminé : on peut maintenant autoriser les pushs auto
+      // (sinon on risquait d'écraser des données valides avec un état local vide)
+      window._initialSyncDone = true;
 
       // ═══ PHASE 2 : PUSH parallèle (toutes les entités après merge) ═══
       var t1 = Date.now();
