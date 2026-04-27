@@ -12324,11 +12324,12 @@ function computeMatchScore(searchName, dealName) {
 // ═══════════════════════════════════════════════════════════════════
 var IMPAYES_KEY = 'sp_impayes_v1';
 var IMPAYES_FILTER = {
-  search_fact: '',   // moteur de recherche N° facture
-  search_name: '',   // moteur de recherche client / candidat
-  client: 'all',     // dropdown client
-  banque: 'all',     // dropdown banque (= Env.)
-  bucket: 'all'      // pills retard (< 30 / 30-60 / > 60)
+  search_fact: '',     // moteur de recherche N° facture
+  search_name: '',     // moteur de recherche client / consultant
+  client: 'all',       // dropdown client
+  banque: 'all',       // dropdown banque (compte bancaire)
+  commercial: 'all',   // dropdown chargé de clientèle
+  bucket: 'all'        // pills retard (< 30 / 30-60 / > 60)
 };
 
 function getImpayes() {
@@ -12459,11 +12460,9 @@ function renderImpayes() {
 function buildImpayesContent() {
   var impayes = getImpayes();
   // Stats
-  var totalTTC = 0, totalSolde = 0;
+  var totalTTC = 0;
   var count30 = 0, count60 = 0, count90 = 0, countNeutral = 0;
   impayes.forEach(function(r){
-    var solde = _parseImpayeNumber(r.solde_du) || _parseImpayeNumber(r.mt_ttc) || 0;
-    totalSolde += solde;
     totalTTC += _parseImpayeNumber(r.mt_ttc) || 0;
     var cls = _impayeColorClass(r.date_echeance);
     if (cls === 'green') count30++;
@@ -12482,7 +12481,10 @@ function buildImpayesContent() {
       if ((r.client || '') !== IMPAYES_FILTER.client) return false;
     }
     if (IMPAYES_FILTER.banque !== 'all') {
-      if ((r.env || '') !== IMPAYES_FILTER.banque) return false;
+      if ((r.banque || '') !== IMPAYES_FILTER.banque) return false;
+    }
+    if (IMPAYES_FILTER.commercial !== 'all') {
+      if ((r.commercial || '') !== IMPAYES_FILTER.commercial) return false;
     }
     if (IMPAYES_FILTER.search_fact) {
       var q = IMPAYES_FILTER.search_fact.toLowerCase();
@@ -12574,7 +12576,7 @@ function buildImpayesContent() {
 
   // Stats
   html += '<div class="imp-stats">'
-    + '<div class="imp-stat"><div class="imp-stat-lbl">Solde dû total</div><div class="imp-stat-val">' + _fmtImpayeEur(totalSolde) + '</div></div>'
+    + '<div class="imp-stat"><div class="imp-stat-lbl">Total TTC dû</div><div class="imp-stat-val">' + _fmtImpayeEur(totalTTC) + '</div></div>'
     + '<div class="imp-stat green"><div class="imp-stat-lbl">🟢 &lt; 30 jours</div><div class="imp-stat-val">' + count30 + '</div></div>'
     + '<div class="imp-stat orange"><div class="imp-stat-lbl">🟠 30 à 60 jours</div><div class="imp-stat-val">' + count60 + '</div></div>'
     + '<div class="imp-stat red"><div class="imp-stat-lbl">🔴 &gt; 60 jours</div><div class="imp-stat-val">' + count90 + '</div></div>'
@@ -12591,19 +12593,22 @@ function buildImpayesContent() {
     return html;
   }
 
-  // Filter bar — deux rangées : dropdowns (Client / Banque / Retard) + recherches (N° Fact / Client&Candidat)
+  // Filter bar — deux rangées : dropdowns (Client / Banque / Commercial / Retard) + recherches (N° Fact / Client&Consultant)
   // Construire listes uniques
   var clientsSet = {};
   var banquesSet = {};
+  var commerciauxSet = {};
   impayes.forEach(function(r){
     if (r.client) clientsSet[r.client] = (clientsSet[r.client] || 0) + 1;
-    if (r.env) banquesSet[r.env] = (banquesSet[r.env] || 0) + 1;
+    if (r.banque) banquesSet[r.banque] = (banquesSet[r.banque] || 0) + 1;
+    if (r.commercial) commerciauxSet[r.commercial] = (commerciauxSet[r.commercial] || 0) + 1;
   });
   var clientsList = Object.keys(clientsSet).sort(function(a,b){ return a.localeCompare(b,'fr'); });
   var banquesList = Object.keys(banquesSet).sort(function(a,b){ return a.localeCompare(b,'fr'); });
+  var commerciauxList = Object.keys(commerciauxSet).sort(function(a,b){ return a.localeCompare(b,'fr'); });
 
   var hasActiveFilter = IMPAYES_FILTER.bucket !== 'all' || IMPAYES_FILTER.client !== 'all' || IMPAYES_FILTER.banque !== 'all'
-    || IMPAYES_FILTER.search_fact || IMPAYES_FILTER.search_name;
+    || IMPAYES_FILTER.commercial !== 'all' || IMPAYES_FILTER.search_fact || IMPAYES_FILTER.search_name;
 
   html += '<div style="background:#fff;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;">';
 
@@ -12620,14 +12625,25 @@ function buildImpayesContent() {
   });
   html += '</select></div>';
 
-  // Banque (Env.)
-  html += '<div style="min-width:140px;">'
-    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Banque (Env.)</label>'
+  // Banque
+  html += '<div style="min-width:160px;flex:1;max-width:240px;">'
+    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Banque</label>'
     + '<select onchange="IMPAYES_FILTER.banque=this.value;renderImpayes();" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;background:#fff;cursor:pointer;">'
     +   '<option value="all"' + (IMPAYES_FILTER.banque==='all'?' selected':'') + '>Toutes (' + banquesList.length + ')</option>';
   banquesList.forEach(function(b){
     var sel = IMPAYES_FILTER.banque === b ? ' selected' : '';
     html += '<option value="' + b.replace(/"/g,'&quot;') + '"' + sel + '>' + b + ' (' + banquesSet[b] + ')</option>';
+  });
+  html += '</select></div>';
+
+  // Commercial
+  html += '<div style="min-width:160px;flex:1;max-width:240px;">'
+    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Commercial</label>'
+    + '<select onchange="IMPAYES_FILTER.commercial=this.value;renderImpayes();" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;background:#fff;cursor:pointer;">'
+    +   '<option value="all"' + (IMPAYES_FILTER.commercial==='all'?' selected':'') + '>Tous (' + commerciauxList.length + ')</option>';
+  commerciauxList.forEach(function(co){
+    var sel = IMPAYES_FILTER.commercial === co ? ' selected' : '';
+    html += '<option value="' + co.replace(/"/g,'&quot;') + '"' + sel + '>' + co + ' (' + commerciauxSet[co] + ')</option>';
   });
   html += '</select></div>';
 
@@ -12681,19 +12697,15 @@ function buildImpayesContent() {
   html += '<div class="imp-table-wrap"><div class="imp-table-scroll"><table class="imp-table">'
     + '<thead><tr>'
     + '<th>Retard</th>'
-    + '<th>N° Fact.</th>'
-    + '<th>Env.</th>'
-    + '<th>Date</th>'
-    + '<th>Échéance</th>'
-    + '<th>Consultant</th>'
-    + '<th>ID M</th>'
-    + '<th>Mission</th>'
+    + '<th>N° Facture</th>'
     + '<th>Client</th>'
-    + '<th style="text-align:right;">MT HT</th>'
-    + '<th style="text-align:right;">MT TTC</th>'
-    + '<th style="text-align:right;">Réglé</th>'
-    + '<th>Le</th>'
-    + '<th style="text-align:right;">Solde dû</th>'
+    + '<th>Échéance</th>'
+    + '<th style="text-align:right;">HT</th>'
+    + '<th style="text-align:right;">TTC</th>'
+    + '<th>Banque</th>'
+    + '<th>Consultant</th>'
+    + '<th>Commercial</th>'
+    + '<th>Contact compta</th>'
     + '<th>Commentaire</th>'
     + '</tr></thead><tbody>';
 
@@ -12707,22 +12719,23 @@ function buildImpayesContent() {
     var tooltipFull = commentEsc
       + (commentBy || commentTs ? '&#10;&#10;— ' + commentBy + (commentTs ? ' · ' + commentTs : '') : '');
     var numFact = (r.num_fact || '').replace(/'/g,'\\\'');
+    var comptaTxt = (r.compta_contact || '');
+    var comptaEmail = (r.compta_email || '');
+    var comptaCell = comptaTxt
+      ? comptaTxt + (comptaEmail ? '<br><span style="font-size:10px;color:#9E94C4;">' + comptaEmail + '</span>' : '')
+      : (comptaEmail ? '<span style="font-size:10.5px;color:#9E94C4;">' + comptaEmail + '</span>' : '—');
 
     html += '<tr class="' + cls + '">'
       + '<td><span class="imp-dot ' + cls + '"></span><span class="imp-age ' + cls + '">' + ageLbl + '</span></td>'
       + '<td style="font-weight:700;">' + (r.num_fact || '') + '</td>'
-      + '<td>' + (r.env || '') + '</td>'
-      + '<td>' + _fmtImpayeDate(r.date) + '</td>'
+      + '<td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="' + (r.client||'').replace(/"/g,'&quot;') + '">' + (r.client || '') + '</td>'
       + '<td style="font-weight:700;">' + _fmtImpayeDate(r.date_echeance) + '</td>'
-      + '<td>' + (r.consultant || '') + '</td>'
-      + '<td>' + (r.id_m || '') + '</td>'
-      + '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;" title="' + (r.mission || '').replace(/"/g,'&quot;') + '">' + (r.mission || '') + '</td>'
-      + '<td style="font-weight:600;">' + (r.client || '') + '</td>'
       + '<td class="imp-amount">' + _fmtImpayeEur(r.mt_ht) + '</td>'
-      + '<td class="imp-amount">' + _fmtImpayeEur(r.mt_ttc) + '</td>'
-      + '<td class="imp-amount">' + _fmtImpayeEur(r.regle) + '</td>'
-      + '<td>' + _fmtImpayeDate(r.le) + '</td>'
-      + '<td class="imp-amount" style="color:' + (cls==='red'?'#8A0A0A':(cls==='orange'?'#8A5F00':(cls==='green'?'#0F5132':'#1A1033'))) + ';">' + _fmtImpayeEur(r.solde_du) + '</td>'
+      + '<td class="imp-amount" style="color:' + (cls==='red'?'#8A0A0A':(cls==='orange'?'#8A5F00':(cls==='green'?'#0F5132':'#1A1033'))) + ';font-weight:700;">' + _fmtImpayeEur(r.mt_ttc) + '</td>'
+      + '<td style="font-size:11px;">' + (r.banque || '—') + '</td>'
+      + '<td>' + (r.consultant || '') + '</td>'
+      + '<td>' + (r.commercial || '') + '</td>'
+      + '<td style="font-size:11px;">' + comptaCell + '</td>'
       + '<td class="ccol">'
       +   '<div class="imp-comment-cell" onclick="openImpayeCommentPopup(\'' + numFact + '\')" title="' + tooltipFull + '">'
       +     (commentEsc
@@ -12735,7 +12748,7 @@ function buildImpayesContent() {
   });
 
   if (filtered.length === 0) {
-    html += '<tr><td colspan="15" style="text-align:center;padding:40px;color:#9E94C4;">Aucun résultat pour ce filtre.</td></tr>';
+    html += '<tr><td colspan="11" style="text-align:center;padding:40px;color:#9E94C4;">Aucun résultat pour ce filtre.</td></tr>';
   }
 
   html += '</tbody></table></div></div>';
@@ -12764,82 +12777,87 @@ function parseAndImportImpayesFile(file) {
         alert('⚠ Le fichier semble vide ou mal formé.');
         return;
       }
-      // Détection de la ligne d'en-têtes : celle qui contient "N° Fact" ou "Consultant"
+
+      // Détection de la ligne d'en-têtes : on cherche "N°Facture" ou "N° Facture"
       var headerRowIdx = -1;
       for (var i = 0; i < Math.min(10, rows.length); i++) {
         var joined = rows[i].map(function(c){ return String(c||'').toLowerCase(); }).join('|');
-        if ((joined.indexOf('n° fact') >= 0 || joined.indexOf('n°fact') >= 0 || joined.indexOf('num fact') >= 0 || joined.indexOf('numero fact') >= 0) ||
-            (joined.indexOf('consultant') >= 0 && joined.indexOf('client') >= 0)) {
+        if (joined.indexOf('n°facture') >= 0 || joined.indexOf('n° facture') >= 0
+            || joined.indexOf('nom | client') >= 0 || joined.indexOf('nom | porté') >= 0) {
           headerRowIdx = i;
           break;
         }
       }
       if (headerRowIdx < 0) {
-        alert('⚠ Impossible de trouver la ligne d\'en-têtes (colonnes N° Fact., Consultant, Client…).\n\nVérifiez que votre fichier contient bien ces colonnes.');
+        alert('⚠ Impossible de trouver la ligne d\'en-têtes attendue.\n\nLe fichier doit contenir les colonnes du format LAYA :\nN°Facture, Nom | Client, Date d\'échéance, HT | Facture, TTC | Facture, Compte Bancaire | Mission, Nom | Porté, Prénom | Porté, etc.');
         return;
       }
       var headers = rows[headerRowIdx].map(function(h){ return String(h||'').trim().toLowerCase(); });
-      // Mapping colonne → index
-      function findCol(patterns) {
+
+      function findCol(needle) {
+        var n = needle.toLowerCase();
         for (var j = 0; j < headers.length; j++) {
-          for (var k = 0; k < patterns.length; k++) {
-            if (headers[j].indexOf(patterns[k]) >= 0) return j;
-          }
+          if (headers[j] === n) return j;
+        }
+        // Fallback : contient
+        for (var j = 0; j < headers.length; j++) {
+          if (headers[j].indexOf(n) >= 0) return j;
         }
         return -1;
       }
-      var colMap = {
-        num_fact:      findCol(['n° fact', 'n°fact', 'num fact', 'numero fact', 'n fact']),
-        env:           findCol(['env']),
-        date:          findCol(['date facture', 'date fact']),
-        date_echeance: findCol(['échéance', 'echeance', 'date écheance', 'date echeance']),
-        consultant:    findCol(['consultant']),
-        id_m:          findCol(['id m', 'id_m', 'id-m']),
-        mission:       findCol(['mission']),
-        client:        findCol(['client']),
-        mt_ht:         findCol(['mt ht', 'ht', 'montant ht']),
-        mt_ttc:        findCol(['mt ttc', 'ttc', 'montant ttc']),
-        regle:         findCol(['réglé', 'regle', 'payé', 'paye']),
-        le:            findCol(['le', 'date règlement', 'date reglement']),
-        solde_du:      findCol(['solde dû', 'solde du', 'solde']),
-        commentaire:   findCol(['commentaire', 'observation', 'note'])
-      };
-      // date simple (pas date facture) : fallback si pas trouvé avec "date facture"
-      if (colMap.date < 0) colMap.date = findCol(['date']);
 
-      // La colonne N° Fact. est obligatoire
-      if (colMap.num_fact < 0) {
-        alert('⚠ La colonne "N° Fact." est introuvable dans le fichier.\n\nHeaders détectés :\n' + headers.slice(0,12).join(' | '));
+      // Mapping CONSERVÉ uniquement (selon la 2e feuille du fichier de spec)
+      var col = {
+        num_fact:         findCol('n°facture'),
+        client:           findCol('nom | client'),
+        date_echeance:    findCol('date d\'échéance'),
+        mt_ht:            findCol('ht | facture'),
+        mt_ttc:           findCol('ttc | facture'),
+        banque:           findCol('compte bancaire | mission'),
+        compta_nom:       findCol('nom | contact comptable du client'),
+        compta_prenom:    findCol('prénom | contact comptable du client'),
+        compta_email:     findCol('email | contact comptable du client'),
+        consultant_nom:   findCol('nom | porté'),
+        consultant_prenom: findCol('prénom | porté'),
+        commercial:       findCol('chargé de clientèle | porté')
+      };
+
+      if (col.num_fact < 0) {
+        alert('⚠ La colonne "N°Facture" est introuvable.\n\nHeaders détectés :\n' + headers.slice(0, 15).join(' | '));
         return;
       }
 
-      // Parser les données
+      // Parser les lignes
       var parsed = [];
       for (var r = headerRowIdx + 1; r < rows.length; r++) {
         var row = rows[r];
         if (!row || row.every(function(c){ return c === '' || c === null || c === undefined; })) continue;
-        var nf = String(row[colMap.num_fact] || '').trim();
+        var nf = String(row[col.num_fact] || '').trim();
         if (!nf) continue;
+
+        var consultantNom = col.consultant_nom >= 0 ? String(row[col.consultant_nom] || '').trim() : '';
+        var consultantPrenom = col.consultant_prenom >= 0 ? String(row[col.consultant_prenom] || '').trim() : '';
+        var consultant = (consultantPrenom + ' ' + consultantNom).trim();
+
+        var comptaNom = col.compta_nom >= 0 ? String(row[col.compta_nom] || '').trim() : '';
+        var comptaPrenom = col.compta_prenom >= 0 ? String(row[col.compta_prenom] || '').trim() : '';
+        var compta = (comptaPrenom + ' ' + comptaNom).trim();
+
         var item = {
           num_fact: nf,
-          env: colMap.env >= 0 ? String(row[colMap.env] || '').trim() : '',
-          date: colMap.date >= 0 ? row[colMap.date] : '',
-          date_echeance: colMap.date_echeance >= 0 ? row[colMap.date_echeance] : '',
-          consultant: colMap.consultant >= 0 ? String(row[colMap.consultant] || '').trim() : '',
-          id_m: colMap.id_m >= 0 ? String(row[colMap.id_m] || '').trim() : '',
-          mission: colMap.mission >= 0 ? String(row[colMap.mission] || '').trim() : '',
-          client: colMap.client >= 0 ? String(row[colMap.client] || '').trim() : '',
-          mt_ht: colMap.mt_ht >= 0 ? _parseImpayeNumber(row[colMap.mt_ht]) : null,
-          mt_ttc: colMap.mt_ttc >= 0 ? _parseImpayeNumber(row[colMap.mt_ttc]) : null,
-          regle: colMap.regle >= 0 ? _parseImpayeNumber(row[colMap.regle]) : null,
-          le: colMap.le >= 0 ? row[colMap.le] : '',
-          solde_du: colMap.solde_du >= 0 ? _parseImpayeNumber(row[colMap.solde_du]) : null,
-          commentaire: colMap.commentaire >= 0 ? String(row[colMap.commentaire] || '').trim() : ''
+          client: col.client >= 0 ? String(row[col.client] || '').trim() : '',
+          date_echeance: col.date_echeance >= 0 ? row[col.date_echeance] : '',
+          mt_ht: col.mt_ht >= 0 ? _parseImpayeNumber(row[col.mt_ht]) : null,
+          mt_ttc: col.mt_ttc >= 0 ? _parseImpayeNumber(row[col.mt_ttc]) : null,
+          banque: col.banque >= 0 ? String(row[col.banque] || '').trim() : '',
+          consultant: consultant,
+          compta_contact: compta,
+          compta_email: col.compta_email >= 0 ? String(row[col.compta_email] || '').trim() : '',
+          commercial: col.commercial >= 0 ? String(row[col.commercial] || '').trim() : ''
         };
-        // Normaliser les dates pour stockage (ISO)
-        var d1 = _parseImpayeDate(item.date);      item.date = d1 ? d1.toISOString() : '';
-        var d2 = _parseImpayeDate(item.date_echeance); item.date_echeance = d2 ? d2.toISOString() : '';
-        var d3 = _parseImpayeDate(item.le);        item.le = d3 ? d3.toISOString() : '';
+        // Normaliser la date d'échéance (ISO)
+        var d = _parseImpayeDate(item.date_echeance);
+        item.date_echeance = d ? d.toISOString() : '';
         parsed.push(item);
       }
 
@@ -12848,8 +12866,8 @@ function parseAndImportImpayesFile(file) {
         return;
       }
 
-      // Merger avec l'existant : préserver les commentaires, remplacer tout le reste,
-      // supprimer les N° Fact. qui ne sont plus dans le nouveau fichier (= factures réglées)
+      // Merge avec l'existant : préserver les commentaires, mettre à jour les autres champs,
+      // supprimer les N° Fact. absents (= factures réglées)
       var existing = getImpayes();
       var existingByNf = {};
       existing.forEach(function(e){ if (e.num_fact) existingByNf[e.num_fact] = e; });
@@ -12859,28 +12877,14 @@ function parseAndImportImpayesFile(file) {
       parsed.forEach(function(item){
         var old = existingByNf[item.num_fact];
         if (old) {
-          // Mise à jour : on prend les nouvelles données, mais on préserve le commentaire local
-          // s'il n'y en a pas dans l'import (ou si celui du fichier est vide)
-          var localComment = (old.commentaire || '').trim();
-          var importComment = (item.commentaire || '').trim();
-          if (localComment && !importComment) {
-            // Garder le commentaire local + ses métadonnées
-            item.commentaire = old.commentaire;
-            item.commentaire_by = old.commentaire_by || '';
-            item.commentaire_ts = old.commentaire_ts || 0;
-            nbCommentsPreserved++;
-          } else if (importComment && importComment !== localComment) {
-            // Le fichier a un commentaire différent → on met à jour avec le commentaire du fichier
-            item.commentaire_by = 'Import fichier';
-            item.commentaire_ts = Date.now();
-          } else {
-            item.commentaire = old.commentaire || '';
-            item.commentaire_by = old.commentaire_by || '';
-            item.commentaire_ts = old.commentaire_ts || 0;
-            if (localComment) nbCommentsPreserved++;
-          }
+          // Préserver le commentaire local + ses métadonnées
+          item.commentaire = old.commentaire || '';
+          item.commentaire_by = old.commentaire_by || '';
+          item.commentaire_ts = old.commentaire_ts || 0;
+          if (item.commentaire) nbCommentsPreserved++;
           nbUpdated++;
         } else {
+          item.commentaire = '';
           item.commentaire_by = '';
           item.commentaire_ts = 0;
           nbCreated++;
@@ -12888,13 +12892,13 @@ function parseAndImportImpayesFile(file) {
         newByNf[item.num_fact] = item;
       });
 
-      // Détecter les lignes supprimées (N° Fact. présents avant, absents du nouveau fichier)
+      // Détecter les lignes supprimées (factures réglées)
       var removed = [];
       Object.keys(existingByNf).forEach(function(nf){
         if (!newByNf[nf]) removed.push(existingByNf[nf]);
       });
 
-      // Demande de confirmation avec preview
+      // Confirmation
       var msg = '📊 Aperçu de l\'import :\n\n';
       msg += '✓ ' + nbCreated + ' nouvelle' + (nbCreated>1?'s':'') + ' facture' + (nbCreated>1?'s':'') + '\n';
       msg += '🔄 ' + nbUpdated + ' mise' + (nbUpdated>1?'s':'') + ' à jour (commentaires préservés : ' + nbCommentsPreserved + ')\n';
@@ -12902,10 +12906,10 @@ function parseAndImportImpayesFile(file) {
       if (removed.length > 0 && removed.length <= 10) {
         msg += '\nFactures à supprimer :\n';
         removed.forEach(function(rm){
-          msg += '  • ' + rm.num_fact + ' — ' + (rm.client || '') + ' — ' + _fmtImpayeEur(rm.solde_du) + '\n';
+          msg += '  • ' + rm.num_fact + ' — ' + (rm.client || '') + '\n';
         });
       } else if (removed.length > 10) {
-        msg += '\n(Liste tronquée à 10 factures — ' + (removed.length - 10) + ' autres…)\n';
+        msg += '\n(' + (removed.length) + ' factures à supprimer — liste tronquée)\n';
       }
       msg += '\nConfirmer l\'import ?';
 
@@ -12914,7 +12918,6 @@ function parseAndImportImpayesFile(file) {
       // Appliquer
       var finalArr = Object.values(newByNf);
       saveImpayes(finalArr);
-      // Tombstones pour les supprimés
       removed.forEach(function(rm){
         if (typeof addTombstone === 'function') addTombstone('impayes', rm.num_fact);
       });
@@ -12926,7 +12929,7 @@ function parseAndImportImpayesFile(file) {
 
     } catch(err) {
       console.error('[Impayes import]', err);
-      alert('❌ Erreur lors du parsing du fichier :\n\n' + err.message + '\n\nVérifiez que le fichier est bien un Excel (.xlsx) avec les bonnes colonnes.');
+      alert('❌ Erreur lors du parsing du fichier :\n\n' + err.message);
     }
   };
   reader.onerror = function(){ alert('❌ Impossible de lire le fichier.'); };
@@ -12962,11 +12965,13 @@ function openImpayeCommentPopup(numFact) {
     +     '<button onclick="document.getElementById(\'imp-comment-modal\').remove()" style="background:none;border:none;color:#9E94C4;font-size:20px;cursor:pointer;line-height:1;">×</button>'
     +   '</div>'
     +   '<div style="background:#F5F3FF;border:1px solid #E4E0FA;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;line-height:1.5;color:#1A1033;">'
-    +     '<div><strong>N° Fact. :</strong> ' + (item.num_fact||'') + '</div>'
+    +     '<div><strong>N° Facture :</strong> ' + (item.num_fact||'') + '</div>'
     +     '<div><strong>Client :</strong> ' + (item.client||'—') + '</div>'
     +     '<div><strong>Consultant :</strong> ' + (item.consultant||'—') + '</div>'
-    +     '<div><strong>Solde dû :</strong> ' + _fmtImpayeEur(item.solde_du) + '</div>'
+    +     '<div><strong>Commercial :</strong> ' + (item.commercial||'—') + '</div>'
+    +     '<div><strong>Montant TTC :</strong> ' + _fmtImpayeEur(item.mt_ttc) + '</div>'
     +     '<div><strong>Échéance :</strong> ' + _fmtImpayeDate(item.date_echeance) + '</div>'
+    +     (item.compta_email ? '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #D9D2F2;"><strong>Contact compta :</strong> ' + (item.compta_contact||'') + (item.compta_email ? ' &lt;' + item.compta_email + '&gt;' : '') + '</div>' : '')
     +   '</div>'
     +   '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Commentaire</label>'
     +   '<textarea id="imp-comment-textarea" rows="6" placeholder="Ex : Client relancé par email le 15/04, promesse de paiement fin du mois…" style="width:100%;padding:10px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.5;">' + commentEsc + '</textarea>'
@@ -13004,6 +13009,7 @@ function clearImpayesFilters() {
   IMPAYES_FILTER.search_name = '';
   IMPAYES_FILTER.client = 'all';
   IMPAYES_FILTER.banque = 'all';
+  IMPAYES_FILTER.commercial = 'all';
   IMPAYES_FILTER.bucket = 'all';
   renderImpayes();
 }
@@ -13012,25 +13018,22 @@ function clearImpayesFilters() {
 function exportImpayes() {
   var all = getImpayes();
   if (all.length === 0) { alert('Aucune donnée à exporter.'); return; }
-  var headers = ['N° Fact.', 'Env.', 'Date', 'Date échéance', 'Retard (j)', 'Consultant', 'ID M', 'Mission', 'Client', 'MT HT', 'MT TTC', 'Réglé', 'Le', 'Solde dû', 'Commentaire', 'Modifié par', 'Modifié le'];
+  var headers = ['N° Facture', 'Client', 'Date échéance', 'Retard (j)', 'HT', 'TTC', 'Banque', 'Consultant', 'Commercial', 'Contact compta', 'Email compta', 'Commentaire', 'Modifié par', 'Modifié le'];
   var aoa = [headers];
   all.forEach(function(r){
     var days = _daysSinceEcheance(r.date_echeance);
     aoa.push([
       r.num_fact || '',
-      r.env || '',
-      _fmtImpayeDate(r.date),
+      r.client || '',
       _fmtImpayeDate(r.date_echeance),
       days === null ? '' : days,
-      r.consultant || '',
-      r.id_m || '',
-      r.mission || '',
-      r.client || '',
       _parseImpayeNumber(r.mt_ht),
       _parseImpayeNumber(r.mt_ttc),
-      _parseImpayeNumber(r.regle),
-      _fmtImpayeDate(r.le),
-      _parseImpayeNumber(r.solde_du),
+      r.banque || '',
+      r.consultant || '',
+      r.commercial || '',
+      r.compta_contact || '',
+      r.compta_email || '',
       r.commentaire || '',
       r.commentaire_by || '',
       r.commentaire_ts ? new Date(r.commentaire_ts).toLocaleString('fr-FR') : ''
