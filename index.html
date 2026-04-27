@@ -5551,10 +5551,17 @@ function odWithToken(cb) {
   .catch(function() { odSetStatus('Session expirée, reconnectez-vous', true); });
 }
 
+// Encoding correct pour Microsoft Graph : segments encodés, slashes littéraux.
+// "/Folder/My File.json" → "/Folder/My%20File.json" (PAS "%2FFolder%2FMy%20File.json")
+function _odEncPath(path) {
+  if (!path) return '';
+  return path.split('/').map(function(s){ return s ? encodeURIComponent(s) : ''; }).join('/');
+}
+
 function odLoad() {
   odWithToken(function(token) {
     odSetStatus('Chargement...', false);
-    var path = encodeURIComponent(OD_FILE_PATH);
+    var path = _odEncPath(OD_FILE_PATH);
     fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + path + ':/content', {
       headers: { 'Authorization': 'Bearer ' + token }
     }).then(function(r) {
@@ -5581,7 +5588,7 @@ function odPush() {
   odWithToken(function(token) {
     odSetStatus('Synchronisation...', false);
     var hist = getHistory();
-    var path = encodeURIComponent(OD_FILE_PATH);
+    var path = _odEncPath(OD_FILE_PATH);
     fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + path + ':/content', {
       headers: { 'Authorization': 'Bearer ' + token }
     }).then(function(r) {
@@ -6233,7 +6240,7 @@ function odSilentFullSync() {
 
     // ═══ PHASE 1 : LOAD parallèle (toutes les entités en même temps) ═══
     var loadPromises = entities.map(function(ent) {
-      var loadUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(ent.path) + ':/content';
+      var loadUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + _odEncPath(ent.path) + ':/content';
       return fetch(loadUrl, { headers: { 'Authorization': 'Bearer ' + token } })
         .then(function(r) {
           if (r.status === 404) return null;
@@ -6272,7 +6279,7 @@ function odSilentFullSync() {
       // ═══ PHASE 2 : PUSH parallèle (toutes les entités après merge) ═══
       var t1 = Date.now();
       var pushPromises = entities.map(function(ent) {
-        var putUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(ent.path) + ':/content';
+        var putUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + _odEncPath(ent.path) + ':/content';
         var body;
         try { body = JSON.stringify(ent.getData()); }
         catch(serErr) { errors.push('ser ' + ent.key); return Promise.resolve(); }
@@ -17973,7 +17980,7 @@ function runFullSync(btn) {
   setSyncProgress('↓ Chargement des ' + total + ' entités...');
   var loadCount = 0;
   var loadPromises = entities.map(function(step) {
-    return fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(step.path) + ':/content', {
+    return fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + _odEncPath(step.path) + ':/content', {
       headers: { 'Authorization': 'Bearer ' + odToken }
     }).then(function(r){
       if (r.status === 404) return null;
@@ -18010,7 +18017,7 @@ function runFullSync(btn) {
         errors.push('serialize ' + step.label);
         return Promise.resolve();
       }
-      return fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodeURIComponent(step.path) + ':/content', {
+      return fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + _odEncPath(step.path) + ':/content', {
         method: 'PUT',
         headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
         body: body
@@ -18412,7 +18419,7 @@ window.addEventListener('load', function() {
   setTimeout(function() {
     if (odToken) {
       // Charger silencieusement l'historique
-      var path = encodeURIComponent(OD_FILE_PATH);
+      var path = _odEncPath(OD_FILE_PATH);
       fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + path + ':/content', {
         headers: { 'Authorization': 'Bearer ' + odToken }
       }).then(function(r){ return r.status===404?null:r.json(); })
@@ -19999,7 +20006,7 @@ function downloadCandDoc(candId, docKey) {
   if (!doc || !doc.od_path) return;
   if (!odToken) { alert('Connectez-vous OneDrive pour télécharger.'); return; }
 
-  var encodedPath = encodeURIComponent(doc.od_path);
+  var encodedPath = _odEncPath(doc.od_path);
   fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodedPath, {
     headers: { 'Authorization': 'Bearer ' + odToken }
   }).then(function(r) { return r.json(); })
@@ -20021,7 +20028,7 @@ function deleteCandDoc(candId, docKey) {
   if (!doc || !doc.od_path) return;
   if (!odToken) { alert('Connectez-vous OneDrive.'); return; }
 
-  var encodedPath = encodeURIComponent(doc.od_path);
+  var encodedPath = _odEncPath(doc.od_path);
   fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodedPath, {
     method: 'DELETE',
     headers: { 'Authorization': 'Bearer ' + odToken }
