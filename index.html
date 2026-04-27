@@ -5947,7 +5947,7 @@ function doForcePurgeOthers() {
         });
         return fetch(putUrl, {
           method: 'PUT',
-          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'If-Match': '*' },
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
       })
@@ -6112,7 +6112,7 @@ function doResetTotalOneDrive() {
       var url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encodedPath + ':/content';
       return fetch(url, {
         method: 'PUT',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'If-Match': '*' },
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       }).then(function(r) {
         if (r.ok) {
@@ -6120,9 +6120,9 @@ function doResetTotalOneDrive() {
           odSetStatus('Reset ' + done + '/' + total + ' fichiers... (' + ent.key + ')', false);
           return;
         }
-        // Rate limiting / unavailable / bad request (transient) → retry avec backoff jusqu'à 3 fois
-        // Note: Microsoft Graph retourne parfois 400 pour des problèmes transitoires de création de fichier
-        if ((r.status === 429 || r.status === 503 || r.status === 504 || r.status === 400) && attempt < 4) {
+        // Rate limiting / unavailable / bad request / precondition (transient) → retry avec backoff jusqu'à 3 fois
+        // Note: Microsoft Graph retourne parfois 400/412 pour des problèmes transitoires
+        if ((r.status === 429 || r.status === 503 || r.status === 504 || r.status === 400 || r.status === 409 || r.status === 412) && attempt < 4) {
           var wait = attempt * 1500;  // 1.5s, 3s, 4.5s
           console.warn('[Reset] ' + ent.key + ' HTTP ' + r.status + ' - retry dans ' + wait + 'ms (tentative ' + attempt + ')');
           return new Promise(function(resolve){ setTimeout(resolve, wait); }).then(function(){ return putOne(ent, attempt + 1); });
@@ -6291,13 +6291,13 @@ function odSilentFullSync() {
           headers: {
             'Authorization': 'Bearer ' + token,
             'Content-Type': 'application/json',
-            'If-Match': '*'  // écraser quel que soit l'etag distant (évite les 412/409 sur conflit)
+              // écraser quel que soit l'etag distant (évite les 412/409 sur conflit)
           },
           body: body
         }).then(function(r) {
           if (r.ok) return;
-          // Retry sur conflit (409), rate limit (429), unavailable (503/504)
-          if ((r.status === 409 || r.status === 429 || r.status === 503 || r.status === 504) && attempt < 3) {
+          // Retry sur conflit (409), precondition (412), rate limit (429), unavailable (503/504)
+          if ((r.status === 409 || r.status === 412 || r.status === 429 || r.status === 503 || r.status === 504) && attempt < 3) {
             var wait = attempt * 800;  // 800ms, 1600ms
             return new Promise(function(resolve){ setTimeout(resolve, wait); }).then(function(){ return pushOne(ent, attempt + 1); });
           }
