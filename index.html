@@ -12531,11 +12531,12 @@ function buildImpayesContent() {
     + '.imp-bucket-pill{padding:6px 11px;border:none;background:transparent;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;color:#6B5E9C;font-family:inherit;}'
     + '.imp-bucket-pill.active{background:#7343EE;color:#fff;}'
     + '.imp-table-wrap{background:#fff;border:1px solid #E4E0FA;border-radius:12px;overflow:hidden;}'
-    + '.imp-table-scroll{overflow-x:auto;}'
-    + '.imp-table{width:100%;border-collapse:collapse;font-size:11.5px;min-width:1200px;}'
-    + '.imp-table th{background:#F5F3FF;color:#1A1033;font-weight:800;text-align:left;padding:10px 10px;border-bottom:2px solid #E4E0FA;font-size:10.5px;text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap;position:sticky;top:0;z-index:1;}'
-    + '.imp-table td{padding:9px 10px;border-bottom:1px solid #F0EDF9;vertical-align:middle;white-space:nowrap;}'
-    + '.imp-table td.ccol{white-space:normal;max-width:280px;min-width:180px;}'
+    + '.imp-table-scroll{overflow-x:hidden;}'
+    + '.imp-table{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;}'
+    + '.imp-table th{background:#F5F3FF;color:#1A1033;font-weight:800;text-align:left;padding:8px 6px;border-bottom:2px solid #E4E0FA;font-size:9.5px;text-transform:uppercase;letter-spacing:0.03em;white-space:nowrap;position:sticky;top:0;z-index:1;overflow:hidden;text-overflow:ellipsis;}'
+    + '.imp-table td{padding:7px 6px;border-bottom:1px solid #F0EDF9;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;word-wrap:break-word;}'
+    + '.imp-table td.ccol{white-space:normal;}'
+    + '.imp-table td.nowrap{white-space:nowrap;}'
     + '.imp-table tr.neutral{}'
     + '.imp-table tr.green{background:#F0FAF4;}'
     + '.imp-table tr.orange{background:#FFF8E8;}'
@@ -12693,8 +12694,21 @@ function buildImpayesContent() {
 
   html += '</div>';  // fin filter container
 
-  // Table
+  // Table — largeurs fixées via colgroup pour tout afficher sans scroll horizontal
   html += '<div class="imp-table-wrap"><div class="imp-table-scroll"><table class="imp-table">'
+    + '<colgroup>'
+    +   '<col style="width:5.5%">'   // Retard
+    +   '<col style="width:9%">'     // N° Facture
+    +   '<col style="width:9%">'     // Client
+    +   '<col style="width:6.5%">'   // Échéance
+    +   '<col style="width:6%">'     // HT
+    +   '<col style="width:6%">'     // TTC
+    +   '<col style="width:9%">'     // Banque
+    +   '<col style="width:10%">'    // Consultant
+    +   '<col style="width:8%">'     // Commercial
+    +   '<col style="width:13%">'    // Contact compta
+    +   '<col style="width:18%">'    // Commentaire
+    + '</colgroup>'
     + '<thead><tr>'
     + '<th>Retard</th>'
     + '<th>N° Facture</th>'
@@ -12722,20 +12736,20 @@ function buildImpayesContent() {
     var comptaTxt = (r.compta_contact || '');
     var comptaEmail = (r.compta_email || '');
     var comptaCell = comptaTxt
-      ? comptaTxt + (comptaEmail ? '<br><span style="font-size:10px;color:#9E94C4;">' + comptaEmail + '</span>' : '')
-      : (comptaEmail ? '<span style="font-size:10.5px;color:#9E94C4;">' + comptaEmail + '</span>' : '—');
+      ? comptaTxt + (comptaEmail ? '<br><span style="font-size:9.5px;color:#9E94C4;">' + comptaEmail + '</span>' : '')
+      : (comptaEmail ? '<span style="font-size:10px;color:#9E94C4;">' + comptaEmail + '</span>' : '—');
 
     html += '<tr class="' + cls + '">'
-      + '<td><span class="imp-dot ' + cls + '"></span><span class="imp-age ' + cls + '">' + ageLbl + '</span></td>'
-      + '<td style="font-weight:700;">' + (r.num_fact || '') + '</td>'
-      + '<td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="' + (r.client||'').replace(/"/g,'&quot;') + '">' + (r.client || '') + '</td>'
-      + '<td style="font-weight:700;">' + _fmtImpayeDate(r.date_echeance) + '</td>'
-      + '<td class="imp-amount">' + _fmtImpayeEur(r.mt_ht) + '</td>'
-      + '<td class="imp-amount" style="color:' + (cls==='red'?'#8A0A0A':(cls==='orange'?'#8A5F00':(cls==='green'?'#0F5132':'#1A1033'))) + ';font-weight:700;">' + _fmtImpayeEur(r.mt_ttc) + '</td>'
-      + '<td style="font-size:11px;">' + (r.banque || '—') + '</td>'
-      + '<td>' + (r.consultant || '') + '</td>'
-      + '<td>' + (r.commercial || '') + '</td>'
-      + '<td style="font-size:11px;">' + comptaCell + '</td>'
+      + '<td class="nowrap"><span class="imp-dot ' + cls + '"></span><span class="imp-age ' + cls + '">' + ageLbl + '</span></td>'
+      + '<td class="nowrap" style="font-weight:700;font-size:10.5px;" title="' + (r.num_fact||'').replace(/"/g,'&quot;') + '">' + (r.num_fact || '') + '</td>'
+      + '<td style="font-weight:600;" title="' + (r.client||'').replace(/"/g,'&quot;') + '">' + (r.client || '') + '</td>'
+      + '<td class="nowrap" style="font-weight:700;">' + _fmtImpayeDate(r.date_echeance) + '</td>'
+      + '<td class="imp-amount nowrap">' + _fmtImpayeEur(r.mt_ht) + '</td>'
+      + '<td class="imp-amount nowrap" style="color:' + (cls==='red'?'#8A0A0A':(cls==='orange'?'#8A5F00':(cls==='green'?'#0F5132':'#1A1033'))) + ';font-weight:700;">' + _fmtImpayeEur(r.mt_ttc) + '</td>'
+      + '<td style="font-size:10.5px;" title="' + (r.banque||'').replace(/"/g,'&quot;') + '">' + (r.banque || '—') + '</td>'
+      + '<td title="' + (r.consultant||'').replace(/"/g,'&quot;') + '">' + (r.consultant || '') + '</td>'
+      + '<td title="' + (r.commercial||'').replace(/"/g,'&quot;') + '">' + (r.commercial || '') + '</td>'
+      + '<td style="font-size:10.5px;" title="' + (comptaTxt + (comptaEmail?' • '+comptaEmail:'')).replace(/"/g,'&quot;') + '">' + comptaCell + '</td>'
       + '<td class="ccol">'
       +   '<div class="imp-comment-cell" onclick="openImpayeCommentPopup(\'' + numFact + '\')" title="' + tooltipFull + '">'
       +     (commentEsc
