@@ -5618,7 +5618,8 @@ var SYNC_ENTITIES = [
   { path: OD_FRAIS_PRO_PATH,    key: 'frais_pro',         label: 'Frais Pro',         merge: null, getData: null },
   { path: OD_DEMARRAGES_PATH,   key: 'demarrages',        label: 'Entrées du mois',   merge: null, getData: null },
   { path: OD_JOURS_PATH,        key: 'jours_prestes',     label: 'Jours prestés',     merge: null, getData: null },
-  { path: OD_APP_SETTINGS_PATH, key: 'app_settings',      label: 'Paramètres app',    merge: null, getData: null }
+  { path: OD_APP_SETTINGS_PATH, key: 'app_settings',      label: 'Paramètres app',    merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Impayes_Global.json', key: 'impayes', label: 'Impayés', merge: null, getData: null }
 ];
 // Les merge/getData sont attachés au moment du 1er usage (après chargement complet du script,
 // car mergeHistorique etc. peuvent être définis plus loin dans le fichier)
@@ -5647,7 +5648,8 @@ function _initSyncEntities() {
         payload._shared = sharedConfigs;
       } catch(e) { console.warn('[app_settings] collect shared configs:', e); }
       return payload;
-    } }
+    } },
+    impayes: { merge: mergeImpayes, getData: function(){ return {version:1,updated:new Date().toISOString(),impayes:getImpayes()}; } }
   };
   SYNC_ENTITIES.forEach(function(ent) {
     if (!ent.merge && mapping[ent.key]) {
@@ -5836,6 +5838,7 @@ function _getEmptyPayloadForEntity(key) {
     case 'frais_pro':          return Object.assign(base, { frais_pro: [] });
     case 'demarrages':         return Object.assign(base, { demarrages: [] });
     case 'jours_prestes':      return Object.assign(base, { _updated_ts: Date.now() });  // objet à plat, pas de clés deal
+    case 'impayes':            return Object.assign(base, { impayes: [] });
     case 'app_settings':       return Object.assign(base, {
       _last_reset_ts: window._currentResetTs || Date.now(),
       _reset_by: window._currentResetBy || _getCurrentUserName()
@@ -5957,6 +5960,8 @@ function doResetTotalOneDrive() {
   var resetBy = _getCurrentUserName();
   window._currentResetTs = resetTs;
   window._currentResetBy = resetBy;
+  // Bloquer les auto-syncs pendant le reset pour ne pas re-pousser des données
+  window._resetInProgress = true;
 
   odWithToken(function(token) {
     if (typeof showNotifToast === 'function') showNotifToast('🔥 Reset en cours... (ne fermez pas la page)');
@@ -5966,6 +5971,31 @@ function doResetTotalOneDrive() {
     var total = entities.length;
     var done = 0;
     var errors = [];
+
+    // ═══ Helper : supprimer un dossier SharePoint et tout son contenu ═══
+    function deleteSharePointFolder(folderPath) {
+      var encPath = folderPath.split('/').map(function(s){return s?encodeURIComponent(s):'';}).join('/');
+      var url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + encPath;
+      return fetch(url, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + token }
+      }).then(function(r){
+        if (r.ok || r.status === 204) {
+          console.log('[Reset] Dossier supprimé:', folderPath);
+          return true;
+        }
+        if (r.status === 404) {
+          // Dossier n'existait pas, pas grave
+          console.log('[Reset] Dossier inexistant (OK):', folderPath);
+          return true;
+        }
+        console.warn('[Reset] Échec suppression dossier ' + folderPath + ' HTTP ' + r.status);
+        return false;
+      }).catch(function(err){
+        console.warn('[Reset] Erreur suppression dossier ' + folderPath, err);
+        return false;
+      });
+    }
 
     // PUT séquentiel avec retry exponentiel pour éviter le rate-limit Microsoft Graph
     function putOne(ent, attempt) {
@@ -6023,10 +6053,18 @@ function doResetTotalOneDrive() {
     });
 
     chain.then(function() {
+      // ═══ ÉTAPE 2 : supprimer les dossiers SharePoint (comptes d'activité) ═══
+      odSetStatus('Suppression dossiers SharePoint...', false);
+      return deleteSharePointFolder('/General/Seven Portage Simlateur/Comptes_activite')
+        .then(function(){
+          // Ajouter d'autres dossiers ici si besoin à l'avenir
+          return true;
+        });
+    }).then(function() {
       if (errors.length) {
         alert('⚠️ Reset partiel : ' + (total - errors.length) + '/' + total + ' fichiers vidés.\n\nErreurs sur : ' + errors.join(', ') + '\n\nVotre navigateur va quand même être vidé pour partir sur une base propre.');
       } else {
-        alert('✓ Reset OneDrive terminé : ' + total + ' fichiers vidés.\n\nVotre navigateur va maintenant être vidé et la page rechargée.\n\n➤ Vos collègues seront automatiquement synchronisés au prochain sync (leur navigateur sera vidé et rechargé).');
+        alert('✓ Reset OneDrive terminé : ' + total + ' fichiers vidés.\n📂 Dossier Comptes_activite/ supprimé.\n\nVotre navigateur va maintenant être vidé et la page rechargée.\n\n➤ Vos collègues seront automatiquement synchronisés au prochain sync (leur navigateur sera vidé et rechargé).');
       }
       try {
         // Préserver l'auth MSAL pour ne pas avoir à se reconnecter
@@ -6056,6 +6094,11 @@ function odAutoSync() {
   // après un envoi de simulation ou une création/édition de placement.
   // Les Paramètres ne sont PAS synchronisés en auto (trop personnels, risque d'écrasement).
   if (!odToken) return;
+  // SÉCURITÉ : ne rien pousser pendant un reset en cours
+  if (window._resetInProgress) {
+    console.warn('[odAutoSync] bloqué : reset en cours');
+    return;
+  }
   // Debounce : si plusieurs appels s'enchaînent (ex: simu + placement dans la foulée),
   // on annule le précédent timeout et on relance — un seul aller-retour réseau au lieu de N.
   if (window._odAutoSyncTimer) { clearTimeout(window._odAutoSyncTimer); }
@@ -9202,6 +9245,9 @@ function mergeAppSettings(remote) {
       var whoReset = remote._reset_by || 'un administrateur';
       var resetDate = new Date(remoteResetTs).toLocaleString('fr-FR');
       console.warn('[Reset distant détecté]', whoReset, resetDate);
+      // IMMÉDIATEMENT bloquer les auto-syncs pour ne pas re-pousser des données
+      window._resetInProgress = true;
+      if (window._odAutoSyncTimer) { clearTimeout(window._odAutoSyncTimer); window._odAutoSyncTimer = null; }
       // Préserver : auth MSAL, paramètres personnels, flag reset seen
       var msalKeys = [];
       for (var i = 0; i < localStorage.length; i++) {
@@ -9347,6 +9393,7 @@ var RH_SUBTABS = [
   { key: 'avances',      label: 'Avances',           icon: '\u{1F4B6}', ready: true  },
   { key: 'frais',        label: 'Frais',             icon: '\u{1F4C4}', ready: true  },
   { key: 'comptes_act',  label: 'Comptes d\'activité', icon: '\u{1F4CA}', ready: true  },
+  { key: 'impayes',      label: 'Impayés',           icon: '\u{1F4B3}', ready: true  },
   { key: 'cooptation',   label: 'Cooptation',        icon: '\u{1F91D}', ready: true  }
 ];
 
@@ -9370,6 +9417,8 @@ function showRHSection(subtab) {
     showComptesActiviteView();
   } else if (subtab === 'entrees') {
     showEntreesView();
+  } else if (subtab === 'impayes') {
+    showImpayesView();
   } else {
     // Placeholder pour les sous-sections non encore implémentées
     showRHPlaceholder(subtab);
@@ -12266,6 +12315,756 @@ function computeMatchScore(searchName, dealName) {
   var simRatio = 1 - dist / maxLen;
   return Math.round(simRatio * 100);
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// IMPAYÉS — Suivi des factures client impayées
+// Import Excel mensuel, préservation des commentaires au re-import,
+// 3 niveaux de couleur selon retard (<30j, 30-60j, >60j),
+// filtrage banque, édition commentaire datée/signée.
+// ═══════════════════════════════════════════════════════════════════
+var IMPAYES_KEY = 'sp_impayes_v1';
+var IMPAYES_FILTER = {
+  search_fact: '',   // moteur de recherche N° facture
+  search_name: '',   // moteur de recherche client / candidat
+  client: 'all',     // dropdown client
+  banque: 'all',     // dropdown banque (= Env.)
+  bucket: 'all'      // pills retard (< 30 / 30-60 / > 60)
+};
+
+function getImpayes() {
+  try { return JSON.parse(localStorage.getItem(IMPAYES_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+
+function saveImpayes(arr) {
+  localStorage.setItem(IMPAYES_KEY, JSON.stringify(arr || []));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+// Merge synchronisation OneDrive — conserve les commentaires locaux s'ils sont plus récents
+function mergeImpayes(remote) {
+  if (!Array.isArray(remote)) return;
+  var local = getImpayes();
+  var byKey = {};
+  local.forEach(function(l){ if (l.num_fact) byKey[l.num_fact] = l; });
+  remote.forEach(function(r){
+    if (!r || !r.num_fact) return;
+    if (typeof isTombstoned === 'function' && isTombstoned('impayes', r.num_fact)) return;
+    var cur = byKey[r.num_fact];
+    if (!cur) { byKey[r.num_fact] = r; return; }
+    // Garder le commentaire le plus récent
+    var curCommentTs = cur.commentaire_ts || 0;
+    var rCommentTs = r.commentaire_ts || 0;
+    var keepLocalComment = curCommentTs >= rCommentTs;
+    byKey[r.num_fact] = Object.assign({}, cur, r);
+    if (keepLocalComment) {
+      byKey[r.num_fact].commentaire = cur.commentaire || '';
+      byKey[r.num_fact].commentaire_by = cur.commentaire_by || '';
+      byKey[r.num_fact].commentaire_ts = cur.commentaire_ts || 0;
+    }
+  });
+  saveImpayes(Object.values(byKey));
+}
+
+// ── Helpers dates ──
+function _parseImpayeDate(v) {
+  if (v === null || v === undefined || v === '') return null;
+  // Date Excel (nombre) ou chaîne
+  if (typeof v === 'number') {
+    // Excel serial date
+    var d = new Date((v - 25569) * 86400 * 1000);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  var s = String(v).trim();
+  if (!s) return null;
+  // Formats : "DD/MM/YYYY", "YYYY-MM-DD", "DD-MM-YYYY"
+  var m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) {
+    var yy = parseInt(m[3], 10);
+    if (yy < 100) yy += 2000;
+    var d = new Date(yy, parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  var d2 = new Date(s);
+  return isNaN(d2.getTime()) ? null : d2;
+}
+
+function _daysSinceEcheance(echeance) {
+  var d = _parseImpayeDate(echeance);
+  if (!d) return null;
+  var now = new Date();
+  return Math.floor((now - d) / 86400000);
+}
+
+// Formatage date pour affichage
+function _fmtImpayeDate(v) {
+  var d = _parseImpayeDate(v);
+  if (!d) return '';
+  return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
+}
+
+function _fmtImpayeEur(v) {
+  if (v === null || v === undefined || v === '' || isNaN(v)) return '—';
+  var n = typeof v === 'number' ? v : parseFloat(String(v).replace(/\s/g,'').replace(',','.'));
+  if (isNaN(n)) return '—';
+  return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+}
+
+function _parseImpayeNumber(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') return v;
+  var n = parseFloat(String(v).replace(/\s/g,'').replace(/\u00A0/g,'').replace(',','.'));
+  return isNaN(n) ? null : n;
+}
+
+// Classe couleur selon retard (en jours depuis la date d'échéance)
+function _impayeColorClass(echeance) {
+  var days = _daysSinceEcheance(echeance);
+  if (days === null) return 'neutral';
+  if (days < 30) return 'green';
+  if (days < 60) return 'orange';
+  return 'red';
+}
+
+// ── Vue principale ──
+function showImpayesView() {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-deals');
+  if (!tab) return;
+  tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+  if (typeof setDealsOriginalVisible === 'function') setDealsOriginalVisible(false);
+  injectRHSubNav();
+  var container = document.getElementById('rh-content-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'rh-content-container';
+    tab.appendChild(container);
+  }
+  container.style.display = 'block';
+  renderImpayes();
+}
+
+function renderImpayes() {
+  var el = document.getElementById('rh-content-container');
+  if (!el) return;
+  el.innerHTML = buildImpayesContent();
+}
+
+function buildImpayesContent() {
+  var impayes = getImpayes();
+  // Stats
+  var totalTTC = 0, totalSolde = 0;
+  var count30 = 0, count60 = 0, count90 = 0, countNeutral = 0;
+  impayes.forEach(function(r){
+    var solde = _parseImpayeNumber(r.solde_du) || _parseImpayeNumber(r.mt_ttc) || 0;
+    totalSolde += solde;
+    totalTTC += _parseImpayeNumber(r.mt_ttc) || 0;
+    var cls = _impayeColorClass(r.date_echeance);
+    if (cls === 'green') count30++;
+    else if (cls === 'orange') count60++;
+    else if (cls === 'red') count90++;
+    else countNeutral++;
+  });
+
+  // Filter + render
+  var filtered = impayes.filter(function(r){
+    if (IMPAYES_FILTER.bucket !== 'all') {
+      var c = _impayeColorClass(r.date_echeance);
+      if (IMPAYES_FILTER.bucket !== c) return false;
+    }
+    if (IMPAYES_FILTER.client !== 'all') {
+      if ((r.client || '') !== IMPAYES_FILTER.client) return false;
+    }
+    if (IMPAYES_FILTER.banque !== 'all') {
+      if ((r.env || '') !== IMPAYES_FILTER.banque) return false;
+    }
+    if (IMPAYES_FILTER.search_fact) {
+      var q = IMPAYES_FILTER.search_fact.toLowerCase();
+      if ((r.num_fact || '').toLowerCase().indexOf(q) < 0) return false;
+    }
+    if (IMPAYES_FILTER.search_name) {
+      var q2 = IMPAYES_FILTER.search_name.toLowerCase();
+      var hay = ((r.client || '') + ' ' + (r.consultant || '')).toLowerCase();
+      if (hay.indexOf(q2) < 0) return false;
+    }
+    return true;
+  });
+
+  // Tri : par retard décroissant
+  filtered.sort(function(a, b){
+    var da = _daysSinceEcheance(a.date_echeance);
+    var db = _daysSinceEcheance(b.date_echeance);
+    if (da === null) da = -9999;
+    if (db === null) db = -9999;
+    return db - da;
+  });
+
+  var html = ''
+    + '<style>'
+    + '.imp-wrap{padding:14px 18px;max-width:1400px;margin:0 auto;}'
+    + '.imp-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:12px;}'
+    + '.imp-title{font-size:18px;font-weight:800;color:#1A1033;}'
+    + '.imp-title span.sub{font-size:11px;font-weight:600;color:#9E94C4;margin-left:8px;}'
+    + '.imp-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}'
+    + '.imp-btn{padding:8px 14px;border:1.5px solid #E4E0FA;background:#fff;color:#4B36EC;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}'
+    + '.imp-btn:hover{background:#F5F3FF;}'
+    + '.imp-btn-primary{background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border-color:transparent;box-shadow:0 3px 10px rgba(115,67,238,0.3);}'
+    + '.imp-btn-primary:hover{background:linear-gradient(135deg,#8553FF,#5B46FC);}'
+    + '.imp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px;}'
+    + '.imp-stat{background:#fff;border:1.5px solid #E4E0FA;border-radius:10px;padding:12px 14px;}'
+    + '.imp-stat-lbl{font-size:10px;font-weight:700;color:#9E94C4;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;}'
+    + '.imp-stat-val{font-size:18px;font-weight:800;color:#1A1033;}'
+    + '.imp-stat.green{background:#E8F5EE;border-color:#9FE1CB;}'
+    + '.imp-stat.orange{background:#FFF4D6;border-color:#F0D98A;}'
+    + '.imp-stat.red{background:#FDECEC;border-color:#F5B5B5;}'
+    + '.imp-filter-bar{display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;}'
+    + '.imp-search{flex:1;min-width:220px;padding:9px 12px;padding-left:34px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;background:#fff url("data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%239E94C4%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><circle cx=%2211%22 cy=%2211%22 r=%228%22/><path d=%22m21 21-4.3-4.3%22/></svg>") no-repeat 10px center;}'
+    + '.imp-bucket-pills{display:flex;gap:4px;background:#F5F3FF;padding:3px;border-radius:7px;}'
+    + '.imp-bucket-pill{padding:6px 11px;border:none;background:transparent;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;color:#6B5E9C;font-family:inherit;}'
+    + '.imp-bucket-pill.active{background:#7343EE;color:#fff;}'
+    + '.imp-table-wrap{background:#fff;border:1px solid #E4E0FA;border-radius:12px;overflow:hidden;}'
+    + '.imp-table-scroll{overflow-x:auto;}'
+    + '.imp-table{width:100%;border-collapse:collapse;font-size:11.5px;min-width:1200px;}'
+    + '.imp-table th{background:#F5F3FF;color:#1A1033;font-weight:800;text-align:left;padding:10px 10px;border-bottom:2px solid #E4E0FA;font-size:10.5px;text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap;position:sticky;top:0;z-index:1;}'
+    + '.imp-table td{padding:9px 10px;border-bottom:1px solid #F0EDF9;vertical-align:middle;white-space:nowrap;}'
+    + '.imp-table td.ccol{white-space:normal;max-width:280px;min-width:180px;}'
+    + '.imp-table tr.neutral{}'
+    + '.imp-table tr.green{background:#F0FAF4;}'
+    + '.imp-table tr.orange{background:#FFF8E8;}'
+    + '.imp-table tr.red{background:#FDECEC;}'
+    + '.imp-table tr:hover{filter:brightness(0.97);}'
+    + '.imp-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;}'
+    + '.imp-dot.green{background:#1D9E75;}'
+    + '.imp-dot.orange{background:#F0A500;}'
+    + '.imp-dot.red{background:#E24B4A;}'
+    + '.imp-dot.neutral{background:#9E94C4;}'
+    + '.imp-age{font-weight:700;font-size:11px;}'
+    + '.imp-age.green{color:#0F5132;}'
+    + '.imp-age.orange{color:#8A5F00;}'
+    + '.imp-age.red{color:#8A0A0A;}'
+    + '.imp-age.neutral{color:#9E94C4;}'
+    + '.imp-amount{font-weight:700;text-align:right;font-variant-numeric:tabular-nums;}'
+    + '.imp-comment-cell{cursor:pointer;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.6);border:1px dashed #D9D2F2;font-size:11px;line-height:1.4;transition:all 0.15s;}'
+    + '.imp-comment-cell:hover{background:#fff;border-style:solid;border-color:#7343EE;}'
+    + '.imp-comment-empty{color:#9E94C4;font-style:italic;}'
+    + '.imp-comment-meta{font-size:9.5px;color:#9E94C4;margin-top:3px;font-weight:600;}'
+    + '.imp-comment-txt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;color:#1A1033;}'
+    + '.imp-empty{padding:50px 20px;text-align:center;color:#9E94C4;}'
+    + '.imp-empty-ic{font-size:42px;margin-bottom:12px;}'
+    + '.imp-empty-h{font-size:15px;font-weight:700;color:#1A1033;margin-bottom:6px;}'
+    + '.imp-empty-s{font-size:12.5px;color:#6B5E9C;margin-bottom:16px;}'
+    + '</style>'
+    + '<div class="imp-wrap">'
+    +   '<div class="imp-header">'
+    +     '<div class="imp-title">💳 Impayés <span class="sub">' + impayes.length + ' ligne' + (impayes.length>1?'s':'') + '</span></div>'
+    +     '<div class="imp-actions">'
+    +       '<button class="imp-btn" onclick="exportImpayes()" title="Exporter le tableau actuel en Excel">📥 Export</button>'
+    +       (impayes.length > 0 ? '<button class="imp-btn" onclick="confirmClearImpayes()" title="Vider la table (mot de passe admin requis)" style="color:#A8322A;border-color:#F5B5B5;">🗑 Vider</button>' : '')
+    +       '<button class="imp-btn imp-btn-primary" onclick="document.getElementById(\'imp-upload-input\').click()">📥 Importer un fichier</button>'
+    +       '<input type="file" id="imp-upload-input" accept=".xlsx,.xls,.csv" style="display:none;" onchange="onImpayesFileSelected(event)">'
+    +     '</div>'
+    +   '</div>'
+    + '';
+
+  // Stats
+  html += '<div class="imp-stats">'
+    + '<div class="imp-stat"><div class="imp-stat-lbl">Solde dû total</div><div class="imp-stat-val">' + _fmtImpayeEur(totalSolde) + '</div></div>'
+    + '<div class="imp-stat green"><div class="imp-stat-lbl">🟢 &lt; 30 jours</div><div class="imp-stat-val">' + count30 + '</div></div>'
+    + '<div class="imp-stat orange"><div class="imp-stat-lbl">🟠 30 à 60 jours</div><div class="imp-stat-val">' + count60 + '</div></div>'
+    + '<div class="imp-stat red"><div class="imp-stat-lbl">🔴 &gt; 60 jours</div><div class="imp-stat-val">' + count90 + '</div></div>'
+    + '</div>';
+
+  if (impayes.length === 0) {
+    html += '<div class="imp-table-wrap"><div class="imp-empty">'
+      + '<div class="imp-empty-ic">💳</div>'
+      + '<div class="imp-empty-h">Aucune facture impayée</div>'
+      + '<div class="imp-empty-s">Chargez votre fichier Excel mensuel pour commencer.</div>'
+      + '<button class="imp-btn imp-btn-primary" onclick="document.getElementById(\'imp-upload-input\').click()">📥 Importer un fichier</button>'
+      + '</div></div>'
+      + '</div>';
+    return html;
+  }
+
+  // Filter bar — deux rangées : dropdowns (Client / Banque / Retard) + recherches (N° Fact / Client&Candidat)
+  // Construire listes uniques
+  var clientsSet = {};
+  var banquesSet = {};
+  impayes.forEach(function(r){
+    if (r.client) clientsSet[r.client] = (clientsSet[r.client] || 0) + 1;
+    if (r.env) banquesSet[r.env] = (banquesSet[r.env] || 0) + 1;
+  });
+  var clientsList = Object.keys(clientsSet).sort(function(a,b){ return a.localeCompare(b,'fr'); });
+  var banquesList = Object.keys(banquesSet).sort(function(a,b){ return a.localeCompare(b,'fr'); });
+
+  var hasActiveFilter = IMPAYES_FILTER.bucket !== 'all' || IMPAYES_FILTER.client !== 'all' || IMPAYES_FILTER.banque !== 'all'
+    || IMPAYES_FILTER.search_fact || IMPAYES_FILTER.search_name;
+
+  html += '<div style="background:#fff;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;">';
+
+  // Rangée 1 : Dropdowns de filtre (Client / Banque / Retard pills)
+  html += '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">';
+  // Client
+  html += '<div style="min-width:180px;flex:1;max-width:280px;">'
+    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Client</label>'
+    + '<select onchange="IMPAYES_FILTER.client=this.value;renderImpayes();" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;background:#fff;cursor:pointer;">'
+    +   '<option value="all"' + (IMPAYES_FILTER.client==='all'?' selected':'') + '>Tous les clients (' + clientsList.length + ')</option>';
+  clientsList.forEach(function(c){
+    var sel = IMPAYES_FILTER.client === c ? ' selected' : '';
+    html += '<option value="' + c.replace(/"/g,'&quot;') + '"' + sel + '>' + c + ' (' + clientsSet[c] + ')</option>';
+  });
+  html += '</select></div>';
+
+  // Banque (Env.)
+  html += '<div style="min-width:140px;">'
+    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Banque (Env.)</label>'
+    + '<select onchange="IMPAYES_FILTER.banque=this.value;renderImpayes();" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;background:#fff;cursor:pointer;">'
+    +   '<option value="all"' + (IMPAYES_FILTER.banque==='all'?' selected':'') + '>Toutes (' + banquesList.length + ')</option>';
+  banquesList.forEach(function(b){
+    var sel = IMPAYES_FILTER.banque === b ? ' selected' : '';
+    html += '<option value="' + b.replace(/"/g,'&quot;') + '"' + sel + '>' + b + ' (' + banquesSet[b] + ')</option>';
+  });
+  html += '</select></div>';
+
+  // Retard (pills)
+  html += '<div style="flex:1;min-width:320px;">'
+    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Retard</label>'
+    + '<div class="imp-bucket-pills" style="display:inline-flex;">'
+    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='all'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'all\';renderImpayes();">Tous (' + impayes.length + ')</button>'
+    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='green'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'green\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='green'?'background:#1D9E75;':'') + '">🟢 &lt;30j (' + count30 + ')</button>'
+    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='orange'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'orange\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='orange'?'background:#F0A500;':'') + '">🟠 30-60j (' + count60 + ')</button>'
+    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='red'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'red\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='red'?'background:#E24B4A;':'') + '">🔴 &gt;60j (' + count90 + ')</button>'
+    + '</div>'
+    + '</div>';
+  html += '</div>';  // fin rangée 1
+
+  // Rangée 2 : Moteurs de recherche
+  html += '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">';
+  // Recherche N° Fact
+  var qF = (IMPAYES_FILTER.search_fact||'').replace(/"/g,'&quot;');
+  html += '<div style="min-width:200px;flex:1;max-width:320px;">'
+    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">🔍 N° Facture</label>'
+    + '<input type="text" value="' + qF + '" placeholder="Ex : FAC-2024-0123" oninput="IMPAYES_FILTER.search_fact=this.value;renderImpayes();setTimeout(function(){var e=document.getElementById(\'imp-search-fact\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0);" id="imp-search-fact" style="width:100%;padding:8px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;">'
+    + '</div>';
+
+  // Recherche Client/Candidat
+  var qN = (IMPAYES_FILTER.search_name||'').replace(/"/g,'&quot;');
+  html += '<div style="min-width:240px;flex:2;">'
+    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">🔍 Client / Consultant</label>'
+    + '<input type="text" value="' + qN + '" placeholder="Ex : Dupont, Safran, Thales…" oninput="IMPAYES_FILTER.search_name=this.value;renderImpayes();setTimeout(function(){var e=document.getElementById(\'imp-search-name\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0);" id="imp-search-name" style="width:100%;padding:8px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;">'
+    + '</div>';
+
+  // Bouton clear filters
+  if (hasActiveFilter) {
+    html += '<div style="align-self:flex-end;">'
+      + '<button onclick="clearImpayesFilters()" style="padding:8px 14px;background:#FFF4D6;color:#8A5F00;border:1.5px solid #F0A500;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;" title="Effacer tous les filtres">✗ Effacer les filtres</button>'
+      + '</div>';
+  }
+  html += '</div>';  // fin rangée 2
+
+  // Compteur résultats
+  var countTxt = filtered.length === impayes.length
+    ? '<strong>' + impayes.length + '</strong> facture' + (impayes.length>1?'s':'')
+    : '<strong>' + filtered.length + '</strong> résultat' + (filtered.length>1?'s':'') + ' <span style="color:#9E94C4;">sur ' + impayes.length + '</span>';
+  html += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #F0EDF9;font-size:11.5px;color:#6B5E9C;">'
+    + countTxt
+    + '</div>';
+
+  html += '</div>';  // fin filter container
+
+  // Table
+  html += '<div class="imp-table-wrap"><div class="imp-table-scroll"><table class="imp-table">'
+    + '<thead><tr>'
+    + '<th>Retard</th>'
+    + '<th>N° Fact.</th>'
+    + '<th>Env.</th>'
+    + '<th>Date</th>'
+    + '<th>Échéance</th>'
+    + '<th>Consultant</th>'
+    + '<th>ID M</th>'
+    + '<th>Mission</th>'
+    + '<th>Client</th>'
+    + '<th style="text-align:right;">MT HT</th>'
+    + '<th style="text-align:right;">MT TTC</th>'
+    + '<th style="text-align:right;">Réglé</th>'
+    + '<th>Le</th>'
+    + '<th style="text-align:right;">Solde dû</th>'
+    + '<th>Commentaire</th>'
+    + '</tr></thead><tbody>';
+
+  filtered.forEach(function(r){
+    var cls = _impayeColorClass(r.date_echeance);
+    var days = _daysSinceEcheance(r.date_echeance);
+    var ageLbl = days === null ? '—' : (days < 0 ? 'J' + days : 'J+' + days);
+    var commentEsc = (r.commentaire || '').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    var commentBy = (r.commentaire_by || '').replace(/</g,'&lt;');
+    var commentTs = r.commentaire_ts ? new Date(r.commentaire_ts).toLocaleDateString('fr-FR') + ' ' + new Date(r.commentaire_ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) : '';
+    var tooltipFull = commentEsc
+      + (commentBy || commentTs ? '&#10;&#10;— ' + commentBy + (commentTs ? ' · ' + commentTs : '') : '');
+    var numFact = (r.num_fact || '').replace(/'/g,'\\\'');
+
+    html += '<tr class="' + cls + '">'
+      + '<td><span class="imp-dot ' + cls + '"></span><span class="imp-age ' + cls + '">' + ageLbl + '</span></td>'
+      + '<td style="font-weight:700;">' + (r.num_fact || '') + '</td>'
+      + '<td>' + (r.env || '') + '</td>'
+      + '<td>' + _fmtImpayeDate(r.date) + '</td>'
+      + '<td style="font-weight:700;">' + _fmtImpayeDate(r.date_echeance) + '</td>'
+      + '<td>' + (r.consultant || '') + '</td>'
+      + '<td>' + (r.id_m || '') + '</td>'
+      + '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;" title="' + (r.mission || '').replace(/"/g,'&quot;') + '">' + (r.mission || '') + '</td>'
+      + '<td style="font-weight:600;">' + (r.client || '') + '</td>'
+      + '<td class="imp-amount">' + _fmtImpayeEur(r.mt_ht) + '</td>'
+      + '<td class="imp-amount">' + _fmtImpayeEur(r.mt_ttc) + '</td>'
+      + '<td class="imp-amount">' + _fmtImpayeEur(r.regle) + '</td>'
+      + '<td>' + _fmtImpayeDate(r.le) + '</td>'
+      + '<td class="imp-amount" style="color:' + (cls==='red'?'#8A0A0A':(cls==='orange'?'#8A5F00':(cls==='green'?'#0F5132':'#1A1033'))) + ';">' + _fmtImpayeEur(r.solde_du) + '</td>'
+      + '<td class="ccol">'
+      +   '<div class="imp-comment-cell" onclick="openImpayeCommentPopup(\'' + numFact + '\')" title="' + tooltipFull + '">'
+      +     (commentEsc
+      ?       '<div class="imp-comment-txt">' + commentEsc + '</div>'
+      +         (commentBy || commentTs ? '<div class="imp-comment-meta">— ' + commentBy + (commentTs ? ' · ' + commentTs : '') + '</div>' : '')
+      :       '<span class="imp-comment-empty">+ Ajouter un commentaire</span>')
+      +   '</div>'
+      + '</td>'
+      + '</tr>';
+  });
+
+  if (filtered.length === 0) {
+    html += '<tr><td colspan="15" style="text-align:center;padding:40px;color:#9E94C4;">Aucun résultat pour ce filtre.</td></tr>';
+  }
+
+  html += '</tbody></table></div></div>';
+  html += '</div>';  // imp-wrap
+
+  return html;
+}
+
+// ── Import ──
+function onImpayesFileSelected(evt) {
+  var file = evt.target.files && evt.target.files[0];
+  evt.target.value = '';  // Permet de réimporter le même fichier
+  if (!file) return;
+  parseAndImportImpayesFile(file);
+}
+
+function parseAndImportImpayesFile(file) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+      var wsName = wb.SheetNames[0];
+      var ws = wb.Sheets[wsName];
+      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (!rows || rows.length < 2) {
+        alert('⚠ Le fichier semble vide ou mal formé.');
+        return;
+      }
+      // Détection de la ligne d'en-têtes : celle qui contient "N° Fact" ou "Consultant"
+      var headerRowIdx = -1;
+      for (var i = 0; i < Math.min(10, rows.length); i++) {
+        var joined = rows[i].map(function(c){ return String(c||'').toLowerCase(); }).join('|');
+        if ((joined.indexOf('n° fact') >= 0 || joined.indexOf('n°fact') >= 0 || joined.indexOf('num fact') >= 0 || joined.indexOf('numero fact') >= 0) ||
+            (joined.indexOf('consultant') >= 0 && joined.indexOf('client') >= 0)) {
+          headerRowIdx = i;
+          break;
+        }
+      }
+      if (headerRowIdx < 0) {
+        alert('⚠ Impossible de trouver la ligne d\'en-têtes (colonnes N° Fact., Consultant, Client…).\n\nVérifiez que votre fichier contient bien ces colonnes.');
+        return;
+      }
+      var headers = rows[headerRowIdx].map(function(h){ return String(h||'').trim().toLowerCase(); });
+      // Mapping colonne → index
+      function findCol(patterns) {
+        for (var j = 0; j < headers.length; j++) {
+          for (var k = 0; k < patterns.length; k++) {
+            if (headers[j].indexOf(patterns[k]) >= 0) return j;
+          }
+        }
+        return -1;
+      }
+      var colMap = {
+        num_fact:      findCol(['n° fact', 'n°fact', 'num fact', 'numero fact', 'n fact']),
+        env:           findCol(['env']),
+        date:          findCol(['date facture', 'date fact']),
+        date_echeance: findCol(['échéance', 'echeance', 'date écheance', 'date echeance']),
+        consultant:    findCol(['consultant']),
+        id_m:          findCol(['id m', 'id_m', 'id-m']),
+        mission:       findCol(['mission']),
+        client:        findCol(['client']),
+        mt_ht:         findCol(['mt ht', 'ht', 'montant ht']),
+        mt_ttc:        findCol(['mt ttc', 'ttc', 'montant ttc']),
+        regle:         findCol(['réglé', 'regle', 'payé', 'paye']),
+        le:            findCol(['le', 'date règlement', 'date reglement']),
+        solde_du:      findCol(['solde dû', 'solde du', 'solde']),
+        commentaire:   findCol(['commentaire', 'observation', 'note'])
+      };
+      // date simple (pas date facture) : fallback si pas trouvé avec "date facture"
+      if (colMap.date < 0) colMap.date = findCol(['date']);
+
+      // La colonne N° Fact. est obligatoire
+      if (colMap.num_fact < 0) {
+        alert('⚠ La colonne "N° Fact." est introuvable dans le fichier.\n\nHeaders détectés :\n' + headers.slice(0,12).join(' | '));
+        return;
+      }
+
+      // Parser les données
+      var parsed = [];
+      for (var r = headerRowIdx + 1; r < rows.length; r++) {
+        var row = rows[r];
+        if (!row || row.every(function(c){ return c === '' || c === null || c === undefined; })) continue;
+        var nf = String(row[colMap.num_fact] || '').trim();
+        if (!nf) continue;
+        var item = {
+          num_fact: nf,
+          env: colMap.env >= 0 ? String(row[colMap.env] || '').trim() : '',
+          date: colMap.date >= 0 ? row[colMap.date] : '',
+          date_echeance: colMap.date_echeance >= 0 ? row[colMap.date_echeance] : '',
+          consultant: colMap.consultant >= 0 ? String(row[colMap.consultant] || '').trim() : '',
+          id_m: colMap.id_m >= 0 ? String(row[colMap.id_m] || '').trim() : '',
+          mission: colMap.mission >= 0 ? String(row[colMap.mission] || '').trim() : '',
+          client: colMap.client >= 0 ? String(row[colMap.client] || '').trim() : '',
+          mt_ht: colMap.mt_ht >= 0 ? _parseImpayeNumber(row[colMap.mt_ht]) : null,
+          mt_ttc: colMap.mt_ttc >= 0 ? _parseImpayeNumber(row[colMap.mt_ttc]) : null,
+          regle: colMap.regle >= 0 ? _parseImpayeNumber(row[colMap.regle]) : null,
+          le: colMap.le >= 0 ? row[colMap.le] : '',
+          solde_du: colMap.solde_du >= 0 ? _parseImpayeNumber(row[colMap.solde_du]) : null,
+          commentaire: colMap.commentaire >= 0 ? String(row[colMap.commentaire] || '').trim() : ''
+        };
+        // Normaliser les dates pour stockage (ISO)
+        var d1 = _parseImpayeDate(item.date);      item.date = d1 ? d1.toISOString() : '';
+        var d2 = _parseImpayeDate(item.date_echeance); item.date_echeance = d2 ? d2.toISOString() : '';
+        var d3 = _parseImpayeDate(item.le);        item.le = d3 ? d3.toISOString() : '';
+        parsed.push(item);
+      }
+
+      if (parsed.length === 0) {
+        alert('⚠ Aucune ligne exploitable n\'a été trouvée dans le fichier.');
+        return;
+      }
+
+      // Merger avec l'existant : préserver les commentaires, remplacer tout le reste,
+      // supprimer les N° Fact. qui ne sont plus dans le nouveau fichier (= factures réglées)
+      var existing = getImpayes();
+      var existingByNf = {};
+      existing.forEach(function(e){ if (e.num_fact) existingByNf[e.num_fact] = e; });
+
+      var newByNf = {};
+      var nbCreated = 0, nbUpdated = 0, nbCommentsPreserved = 0;
+      parsed.forEach(function(item){
+        var old = existingByNf[item.num_fact];
+        if (old) {
+          // Mise à jour : on prend les nouvelles données, mais on préserve le commentaire local
+          // s'il n'y en a pas dans l'import (ou si celui du fichier est vide)
+          var localComment = (old.commentaire || '').trim();
+          var importComment = (item.commentaire || '').trim();
+          if (localComment && !importComment) {
+            // Garder le commentaire local + ses métadonnées
+            item.commentaire = old.commentaire;
+            item.commentaire_by = old.commentaire_by || '';
+            item.commentaire_ts = old.commentaire_ts || 0;
+            nbCommentsPreserved++;
+          } else if (importComment && importComment !== localComment) {
+            // Le fichier a un commentaire différent → on met à jour avec le commentaire du fichier
+            item.commentaire_by = 'Import fichier';
+            item.commentaire_ts = Date.now();
+          } else {
+            item.commentaire = old.commentaire || '';
+            item.commentaire_by = old.commentaire_by || '';
+            item.commentaire_ts = old.commentaire_ts || 0;
+            if (localComment) nbCommentsPreserved++;
+          }
+          nbUpdated++;
+        } else {
+          item.commentaire_by = '';
+          item.commentaire_ts = 0;
+          nbCreated++;
+        }
+        newByNf[item.num_fact] = item;
+      });
+
+      // Détecter les lignes supprimées (N° Fact. présents avant, absents du nouveau fichier)
+      var removed = [];
+      Object.keys(existingByNf).forEach(function(nf){
+        if (!newByNf[nf]) removed.push(existingByNf[nf]);
+      });
+
+      // Demande de confirmation avec preview
+      var msg = '📊 Aperçu de l\'import :\n\n';
+      msg += '✓ ' + nbCreated + ' nouvelle' + (nbCreated>1?'s':'') + ' facture' + (nbCreated>1?'s':'') + '\n';
+      msg += '🔄 ' + nbUpdated + ' mise' + (nbUpdated>1?'s':'') + ' à jour (commentaires préservés : ' + nbCommentsPreserved + ')\n';
+      msg += '🗑 ' + removed.length + ' suppression' + (removed.length>1?'s':'') + ' (factures réglées)\n';
+      if (removed.length > 0 && removed.length <= 10) {
+        msg += '\nFactures à supprimer :\n';
+        removed.forEach(function(rm){
+          msg += '  • ' + rm.num_fact + ' — ' + (rm.client || '') + ' — ' + _fmtImpayeEur(rm.solde_du) + '\n';
+        });
+      } else if (removed.length > 10) {
+        msg += '\n(Liste tronquée à 10 factures — ' + (removed.length - 10) + ' autres…)\n';
+      }
+      msg += '\nConfirmer l\'import ?';
+
+      if (!confirm(msg)) return;
+
+      // Appliquer
+      var finalArr = Object.values(newByNf);
+      saveImpayes(finalArr);
+      // Tombstones pour les supprimés
+      removed.forEach(function(rm){
+        if (typeof addTombstone === 'function') addTombstone('impayes', rm.num_fact);
+      });
+
+      if (typeof showNotifToast === 'function') {
+        showNotifToast('✓ Import : ' + nbCreated + ' ajoutée(s), ' + nbUpdated + ' mise(s) à jour, ' + removed.length + ' supprimée(s)');
+      }
+      renderImpayes();
+
+    } catch(err) {
+      console.error('[Impayes import]', err);
+      alert('❌ Erreur lors du parsing du fichier :\n\n' + err.message + '\n\nVérifiez que le fichier est bien un Excel (.xlsx) avec les bonnes colonnes.');
+    }
+  };
+  reader.onerror = function(){ alert('❌ Impossible de lire le fichier.'); };
+  reader.readAsArrayBuffer(file);
+}
+
+// ── Popup édition commentaire ──
+function openImpayeCommentPopup(numFact) {
+  var all = getImpayes();
+  var item = all.find(function(r){ return r.num_fact === numFact; });
+  if (!item) { alert('⚠ Facture introuvable.'); return; }
+
+  // Supprimer popup existant
+  var existing = document.getElementById('imp-comment-modal');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'imp-comment-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(20,10,60,0.55);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+  var metaHtml = '';
+  if (item.commentaire_by || item.commentaire_ts) {
+    var tsTxt = item.commentaire_ts ? new Date(item.commentaire_ts).toLocaleString('fr-FR') : '';
+    metaHtml = '<div style="font-size:11px;color:#9E94C4;margin-top:6px;">Dernière modification : ' + (item.commentaire_by || '?') + (tsTxt ? ' · ' + tsTxt : '') + '</div>';
+  }
+
+  var commentEsc = (item.commentaire || '').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(20,10,60,0.4);padding:22px 24px;width:94%;max-width:560px;">'
+    +   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+    +     '<div style="font-size:16px;font-weight:800;color:#1A1033;">💬 Commentaire facture</div>'
+    +     '<button onclick="document.getElementById(\'imp-comment-modal\').remove()" style="background:none;border:none;color:#9E94C4;font-size:20px;cursor:pointer;line-height:1;">×</button>'
+    +   '</div>'
+    +   '<div style="background:#F5F3FF;border:1px solid #E4E0FA;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;line-height:1.5;color:#1A1033;">'
+    +     '<div><strong>N° Fact. :</strong> ' + (item.num_fact||'') + '</div>'
+    +     '<div><strong>Client :</strong> ' + (item.client||'—') + '</div>'
+    +     '<div><strong>Consultant :</strong> ' + (item.consultant||'—') + '</div>'
+    +     '<div><strong>Solde dû :</strong> ' + _fmtImpayeEur(item.solde_du) + '</div>'
+    +     '<div><strong>Échéance :</strong> ' + _fmtImpayeDate(item.date_echeance) + '</div>'
+    +   '</div>'
+    +   '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Commentaire</label>'
+    +   '<textarea id="imp-comment-textarea" rows="6" placeholder="Ex : Client relancé par email le 15/04, promesse de paiement fin du mois…" style="width:100%;padding:10px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.5;">' + commentEsc + '</textarea>'
+    +   metaHtml
+    +   '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">'
+    +     '<button onclick="document.getElementById(\'imp-comment-modal\').remove()" style="padding:9px 16px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Annuler</button>'
+    +     '<button onclick="saveImpayeComment(\'' + (numFact||'').replace(/'/g,"\\'") + '\')" style="padding:9px 18px;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(115,67,238,0.3);">💾 Enregistrer</button>'
+    +   '</div>'
+    + '</div>';
+
+  document.body.appendChild(modal);
+  setTimeout(function(){ var ta = document.getElementById('imp-comment-textarea'); if (ta) ta.focus(); }, 50);
+}
+
+function saveImpayeComment(numFact) {
+  var ta = document.getElementById('imp-comment-textarea');
+  if (!ta) return;
+  var newComment = ta.value.trim();
+  var all = getImpayes();
+  var idx = all.findIndex(function(r){ return r.num_fact === numFact; });
+  if (idx < 0) { alert('⚠ Facture introuvable.'); return; }
+  all[idx].commentaire = newComment;
+  all[idx].commentaire_by = (typeof _getCurrentUserName === 'function') ? _getCurrentUserName() : 'inconnu';
+  all[idx].commentaire_ts = Date.now();
+  saveImpayes(all);
+  var modal = document.getElementById('imp-comment-modal');
+  if (modal) modal.remove();
+  if (typeof showNotifToast === 'function') showNotifToast('✓ Commentaire enregistré');
+  renderImpayes();
+}
+
+// Remet tous les filtres à zéro
+function clearImpayesFilters() {
+  IMPAYES_FILTER.search_fact = '';
+  IMPAYES_FILTER.search_name = '';
+  IMPAYES_FILTER.client = 'all';
+  IMPAYES_FILTER.banque = 'all';
+  IMPAYES_FILTER.bucket = 'all';
+  renderImpayes();
+}
+
+// ── Export ──
+function exportImpayes() {
+  var all = getImpayes();
+  if (all.length === 0) { alert('Aucune donnée à exporter.'); return; }
+  var headers = ['N° Fact.', 'Env.', 'Date', 'Date échéance', 'Retard (j)', 'Consultant', 'ID M', 'Mission', 'Client', 'MT HT', 'MT TTC', 'Réglé', 'Le', 'Solde dû', 'Commentaire', 'Modifié par', 'Modifié le'];
+  var aoa = [headers];
+  all.forEach(function(r){
+    var days = _daysSinceEcheance(r.date_echeance);
+    aoa.push([
+      r.num_fact || '',
+      r.env || '',
+      _fmtImpayeDate(r.date),
+      _fmtImpayeDate(r.date_echeance),
+      days === null ? '' : days,
+      r.consultant || '',
+      r.id_m || '',
+      r.mission || '',
+      r.client || '',
+      _parseImpayeNumber(r.mt_ht),
+      _parseImpayeNumber(r.mt_ttc),
+      _parseImpayeNumber(r.regle),
+      _fmtImpayeDate(r.le),
+      _parseImpayeNumber(r.solde_du),
+      r.commentaire || '',
+      r.commentaire_by || '',
+      r.commentaire_ts ? new Date(r.commentaire_ts).toLocaleString('fr-FR') : ''
+    ]);
+  });
+  var ws = XLSX.utils.aoa_to_sheet(aoa);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Impayés');
+  var filename = 'Impayes_' + new Date().toISOString().slice(0,10) + '.xlsx';
+  XLSX.writeFile(wb, filename);
+}
+
+// ── Vider table (admin) ──
+function confirmClearImpayes() {
+  if (typeof promptGenericAdminPassword !== 'function') {
+    alert('⚠ Fonction de mot de passe admin indisponible.');
+    return;
+  }
+  promptGenericAdminPassword({
+    title: '🗑 Vider la table des impayés',
+    subtitle: 'Cette action supprime TOUTES les lignes (local + OneDrive). Les commentaires seront perdus. Mot de passe admin requis.'
+  }, function() {
+    if (!confirm('⚠️ Vider TOUTE la table des impayés ?\n\n• Toutes les factures seront supprimées\n• Tous les commentaires seront perdus\n• La suppression est propagée à toute l\'équipe\n\nCette action est IRRÉVERSIBLE.\n\nContinuer ?')) return;
+    // Tombstones pour tous les num_fact
+    var all = getImpayes();
+    all.forEach(function(r){
+      if (r.num_fact && typeof addTombstone === 'function') addTombstone('impayes', r.num_fact);
+    });
+    saveImpayes([]);
+    if (typeof showNotifToast === 'function') showNotifToast('🗑 Table impayés vidée');
+    renderImpayes();
+  });
+}
+
 
 // ── Vue principale ──
 function showComptesActiviteView() {
