@@ -1628,6 +1628,18 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
             </div>
             <button onclick="confirmForcePurgeOthers()" style="padding:9px 16px;background:#fff;color:#8A5F00;border:1.5px solid #F0A500;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;" onmouseover="this.style.background='#FFF4D6'" onmouseout="this.style.background='#fff'">&#128296; Forcer la purge des autres</button>
           </div>
+
+          <!-- BLOC : Diagnostic OneDrive -->
+          <div style="background:#EEF4FF;border:1.5px solid #B8D0F5;border-radius:10px;padding:16px 18px;margin-top:14px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+              <span style="font-size:20px;">&#128269;</span>
+              <div style="font-size:13px;font-weight:700;color:#1A4F96;">Diagnostic OneDrive</div>
+            </div>
+            <div style="font-size:11.5px;color:#6B5E9C;line-height:1.55;margin-bottom:12px;">
+              Affiche l'état exact de chaque fichier sur OneDrive (taille, nombre d'\u00e9l\u00e9ments, marqueur de reset). Utile pour diagnostiquer les bugs de synchro.
+            </div>
+            <button onclick="showOneDriveDiagnostic()" style="padding:9px 16px;background:#fff;color:#1A4F96;border:1.5px solid #B8D0F5;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;" onmouseover="this.style.background='#E6EFFA'" onmouseout="this.style.background='#fff'">&#128269; Afficher le diagnostic</button>
+          </div>
         </div>
       </div>
 
@@ -5951,6 +5963,92 @@ function doForcePurgeOthers() {
   });
 }
 
+// 🔍 DIAGNOSTIC ONEDRIVE — affiche l'état des 16 fichiers et le marqueur de reset
+function showOneDriveDiagnostic() {
+  if (!odToken) {
+    alert('⚠️ Vous devez être connecté à OneDrive pour faire le diagnostic.');
+    return;
+  }
+  _initSyncEntities();
+  odSetStatus('Diagnostic en cours...', false);
+
+  odWithToken(function(token) {
+    var entities = SYNC_ENTITIES;
+    var results = [];
+
+    function checkOne(ent) {
+      var enc = ent.path.split('/').map(function(s){ return s?encodeURIComponent(s):''; }).join('/');
+      var url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + enc + ':/content';
+      return fetch(url, { headers: {'Authorization': 'Bearer ' + token} })
+        .then(function(r){
+          if (!r.ok) {
+            return { key: ent.key, status: r.status, count: 'N/A', size: 0 };
+          }
+          return r.text().then(function(txt){
+            var size = txt.length;
+            var count = '?';
+            try {
+              var j = JSON.parse(txt);
+              // Trouver le tableau principal
+              var arrFields = ['simulations','candidats','deals','clients','commissions','sortants','cooptations','avances','taches','demandes','avantages_sociaux','frais_pro','demarrages','jours_prestes','impayes'];
+              for (var i = 0; i < arrFields.length; i++) {
+                if (Array.isArray(j[arrFields[i]])) { count = j[arrFields[i]].length; break; }
+              }
+              if (ent.key === 'app_settings') {
+                count = 'settings';
+              }
+              return {
+                key: ent.key, status: 200, count: count, size: size,
+                last_reset_ts: j._last_reset_ts || null,
+                reset_by: j._reset_by || null
+              };
+            } catch(e) {
+              return { key: ent.key, status: 200, count: 'JSON err', size: size };
+            }
+          });
+        })
+        .catch(function(err){
+          return { key: ent.key, status: 'NET', count: 'err', size: 0 };
+        });
+    }
+
+    var chain = Promise.resolve();
+    entities.forEach(function(ent){
+      chain = chain.then(function(){
+        return checkOne(ent).then(function(res){ results.push(res); });
+      });
+    });
+
+    chain.then(function(){
+      var lastResetTs = null, resetBy = null;
+      results.forEach(function(r){
+        if (r.last_reset_ts) { lastResetTs = r.last_reset_ts; resetBy = r.reset_by; }
+      });
+      var lastSeenLocal = parseInt(localStorage.getItem(LAST_RESET_SEEN_KEY) || '0', 10);
+
+      var msg = '🔍 DIAGNOSTIC ONEDRIVE\n';
+      msg += '═══════════════════════════\n\n';
+      msg += '📅 Dernier reset OneDrive : ' + (lastResetTs ? new Date(lastResetTs).toLocaleString('fr-FR') + ' par ' + (resetBy||'?') : 'AUCUN') + '\n';
+      msg += '👁  Vu en local : ' + (lastSeenLocal ? new Date(lastSeenLocal).toLocaleString('fr-FR') : 'JAMAIS') + '\n';
+      if (lastResetTs && lastResetTs > lastSeenLocal) {
+        msg += '⚠️  Reset distant non appliqué — devrait se déclencher au prochain sync\n';
+      }
+      msg += '\n📊 État des fichiers :\n\n';
+      results.forEach(function(r){
+        var icon = r.status === 200 ? '✓' : '❌';
+        var countTxt = (typeof r.count === 'number') ? r.count + ' éléments' : r.count;
+        var sizeTxt = r.size > 1024 ? Math.round(r.size/1024) + ' Ko' : r.size + ' o';
+        msg += icon + ' ' + r.key.padEnd(20) + ' ' + countTxt + ' (' + sizeTxt + ')';
+        if (r.status !== 200) msg += ' — ERREUR ' + r.status;
+        msg += '\n';
+      });
+      odSetStatus('✓ Diagnostic terminé', false);
+      alert(msg);
+      console.log('[Diag] Résultats complets:', results);
+    });
+  });
+}
+
 // Exécution : upload des 15 fichiers vides sur OneDrive, puis clear local + reload
 function doResetTotalOneDrive() {
   _initSyncEntities();
@@ -6046,23 +6144,41 @@ function doResetTotalOneDrive() {
     }
 
     // Enchaîner les PUT un par un avec 250ms entre chaque (respecte le rate-limit Graph)
+    // Chaque putOne ne rejette JAMAIS (il push dans errors[]) → la chaîne ne casse pas
     var chain = Promise.resolve();
-    entities.forEach(function(ent) {
-      chain = chain.then(function(){ return putOne(ent); })
-                   .then(function(){ return new Promise(function(resolve){ setTimeout(resolve, 250); }); });
+    entities.forEach(function(ent, idx) {
+      chain = chain.then(function(){
+        console.log('[Reset] PUT ' + (idx+1) + '/' + total + ' : ' + ent.key);
+        return putOne(ent);
+      }).catch(function(err){
+        // Filet de sécurité ultime — si jamais putOne rejette malgré tout
+        console.error('[Reset] Exception non-catchée sur ' + ent.key, err);
+        errors.push(ent.key + ' (exception)');
+        return null;  // Continuer la chaîne
+      }).then(function(){
+        return new Promise(function(resolve){ setTimeout(resolve, 250); });
+      });
     });
 
     chain.then(function() {
       // ═══ ÉTAPE 2 : supprimer les dossiers SharePoint (comptes d'activité) ═══
       odSetStatus('Suppression dossiers SharePoint...', false);
+      console.log('[Reset] PUT terminés — ' + done + '/' + total + ' OK, ' + errors.length + ' erreurs');
       return deleteSharePointFolder('/General/Seven Portage Simlateur/Comptes_activite')
         .then(function(){
-          // Ajouter d'autres dossiers ici si besoin à l'avenir
           return true;
+        }).catch(function(err){
+          console.warn('[Reset] Échec suppression dossier SharePoint', err);
+          return false;
         });
+    }).catch(function(err){
+      // Filet de sécurité final — l'alerte doit s'afficher dans tous les cas
+      console.error('[Reset] Exception finale', err);
+      errors.push('exception finale');
+      return false;
     }).then(function() {
       if (errors.length) {
-        alert('⚠️ Reset partiel : ' + (total - errors.length) + '/' + total + ' fichiers vidés.\n\nErreurs sur : ' + errors.join(', ') + '\n\nVotre navigateur va quand même être vidé pour partir sur une base propre.');
+        alert('⚠️ Reset partiel : ' + (total - errors.length) + '/' + total + ' fichiers vidés.\n\nErreurs sur : ' + errors.join(', ') + '\n\n📋 Détails complets dans la console (F12).\n\nVotre navigateur va quand même être vidé pour partir sur une base propre.');
       } else {
         alert('✓ Reset OneDrive terminé : ' + total + ' fichiers vidés.\n📂 Dossier Comptes_activite/ supprimé.\n\nVotre navigateur va maintenant être vidé et la page rechargée.\n\n➤ Vos collègues seront automatiquement synchronisés au prochain sync (leur navigateur sera vidé et rechargé).');
       }
