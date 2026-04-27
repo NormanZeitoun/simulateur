@@ -12646,6 +12646,44 @@ function _avBadge(value, type) {
   return '<span style="display:inline-block;padding:2px 8px;background:' + bg + ';color:' + color + ';border-radius:5px;font-size:10.5px;font-weight:700;">' + value + '</span>';
 }
 
+// ── Select éditable inline pour le tableau Avenants ──
+// Modifie un champ directement dans la cellule et sauvegarde + sync OneDrive
+function _avInlineSelect(avenantId, field, currentValue, options) {
+  var bg = '#fff', color = '#6B5E9C', borderColor = '#E4E0FA';
+  // Code couleur selon valeur sélectionnée
+  if (currentValue === 'Oui') { bg = '#E8F5EE'; color = '#0F5132'; borderColor = '#9FE1CB'; }
+  else if (currentValue === 'Non') { bg = '#FDECEC'; color = '#8A0A0A'; borderColor = '#F5B5B5'; }
+  else if (currentValue === 'Envoyé') { bg = '#EEF4FF'; color = '#1A4F96'; borderColor = '#B8D0F5'; }
+  else if (currentValue === 'Reçu') { bg = '#E8F5EE'; color = '#0F5132'; borderColor = '#9FE1CB'; }
+  else if (currentValue === 'En attente') { bg = '#FFF4D6'; color = '#8A5F00'; borderColor = '#F0D98A'; }
+  var html = '<select onchange="updateAvenantField(\'' + avenantId + '\',\'' + field + '\',this.value)" style="padding:3px 6px;border:1.5px solid ' + borderColor + ';border-radius:5px;font-size:10.5px;font-weight:700;background:' + bg + ';color:' + color + ';cursor:pointer;font-family:inherit;min-width:80px;">';
+  html += '<option value=""' + (!currentValue?' selected':'') + '>—</option>';
+  options.forEach(function(opt){
+    html += '<option value="' + opt + '"' + (currentValue===opt?' selected':'') + '>' + opt + '</option>';
+  });
+  html += '</select>';
+  return html;
+}
+
+// Mise à jour d'un champ d'avenant + sauvegarde + sync (édition inline)
+function updateAvenantField(avenantId, field, value) {
+  var all = getAvenants();
+  var idx = all.findIndex(function(a){ return a.id === avenantId; });
+  if (idx < 0) return;
+  all[idx][field] = value;
+  all[idx].updated_at = Date.now();
+  all[idx].updated_by = (typeof _getCurrentUserName === 'function') ? _getCurrentUserName() : 'inconnu';
+  saveAvenants(all);
+  // Pour les champs critiques (signatures, LAYA), redessiner le tableau et le KPI dashboard
+  // pour que les pills "À traiter / Finalisés" et le compteur dashboard se mettent à jour
+  if (field === 'avenant_cdt_signe' || field === 'avenant_cdps_signe' || field === 'modif_laya' || field === 'etat_avenant_cdt' || field === 'etat_av_cdps') {
+    // Re-render léger : on recharge les pills et compteurs uniquement si la vue est active
+    if (typeof renderAvenants === 'function' && document.getElementById('rh-content-container')) {
+      renderAvenants();
+    }
+  }
+}
+
 function buildAvenantsContent() {
   var avenants = getAvenants();
 
@@ -12776,18 +12814,63 @@ function buildAvenantsContent() {
     + '</tr></thead><tbody>';
 
   filtered.forEach(function(a){
+    // Pour les anciens avenants qui stockaient "Oui"/"Non", on re-extrait depuis la SIMU
+    // pour afficher les vrais montants. Pour les nouveaux, on utilise les valeurs stockées.
+    var freshFrais = null;
+    var oldFraisCmp = null;
+    if (a.sim_ts && typeof getHistory === 'function') {
+      try {
+        var simAv = getHistory().find(function(s){ return s.timestamp === a.sim_ts; });
+        if (simAv) freshFrais = _avExtractFraisFromSim(simAv);
+      } catch(e) {}
+    }
+    // Re-calcul des changements vs ancienne SIMU si possible
+    if (freshFrais && a.deal_id && typeof getDeals === 'function') {
+      try {
+        // On essaie de retrouver l'ancien sim_ts via l'historique du deal
+        var dealOfAvenant = getDeals().find(function(d){ return d.id == a.deal_id; });
+        if (dealOfAvenant && Array.isArray(dealOfAvenant.historique_prolongations)) {
+          var thisEvent = dealOfAvenant.historique_prolongations.find(function(h){ return h.avenant_id === a.id; });
+          if (thisEvent && thisEvent.ancien_sim_ts) {
+            var ancSim = getHistory().find(function(s){ return s.timestamp === thisEvent.ancien_sim_ts; });
+            if (ancSim) oldFraisCmp = _avExtractFraisFromSim(ancSim);
+          }
+        }
+      } catch(e) {}
+    }
+
     function val(field, type) {
-      var v = a[field];
+      // Priorité : valeur fraîche depuis SIMU si dispo, sinon valeur stockée
+      var v = (freshFrais && freshFrais[field] !== undefined && freshFrais[field] !== null) ? freshFrais[field] : a[field];
+      // Détermine si c'est changé (depuis _changed pré-calculé OU recalcul à la volée)
+      var isChanged = false;
+      var oldValDisplay = '';
       if (a._changed && a._changed[field]) {
-        return '<span class="av-newvalue" title="Modifié vs ancien : ' + (a._old && a._old[field] !== undefined ? a._old[field] : '?') + '">' + (v||'—') + '</span>';
+        isChanged = true;
+        oldValDisplay = (a._old && a._old[field] !== undefined) ? a._old[field] : '?';
+      } else if (oldFraisCmp && freshFrais && String(oldFraisCmp[field]||'') !== String(freshFrais[field]||'')) {
+        isChanged = true;
+        oldValDisplay = oldFraisCmp[field] || '—';
+      }
+      if (isChanged) {
+        return '<span class="av-newvalue" title="Modifié vs ancien : ' + String(oldValDisplay).replace(/"/g,'&quot;') + '">' + (v||'—') + '</span>';
       }
       return '<span class="av-unchanged">' + (v||'—') + '</span>';
     }
     function valEur(field) {
-      var v = a[field];
+      var v = (freshFrais && freshFrais[field] !== undefined && freshFrais[field] !== null) ? freshFrais[field] : a[field];
       var formatted = _fmtAvEur(v);
+      var isChanged = false;
+      var oldValDisplay = null;
       if (a._changed && a._changed[field]) {
-        return '<span class="av-newvalue" title="Ancien : ' + _fmtAvEur(a._old && a._old[field]) + '">' + formatted + '</span>';
+        isChanged = true;
+        oldValDisplay = a._old && a._old[field];
+      } else if (oldFraisCmp && freshFrais && (oldFraisCmp[field]||0) !== (freshFrais[field]||0)) {
+        isChanged = true;
+        oldValDisplay = oldFraisCmp[field];
+      }
+      if (isChanged) {
+        return '<span class="av-newvalue" title="Ancien : ' + _fmtAvEur(oldValDisplay) + '">' + formatted + '</span>';
       }
       return formatted;
     }
@@ -12813,13 +12896,13 @@ function buildAvenantsContent() {
       + '<td>' + val('teletravail') + '</td>'
       + '<td>' + val('tel_internet') + '</td>'
       + '<td>' + val('grand_deplacement') + '</td>'
-      + '<td>' + _avBadge(a.etat_avenant_cdt, 'etat_cdt') + '</td>'
-      + '<td>' + _avBadge(a.etat_av_cdps, 'etat_cdps') + '</td>'
-      + '<td>' + _avBadge(a.avenant_cdt_signe, 'signe') + '</td>'
-      + '<td>' + _avBadge(a.avenant_cdps_signe, 'signe') + '</td>'
-      + '<td>' + _avBadge(a.modif_laya, 'modif_laya') + '</td>'
-      + '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;" title="' + (a.commentaires||'').replace(/"/g,'&quot;') + '">' + (a.commentaires || '—') + '</td>'
-      + '<td><button class="av-edit-btn" onclick="openEditAvenantPopup(\'' + a.id + '\')">✎ Suivi</button></td>'
+      + '<td>' + _avInlineSelect(a.id, 'etat_avenant_cdt', a.etat_avenant_cdt, ['Envoyé','En attente']) + '</td>'
+      + '<td>' + _avInlineSelect(a.id, 'etat_av_cdps', a.etat_av_cdps, ['Envoyé','Reçu','En attente']) + '</td>'
+      + '<td>' + _avInlineSelect(a.id, 'avenant_cdt_signe', a.avenant_cdt_signe, ['Oui','Non']) + '</td>'
+      + '<td>' + _avInlineSelect(a.id, 'avenant_cdps_signe', a.avenant_cdps_signe, ['Oui','Non']) + '</td>'
+      + '<td>' + _avInlineSelect(a.id, 'modif_laya', a.modif_laya, ['Oui','Non']) + '</td>'
+      + '<td style="max-width:220px;"><input type="text" value="' + (a.commentaires||'').replace(/"/g,'&quot;') + '" placeholder="—" oninput="updateAvenantField(\'' + a.id + '\',\'commentaires\',this.value);" style="width:100%;padding:4px 7px;border:1px solid #E4E0FA;border-radius:5px;font-size:10.5px;font-family:inherit;background:transparent;"></td>'
+      + '<td><button class="av-edit-btn" onclick="openEditAvenantPopup(\'' + a.id + '\')" title="Édition complète + suppression">✎</button></td>'
       + '</tr>';
   });
 
