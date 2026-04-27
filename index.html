@@ -908,6 +908,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .kpi-card.kpi-gold   { --kpi-accent: linear-gradient(90deg, #B26A00, #F0A500); --kpi-bg: #FFF4D6; --kpi-value-color: #A86B00; }
 .kpi-card.kpi-blue   { --kpi-accent: linear-gradient(90deg, #0051A8, #0078D4); --kpi-bg: #E3F0FF; --kpi-value-color: #0051A8; }
 .kpi-card.kpi-purple { --kpi-accent: linear-gradient(90deg, #6E1F8F, #B447C9); --kpi-bg: #F7E4FD; --kpi-value-color: #7A2D97; }
+.kpi-card.kpi-orange { --kpi-accent: linear-gradient(90deg, #C46300, #F0A500); --kpi-bg: #FFF0DB; --kpi-value-color: #B26A00; }
 .dash-repart-card {
   background: #fff;
   border-radius: 14px;
@@ -4514,6 +4515,18 @@ function filterByPeriod(all, period) {
   return all;
 }
 
+// Helper navigation depuis le dashboard vers la liste Candidats avec filtre statut
+function _dashGoToCandidats(statut) {
+  if (typeof mainNavTo === 'function') mainNavTo('candidats');
+  setTimeout(function(){
+    var sel = document.getElementById('cand-filter-statut');
+    if (sel) {
+      sel.value = statut || '';
+      if (typeof renderCandidats === 'function') renderCandidats();
+    }
+  }, 150);
+}
+
 function buildDashboard(all) {
   var el = document.getElementById('hist-dashboard');
   if (!el) return;
@@ -4747,6 +4760,14 @@ function renderDashboardKPIs() {
     return _dashMatchPeriod(s.date_sortie);
   }).length;
 
+  // Avenants à traiter (instant T) — non finalisés = au moins une signature ou Modif LAYA manquante
+  var avenantsAll = (typeof getAvenants === 'function') ? getAvenants() : [];
+  var avenantsATraiter = avenantsAll.filter(function(a){
+    if (dashFilters.commercial !== '__all__' && (a.commercial || '') !== dashFilters.commercial) return false;
+    return !_avIsFinalise(a);
+  });
+  var nbAvenantsATraiter = avenantsATraiter.length;
+
   var simsFiltered = simulations.filter(function(s) {
     if (dashFilters.commercial !== '__all__' && (s.commercial || '') !== dashFilters.commercial) return false;
     return _dashMatchPeriod(s.date);
@@ -4864,10 +4885,11 @@ function renderDashboardKPIs() {
   var nbClientsActifs = Object.keys(clientsActifs).length;
 
   // ─ Helpers rendu ─
-  function kpi(cls, icon, value, unit, label, sub) {
+  function kpi(cls, icon, value, unit, label, sub, onclick) {
     var u = unit ? '<span class="kpi-unit">' + unit + '</span>' : '';
     var s = sub ? '<div class="kpi-sub">' + sub + '</div>' : '';
-    return '<div class="kpi-card ' + cls + '">'
+    var clickAttr = onclick ? ' onclick="' + onclick + '" style="cursor:pointer;" title="Cliquez pour ouvrir"' : '';
+    return '<div class="kpi-card ' + cls + '"' + clickAttr + '>'
       + '<div class="kpi-icon">' + icon + '</div>'
       + '<div class="kpi-value">' + value + u + '</div>'
       + '<div class="kpi-label">' + label + '</div>'
@@ -4910,18 +4932,23 @@ function renderDashboardKPIs() {
 
     + '<div class="dash-section-title">📊 Volumes du mois</div>'
     + '<div class="dash-grid cols-4">'
-    +   kpi('kpi-violet', '📋', nbPlacements, '', 'Placements', 'créés dans la période')
-    +   kpi('kpi-green',  '🚀', nbStarters,   '', 'Starters',   'entrées effectives')
-    +   kpi('kpi-red',    '🚪', nbSortants,   '', 'Sortants',   'sorties enregistrées')
-    +   kpi('kpi-gold',   '📈', nbSimulations,'', 'Simulations','créées dans la période')
+    +   kpi('kpi-violet', '📋', nbPlacements, '', 'Placements', 'créés dans la période', 'mainNavTo(\'rh\');setTimeout(function(){showRHSection(\'deals\');},120);')
+    +   kpi('kpi-green',  '🚀', nbStarters,   '', 'Starters',   'entrées effectives', 'mainNavTo(\'rh\');setTimeout(function(){showRHSection(\'entrees\');},120);')
+    +   kpi('kpi-red',    '🚪', nbSortants,   '', 'Sortants',   'sorties enregistrées', 'mainNavTo(\'rh\');setTimeout(function(){showRHSection(\'sortants\');},120);')
+    +   kpi('kpi-gold',   '📈', nbSimulations,'', 'Simulations','créées dans la période', 'mainNavTo(\'historique\');')
     + '</div>'
 
     + '<div class="dash-section-title">👥 Portefeuille actif (instant T)</div>'
     + '<div class="dash-grid cols-4">'
-    +   kpi('kpi-violet', '👤', nbPortesActifs,  '', 'Portés actifs',    'Signés + En cours en mission')
-    +   kpi('kpi-purple', '🏢', nbClientsActifs, '', 'Clients actifs',   '≥1 porté actif')
+    +   kpi('kpi-violet', '👤', nbPortesActifs,  '', 'Portés actifs',    'Signés + En cours en mission', '_dashGoToCandidats(\'Porté\');')
+    +   kpi('kpi-purple', '🏢', nbClientsActifs, '', 'Clients actifs',   '≥1 porté actif', 'mainNavTo(\'clients\');')
     +   kpi('kpi-blue',   '🌍', pctEtrangers,    '%', 'Étrangers',       '% portés avec titre de séjour')
     +   kpi('kpi-gold',   '🧳', pctGD,           '%', 'Grand déplacement','% portés GD')
+    + '</div>'
+
+    + '<div class="dash-section-title">📝 Suivi RH à traiter</div>'
+    + '<div class="dash-grid cols-4">'
+    +   kpi(nbAvenantsATraiter > 0 ? 'kpi-orange' : 'kpi-green', '📝', nbAvenantsATraiter, '', 'Avenants à traiter', nbAvenantsATraiter > 0 ? 'CDT, CDPS ou LAYA non finalisés' : 'Tous les avenants sont finalisés', 'AVENANTS_FILTER.statut=\'a_traiter\';mainNavTo(\'rh\');setTimeout(function(){showRHSection(\'avenants\');},100);')
     + '</div>'
 
     + '<div class="dash-section-title">💰 Financier</div>'
@@ -4939,9 +4966,9 @@ function renderDashboardKPIs() {
 
     + '<div class="dash-section-title">🎯 Statuts candidats (temps réel)</div>'
     + '<div class="dash-grid cols-3">'
-    +   kpi('kpi-gold', '🔥', nbProspectsChauds, '', 'Prospects chauds', 'à convertir rapidement')
-    +   kpi('kpi-gold', '⛔', nbSansMission,     '', 'Sans mission',     'portés signés hors mission')
-    +   kpi('kpi-red',  '❌', nbPerdus,          '', 'Perdus',           'candidats abandonnés')
+    +   kpi('kpi-gold', '🔥', nbProspectsChauds, '', 'Prospects chauds', 'à convertir rapidement', '_dashGoToCandidats(\'Prospect chaud\');')
+    +   kpi('kpi-gold', '⛔', nbSansMission,     '', 'Sans mission',     'portés signés hors mission', '_dashGoToCandidats(\'Porté sans mission\');')
+    +   kpi('kpi-red',  '❌', nbPerdus,          '', 'Perdus',           'candidats abandonnés', '_dashGoToCandidats(\'Perdu\');')
     + '</div>'
 
     + '<div class="dash-section-title">📈 Répartitions</div>'
@@ -12511,8 +12538,16 @@ var AVENANTS_FILTER = {
   search: '',
   commercial: 'all',
   etat_cdt: 'all',
-  etat_cdps: 'all'
+  etat_cdps: 'all',
+  statut: 'all'  // 'all' / 'a_traiter' (au moins une signature manquante OU LAYA non fait) / 'finalise' (tout = Oui)
 };
+
+// Helper : un avenant est "finalisé" quand CDT signé = Oui ET CDPS signé = Oui ET Modif LAYA = Oui
+function _avIsFinalise(a) {
+  return a && a.avenant_cdt_signe === 'Oui'
+           && a.avenant_cdps_signe === 'Oui'
+           && a.modif_laya === 'Oui';
+}
 
 function getAvenants() {
   try { return JSON.parse(localStorage.getItem(AVENANTS_KEY) || '[]'); }
@@ -12615,6 +12650,8 @@ function buildAvenantsContent() {
   var avenants = getAvenants();
 
   var filtered = avenants.filter(function(a){
+    if (AVENANTS_FILTER.statut === 'a_traiter' && _avIsFinalise(a)) return false;
+    if (AVENANTS_FILTER.statut === 'finalise' && !_avIsFinalise(a)) return false;
     if (AVENANTS_FILTER.commercial !== 'all') {
       if ((a.commercial || '') !== AVENANTS_FILTER.commercial) return false;
     }
@@ -12644,7 +12681,7 @@ function buildAvenantsContent() {
   avenants.forEach(function(a){ if (a.commercial) commerciauxSet[a.commercial] = (commerciauxSet[a.commercial] || 0) + 1; });
   var commerciauxList = Object.keys(commerciauxSet).sort(function(a,b){ return a.localeCompare(b,'fr'); });
 
-  var hasActiveFilter = AVENANTS_FILTER.commercial !== 'all' || AVENANTS_FILTER.etat_cdt !== 'all' || AVENANTS_FILTER.etat_cdps !== 'all' || AVENANTS_FILTER.search;
+  var hasActiveFilter = AVENANTS_FILTER.commercial !== 'all' || AVENANTS_FILTER.etat_cdt !== 'all' || AVENANTS_FILTER.etat_cdps !== 'all' || AVENANTS_FILTER.search || AVENANTS_FILTER.statut !== 'all';
 
   var html = '<style>'
     + '.av-wrap{padding:14px 18px;max-width:100%;}'
@@ -12653,7 +12690,7 @@ function buildAvenantsContent() {
     + '.av-title span.sub{font-size:11px;font-weight:600;color:#9E94C4;margin-left:8px;}'
     + '.av-table-wrap{background:#fff;border:1px solid #E4E0FA;border-radius:12px;overflow:hidden;}'
     + '.av-table-scroll{overflow-x:auto;}'
-    + '.av-table{width:100%;border-collapse:collapse;font-size:11px;min-width:1800px;}'
+    + '.av-table{width:100%;border-collapse:collapse;font-size:11px;min-width:2400px;}'
     + '.av-table th{background:#F5F3FF;color:#1A1033;font-weight:800;text-align:left;padding:8px 8px;border-bottom:2px solid #E4E0FA;font-size:9.5px;text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap;position:sticky;top:0;z-index:1;}'
     + '.av-table td{padding:7px 8px;border-bottom:1px solid #F0EDF9;vertical-align:middle;font-size:11px;white-space:nowrap;}'
     + '.av-table tr:hover{background:#FAFAFE;}'
@@ -12669,6 +12706,18 @@ function buildAvenantsContent() {
     +     '<div class="av-title">📝 Avenants <span class="sub">' + avenants.length + ' avenant' + (avenants.length>1?'s':'') + '</span></div>'
     +     '<div style="font-size:11px;color:#9E94C4;">💡 Les avenants sont créés depuis la fiche candidat via le bouton <strong>Prolongation</strong></div>'
     +   '</div>';
+
+  // ── Pills de statut : À traiter / Finalisés / Tous ──
+  // Un avenant est "finalisé" quand CDT signé = Oui ET CDPS signé = Oui ET Modif LAYA = Oui
+  var nbATraiter = avenants.filter(function(a){ return !_avIsFinalise(a); }).length;
+  var nbFinalises = avenants.filter(function(a){ return _avIsFinalise(a); }).length;
+
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">';
+  html += '<button onclick="AVENANTS_FILTER.statut=\'all\';renderAvenants();" style="padding:8px 14px;background:' + (AVENANTS_FILTER.statut==='all'?'linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border:none;':'#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;') + 'border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">📋 Tous (' + avenants.length + ')</button>';
+  html += '<button onclick="AVENANTS_FILTER.statut=\'a_traiter\';renderAvenants();" style="padding:8px 14px;background:' + (AVENANTS_FILTER.statut==='a_traiter'?'linear-gradient(135deg,#F0A500,#D49100);color:#fff;border:none;':'#FFF8E8;color:#8A5F00;border:1.5px solid #F0D98A;') + 'border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">⏳ À traiter (' + nbATraiter + ')</button>';
+  html += '<button onclick="AVENANTS_FILTER.statut=\'finalise\';renderAvenants();" style="padding:8px 14px;background:' + (AVENANTS_FILTER.statut==='finalise'?'linear-gradient(135deg,#1D9E75,#0F5132);color:#fff;border:none;':'#F0FAF4;color:#0F5132;border:1.5px solid #9FE1CB;') + 'border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">✓ Finalisés (' + nbFinalises + ')</button>';
+  html += '<span style="font-size:10.5px;color:#9E94C4;margin-left:4px;">Finalisé = CDT signé · CDPS signé · Modif LAYA = tous Oui</span>';
+  html += '</div>';
 
   // Filtres
   html += '<div style="background:#fff;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">';
@@ -12700,7 +12749,7 @@ function buildAvenantsContent() {
     +   '<option value="En attente"' + (AVENANTS_FILTER.etat_cdps==='En attente'?' selected':'') + '>En attente</option>'
     + '</select></div>';
   if (hasActiveFilter) {
-    html += '<button onclick="AVENANTS_FILTER={search:\'\',commercial:\'all\',etat_cdt:\'all\',etat_cdps:\'all\'};renderAvenants();" style="padding:8px 14px;background:#FFF4D6;color:#8A5F00;border:1.5px solid #F0A500;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;align-self:flex-end;">✗ Effacer les filtres</button>';
+    html += '<button onclick="AVENANTS_FILTER={search:\'\',commercial:\'all\',etat_cdt:\'all\',etat_cdps:\'all\',statut:\'all\'};renderAvenants();" style="padding:8px 14px;background:#FFF4D6;color:#8A5F00;border:1.5px solid #F0A500;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;align-self:flex-end;">✗ Effacer les filtres</button>';
   }
   html += '</div>';
 
@@ -13029,6 +13078,7 @@ function confirmProlongationSimple(dealId) {
   deal.historique_prolongations.push({
     type: 'prolongation_simple',
     date: dateAvenant || new Date().toISOString().slice(0,10),
+    sim_ts: deal.sim_ts || null,  // SIMU active au moment de la prolongation simple
     ancienne_date_fin: ancienneDateFin,
     nouvelle_date_fin: newDate,
     commentaire: comment,
@@ -13145,7 +13195,7 @@ function sendProlongationSimpleEmail(deal, ancienneDateFin, nouvelleDateFin, com
 // Cas 3 : Prolongation nouvelle SIMU (renégociation TJM/salaire/frais)
 // ═══════════════════════════════════════════════════════════════════
 
-// Helper : extraire les frais structurés depuis une SIMU
+// Helper : extraire les frais structurés depuis une SIMU (avec montants)
 function _avExtractFraisFromSim(sim) {
   if (!sim) return {};
   var _resolve = function(field){
@@ -13160,17 +13210,75 @@ function _avExtractFraisFromSim(sim) {
   var trans = parseFloat(String(sim.abo_transport||'').replace(',','.')) || 0;
   var tel = parseFloat(String(sim.abo_tel||'').replace(',','.')) || 0;
   var net = parseFloat(String(sim.abo_internet||'').replace(',','.')) || 0;
+  var gdLieu = _resolve('gd_lieu') || '';
   var brutMens = parseFloat(String(sim.brut||'').replace(/[^0-9.,]/g,'').replace(',','.')) || 0;
+  // Forfait repas par jour (param paie globale, fallback 21.10€/jour si non disponible)
+  var forfaitJournalier = 21.10;
+  try {
+    var pfr = document.getElementById('p_forfait_repas');
+    if (pfr && pfr.value) forfaitJournalier = parseFloat(pfr.value) || 21.10;
+  } catch(e) {}
+
+  // Libellés Swile/TR
+  var swileLbl = 'Non';
+  if (repas === 'Swile' || repasUp === 'SWILE') swileLbl = 'Swile';
+  else if (repas === 'Reel' || repasUp === 'REEL') swileLbl = 'Réel';
+
+  // Libellé Forfait repas (montant journalier × forfait)
+  var forfaitLbl = 'Non';
+  if (repas === 'Forfait' || repasUp === 'FORFAIT') {
+    forfaitLbl = forfaitJournalier.toFixed(2).replace('.', ',') + ' €/jour';
+  }
+
+  // Indemnité km (km aller, multiplié par 2 pour aller-retour, à titre informatif)
+  var kmLbl = km > 0 ? (km + ' km aller') : 'Non';
+
+  // Transport en commun (abonnement)
+  var transLbl = trans > 0 ? (trans.toLocaleString('fr-FR') + ' €/mois') : 'Non';
+
+  // Télétravail
+  var ttLbl = tt ? 'Oui' : 'Non';
+
+  // Tel + Internet (somme)
+  var telnetTotal = tel + net;
+  var telnetLbl;
+  if (telnetTotal > 0) {
+    var parts = [];
+    if (tel > 0) parts.push('tel ' + tel.toLocaleString('fr-FR') + '€');
+    if (net > 0) parts.push('net ' + net.toLocaleString('fr-FR') + '€');
+    telnetLbl = telnetTotal.toLocaleString('fr-FR') + ' €/mois (' + parts.join(' + ') + ')';
+  } else {
+    telnetLbl = 'Non';
+  }
+
+  // Grand déplacement
+  var gdLbl = (repasUp === 'GD') ? ('Oui' + (gdLieu ? ' (' + gdLieu + ')' : '')) : 'Non';
+
   return {
     tjm: sim.tjm ? String(sim.tjm) : '',
     new_salaire_annuel: brutMens > 0 ? Math.round(brutMens * 12) : null,
-    swile_tr: (repas === 'Swile' || repas === 'Reel' || repasUp === 'SWILE' || repasUp === 'REEL') ? 'Oui' : 'Non',
-    forfait_repas: (repas === 'Forfait' || repasUp === 'FORFAIT') ? 'Oui' : 'Non',
-    ind_km: km > 0 ? 'Oui' : 'Non',
-    transport_commun: trans > 0 ? 'Oui' : 'Non',
-    teletravail: tt ? 'Oui' : 'Non',
-    tel_internet: (tel + net) > 0 ? 'Oui' : 'Non',
-    grand_deplacement: (repasUp === 'GD') ? 'Oui' : 'Non'
+    swile_tr: swileLbl,
+    forfait_repas: forfaitLbl,
+    ind_km: kmLbl,
+    transport_commun: transLbl,
+    teletravail: ttLbl,
+    tel_internet: telnetLbl,
+    grand_deplacement: gdLbl,
+    // Valeurs brutes pour comparaisons fines
+    _raw: {
+      tjm: sim.tjm ? parseFloat(String(sim.tjm).replace(',','.')) : 0,
+      brut_mens: brutMens,
+      swile_type: swileLbl,
+      forfait_journalier: forfaitJournalier,
+      forfait_actif: (repas === 'Forfait' || repasUp === 'FORFAIT'),
+      km: km,
+      transport: trans,
+      tt: !!tt,
+      tel: tel,
+      net: net,
+      gd_actif: (repasUp === 'GD'),
+      gd_lieu: gdLieu
+    }
   };
 }
 
@@ -13367,9 +13475,11 @@ function renderAvenantPopupBody(simTimestamp) {
     +     '<option value="">— Sélectionner —</option>'
     +     '<option>Hausse TJM</option><option>New CDPS</option><option>New Frais</option><option>Frais URSSAF</option><option>Autre</option>'
     +   '</select></div>'
-    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">CDPS Seven ou client</label>'
+    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">CDPS Seven ou client <span style="color:#9E94C4;font-weight:500;">(auto)</span></label>'
     +   '<select id="av-cdps-seven-client" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;background:#fff;">'
-    +     '<option value="">—</option><option>Seven</option><option>Client</option>'
+    +     '<option value=""' + (!deal.type_contrat_client?' selected':'') + '>—</option>'
+    +     '<option value="Seven"' + (deal.type_contrat_client==='Seven'?' selected':'') + '>Seven</option>'
+    +     '<option value="Client"' + (deal.type_contrat_client==='Client'?' selected':'') + '>Client</option>'
     +   '</select></div>'
     + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Type contrat</label>'
     +   '<select id="av-type-contrat" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;background:#fff;">'
@@ -13512,6 +13622,7 @@ function confirmProlongationAvenant(dealId, mode) {
     date: dateAvenant,
     avenant_id: avenantId,
     sim_ts: simTs,
+    ancien_sim_ts: deal.sim_ts || null,  // pour retrouver la SIMU originale dans la timeline
     ancienne_date_fin: deal.date_fin || '',
     nouvelle_date_fin: dateFin,
     type_avenant: typeAvenant,
@@ -14066,9 +14177,30 @@ function buildImpayesContent() {
     var numFact = (r.num_fact || '').replace(/'/g,'\\\'');
     var comptaTxt = (r.compta_contact || '');
     var comptaEmail = (r.compta_email || '');
-    var comptaCell = comptaTxt
+
+    // Cellule Contact compta → lien cliquable vers la fiche client (si client trouvé)
+    var clientNameForLookup = (r.client || '').trim();
+    var comptaInner = comptaTxt
       ? comptaTxt + (comptaEmail ? '<br><span style="font-size:9.5px;color:#9E94C4;">' + comptaEmail + '</span>' : '')
       : (comptaEmail ? '<span style="font-size:10px;color:#9E94C4;">' + comptaEmail + '</span>' : '—');
+    var comptaCell;
+    if (comptaTxt || comptaEmail) {
+      // Recherche du client par nom (insensible à la casse) pour récupérer son ID
+      var clientLookup = null;
+      try {
+        if (clientNameForLookup && typeof getClients === 'function') {
+          var lc = clientNameForLookup.toLowerCase();
+          clientLookup = getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === lc; });
+        }
+      } catch(e) {}
+      if (clientLookup) {
+        comptaCell = '<a href="#" onclick="event.preventDefault();event.stopPropagation();mainNavTo(\'clients\');setTimeout(function(){openClientPage(' + clientLookup.id + ');},150);return false;" title="Ouvrir la fiche client : ' + (r.client||'').replace(/"/g,'&quot;') + '" style="color:#4B36EC;text-decoration:none;border-bottom:1px dashed #4B36EC;cursor:pointer;display:inline-block;">' + comptaInner + '</a>';
+      } else {
+        comptaCell = comptaInner;
+      }
+    } else {
+      comptaCell = '—';
+    }
 
     html += '<tr class="' + cls + '">'
       + '<td class="nowrap"><span class="imp-dot ' + cls + '"></span><span class="imp-age ' + cls + '">' + ageLbl + '</span></td>'
@@ -20557,6 +20689,14 @@ function _renderPlacementHistory(deal) {
   // Construire la timeline complète : Placement original + chaque entry de l'historique, triés chronologiquement
   var timeline = [];
   // Entrée 1 : Placement original
+  // Récupération de la SIMU originale via le 1er sim_ts du deal (avant toute modification d'avenant)
+  // Si historique_prolongations contient des avenants nouvelle_simu, le sim_ts a évolué : on retrouve l'original
+  var firstSimTs = deal.sim_ts;
+  // Cherche dans l'historique le premier avenant qui a changé de SIMU pour déduire l'ancienne
+  var simChangeEvent = hist.find(function(h){ return h.type === 'avenant_nouveau_client' || h.type === 'avenant_nouvelle_simu'; });
+  if (simChangeEvent && simChangeEvent.ancien_sim_ts) {
+    firstSimTs = simChangeEvent.ancien_sim_ts;
+  }
   var dateEntreeOriginale = deal.date_entree || deal.date_deal || '';
   timeline.push({
     type: 'placement_original',
@@ -20565,7 +20705,8 @@ function _renderPlacementHistory(deal) {
     icon: '📍',
     color: '#7343EE',
     bg: '#F5F3FF',
-    detail: (deal.tjm ? deal.tjm + '€/j' : '') + (deal.entreprise ? ' · ' + deal.entreprise : '')
+    detail: (deal.tjm ? deal.tjm + '€/j' : '') + (deal.entreprise ? ' · ' + deal.entreprise : ''),
+    sim_ts: firstSimTs || null
   });
 
   // Entrées suivantes : prolongations + avenants (numérotation séparée)
@@ -20581,6 +20722,8 @@ function _renderPlacementHistory(deal) {
       entry.color = '#0F5132';
       entry.bg = '#F0FAF4';
       entry.detail = 'Nouvelle fin : ' + fmtDate(h.nouvelle_date_fin) + (h.commentaire ? ' · ' + h.commentaire : '');
+      // Pas de SIMU dédiée pour prolongation simple : pointe vers la SIMU active du moment
+      entry.sim_ts = h.sim_ts || null;
     } else if (h.type === 'avenant_nouveau_client') {
       avenantCount++;
       entry.type = 'avenant_nouveau_client';
@@ -20590,6 +20733,7 @@ function _renderPlacementHistory(deal) {
       entry.bg = '#FFF8E8';
       var clt = h.nouveau_client || h.ancien_client || '';
       entry.detail = (h.type_avenant ? h.type_avenant + ' · ' : '') + (h.motif || '') + (clt ? ' → ' + clt : '');
+      entry.sim_ts = h.sim_ts || null;
     } else if (h.type === 'avenant_nouvelle_simu') {
       avenantCount++;
       entry.type = 'avenant_nouvelle_simu';
@@ -20598,6 +20742,7 @@ function _renderPlacementHistory(deal) {
       entry.color = '#1A4F96';
       entry.bg = '#EEF4FF';
       entry.detail = (h.type_avenant ? h.type_avenant + ' · ' : '') + (h.motif || '');
+      entry.sim_ts = h.sim_ts || null;
     } else {
       // Fallback type inconnu
       entry.type = h.type || 'autre';
@@ -20606,6 +20751,7 @@ function _renderPlacementHistory(deal) {
       entry.color = '#6B5E9C';
       entry.bg = '#F5F3FF';
       entry.detail = '';
+      entry.sim_ts = h.sim_ts || null;
     }
     timeline.push(entry);
   });
@@ -20620,15 +20766,20 @@ function _renderPlacementHistory(deal) {
   // Rendu : timeline verticale compacte avec connecteurs
   var rows = timeline.map(function(t, i) {
     var isLast = i === timeline.length - 1;
+    var simBtn = '';
+    if (t.sim_ts) {
+      simBtn = '<button onclick="event.stopPropagation();closeCandFiche();setTimeout(function(){openSimFromDeal(' + t.sim_ts + ');},120);" title="Ouvrir cette simulation" style="margin-left:6px;padding:2px 7px;background:#fff;color:#7343EE;border:1.5px solid #D9CFFA;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">📊 Voir simu</button>';
+    }
     return '<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;">'
       + '<div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;">'
       +   '<div style="width:22px;height:22px;border-radius:50%;background:' + t.bg + ';border:1.5px solid ' + t.color + ';display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;">' + t.icon + '</div>'
       +   (isLast ? '' : '<div style="width:1.5px;flex:1;background:#E4E0FA;min-height:8px;margin-top:2px;"></div>')
       + '</div>'
       + '<div style="flex:1;padding-bottom:' + (isLast ? '0' : '4px') + ';">'
-      +   '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+      +   '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
       +     '<span style="font-size:11px;font-weight:700;color:' + t.color + ';">' + t.label + '</span>'
       +     '<span style="font-size:10.5px;color:#9E94C4;">' + fmtDate(t.date) + '</span>'
+      +     simBtn
       +   '</div>'
       + (t.detail ? '<div style="font-size:10.5px;color:#6B5E9C;margin-top:2px;line-height:1.4;">' + t.detail + '</div>' : '')
       + '</div>'
