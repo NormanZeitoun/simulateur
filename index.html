@@ -9043,7 +9043,38 @@ function closeCandFiche() {
 function getCandidats() {
   try { return JSON.parse(localStorage.getItem(CAND_KEY) || '[]'); } catch(e) { return []; }
 }
-function saveCandidatsArr(arr) { localStorage.setItem(CAND_KEY, JSON.stringify(arr)); }
+function saveCandidatsArr(arr) {
+  // Stamp updated_at (timestamp millis) sur chaque candidat modifié pour que
+  // le merge inter-utilisateurs puisse choisir le plus récent (last-write-wins
+  // au niveau ms plutôt que jour).
+  if (Array.isArray(arr)) {
+    var nowMs = Date.now();
+    var prevArr = [];
+    try { prevArr = JSON.parse(localStorage.getItem(CAND_KEY) || '[]'); } catch(e) {}
+    var prevMap = {};
+    prevArr.forEach(function(p){
+      if (p && p.email) prevMap[p.email.toLowerCase()] = p;
+    });
+    arr.forEach(function(c){
+      if (!c || !c.email) return;
+      var key = c.email.toLowerCase();
+      var prev = prevMap[key];
+      if (!prev) {
+        if (!c.updated_at) c.updated_at = nowMs;
+        return;
+      }
+      // Comparaison JSON sans updated_at (évite boucle)
+      var prevCopy = Object.assign({}, prev); delete prevCopy.updated_at;
+      var newCopy  = Object.assign({}, c);    delete newCopy.updated_at;
+      if (JSON.stringify(prevCopy) !== JSON.stringify(newCopy)) {
+        c.updated_at = nowMs;
+      } else if (!c.updated_at) {
+        c.updated_at = prev.updated_at || nowMs;
+      }
+    });
+  }
+  localStorage.setItem(CAND_KEY, JSON.stringify(arr));
+}
 
 function saveCandidatFromEntry(entry) {
   var email = (entry.email || '').trim().toLowerCase();
@@ -19478,16 +19509,33 @@ function buildCandDocsHTML(cand) {
     var docTypeOptions = DOC_TYPES.map(function(dt){
       return '<option value="' + dt.key + '">' + dt.label + '</option>';
     }).join('');
+    // Récupère la valeur actuelle du sélecteur (persistée via variable globale par candidat)
+    if (!window._docDropTypePerCandidat) window._docDropTypePerCandidat = {};
+    var savedDocType = window._docDropTypePerCandidat[cand.id] || '__auto__';
+    // Couleur du sélecteur si type forcé (pour que l'utilisateur voit clairement que c'est actif)
+    var selectStyle = (savedDocType !== '__auto__')
+      ? 'flex:1;min-width:150px;padding:6px 10px;border:2px solid #7343EE;border-radius:7px;font-size:12px;background:#F5F3FF;color:#4B36EC;font-weight:700;'
+      : 'flex:1;min-width:150px;padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;';
     html += '<div style="margin-bottom:12px;">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">'
       +   '<label style="font-size:11px;font-weight:700;color:#6B5E9C;white-space:nowrap;">Type du document :</label>'
-      +   '<select id="doc-drop-type-' + cand.id + '" style="flex:1;min-width:150px;padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;">'
-      +     '<option value="__auto__">&#128269; Détection automatique (selon le nom)</option>'
-      +     docTypeOptions
+      +   '<select id="doc-drop-type-' + cand.id + '" data-candid="' + cand.id + '" onchange="window._docDropTypePerCandidat[this.dataset.candid]=this.value;var c=document.getElementById(\'ct-content-\'+this.dataset.candid);if(c){var cd=getCandidats().find(function(x){return x.id==this.dataset.candid}.bind(this));if(cd){c.innerHTML=buildCandDocsHTML(cd);setupCandDocsDragDrop(cd);}}" style="' + selectStyle + '">'
+      +     '<option value="__auto__"' + (savedDocType==='__auto__'?' selected':'') + '>&#128269; Détection automatique (selon le nom)</option>'
+      +     DOC_TYPES.map(function(dt){
+              return '<option value="' + dt.key + '"' + (savedDocType===dt.key?' selected':'') + '>' + dt.label + '</option>';
+            }).join('')
       +   '</select>'
       +   '<button onclick="addCustomDocType(' + cand.id + ')" title="Ajouter un nouveau type de document" style="padding:6px 10px;background:#F5F3FF;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">+ Type</button>'
-      + '</div>'
-      + '<div id="doc-dropzone-' + cand.id + '" class="doc-dropzone" data-candid="' + cand.id + '" style="border:2px dashed #E4E0FA;border-radius:10px;padding:16px;text-align:center;background:#FAFAFA;transition:all 0.2s;color:#9E9E9E;font-size:12px;">'
+      + '</div>';
+    // Indicateur visuel : si un type est forcé, l'afficher clairement
+    if (savedDocType !== '__auto__') {
+      var lblForced = (window.DOC_TYPES_DISPLAY && window.DOC_TYPES_DISPLAY[savedDocType]) || savedDocType;
+      html += '<div style="margin-bottom:6px;padding:6px 10px;background:#F5F3FF;border:1px solid #D9CFFA;border-radius:6px;font-size:11px;color:#4B36EC;font-weight:700;">'
+        +   '🎯 Tous les fichiers déposés seront classés en : <strong>' + lblForced + '</strong>'
+        +   ' &nbsp;<button onclick="window._docDropTypePerCandidat[' + cand.id + ']=\'__auto__\';var c=document.getElementById(\'ct-content-\' + ' + cand.id + ');if(c){var cd=getCandidats().find(function(x){return x.id===' + cand.id + '});if(cd){c.innerHTML=buildCandDocsHTML(cd);setupCandDocsDragDrop(cd);}}" style="margin-left:4px;padding:2px 8px;background:#fff;color:#4B36EC;border:1px solid #D9CFFA;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">↻ Auto</button>'
+        + '</div>';
+    }
+    html += '<div id="doc-dropzone-' + cand.id + '" class="doc-dropzone" data-candid="' + cand.id + '" style="border:2px dashed #E4E0FA;border-radius:10px;padding:16px;text-align:center;background:#FAFAFA;transition:all 0.2s;color:#9E9E9E;font-size:12px;">'
       +   '&#128228; Glissez-déposez vos documents ici<br>'
       +   '<span style="font-size:10px;color:#C0B8E0;">Vous pouvez aussi cliquer pour sélectionner plusieurs fichiers</span>'
       +   '<input type="file" id="doc-drop-input-' + cand.id + '" accept="image/*,.pdf,.heic,.heif,.webp,.gif,.bmp,.tiff,.doc,.docx,.xls,.xlsx,.txt" multiple data-candid="' + cand.id + '" onchange="handleDropzoneFiles(this.dataset.candid,this.files)" style="display:none;">'
@@ -19816,15 +19864,14 @@ function mergeCandidats(remote) {
       if (Object.keys(mergedDocs).length > 0) emailMap[key].documents = mergedDocs;
 
       // ── Fusion des autres champs simples : prendre le plus récemment mis à jour ──
-      // Si la version remote est plus récente, on mets à jour les champs métiers.
-      // Comparaison sur le champ "updated" (DD/MM/YYYY).
-      var localUpdated = _parseFRDate(emailMap[key].updated);
-      var remoteUpdated = _parseFRDate(rc.updated);
+      // Comparaison prioritaire sur updated_at (timestamp millis), fallback sur "updated" (DD/MM/YYYY).
+      var localUpdated = emailMap[key].updated_at || _parseFRDate(emailMap[key].updated) || 0;
+      var remoteUpdated = rc.updated_at || _parseFRDate(rc.updated) || 0;
       if (remoteUpdated > localUpdated) {
         // Champs à propager si remote est plus récent (sans toucher aux simulations/documents déjà gérés)
         var simpleFields = ['prenom', 'nom', 'tel', 'poste', 'profil', 'techno', 'ville',
                             'linkedin', 'tjm_actuel', 'entreprise', 'commercial', 'secteur',
-                            'civilite', 'disponibilite', 'anniversaire', 'statut', 'updated'];
+                            'civilite', 'disponibilite', 'anniversaire', 'statut', 'updated', 'updated_at'];
         simpleFields.forEach(function(f){
           if (rc[f] !== undefined && rc[f] !== null && rc[f] !== '') {
             emailMap[key][f] = rc[f];
@@ -19833,6 +19880,34 @@ function mergeCandidats(remote) {
       }
     }
   });
+  // ── Alignement final : le commercial du candidat doit refléter celui du deal le plus récent ──
+  // Cas typique : Norman a changé le commercial sur un deal de "Norman" à "Esteban".
+  // mergeDeals a fait gagner le deal récent (Esteban). Mais si la fiche candidat est plus
+  // ancienne et porte encore "Norman", on l'aligne sur le commercial du deal actif.
+  try {
+    var deals = (typeof getDeals === 'function') ? getDeals() : [];
+    Object.values(emailMap).forEach(function(c){
+      if (!c || !c.email) return;
+      var emailLower = c.email.toLowerCase();
+      // Trouver le deal le plus récent (par updated_at) lié à ce candidat (hors annulés/sortis)
+      var candDeals = deals.filter(function(d){
+        return (d.email||'').toLowerCase() === emailLower
+            && d.etat !== 'Annulé'
+            && d.etat !== 'Sorti des effectifs';
+      });
+      if (!candDeals.length) return;
+      candDeals.sort(function(a,b){ return (b.updated_at||0) - (a.updated_at||0); });
+      var latestDeal = candDeals[0];
+      // Si le deal a un updated_at plus récent que le candidat, propager son commercial
+      var dealTs = latestDeal.updated_at || 0;
+      var candTs = c.updated_at || _parseFRDate(c.updated) || 0;
+      if (dealTs > candTs && latestDeal.commercial && c.commercial !== latestDeal.commercial) {
+        c.commercial = latestDeal.commercial;
+        c.updated_at = dealTs;  // aligne aussi le timestamp pour reposer au prochain merge
+      }
+    });
+  } catch(e) { console.warn('[mergeCandidats alignement deal] :', e); }
+
   saveCandidatsArr(Object.values(emailMap));
   if (typeof renderCandidats === 'function') renderCandidats();
 }
@@ -20161,6 +20236,12 @@ function mergeClients(remote) {
   remote.forEach(function(rc) {
     var key = (rc.name||'').toLowerCase();
     if (!key) return;
+    // Skip si tombstoné par ID ou par nom (les 2 sont vérifiés pour robustesse
+    // car certains anciens tombstones étaient posés sur l'ID, d'autres sur le nom)
+    if (typeof isTombstoned === 'function') {
+      if (rc.id && isTombstoned('clients', rc.id)) return;
+      if (isTombstoned('clients', key)) return;
+    }
     if (!nameMap[key]) {
       nameMap[key] = rc;
     } else {
@@ -20825,7 +20906,14 @@ function confirmDeleteClient(clid) {
   }, function() {
     var arr = getClients().filter(function(c){ return c.id !== clid; });
     saveClientsArr(arr);
-    if (typeof addTombstone === 'function') addTombstone('clients', clid);
+    // Tombstones par ID ET par nom (le merge utilise le nom comme clé, l'ID pour robustesse)
+    if (typeof addTombstone === 'function') {
+      addTombstone('clients', clid);
+      addTombstone('clients', (cl.name || '').toLowerCase());
+    }
+    // Push immédiat des tombstones via _shared.tombstones
+    if (typeof _touchAppSettings === 'function') _touchAppSettings();
+    if (typeof odAutoSync === 'function') odAutoSync();
     if (typeof showNotifToast === 'function') showNotifToast('🗑 Client supprimé');
     if (typeof showClientsTab === 'function') showClientsTab();
     if (typeof renderClients === 'function') {
@@ -22133,12 +22221,16 @@ function setupCandDocsDragDrop(cand) {
       row.style.boxShadow = '';
       var files = e.dataTransfer.files;
       if (!files || !files.length) return;
-      // Si le menu déroulant a un type forcé (≠ __auto__), il prime sur le type de la ligne.
-      // Sinon on utilise le dockey de la ligne ciblée (ce qui est attendu).
-      var typeSelectRow = document.getElementById('doc-drop-type-' + cand.id);
-      var forcedTypeRow = typeSelectRow ? typeSelectRow.value : '__auto__';
+      // Source de vérité : variable globale (résiste aux re-rendus DOM)
+      var forcedTypeRow = '__auto__';
+      if (window._docDropTypePerCandidat && window._docDropTypePerCandidat[cand.id]) {
+        forcedTypeRow = window._docDropTypePerCandidat[cand.id];
+      } else {
+        var typeSelectRow = document.getElementById('doc-drop-type-' + cand.id);
+        if (typeSelectRow) forcedTypeRow = typeSelectRow.value;
+      }
       if (forcedTypeRow && forcedTypeRow !== '__auto__') {
-        // Menu sélectionné → on respecte ça (passe par handleDropzoneFiles qui relit le menu)
+        // Menu sélectionné → on respecte ça
         handleDropzoneFiles(cand.id, files);
       } else {
         // Sinon : drop sur une ligne spécifique = type de la ligne
@@ -22154,11 +22246,17 @@ function setupCandDocsDragDrop(cand) {
 
 function handleDropzoneFiles(candId, files) {
   if (!files || !files.length) return;
-  var typeSelect = document.getElementById('doc-drop-type-' + candId);
-  var forcedType = typeSelect ? typeSelect.value : '__auto__';
+  // Source de vérité : variable globale (résiste aux re-rendus de DOM)
+  // Fallback : valeur du <select> dans le DOM
+  var forcedType = '__auto__';
+  if (window._docDropTypePerCandidat && window._docDropTypePerCandidat[candId]) {
+    forcedType = window._docDropTypePerCandidat[candId];
+  } else {
+    var typeSelect = document.getElementById('doc-drop-type-' + candId);
+    if (typeSelect) forcedType = typeSelect.value;
+  }
 
   // Labels par type — utilise DOC_TYPES_DISPLAY (inclut types par défaut + perso)
-  // avec fallback sur les 6 types par défaut au cas où DOC_TYPES_DISPLAY pas encore initialisé
   var typeLabels = (window.DOC_TYPES_DISPLAY) || {
     cv: 'CV',
     cni: 'CNI / Passeport',
