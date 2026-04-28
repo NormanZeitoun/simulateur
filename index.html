@@ -1630,6 +1630,20 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
             <button onclick="confirmForcePurgeOthers()" style="padding:9px 16px;background:#fff;color:#8A5F00;border:1.5px solid #F0A500;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;" onmouseover="this.style.background='#FFF4D6'" onmouseout="this.style.background='#fff'">&#128296; Forcer la purge des autres</button>
           </div>
 
+          <!-- BLOC : Recalcul cohérence statuts deals -->
+          <div style="background:#EEF4FF;border:1.5px solid #B8D0F5;border-radius:10px;padding:16px 18px;margin-top:14px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+              <span style="font-size:20px;">&#9881;&#65039;</span>
+              <div style="font-size:13px;font-weight:700;color:#1A4F96;">Recalculer les statuts &laquo; Sign&eacute; &raquo;</div>
+            </div>
+            <div style="font-size:11.5px;color:#6B5E9C;line-height:1.55;margin-bottom:12px;">
+              Recalcule l'&eacute;tat de tous les placements en fonction des 3 conditions :<br>
+              <strong>&Eacute;tat CDPS = Re&ccedil;u + Signature CDPS = Oui + Signature CDT = Oui</strong>.<br>
+              &#128161; Utile une seule fois pour rattraper les anciens deals incorrectement marqu&eacute;s &laquo; Sign&eacute; &raquo;.
+            </div>
+            <button onclick="confirmRecomputeAllDealsEtat()" style="padding:9px 16px;background:#fff;color:#1A4F96;border:1.5px solid #4B7FD6;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;" onmouseover="this.style.background='#EEF4FF'" onmouseout="this.style.background='#fff'">&#9881;&#65039; V&eacute;rifier coh&eacute;rence statuts</button>
+          </div>
+
           <!-- BLOC : Diagnostic OneDrive -->
           <div style="background:#EEF4FF;border:1.5px solid #B8D0F5;border-radius:10px;padding:16px 18px;margin-top:14px;">
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
@@ -5583,8 +5597,146 @@ function odWithToken(cb) {
   .catch(function() { odSetStatus('Session expirée, reconnectez-vous', true); });
 }
 
-// Encoding correct pour Microsoft Graph : segments encodés, slashes littéraux.
-// "/Folder/My File.json" → "/Folder/My%20File.json" (PAS "%2FFolder%2FMy%20File.json")
+// ── Refresh silencieux du token Microsoft Graph ──
+// Tente un acquireTokenSilent, et si ça échoue (refresh token expiré), bascule vers un loginPopup discret.
+// Renvoie une Promise qui résout avec le nouveau token, ou rejette si impossible.
+var _odRefreshInProgress = null;  // évite les refresh concurrents
+function _odRefreshToken() {
+  // Si un refresh est déjà en cours, on attend celui-là (mutualisation des appels concurrents)
+  if (_odRefreshInProgress) return _odRefreshInProgress;
+  _odRefreshInProgress = (function(){
+    if (!msalApp || !odAccount) {
+      return Promise.reject(new Error('Pas de compte MSAL pour refresh'));
+    }
+    return msalApp.acquireTokenSilent({
+      scopes: ['Files.ReadWrite', 'User.Read', 'Sites.ReadWrite.All', 'Mail.Send'],
+      account: odAccount
+    }).then(function(r){
+      odToken = r.accessToken;
+      console.log('[Token] Refresh silencieux réussi');
+      // Petit toast discret pour informer l'utilisateur
+      if (typeof showNotifToast === 'function') {
+        showNotifToast('🔄 Session OneDrive renouvelée');
+      }
+      return odToken;
+    }).catch(function(silentErr){
+      // Refresh silencieux a échoué (souvent : MFA requis, ou refresh_token expiré)
+      console.warn('[Token] Refresh silencieux KO :', silentErr && silentErr.errorCode);
+      // Tentative loginPopup uniquement si on est en interaction utilisateur
+      // Sinon on rejette pour que le caller affiche son propre message
+      throw silentErr;
+    });
+  })().finally(function(){
+    // Libérer le lock 100ms plus tard pour grouper les retries proches
+    setTimeout(function(){ _odRefreshInProgress = null; }, 100);
+  });
+  return _odRefreshInProgress;
+}
+
+// ── Fetch wrapper avec auto-retry sur 401 (token expiré) ──
+// À utiliser pour TOUS les appels Graph qui pourraient échouer pour cause d'expiration.
+// Usage identique à fetch() mais détecte automatiquement les 401 et retry après refresh.
+function _odFetchWith401Retry(url, options) {
+  options = options || {};
+  return fetch(url, options).then(function(response){
+    if (response.status !== 401) return response;
+    // Cloner pour pouvoir lire le body sans consommer la response originale
+    return response.clone().text().then(function(body){
+      // Vérifie que c'est bien InvalidAuthenticationToken (pas un 401 d'autre nature)
+      var isExpiredToken = body.indexOf('InvalidAuthenticationToken') >= 0
+                       || body.indexOf('token is expired') >= 0
+                       || body.indexOf('Lifetime validation failed') >= 0;
+      if (!isExpiredToken) return response; // 401 d'autre nature, ne pas masquer
+
+      console.log('[Token] 401 détecté, tentative de refresh + retry...');
+      return _odRefreshToken().then(function(newToken){
+        // Mettre à jour le header Authorization avec le nouveau token
+        var newOptions = Object.assign({}, options);
+        newOptions.headers = Object.assign({}, options.headers || {});
+        // Trouver le header Authorization (case-insensitive)
+        Object.keys(newOptions.headers).forEach(function(k){
+          if (k.toLowerCase() === 'authorization') delete newOptions.headers[k];
+        });
+        newOptions.headers['Authorization'] = 'Bearer ' + newToken;
+        // Retry une seule fois
+        return fetch(url, newOptions);
+      }).catch(function(refreshErr){
+        // Refresh impossible → on retourne l'erreur originale + on prévient l'utilisateur une seule fois
+        if (!window._odSessionExpiredNotified) {
+          window._odSessionExpiredNotified = true;
+          setTimeout(function(){
+            if (confirm('🔐 Votre session OneDrive a expiré.\n\nCliquez sur OK pour vous reconnecter (ne perd pas vos données locales).')) {
+              if (typeof odConnect === 'function') odConnect();
+            }
+            window._odSessionExpiredNotified = false;
+          }, 100);
+        }
+        return response; // renvoie la 401 originale
+      });
+    });
+  });
+}
+
+// ── Intercepteur global fetch : auto-retry sur 401 pour TOUS les appels Microsoft Graph ──
+// Permet de gérer la session expirée sans modifier chaque fetch individuellement.
+// Active dès le chargement de la page.
+(function _installGraphFetchInterceptor(){
+  if (window._graphFetchInterceptorInstalled) return;
+  window._graphFetchInterceptorInstalled = true;
+  var _originalFetch = window.fetch.bind(window);
+  window.fetch = function(input, init){
+    // Récupérer l'URL en string
+    var urlStr = (typeof input === 'string') ? input : (input && input.url) || '';
+    var isGraphCall = urlStr.indexOf('graph.microsoft.com') >= 0;
+    if (!isGraphCall) {
+      return _originalFetch(input, init);
+    }
+    // Appel Graph : on encapsule pour gérer le 401
+    return _originalFetch(input, init).then(function(response){
+      if (response.status !== 401) return response;
+      return response.clone().text().then(function(body){
+        var isExpired = body.indexOf('InvalidAuthenticationToken') >= 0
+                     || body.indexOf('token is expired') >= 0
+                     || body.indexOf('Lifetime validation failed') >= 0;
+        if (!isExpired) return response;
+        // Token expiré : tenter un refresh silencieux
+        if (typeof _odRefreshToken !== 'function') return response;
+        console.log('[Fetch interceptor] 401 token expiré, refresh silencieux puis retry...');
+        return _odRefreshToken().then(function(newToken){
+          // Reconstituer les options avec le nouveau token
+          var newInit = Object.assign({}, init || {});
+          newInit.headers = Object.assign({}, (init && init.headers) || {});
+          // Supprimer l'ancien Authorization (case-insensitive)
+          Object.keys(newInit.headers).forEach(function(k){
+            if (k.toLowerCase() === 'authorization') delete newInit.headers[k];
+          });
+          newInit.headers['Authorization'] = 'Bearer ' + newToken;
+          // Retry l'appel original
+          var retryUrl = (typeof input === 'string') ? input : urlStr;
+          return _originalFetch(retryUrl, newInit);
+        }).catch(function(refreshErr){
+          // Refresh impossible : prévenir l'utilisateur (une seule fois pour éviter le spam)
+          console.warn('[Fetch interceptor] Refresh KO, session vraiment perdue');
+          if (!window._odSessionExpiredNotified) {
+            window._odSessionExpiredNotified = true;
+            setTimeout(function(){
+              if (typeof odSetStatus === 'function') odSetStatus('Session expirée', true);
+              var doConnect = confirm('🔐 Votre session OneDrive a expiré et n\'a pas pu être renouvelée automatiquement.\n\nCliquez sur OK pour vous reconnecter (vos données locales sont préservées).');
+              if (doConnect && typeof odConnect === 'function') {
+                odConnect();
+              }
+              // Reset après 3s pour permettre un nouveau prompt si toujours en erreur
+              setTimeout(function(){ window._odSessionExpiredNotified = false; }, 3000);
+            }, 100);
+          }
+          return response; // retourne la 401 originale
+        });
+      });
+    });
+  };
+})();
+
+
 function _odEncPath(path) {
   if (!path) return '';
   return path.split('/').map(function(s){ return s ? encodeURIComponent(s) : ''; }).join('/');
@@ -5748,6 +5900,7 @@ var _SHARED_CONFIG_KEYS = [
   { ls: 'sp_commission_exclusions_v1', field: 'commission_exclusions' },
   { ls: 'sp_commission_goals_v1',    field: 'commission_goals' },
   { ls: 'sp_matching_jours_v1',      field: 'matching_jours' },
+  { ls: 'sp_custom_doc_types_v1',    field: 'custom_doc_types' },
   { ls: 'sp_tombstones_v1',          field: 'tombstones' }
 ];
 
@@ -6427,6 +6580,64 @@ function getDeals() {
 }
 function saveDeals(arr) { localStorage.setItem(DEALS_KEY, JSON.stringify(arr)); }
 
+// ── Recalcul cohérence des statuts deals ──
+// Corrige les deals qui sont en "Signé" alors que les 3 conditions ne sont plus remplies.
+// Utile pour rattraper l'historique avant le passage en mode Auto strict.
+function recomputeAllDealsEtat() {
+  var deals = getDeals();
+  var nbCorrected = 0, nbVraiSigne = 0, nbToujoursEnCours = 0;
+  deals.forEach(function(d){
+    if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return;
+    var cdps  = (d.etat_cdps || '').toString();
+    var sCdps = (d.signature_cdps || '').toString();
+    var sCdt  = (d.signature_contrat_travail || '').toString();
+    var hasAny = (cdps && cdps !== '') || (sCdps && sCdps !== '') || (sCdt && sCdt !== '');
+    var allOk = cdps === 'Reçu' && sCdps === 'Oui' && sCdt === 'Oui';
+    var newEtat = d.etat;
+    if (allOk) {
+      newEtat = 'Signé';
+      nbVraiSigne++;
+    } else if (d.etat === 'Signé') {
+      newEtat = 'En cours';
+    } else if (hasAny && d.etat === 'Nouveau placement') {
+      newEtat = 'En cours';
+      nbToujoursEnCours++;
+    }
+    if (newEtat !== d.etat) {
+      d.etat = newEtat;
+      nbCorrected++;
+    }
+  });
+  if (nbCorrected > 0) {
+    saveDeals(deals);
+    if (typeof odAutoSync === 'function') odAutoSync();
+  }
+  return { nbCorrected: nbCorrected, nbVraiSigne: nbVraiSigne, nbTotal: deals.length };
+}
+
+// Confirmation + exécution du recalcul des statuts deals (bouton dans Paramètres → Maintenance)
+function confirmRecomputeAllDealsEtat() {
+  if (typeof promptGenericAdminPassword !== 'function') {
+    alert('⚠ Fonction admin indisponible.'); return;
+  }
+  promptGenericAdminPassword({
+    title: '⚙️ Recalcul des statuts',
+    subtitle: 'Confirmez avec le mot de passe administrateur'
+  }, function(){
+    var deals = getDeals();
+    if (!deals.length) { alert('Aucun deal à recalculer.'); return; }
+    if (!confirm('Recalculer le statut de ' + deals.length + ' placement(s) ?\n\nLes deals en « Signé » dont les 3 conditions ne sont pas remplies seront ramenés à « En cours ».')) return;
+    var result = recomputeAllDealsEtat();
+    alert('✓ Recalcul terminé.\n\n' +
+          '• Total deals : ' + result.nbTotal + '\n' +
+          '• Statuts corrigés : ' + result.nbCorrected + '\n' +
+          '• Vrais "Signé" (3 conditions OK) : ' + result.nbVraiSigne);
+    if (typeof renderDeals === 'function' && document.getElementById('rh-content-container')) {
+      try { renderDeals(); } catch(e){}
+    }
+  });
+}
+
 function openPlacementPopup(ts) {
   var hist = getHistory();
   var sim = hist.find(function(s) { return s.timestamp === ts; });
@@ -6648,7 +6859,13 @@ function openPlacementPopup(ts) {
     document.getElementById('pl-delai-paiement').value = existing.delai_paiement || '';
     document.getElementById('pl-banque').value = existing.banque || '';
     document.getElementById('pl-origine').value = existing.origine || '';
-    document.getElementById('pl-etat').value = existing.etat || 'Nouveau placement';
+    // L'état "Signé" est désormais calculé automatiquement depuis les 3 champs CDPS/CDT.
+    // Si on ouvre un deal déjà à "Signé", on retombe sur "En cours" dans le sélecteur
+    // (l'utilisateur ne peut plus forcer Signé manuellement). L'auto-calcul rétablira
+    // "Signé" si les 3 champs sont remplis correctement.
+    var etatToSet = existing.etat || 'Nouveau placement';
+    if (etatToSet === 'Signé') etatToSet = 'En cours';
+    document.getElementById('pl-etat').value = etatToSet;
     document.getElementById('pl-contrat').value = existing.contrat || '';
     document.getElementById('pl-date-entree').value = existing.date_entree || '';
     document.getElementById('pl-commentaire').value = existing.commentaire || '';
@@ -8655,17 +8872,17 @@ function updateDealField(dealId, key, value) {
   }
 
   // ── Auto-transition d'état basée sur les 3 champs clés d'onboarding ──
-  // Règle : si les 3 champs suivants sont remplis "positivement" → etat = 'Signé'
+  // Mode AUTOMATIQUE STRICT : l'état "Signé" est exclusivement calculé depuis :
   //   - etat_cdps === 'Reçu'
   //   - signature_cdps === 'Oui'
   //   - signature_contrat_travail === 'Oui'
-  // Si au moins un des 3 est rempli sans que les 3 soient complets → etat = 'En cours'
-  // Sinon (aucun rempli) → on laisse l'etat actuel tel quel.
-  // Les états 'Annulé' et 'Sorti des effectifs' ne sont JAMAIS écrasés automatiquement
-  // (décision humaine qui doit primer).
+  // Quand l'un des 3 champs change :
+  //   - Si les 3 sont OK → 'Signé'
+  //   - Si au moins 1 est rempli mais pas tous → 'En cours'
+  //   - Si l'état était 'Signé' mais qu'on a retiré un Oui → on retombe à 'En cours'
+  // Les états 'Annulé' et 'Sorti des effectifs' ne sont JAMAIS écrasés (décision humaine).
   if (key === 'etat_cdps' || key === 'signature_cdps' || key === 'signature_contrat_travail') {
     var currentEtat = deals[idx].etat || '';
-    // Ne rien faire si l'état actuel est déjà une décision manuelle forte
     if (currentEtat !== 'Annulé' && currentEtat !== 'Sorti des effectifs') {
       var cdps  = (deals[idx].etat_cdps || '').toString();
       var sCdps = (deals[idx].signature_cdps || '').toString();
@@ -8674,6 +8891,9 @@ function updateDealField(dealId, key, value) {
       var allOk = cdps === 'Reçu' && sCdps === 'Oui' && sCdt === 'Oui';
       if (allOk) {
         deals[idx].etat = 'Signé';
+      } else if (currentEtat === 'Signé') {
+        // L'état était Signé mais une condition n'est plus remplie → revenir à En cours
+        deals[idx].etat = 'En cours';
       } else if (hasAny) {
         deals[idx].etat = 'En cours';
       }
@@ -18988,9 +19208,15 @@ function deleteCandidatFromFiche(candId) {
 function buildFicheEditBarHTML(kind, entityId, extraId) {
   var idArg = kind === 'manager' ? entityId + ',' + extraId : entityId;
   var kindLabel = kind === 'candidat' ? 'le candidat' : (kind === 'client' ? 'le client' : 'le manager');
+  // Bouton supprimer pour les managers (Client a son bouton dans la barre principale, Candidat dans la barre fiche)
+  var deleteBtn = '';
+  if (kind === 'manager') {
+    deleteBtn = '<button class="fiche-edit-btn" onclick="confirmDeleteManager(' + idArg + ')" title="Supprimer ce manager (mot de passe admin requis)" style="background:#fff;color:#A8322A;border:1.5px solid #F5B5B5;">🗑 Supprimer</button>';
+  }
   return '<div data-fiche-edit-bar data-mode="view" class="fiche-edit-bar">'
     + '<span class="fiche-lock-badge">🔒 Lecture seule</span>'
     + '<button class="fiche-edit-btn fiche-edit-btn-edit" onclick="enterFicheEditMode(\'' + kind + '\',' + idArg + ')" title="Déverrouiller ' + kindLabel + ' pour modifier">✎ Éditer</button>'
+    + deleteBtn
     + '</div>';
 }
 
@@ -19187,7 +19413,8 @@ function buildCandDocsHTML(cand) {
   var connected = odToken ? true : false;
   var IS = 'width:100%;padding:6px 9px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;';
 
-  var DOC_TYPES = [
+  // ── Types de documents : 6 par défaut + types personnalisés ajoutés par l'utilisateur ──
+  var DEFAULT_DOC_TYPES = [
     {key:'cv', label:'CV'},
     {key:'cni', label:'CNI / Passeport'},
     {key:'carte_vitale', label:'Carte Vitale'},
@@ -19195,6 +19422,14 @@ function buildCandDocsHTML(cand) {
     {key:'justif_domicile', label:'Justificatif domicile'},
     {key:'bulletin', label:'Dernier bulletin de salaire'}
   ];
+  var customDocTypes = (function(){
+    try { return JSON.parse(localStorage.getItem('sp_custom_doc_types_v1') || '[]'); }
+    catch(e) { return []; }
+  })();
+  var DOC_TYPES = DEFAULT_DOC_TYPES.concat(customDocTypes);
+  // Map global pour les zones drop (ligne 21863)
+  window.DOC_TYPES_DISPLAY = {};
+  DOC_TYPES.forEach(function(dt){ window.DOC_TYPES_DISPLAY[dt.key] = dt.label; });
 
   var spId = getOrCreateSpId(cand);
   var html = '<div style="margin-bottom:8px;background:#F5F3FF;border-radius:8px;padding:8px 12px;font-size:11px;color:#7343EE;">'
@@ -19207,17 +19442,18 @@ function buildCandDocsHTML(cand) {
       return '<option value="' + dt.key + '">' + dt.label + '</option>';
     }).join('');
     html += '<div style="margin-bottom:12px;">'
-      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">'
       +   '<label style="font-size:11px;font-weight:700;color:#6B5E9C;white-space:nowrap;">Type du document :</label>'
-      +   '<select id="doc-drop-type-' + cand.id + '" style="flex:1;padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;">'
+      +   '<select id="doc-drop-type-' + cand.id + '" style="flex:1;min-width:150px;padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;">'
       +     '<option value="__auto__">&#128269; Détection automatique (selon le nom)</option>'
       +     docTypeOptions
       +   '</select>'
+      +   '<button onclick="addCustomDocType(' + cand.id + ')" title="Ajouter un nouveau type de document" style="padding:6px 10px;background:#F5F3FF;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">+ Type</button>'
       + '</div>'
       + '<div id="doc-dropzone-' + cand.id + '" class="doc-dropzone" data-candid="' + cand.id + '" style="border:2px dashed #E4E0FA;border-radius:10px;padding:16px;text-align:center;background:#FAFAFA;transition:all 0.2s;color:#9E9E9E;font-size:12px;">'
       +   '&#128228; Glissez-déposez vos documents ici<br>'
       +   '<span style="font-size:10px;color:#C0B8E0;">Vous pouvez aussi cliquer pour sélectionner plusieurs fichiers</span>'
-      +   '<input type="file" id="doc-drop-input-' + cand.id + '" accept=".pdf,.jpg,.jpeg,.png" multiple data-candid="' + cand.id + '" onchange="handleDropzoneFiles(this.dataset.candid,this.files)" style="display:none;">'
+      +   '<input type="file" id="doc-drop-input-' + cand.id + '" accept="image/*,.pdf,.heic,.heif,.webp,.gif,.bmp,.tiff,.doc,.docx,.xls,.xlsx,.txt" multiple data-candid="' + cand.id + '" onchange="handleDropzoneFiles(this.dataset.candid,this.files)" style="display:none;">'
       + '</div>'
       + '</div>';
   }
@@ -19233,7 +19469,10 @@ function buildCandDocsHTML(cand) {
     var hasFile = doc.od_path ? true : false;
     var rowBg = i % 2 === 0 ? '#fff' : '#FAFAFA';
     html += '<tr class="doc-row" data-candid="' + cand.id + '" data-dockey="' + dt.key + '" data-doclabel="' + dt.label + '" style="border-bottom:1px solid #F0EDF9;background:' + rowBg + ';transition:all 0.15s;">';
-    html += '<td style="padding:8px 10px;font-size:12px;font-weight:600;color:#1A1033;">' + dt.label + '</td>';
+    var isCustom = customDocTypes.some(function(c){ return c.key === dt.key; });
+    var deleteCustomBtn = isCustom ? ' <button onclick="removeCustomDocType(' + cand.id + ',\'' + dt.key + '\')" title="Supprimer ce type personnalisé" style="background:transparent;border:none;color:#9E94C4;cursor:pointer;font-size:11px;padding:0 4px;">×</button>' : '';
+    var customBadge = isCustom ? ' <span style="font-size:9px;color:#7343EE;background:#F5F3FF;padding:1px 5px;border-radius:4px;font-weight:700;">perso</span>' : '';
+    html += '<td style="padding:8px 10px;font-size:12px;font-weight:600;color:#1A1033;">' + dt.label + customBadge + deleteCustomBtn + '</td>';
     // Statut
     if (hasFile) {
       html += '<td style="padding:8px 10px;text-align:center;"><span style="background:#E6F9F0;color:#1D9E75;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;">&#10003; Upload\u00e9</span></td>';
@@ -19252,7 +19491,7 @@ function buildCandDocsHTML(cand) {
       if (connected) {
         html += '<label style="padding:3px 8px;background:#7343EE;color:#fff;border-radius:5px;font-size:11px;cursor:pointer;">'
           + '&#8679; Upload'
-          + '<input type="file" accept=".pdf,.jpg,.jpeg,.png" data-candid="' + cand.id + '" data-dockey="' + dt.key + '" data-doclabel="' + dt.label + '" onchange="uploadCandDoc(this)" style="display:none;"></label>';
+          + '<input type="file" accept="image/*,.pdf,.heic,.heif,.webp,.gif,.bmp,.tiff,.doc,.docx,.xls,.xlsx,.txt" data-candid="' + cand.id + '" data-dockey="' + dt.key + '" data-doclabel="' + dt.label + '" onchange="uploadCandDoc(this)" style="display:none;"></label>';
       }
       html += ' <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#6B5E9C;cursor:pointer;margin-left:6px;">'
         + '<input type="checkbox" ' + (doc.recu ? 'checked' : '') + ' data-candid="' + cand.id + '" data-dockey="' + dt.key + '" onchange="toggleDocRecu(this)" style="accent-color:#7343EE;"> Re\u00e7u</label>';
@@ -19910,6 +20149,28 @@ function updateCandidatFromDeal(deal) {
 
   cands[idx].updated = new Date().toLocaleDateString('fr-FR');
   saveCandidatsArr(cands);
+
+  // Bug fix : propager aussi vers la SIMU originale du deal
+  // Permet d'avoir le bon commercial dans Historique → fiche du porté
+  if (deal.sim_ts && typeof getHistory === 'function' && typeof saveHistoryArr === 'function') {
+    try {
+      var hist = getHistory();
+      var simIdx = hist.findIndex(function(s){ return s.timestamp === deal.sim_ts; });
+      if (simIdx >= 0) {
+        var simChanged = false;
+        if (deal.commercial && hist[simIdx].commercial !== deal.commercial) {
+          hist[simIdx].commercial = deal.commercial;
+          simChanged = true;
+        }
+        // Optionnel : propager aussi le poste si vide
+        if (deal.poste && !hist[simIdx].poste) {
+          hist[simIdx].poste = deal.poste;
+          simChanged = true;
+        }
+        if (simChanged) saveHistoryArr(hist);
+      }
+    } catch(e) { console.warn('[updateCandidatFromDeal] propagation SIMU :', e); }
+  }
 }
 
 function saveClientFromDeal(deal) {
@@ -19970,6 +20231,10 @@ function saveClientFromDeal(deal) {
       delai_paiement: deal.delai_paiement||'',
       banque: deal.banque||'',
       type_contrat_client: deal.type_contrat_client||'',
+      // Bug fix : signataire des contrats (était oublié à la création de nouveau client)
+      nom_signataire: deal.nom_signataire || '',
+      tel_signataire: deal.tel_signataire || '',
+      email_signataire: deal.email_signataire || '',
       commentaire: '',
       created: new Date().toLocaleDateString('fr-FR'),
       updated: new Date().toLocaleDateString('fr-FR'),
@@ -20219,6 +20484,7 @@ function buildClientPageHTML(cl) {
     +   '<div data-fiche-edit-bar data-mode="view" class="fiche-edit-bar">'
     +     '<span class="fiche-lock-badge">🔒 Lecture seule</span>'
     +     '<button class="fiche-edit-btn fiche-edit-btn-edit" onclick="enterFicheEditMode(\'client\',' + cl.id + ')" title="Déverrouiller le client pour modifier">✎ Éditer</button>'
+    +     '<button class="fiche-edit-btn" onclick="confirmDeleteClient(' + cl.id + ')" title="Supprimer ce client (mot de passe admin requis)" style="background:#fff;color:#A8322A;border:1.5px solid #F5B5B5;">🗑 Supprimer</button>'
     +   '</div>'
     + '</div>'
 
@@ -20334,7 +20600,8 @@ function openSignataireEditor(clid) {
     +   '</div>'
     + '</div>'
     // Footer
-    + '<div style="padding:12px 22px 18px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid #F0EDF9;">'
+    + '<div style="padding:12px 22px 18px;display:flex;justify-content:space-between;gap:8px;border-top:1px solid #F0EDF9;align-items:center;">'
+    +   '<button onclick="confirmDeleteSignataire(' + cl.id + ')" style="padding:9px 14px;background:#fff;color:#A8322A;border:1.5px solid #F5B5B5;border-radius:9px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;">🗑 Supprimer signataire</button>'
     +   '<button onclick="document.getElementById(\'modal-signataire-editor\').remove()" style="padding:9px 20px;background:linear-gradient(135deg,#F0A500,#D69300);color:#fff;border:none;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Fermer</button>'
     + '</div>'
     + '</div>';
@@ -20351,6 +20618,106 @@ function refreshSignataireCardAfterEdit(clid) {
     // Re-render la fiche client en arrière-plan (la modale signataire reste ouverte devant)
     if (typeof openClientPage === 'function') openClientPage(clid);
   }, 50);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SUPPRESSIONS — Client / Manager / Signataire (avec mot de passe admin)
+// Toutes utilisent les tombstones synchronisés pour propagation à l'équipe
+// ═══════════════════════════════════════════════════════════════════
+
+// Supprimer un signataire (vide juste les 3 champs, ne supprime pas le client)
+function confirmDeleteSignataire(clid) {
+  var clients = getClients();
+  var cl = clients.find(function(c){ return c.id === clid; });
+  if (!cl) return;
+  if (!cl.nom_signataire && !cl.tel_signataire && !cl.email_signataire) {
+    alert('ℹ Aucun signataire à supprimer pour ce client.');
+    return;
+  }
+  var sigName = cl.nom_signataire || '(sans nom)';
+  if (!confirm('🗑 Supprimer le signataire "' + sigName + '" du client ' + cl.name + ' ?\n\nLes 3 champs (nom, téléphone, email) seront vidés.\nCette action est synchronisée avec toute l\'équipe.')) return;
+  promptGenericAdminPassword({
+    title: '🔒 Suppression signataire',
+    subtitle: 'Mot de passe admin requis pour supprimer le signataire de ' + cl.name
+  }, function() {
+    var arr = getClients();
+    var idx = arr.findIndex(function(c){ return c.id === clid; });
+    if (idx < 0) return;
+    arr[idx].nom_signataire = '';
+    arr[idx].tel_signataire = '';
+    arr[idx].email_signataire = '';
+    arr[idx].updated = new Date().toLocaleDateString('fr-FR');
+    saveClientsArr(arr);
+    if (typeof showNotifToast === 'function') showNotifToast('🗑 Signataire supprimé');
+    var modal = document.getElementById('modal-signataire-editor');
+    if (modal) modal.remove();
+    if (typeof openClientPage === 'function') openClientPage(clid);
+  });
+}
+
+// Supprimer un manager (avec garde-fou : warning si placements liés)
+function confirmDeleteManager(clid, mgridx) {
+  var clients = getClients();
+  var cl = clients.find(function(c){ return c.id === clid; });
+  if (!cl || !cl.managers || !cl.managers[mgridx]) return;
+  var m = cl.managers[mgridx];
+  var nbDeals = (m.deals && m.deals.length) || 0;
+  var msg = '🗑 Supprimer le manager "' + m.name + '" du client ' + cl.name + ' ?';
+  if (nbDeals > 0) {
+    msg += '\n\n⚠ ATTENTION : ' + nbDeals + ' placement' + (nbDeals>1?'s':'') + ' référence' + (nbDeals>1?'nt':'') + ' ce manager.\nLes placements ne seront PAS supprimés (ils gardent juste le nom du manager dans leurs données), mais le manager disparaîtra de la fiche client.';
+  }
+  msg += '\n\nCette action est synchronisée avec toute l\'équipe.';
+  if (!confirm(msg)) return;
+  promptGenericAdminPassword({
+    title: '🔒 Suppression manager',
+    subtitle: 'Mot de passe admin requis pour supprimer "' + m.name + '"'
+  }, function() {
+    var arrC = getClients();
+    var idxC = arrC.findIndex(function(c){ return c.id === clid; });
+    if (idxC < 0) return;
+    if (!arrC[idxC].managers || !arrC[idxC].managers[mgridx]) return;
+    arrC[idxC].managers.splice(mgridx, 1);
+    arrC[idxC].updated = new Date().toLocaleDateString('fr-FR');
+    saveClientsArr(arrC);
+    if (typeof showNotifToast === 'function') showNotifToast('🗑 Manager supprimé');
+    var modal = document.getElementById('modal-manager-fiche');
+    if (modal) modal.remove();
+    if (typeof openClientPage === 'function') openClientPage(clid);
+  });
+}
+
+// Supprimer un client (avec tombstone synchronisé)
+function confirmDeleteClient(clid) {
+  var clients = getClients();
+  var cl = clients.find(function(c){ return c.id === clid; });
+  if (!cl) return;
+  // Compter les placements liés à ce client
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var nameLower = (cl.name || '').toLowerCase();
+  var linkedDeals = deals.filter(function(d){ return (d.entreprise||'').toLowerCase() === nameLower; });
+  var nbMgrs = (cl.managers && cl.managers.length) || 0;
+  var msg = '🗑 Supprimer le client "' + cl.name + '" ?';
+  if (linkedDeals.length > 0) {
+    msg += '\n\n⚠ ATTENTION : ' + linkedDeals.length + ' placement' + (linkedDeals.length>1?'s':'') + ' lié' + (linkedDeals.length>1?'s':'') + ' à ce client.\nLes placements ne seront PAS supprimés (historique conservé).';
+  }
+  if (nbMgrs > 0) {
+    msg += '\n\n⚠ Ce client a ' + nbMgrs + ' manager' + (nbMgrs>1?'s':'') + ' : ils seront supprimés avec le client.';
+  }
+  msg += '\n\nCette suppression sera propagée à toute l\'équipe (synchronisée).';
+  if (!confirm(msg)) return;
+  promptGenericAdminPassword({
+    title: '🔒 Suppression client',
+    subtitle: 'Mot de passe admin requis pour supprimer ' + cl.name
+  }, function() {
+    var arr = getClients().filter(function(c){ return c.id !== clid; });
+    saveClientsArr(arr);
+    if (typeof addTombstone === 'function') addTombstone('clients', clid);
+    if (typeof showNotifToast === 'function') showNotifToast('🗑 Client supprimé');
+    if (typeof showClientsTab === 'function') showClientsTab();
+    if (typeof renderClients === 'function') {
+      try { renderClients(); } catch(e) {}
+    }
+  });
 }
 
 // ── Fiche manager (modal) ──
@@ -21651,8 +22018,17 @@ function setupCandDocsDragDrop(cand) {
       row.style.boxShadow = '';
       var files = e.dataTransfer.files;
       if (!files || !files.length) return;
-      var dockey = row.dataset.dockey;
-      var doclabel = row.dataset.doclabel;
+      // Si le menu déroulant a un type forcé (≠ __auto__), il prime sur le type de la ligne
+      var typeSelectRow = document.getElementById('doc-drop-type-' + cand.id);
+      var forcedTypeRow = typeSelectRow ? typeSelectRow.value : '__auto__';
+      var dockey, doclabel;
+      if (forcedTypeRow && forcedTypeRow !== '__auto__') {
+        dockey = forcedTypeRow;
+        doclabel = (DOC_TYPES_DISPLAY[forcedTypeRow] || forcedTypeRow);
+      } else {
+        dockey = row.dataset.dockey;
+        doclabel = row.dataset.doclabel;
+      }
       uploadCandDocFromFile(cand.id, dockey, doclabel, files[0]);
     });
   });
@@ -21702,6 +22078,72 @@ function uploadCandDocFromFile(candId, docKey, docLabel, file) {
     files: [file]
   };
   uploadCandDoc(fakeInput);
+}
+
+// Ajouter un type de document personnalisé (synchronisé localement, persiste entre sessions)
+function addCustomDocType(candId) {
+  var label = prompt('Nom du nouveau type de document :\n\nExemples : "Diplôme", "Lettre de mission", "Avenant client"...');
+  if (!label) return;
+  label = label.trim();
+  if (!label) return;
+  // Générer une clé unique slugifiée
+  var key = label.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
+  if (!key) { alert('⚠ Nom invalide.'); return; }
+  // Charger les types existants
+  var custom = [];
+  try { custom = JSON.parse(localStorage.getItem('sp_custom_doc_types_v1') || '[]'); }
+  catch(e) {}
+  // Vérifier doublon (clé)
+  var defaultKeys = ['cv','cni','carte_vitale','rib','justif_domicile','bulletin'];
+  if (defaultKeys.indexOf(key) >= 0 || custom.some(function(c){ return c.key === key; })) {
+    alert('⚠ Ce type de document existe déjà.');
+    return;
+  }
+  custom.push({ key: key, label: label });
+  localStorage.setItem('sp_custom_doc_types_v1', JSON.stringify(custom));
+  // Synchroniser via app_settings (partagé avec toute l'équipe)
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
+  if (typeof odAutoSync === 'function') odAutoSync();
+  // Refresh la fiche candidat pour faire apparaître le nouveau type
+  var cont = document.getElementById('ct-content-' + candId);
+  if (cont) {
+    var cands = getCandidats();
+    var cand = cands.find(function(c){ return c.id === candId; });
+    if (cand) cont.innerHTML = buildCandDocsHTML(cand);
+  }
+  // Pré-sélectionne le nouveau type
+  setTimeout(function(){
+    var sel = document.getElementById('doc-drop-type-' + candId);
+    if (sel) sel.value = key;
+    // Re-attache les listeners drag-drop
+    if (cands && cand && typeof setupCandDocsDragDrop === 'function') {
+      try { setupCandDocsDragDrop(cand); } catch(e){}
+    }
+  }, 50);
+}
+
+// Supprimer un type de document personnalisé
+function removeCustomDocType(candId, key) {
+  var defaultKeys = ['cv','cni','carte_vitale','rib','justif_domicile','bulletin'];
+  if (defaultKeys.indexOf(key) >= 0) { alert('⚠ Les types par défaut ne peuvent pas être supprimés.'); return; }
+  if (!confirm('Supprimer ce type de document personnalisé ?\n\nLes documents déjà uploadés sous ce type ne seront pas effacés (mais ils ne seront plus visibles dans la liste).')) return;
+  var custom = [];
+  try { custom = JSON.parse(localStorage.getItem('sp_custom_doc_types_v1') || '[]'); }
+  catch(e) {}
+  custom = custom.filter(function(c){ return c.key !== key; });
+  localStorage.setItem('sp_custom_doc_types_v1', JSON.stringify(custom));
+  // Synchroniser via app_settings (partagé avec toute l'équipe)
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
+  if (typeof odAutoSync === 'function') odAutoSync();
+  var cont = document.getElementById('ct-content-' + candId);
+  if (cont) {
+    var cands = getCandidats();
+    var cand = cands.find(function(c){ return c.id === candId; });
+    if (cand) cont.innerHTML = buildCandDocsHTML(cand);
+  }
 }
 
 function toggleDocRecu(input) {
@@ -25282,7 +25724,7 @@ function exportCommHistCSV() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Date deal</label><input id="pl-date-deal" type="date" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Commercial</label><select id="pl-commercial" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option value="">-- Sélectionner --</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Origine deal</label><select id="pl-origine" onchange="onPlCoopTypeChange()" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>Réseau</option><option>LinkedIn</option><option>Job board</option><option>Recommandation</option><option>Cooptation Client</option><option>Cooptation Candidat</option><option>Autre</option></select></div>
-        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">État dossier</label><select id="pl-etat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Nouveau placement</option><option>En cours</option><option>Signé</option><option>Annulé</option></select></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">État dossier <span style="font-weight:500;text-transform:none;color:#9E94C4;">(« Signé » est calculé auto)</span></label><select id="pl-etat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Nouveau placement</option><option>En cours</option><option>Annulé</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Type de contrat</label><select id="pl-contrat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>CDI</option><option>CDD</option><option>Portage</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Date d'entrée / Starter</label><input id="pl-date-entree" type="date" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
       </div>
