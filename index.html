@@ -6578,7 +6578,39 @@ var dealFilterEtranger = '__all__';
 function getDeals() {
   try { return JSON.parse(localStorage.getItem(DEALS_KEY) || '[]'); } catch(e) { return []; }
 }
-function saveDeals(arr) { localStorage.setItem(DEALS_KEY, JSON.stringify(arr)); }
+function saveDeals(arr) {
+  // Stamp updated_at en millis sur chaque deal modifié pour que le merge
+  // inter-utilisateurs (mergeDeals) puisse choisir le plus récent.
+  // Stratégie : on compare avec la version actuellement stockée et on stamp
+  // uniquement les deals qui ont changé. Ça permet de propager les modifs
+  // (commercial, statut, dates) sans polluer les autres timestamps.
+  if (Array.isArray(arr)) {
+    var nowMs = Date.now();
+    var prevArr = [];
+    try { prevArr = JSON.parse(localStorage.getItem(DEALS_KEY) || '[]'); } catch(e) {}
+    var prevMap = {};
+    prevArr.forEach(function(p){ if (p && p.id) prevMap[p.id] = p; });
+    arr.forEach(function(d){
+      if (!d || !d.id) return;
+      var prev = prevMap[d.id];
+      // Si pas de version précédente OU contenu différent → stamper
+      // Comparaison : on exclut updated_at lui-même pour éviter une boucle
+      if (!prev) {
+        if (!d.updated_at) d.updated_at = nowMs;
+        return;
+      }
+      // Comparer JSON sans updated_at
+      var prevCopy = Object.assign({}, prev); delete prevCopy.updated_at;
+      var newCopy  = Object.assign({}, d);    delete newCopy.updated_at;
+      if (JSON.stringify(prevCopy) !== JSON.stringify(newCopy)) {
+        d.updated_at = nowMs;
+      } else if (!d.updated_at) {
+        d.updated_at = prev.updated_at || nowMs;
+      }
+    });
+  }
+  localStorage.setItem(DEALS_KEY, JSON.stringify(arr));
+}
 
 // ── Recalcul cohérence des statuts deals ──
 // Corrige les deals qui sont en "Signé" alors que les 3 conditions ne sont plus remplies.
@@ -8656,6 +8688,11 @@ function deleteCurrDealView(){
   var name = (document.getElementById('deal-view-name').value||'').trim();
   if (!name){ alert('Entrez le nom à supprimer.'); return; }
   saveDealViewsArr(getDealViews().filter(function(v){ return v.name!==name; }));
+  // Tombstone : empêche la vue de revenir lors d'un sync depuis un autre commercial
+  if (typeof addTombstone === 'function') addTombstone('deal_views', name);
+  // Push immédiat de la mise à jour des configs partagées (deal_views ET tombstones)
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
+  if (typeof odAutoSync === 'function') odAutoSync();
   renderDealViewsList(); renderDealViewSelect();
 }
 
@@ -19748,10 +19785,65 @@ function mergeCandidats(remote) {
       emailMap[key].simulations = sims;
       // Garder le SP-ID si absent
       if (!emailMap[key].sp_id && rc.sp_id) emailMap[key].sp_id = rc.sp_id;
+
+      // ── Fusion des documents (clé par clé, last-write-wins) ──
+      // Quand un commercial upload un doc d'un côté, l'autre doit le voir au sync.
+      var localDocs = emailMap[key].documents || {};
+      var remoteDocs = rc.documents || {};
+      var mergedDocs = Object.assign({}, localDocs);
+      Object.keys(remoteDocs).forEach(function(docKey){
+        var localDoc = localDocs[docKey];
+        var remoteDoc = remoteDocs[docKey];
+        if (!localDoc) {
+          mergedDocs[docKey] = remoteDoc;
+          return;
+        }
+        // Comparer par date d'upload (le plus récent gagne)
+        // Si remote a un od_path et pas local, prendre remote
+        if (!localDoc.od_path && remoteDoc.od_path) {
+          mergedDocs[docKey] = remoteDoc;
+          return;
+        }
+        if (localDoc.od_path && !remoteDoc.od_path) {
+          // Garder local
+          return;
+        }
+        // Les 2 ont un od_path : prendre celui dont la date est la plus récente
+        var lDate = _parseFRDate(localDoc.uploaded);
+        var rDate = _parseFRDate(remoteDoc.uploaded);
+        if (rDate > lDate) mergedDocs[docKey] = remoteDoc;
+      });
+      if (Object.keys(mergedDocs).length > 0) emailMap[key].documents = mergedDocs;
+
+      // ── Fusion des autres champs simples : prendre le plus récemment mis à jour ──
+      // Si la version remote est plus récente, on mets à jour les champs métiers.
+      // Comparaison sur le champ "updated" (DD/MM/YYYY).
+      var localUpdated = _parseFRDate(emailMap[key].updated);
+      var remoteUpdated = _parseFRDate(rc.updated);
+      if (remoteUpdated > localUpdated) {
+        // Champs à propager si remote est plus récent (sans toucher aux simulations/documents déjà gérés)
+        var simpleFields = ['prenom', 'nom', 'tel', 'poste', 'profil', 'techno', 'ville',
+                            'linkedin', 'tjm_actuel', 'entreprise', 'commercial', 'secteur',
+                            'civilite', 'disponibilite', 'anniversaire', 'statut', 'updated'];
+        simpleFields.forEach(function(f){
+          if (rc[f] !== undefined && rc[f] !== null && rc[f] !== '') {
+            emailMap[key][f] = rc[f];
+          }
+        });
+      }
     }
   });
   saveCandidatsArr(Object.values(emailMap));
   if (typeof renderCandidats === 'function') renderCandidats();
+}
+
+// Helper : convertit une date FR "DD/MM/YYYY" en timestamp pour comparaison
+function _parseFRDate(s) {
+  if (!s) return 0;
+  if (typeof s === 'number') return s;
+  var m = String(s).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!m) return 0;
+  return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1])).getTime();
 }
 
 function mergeDeals(remote) {
@@ -19759,7 +19851,22 @@ function mergeDeals(remote) {
   var idMap = {};
   local.forEach(function(d) { idMap[d.id] = d; });
   remote.forEach(function(d) {
-    if (typeof isTombstoned === 'function' && d && isTombstoned('deals', d.id)) return; if (!idMap[d.id]) idMap[d.id] = d; });
+    if (typeof isTombstoned === 'function' && d && isTombstoned('deals', d.id)) return;
+    if (!d || !d.id) return;
+    var existing = idMap[d.id];
+    if (!existing) {
+      idMap[d.id] = d;
+      return;
+    }
+    // ── Last-write-wins par updated_at (timestamp millis) ──
+    // Si le deal remote a un updated_at plus récent, il gagne entièrement.
+    // Sinon on garde le local. Ça permet de propager les modifs (commercial, statut, dates, etc.)
+    var rTs = d.updated_at || _parseFRDate(d.updated) || 0;
+    var lTs = existing.updated_at || _parseFRDate(existing.updated) || 0;
+    if (rTs > lTs) {
+      idMap[d.id] = d;
+    }
+  });
   var merged = Object.values(idMap).sort(function(a,b){ return (b.id||0)-(a.id||0); });
   saveDeals(merged);
   if (typeof renderDeals === 'function') renderDeals();
@@ -19811,10 +19918,17 @@ function mergeParams(remote) {
     var local = JSON.parse(localStorage.getItem('sp_deal_views_v1') || '[]');
     var names = local.map(function(v){ return v.name; });
     remote.deal_views.forEach(function(rv) {
+      // Skip si la vue a été supprimée par quelqu'un (tombstone)
+      if (typeof isTombstoned === 'function' && rv && isTombstoned('deal_views', rv.name)) return;
       if (names.indexOf(rv.name) < 0) { local.push(rv); names.push(rv.name); }
     });
+    // Filtre aussi les vues locales tombstonées (au cas où elles seraient revenues à un sync précédent)
+    if (typeof isTombstoned === 'function') {
+      local = local.filter(function(v){ return !isTombstoned('deal_views', v.name); });
+    }
     localStorage.setItem('sp_deal_views_v1', JSON.stringify(local));
     if (typeof renderDealViewSelect === 'function') renderDealViewSelect();
+    if (typeof renderDealViewsList === 'function') renderDealViewsList();
   }
   // Sortants config : merge champ par champ, la version remote gagne si plus récente
   // (pas de timestamp fin → on fait un merge conservateur : prend la version non vide)
@@ -22014,22 +22128,26 @@ function setupCandDocsDragDrop(cand) {
     });
     row.addEventListener('drop', function(e) {
       e.preventDefault();
+      e.stopPropagation();
       row.style.background = '';
       row.style.boxShadow = '';
       var files = e.dataTransfer.files;
       if (!files || !files.length) return;
-      // Si le menu déroulant a un type forcé (≠ __auto__), il prime sur le type de la ligne
+      // Si le menu déroulant a un type forcé (≠ __auto__), il prime sur le type de la ligne.
+      // Sinon on utilise le dockey de la ligne ciblée (ce qui est attendu).
       var typeSelectRow = document.getElementById('doc-drop-type-' + cand.id);
       var forcedTypeRow = typeSelectRow ? typeSelectRow.value : '__auto__';
-      var dockey, doclabel;
       if (forcedTypeRow && forcedTypeRow !== '__auto__') {
-        dockey = forcedTypeRow;
-        doclabel = (DOC_TYPES_DISPLAY[forcedTypeRow] || forcedTypeRow);
+        // Menu sélectionné → on respecte ça (passe par handleDropzoneFiles qui relit le menu)
+        handleDropzoneFiles(cand.id, files);
       } else {
-        dockey = row.dataset.dockey;
-        doclabel = row.dataset.doclabel;
+        // Sinon : drop sur une ligne spécifique = type de la ligne
+        var dockey = row.dataset.dockey;
+        var doclabel = row.dataset.doclabel;
+        for (var i = 0; i < files.length; i++) {
+          uploadCandDocFromFile(cand.id, dockey, doclabel, files[i]);
+        }
       }
-      uploadCandDocFromFile(cand.id, dockey, doclabel, files[0]);
     });
   });
 }
@@ -22039,8 +22157,9 @@ function handleDropzoneFiles(candId, files) {
   var typeSelect = document.getElementById('doc-drop-type-' + candId);
   var forcedType = typeSelect ? typeSelect.value : '__auto__';
 
-  // Labels par type
-  var typeLabels = {
+  // Labels par type — utilise DOC_TYPES_DISPLAY (inclut types par défaut + perso)
+  // avec fallback sur les 6 types par défaut au cas où DOC_TYPES_DISPLAY pas encore initialisé
+  var typeLabels = (window.DOC_TYPES_DISPLAY) || {
     cv: 'CV',
     cni: 'CNI / Passeport',
     carte_vitale: 'Carte Vitale',
