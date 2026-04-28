@@ -1637,8 +1637,8 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
               <div style="font-size:13px;font-weight:700;color:#1A4F96;">Recalculer les statuts &laquo; Sign&eacute; &raquo;</div>
             </div>
             <div style="font-size:11.5px;color:#6B5E9C;line-height:1.55;margin-bottom:12px;">
-              Recalcule l'&eacute;tat de tous les placements en fonction des 3 conditions :<br>
-              <strong>&Eacute;tat CDPS = Re&ccedil;u + Signature CDPS = Oui + Signature CDT = Oui</strong>.<br>
+              Recalcule l'&eacute;tat de tous les placements en fonction des 2 conditions :<br>
+              <strong>Signature CDPS = Oui + Signature CDT = Oui</strong>.<br>
               &#128161; Utile une seule fois pour rattraper les anciens deals incorrectement marqu&eacute;s &laquo; Sign&eacute; &raquo;.
             </div>
             <button onclick="confirmRecomputeAllDealsEtat()" style="padding:9px 16px;background:#fff;color:#1A4F96;border:1.5px solid #4B7FD6;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;" onmouseover="this.style.background='#EEF4FF'" onmouseout="this.style.background='#fff'">&#9881;&#65039; V&eacute;rifier coh&eacute;rence statuts</button>
@@ -6620,11 +6620,10 @@ function recomputeAllDealsEtat() {
   var nbCorrected = 0, nbVraiSigne = 0, nbToujoursEnCours = 0;
   deals.forEach(function(d){
     if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return;
-    var cdps  = (d.etat_cdps || '').toString();
     var sCdps = (d.signature_cdps || '').toString();
     var sCdt  = (d.signature_contrat_travail || '').toString();
-    var hasAny = (cdps && cdps !== '') || (sCdps && sCdps !== '') || (sCdt && sCdt !== '');
-    var allOk = cdps === 'Reçu' && sCdps === 'Oui' && sCdt === 'Oui';
+    var hasAny = (sCdps && sCdps !== '') || (sCdt && sCdt !== '');
+    var allOk = sCdps === 'Oui' && sCdt === 'Oui';
     var newEtat = d.etat;
     if (allOk) {
       newEtat = 'Signé';
@@ -6658,12 +6657,12 @@ function confirmRecomputeAllDealsEtat() {
   }, function(){
     var deals = getDeals();
     if (!deals.length) { alert('Aucun deal à recalculer.'); return; }
-    if (!confirm('Recalculer le statut de ' + deals.length + ' placement(s) ?\n\nLes deals en « Signé » dont les 3 conditions ne sont pas remplies seront ramenés à « En cours ».')) return;
+    if (!confirm('Recalculer le statut de ' + deals.length + ' placement(s) ?\n\nLes deals en « Signé » dont les 2 conditions (Signature CDPS = Oui + Signature CDT = Oui) ne sont pas remplies seront ramenés à « En cours ».')) return;
     var result = recomputeAllDealsEtat();
     alert('✓ Recalcul terminé.\n\n' +
           '• Total deals : ' + result.nbTotal + '\n' +
           '• Statuts corrigés : ' + result.nbCorrected + '\n' +
-          '• Vrais "Signé" (3 conditions OK) : ' + result.nbVraiSigne);
+          '• Vrais "Signé" (2 conditions OK) : ' + result.nbVraiSigne);
     if (typeof renderDeals === 'function' && document.getElementById('rh-content-container')) {
       try { renderDeals(); } catch(e){}
     }
@@ -8787,16 +8786,65 @@ function getCellValue(d, key){
       var mutLabels = { 'isolee':'Isol\u00e9e', 'famille':'Famille', 'isolee_seven':'Isol\u00e9e (Seven)', 'renoncement':'Non', 'non':'Non' };
       return d.mutuelle ? (mutLabels[d.mutuelle] || d.mutuelle) : '\u2014';
     case 'repas':
-      var repasLabels = { 'Forfait':'Swile (Forfait)', 'Reel':'Swile (R\u00e9el)', 'forfait':'Swile (Forfait)', 'reel':'Swile (R\u00e9el)', 'Swile':'Swile (TR)', 'swile':'Swile (TR)' };
-      // GD n'est PAS Swile/TR → renvoyer un tiret dans cette colonne
+      // Affiche le montant journalier Swile/TR depuis les paramètres (p_swile)
       if (d.repas === 'GD' || d.repas === 'gd') return '\u2014';
-      return (d.repas && d.repas!=='Non') ? (repasLabels[d.repas] || d.repas) : '\u2014';
-    case 'forfait_repas': return d.repas==='Forfait' ? 'Oui' : '—';
-    case 'km_aller': return (d.km_aller && parseFloat(d.km_aller)>0) ? d.km_aller+' km' : '—';
+      if (!d.repas || d.repas === 'Non') return '\u2014';
+      var swileEl = document.getElementById('p_swile');
+      var swileVal = swileEl ? (parseFloat(swileEl.value) || 14) : 14;
+      var swileType = '';
+      if (d.repas === 'Forfait' || d.repas === 'forfait') swileType = ' (Forfait)';
+      else if (d.repas === 'Reel' || d.repas === 'reel') swileType = ' (Réel)';
+      else if (d.repas === 'Swile' || d.repas === 'swile') swileType = ' (TR)';
+      return swileVal.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' + swileType;
+    case 'forfait_repas':
+      // Affiche le montant journalier Forfait repas depuis les paramètres (p_forfait_repas)
+      if (d.repas !== 'Forfait' && d.repas !== 'forfait') return '\u2014';
+      var forfaitEl = document.getElementById('p_forfait_repas');
+      var forfaitVal = forfaitEl ? (parseFloat(forfaitEl.value) || 21.10) : 21.10;
+      return forfaitVal.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j';
+    case 'km_aller':
+      // Affiche l'indemnité km en €/j calculée depuis km_aller + puissance fiscale
+      var kmA = parseFloat(d.km_aller) || 0;
+      if (kmA <= 0) return '\u2014';
+      try {
+        var puiss = parseInt(d.puissance) || 5;
+        var nbJ = parseInt(d.nb_jours) || 21;
+        var jPres = parseInt(d.jours_presentiels) || (nbJ - (parseInt(d.jours_tt)||0));
+        if (jPres <= 0) jPres = nbJ;
+        if (typeof calcIK === 'function') {
+          var ikRes = calcIK(kmA, puiss, jPres, nbJ, d.ik_1ere !== false);
+          if (ikRes && ikRes.journaliere > 0) {
+            return ikRes.journaliere.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j (' + kmA + ' km)';
+          }
+        }
+      } catch(e) {}
+      return kmA + ' km';
     case 'abo_transport':
       var _tr = parseFloat(d.abo_transport) || 0;
       return _tr > 0 ? (_tr / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
-    case 'tt': return fmt(d.tt);
+    case 'tt':
+      // Affiche l'indemnité télétravail journalière depuis la SIMU
+      if (d.tt === 'Non' || !d.tt) return '\u2014';
+      // Récupérer la SIMU pour connaître les charges TT
+      try {
+        if (d.sim_ts && typeof getHistory === 'function') {
+          var simTT = getHistory().find(function(s){ return s.timestamp === d.sim_ts; });
+          if (simTT) {
+            var totalChg = (parseFloat(simTT.tt_loyer)||0) + (parseFloat(simTT.tt_elec)||0)
+                         + (parseFloat(simTT.tt_chauffage)||0) + (parseFloat(simTT.tt_taxe)||0)
+                         + (parseFloat(simTT.tt_assurance)||0) + (parseFloat(simTT.tt_internet)||0)
+                         + (parseFloat(simTT.tt_mobile)||0);
+            var jTT = parseInt(simTT.jours_tt) || 0;
+            if (totalChg > 0 && jTT > 0) {
+              var indemTT = totalChg * 0.15 * (jTT / 5) / 21;  // €/j
+              return indemTT.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j (' + jTT + 'j TT)';
+            }
+            // Si jours TT mais pas de charges → afficher juste le nb de jours
+            if (jTT > 0) return jTT + 'j TT';
+          }
+        }
+      } catch(e) {}
+      return d.tt === 'Oui' ? 'Oui' : fmt(d.tt);
     case 'telnet': 
       var totalTelnet = (parseFloat(d.abo_tel)||0) + (parseFloat(d.abo_internet)||0);
       return totalTelnet > 0 ? (totalTelnet / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
@@ -8897,12 +8945,30 @@ function updateDealField(dealId, key, value) {
 
   // ── Hook : mail de bienvenue automatique au candidat ──
   // Se déclenche UNE SEULE FOIS quand mail_bienvenue passe à "Oui"
+  // ⚠️ Avec confirmation utilisateur pour éviter les envois accidentels.
   if (key === 'mail_bienvenue' && value === 'Oui' && previousValue !== 'Oui' && !deals[idx].welcome_mail_sent_ts) {
-    try {
-      sendWelcomeEmailToCandidate(deals[idx]);
+    var deal = deals[idx];
+    var nomComplet = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim() || '(sans nom)';
+    var emailDest = (deal.email || '').trim() || '(pas d\'email)';
+    var msgConfirm = '📧 Envoyer le mail de bienvenue ?\n\n'
+      + '• Destinataire : ' + nomComplet + '\n'
+      + '• Email : ' + emailDest + '\n'
+      + '• Client : ' + (deal.entreprise || '—') + '\n\n'
+      + 'Cliquez OK pour envoyer le mail, ou Annuler pour juste cocher "Oui" sans envoyer.';
+    var doSend = confirm(msgConfirm);
+    if (doSend) {
+      try {
+        sendWelcomeEmailToCandidate(deals[idx]);
+        deals[idx].welcome_mail_sent_ts = Date.now();
+      } catch(e) {
+        console.error('[Welcome] Exception:', e);
+      }
+    } else {
+      // Utilisateur a annulé : on garde le statut "Oui" mais on stamp pour ne pas reproposer
+      // (sinon à chaque modif d'un autre champ, le hook se re-déclencherait)
       deals[idx].welcome_mail_sent_ts = Date.now();
-    } catch(e) {
-      console.error('[Welcome] Exception:', e);
+      deals[idx].welcome_mail_skipped = true;
+      if (typeof showNotifToast === 'function') showNotifToast('⏭ Mail bienvenue non envoyé (statut conservé à Oui)');
     }
   }
 
@@ -8912,24 +8978,22 @@ function updateDealField(dealId, key, value) {
     deals[idx].relance2_prolong_ts = null;
   }
 
-  // ── Auto-transition d'état basée sur les 3 champs clés d'onboarding ──
+  // ── Auto-transition d'état basée sur les 2 champs Signature ──
   // Mode AUTOMATIQUE STRICT : l'état "Signé" est exclusivement calculé depuis :
-  //   - etat_cdps === 'Reçu'
   //   - signature_cdps === 'Oui'
   //   - signature_contrat_travail === 'Oui'
-  // Quand l'un des 3 champs change :
-  //   - Si les 3 sont OK → 'Signé'
-  //   - Si au moins 1 est rempli mais pas tous → 'En cours'
+  // Quand l'un des 2 champs change :
+  //   - Si les 2 sont à "Oui" → 'Signé'
+  //   - Si au moins 1 est rempli mais pas les 2 → 'En cours'
   //   - Si l'état était 'Signé' mais qu'on a retiré un Oui → on retombe à 'En cours'
   // Les états 'Annulé' et 'Sorti des effectifs' ne sont JAMAIS écrasés (décision humaine).
-  if (key === 'etat_cdps' || key === 'signature_cdps' || key === 'signature_contrat_travail') {
+  if (key === 'signature_cdps' || key === 'signature_contrat_travail') {
     var currentEtat = deals[idx].etat || '';
     if (currentEtat !== 'Annulé' && currentEtat !== 'Sorti des effectifs') {
-      var cdps  = (deals[idx].etat_cdps || '').toString();
       var sCdps = (deals[idx].signature_cdps || '').toString();
       var sCdt  = (deals[idx].signature_contrat_travail || '').toString();
-      var hasAny = (cdps && cdps !== '') || (sCdps && sCdps !== '') || (sCdt && sCdt !== '');
-      var allOk = cdps === 'Reçu' && sCdps === 'Oui' && sCdt === 'Oui';
+      var hasAny = (sCdps && sCdps !== '') || (sCdt && sCdt !== '');
+      var allOk = sCdps === 'Oui' && sCdt === 'Oui';
       if (allOk) {
         deals[idx].etat = 'Signé';
       } else if (currentEtat === 'Signé') {
