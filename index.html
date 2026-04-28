@@ -7727,6 +7727,10 @@ function savePlacement() {
   closeModal('modal-placement');
   renderHistorique();
   if (document.getElementById('tab-deals') && document.getElementById('tab-deals').style.display !== 'none') renderDeals();
+  // Bug fix : la liste candidats peut afficher l'ancien commercial sur la carte si on ne re-rend pas
+  if (typeof renderCandidats === 'function') {
+    try { renderCandidats(); } catch(e) {}
+  }
   // Déclenche sync auto (debouncée) pour pousser deal + candidat + client sur SharePoint
   if (typeof odAutoSync === 'function') odAutoSync();
 }
@@ -9587,17 +9591,42 @@ function renderCandidats() {
     var myName = (typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
     if (myName) {
       cands = cands.filter(function(cand) {
-        if ((cand.commercial||'') === myName) return true;
+        // Comparaison tolérante (insensible à la casse, prénom uniquement)
+        if (typeof _sameCommercial === 'function' ? _sameCommercial(cand.commercial, myName) : ((cand.commercial||'').trim().toLowerCase() === myName.toLowerCase())) return true;
         // Fallback : regarder aussi les commercials des simulations
-        return (cand.simulations||[]).some(function(s){ return (s.commercial||'') === myName; });
+        return (cand.simulations||[]).some(function(s){
+          return typeof _sameCommercial === 'function' ? _sameCommercial(s.commercial, myName) : ((s.commercial||'').trim().toLowerCase() === myName.toLowerCase());
+        });
+      });
+    } else {
+      // L'utilisateur n'a pas renseigné son prénom : on affiche 0 candidat (au lieu de tout) pour forcer la config
+      // Plus sûr : un commercial qui voit "0 candidat" ira chercher pourquoi vs un qui voit ceux des autres et travaille dessus
+      cands = [];
+      // Affiche un message d'info sous la barre de recherche (une seule fois)
+      var infoEl = document.getElementById('cand-no-commercial-info');
+      if (!infoEl) {
+        var listEl = document.getElementById('candidats-list');
+        if (listEl && listEl.parentNode) {
+          var div = document.createElement('div');
+          div.id = 'cand-no-commercial-info';
+          div.style.cssText = 'background:#FFF8E1;border:1.5px solid #F0A500;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#8A5F00;';
+          div.innerHTML = '⚠ <strong>Renseignez votre prénom</strong> dans Paramètres → Commercial Seven Portage pour voir « Mes candidats », ou choisissez « Tous les commerciaux » dans le menu.';
+          listEl.parentNode.insertBefore(div, listEl);
+        }
+      }
+    }
+  } else {
+    // Pas en mode "Mes candidats" : retirer l'avertissement s'il existe
+    var infoEl2 = document.getElementById('cand-no-commercial-info');
+    if (infoEl2) infoEl2.remove();
+    if (filtComm && filtComm !== '') {
+      cands = cands.filter(function(cand) {
+        if (typeof _sameCommercial === 'function' ? _sameCommercial(cand.commercial, filtComm) : ((cand.commercial||'') === filtComm)) return true;
+        return (cand.simulations||[]).some(function(s){
+          return typeof _sameCommercial === 'function' ? _sameCommercial(s.commercial, filtComm) : ((s.commercial||'') === filtComm);
+        });
       });
     }
-    // Si l'utilisateur n'a pas renseigné son prénom dans Paramètres → on affiche tout (comportement défensif)
-  } else if (filtComm && filtComm !== '') {
-    cands = cands.filter(function(cand) {
-      if ((cand.commercial||'') === filtComm) return true;
-      return (cand.simulations||[]).some(function(s){ return (s.commercial||'') === filtComm; });
-    });
   }
 
   if (q) {
