@@ -8861,46 +8861,39 @@ function renderDealColCheckboxes(){
 
   var html = '';
 
-  // ── Section 1 : colonnes affichées (lignes pleine largeur, drag pour réordonner) ──
+  // ── Section 1 : colonnes affichées (tags violets compacts horizontaux, drag-drop) ──
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 8px 0;">'
        + '<div style="font-size:11.5px;color:#7343EE;font-weight:800;text-transform:uppercase;letter-spacing:0.04em;">'
        +   '✓ Colonnes affichées (' + visibleColKeys.length + ')'
        + '</div>'
-       + '<div style="font-size:10.5px;color:#9E94C4;">⋮⋮ Glissez pour réordonner · × pour masquer</div>'
+       + '<div style="font-size:10.5px;color:#9E94C4;">Glissez pour réordonner · × pour masquer</div>'
        + '</div>';
   html += '<div id="deal-col-visible-list" '
        + 'ondragover="_dealColDragOver(event)" '
        + 'ondrop="_dealColDropOnContainer(event)" '
-       + 'style="background:#FAFAFA;border-radius:8px;border:1.5px solid #D9CFFA;padding:6px;margin-bottom:14px;max-height:340px;overflow-y:auto;">';
+       + 'style="background:#FAFAFA;border-radius:8px;border:1.5px dashed #D9CFFA;padding:10px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:5px;align-content:flex-start;min-height:50px;max-height:240px;overflow-y:auto;">';
   visibleColKeys.forEach(function(key, idx){
     var col = colMap[key];
     if (!col) return;
-    var freezeTag = col.freeze ? '<span style="font-size:10px;color:#7343EE;background:#F5F3FF;padding:1px 6px;border-radius:4px;margin-left:6px;">❄ Figée</span>' : '';
-    var posBadge = '<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#7343EE;color:#fff;font-size:10px;font-weight:700;border-radius:4px;flex-shrink:0;">' + (idx + 1) + '</span>';
+    var freezeIcon = col.freeze ? ' ❄' : '';
+    // Tag compact violet style "rang sportif"
     html += '<div draggable="true" data-col="' + col.key + '" data-idx="' + idx + '" '
          +   'ondragstart="_dealColDragStart(event,this)" '
          +   'ondragover="_dealColDragOverItem(event,this)" '
          +   'ondragleave="_dealColDragLeave(event,this)" '
          +   'ondrop="_dealColDrop(event,this)" '
          +   'ondragend="_dealColDragEnd(event,this)" '
-         +   'style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#fff;border:1px solid #E4E0FA;border-radius:7px;margin-bottom:5px;cursor:grab;font-size:12.5px;color:#1A1033;user-select:none;transition:all .12s;" '
-         +   'onmouseover="this.style.borderColor=\'#7343EE\';this.style.boxShadow=\'0 2px 6px rgba(115,67,238,0.12)\'" '
-         +   'onmouseout="this.style.borderColor=\'#E4E0FA\';this.style.boxShadow=\'none\'">'
-         + '<span style="color:#9E94C4;font-size:14px;cursor:grab;line-height:1;">⋮⋮</span>'
-         + posBadge
-         + '<div style="flex:1;display:flex;align-items:center;gap:6px;">'
-         +   '<span style="font-weight:600;">' + col.label + '</span>'
-         +   freezeTag
-         + '</div>'
-         + '<div style="display:flex;gap:4px;flex-shrink:0;">'
-         + (idx > 0 ? '<button onclick="event.stopPropagation();_dealColMove(\'' + col.key + '\',-1)" title="Monter" style="width:24px;height:24px;background:#F5F3FF;color:#7343EE;border:1px solid #D9CFFA;border-radius:5px;cursor:pointer;font-size:11px;line-height:1;padding:0;font-family:inherit;">↑</button>' : '<span style="width:24px;"></span>')
-         + (idx < visibleColKeys.length - 1 ? '<button onclick="event.stopPropagation();_dealColMove(\'' + col.key + '\',1)" title="Descendre" style="width:24px;height:24px;background:#F5F3FF;color:#7343EE;border:1px solid #D9CFFA;border-radius:5px;cursor:pointer;font-size:11px;line-height:1;padding:0;font-family:inherit;">↓</button>' : '<span style="width:24px;"></span>')
-         +   '<button onclick="event.stopPropagation();toggleDealCol(\'' + col.key + '\',false)" title="Masquer cette colonne" style="width:24px;height:24px;background:#FCEBEB;color:#A8322A;border:1px solid #F5B5B5;border-radius:5px;cursor:pointer;font-size:13px;line-height:1;padding:0;font-family:inherit;">×</button>'
-         + '</div>'
+         +   'title="Glissez pour réordonner · cliquez × pour masquer" '
+         +   'style="display:inline-flex;align-items:center;gap:5px;padding:4px 4px 4px 4px;background:#EEEDFE;border:1px solid #AFA9EC;border-radius:14px;font-size:12px;cursor:grab;user-select:none;transition:all .12s;" '
+         +   'onmouseover="this.style.background=\'#E0DCFB\';this.style.borderColor=\'#7F77DD\'" '
+         +   'onmouseout="this.style.background=\'#EEEDFE\';this.style.borderColor=\'#AFA9EC\'">'
+         +   '<span style="background:#534AB7;color:#fff;font-size:10px;font-weight:700;min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;flex-shrink:0;">' + (idx + 1) + '</span>'
+         +   '<span style="color:#3C3489;font-weight:600;padding:0 2px 0 1px;">' + col.label + freezeIcon + '</span>'
+         +   '<button onclick="event.stopPropagation();toggleDealCol(\'' + col.key + '\',false)" title="Masquer cette colonne" style="background:transparent;color:#A8322A;border:none;cursor:pointer;font-size:14px;line-height:1;padding:0 4px 0 0;font-family:inherit;font-weight:700;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;" onmouseover="this.style.background=\'#FCEBEB\'" onmouseout="this.style.background=\'transparent\'">×</button>'
          + '</div>';
   });
   if (visibleColKeys.length === 0) {
-    html += '<div style="text-align:center;padding:20px;color:#9E94C4;font-size:12px;">Aucune colonne affichée — cochez ci-dessous pour ajouter</div>';
+    html += '<div style="width:100%;text-align:center;padding:14px;color:#9E94C4;font-size:12px;">Aucune colonne affichée — cochez ci-dessous pour en ajouter</div>';
   }
   html += '</div>';
 
