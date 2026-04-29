@@ -5194,6 +5194,22 @@ function saveHistorique(data, dest, email, consultantName) {
     abo_internet: data.abo_internet || '',
     frais_formation: data.frais_formation || '',
     frais_materiel: data.frais_materiel || '',
+    // Frais détaillés (pour le tableau Suivi RH → Deals + analyses)
+    // Sauvegardés depuis data.frais_tt etc. retournés par calc()
+    frais_tt: data.frais_tt || 0,
+    frais_ik: data.frais_ik || 0,
+    frais_repas: data.frais_repas || 0,
+    frais_transport: data.frais_transport || 0,
+    frais_telnet: data.frais_telnet || 0,
+    // Charges TT détaillées et nb jours TT (pour fallback de calcul si frais_tt absent)
+    jours_tt: (function(){ var el=document.getElementById('jours_tt'); return el ? (parseInt(el.value)||0) : 0; })(),
+    tt_loyer: (function(){ var el=document.getElementById('tt_loyer'); return el ? (parseFloat(el.value)||0) : 0; })(),
+    tt_elec: (function(){ var el=document.getElementById('tt_elec'); return el ? (parseFloat(el.value)||0) : 0; })(),
+    tt_chauffage: (function(){ var el=document.getElementById('tt_chauffage'); return el ? (parseFloat(el.value)||0) : 0; })(),
+    tt_taxe: (function(){ var el=document.getElementById('tt_taxe'); return el ? (parseFloat(el.value)||0) : 0; })(),
+    tt_assurance: (function(){ var el=document.getElementById('tt_assurance'); return el ? (parseFloat(el.value)||0) : 0; })(),
+    tt_internet: (function(){ var el=document.getElementById('tt_internet'); return el ? (parseFloat(el.value)||0) : 0; })(),
+    tt_mobile: (function(){ var el=document.getElementById('tt_mobile'); return el ? (parseFloat(el.value)||0) : 0; })(),
     hide_tjm_mail: data.hide_tjm_mail || false,
     dest: dest,
     email: email,
@@ -8474,6 +8490,45 @@ function _getADVForDeal(d) {
   return _getADVByLetter(firstLetter);
 }
 
+// Helper : retrouve la SIMU liée à un deal — par sim_ts en priorité, puis fallback par email + entreprise
+// Cache mémoire pour éviter de scanner getHistory() N fois par rendu de tableau.
+function _findSimForDeal(d) {
+  if (!d) return null;
+  if (typeof getHistory !== 'function') return null;
+  // Cache par deal id pour 1 seconde (durée d'un rendu de tableau)
+  if (!window._simForDealCache) window._simForDealCache = { ts: 0, map: {} };
+  var now = Date.now();
+  if (now - window._simForDealCache.ts > 1000) {
+    window._simForDealCache = { ts: now, map: {} };
+  }
+  var cacheKey = d.id || (d.sim_ts + '|' + (d.email||''));
+  if (window._simForDealCache.map[cacheKey] !== undefined) {
+    return window._simForDealCache.map[cacheKey];
+  }
+  var allSims = getHistory();
+  var sim = null;
+  // Méthode 1 : sim_ts exact
+  if (d.sim_ts) {
+    sim = allSims.find(function(s){ return s.timestamp === d.sim_ts; }) || null;
+  }
+  // Méthode 2 (fallback) : email + entreprise → la plus récente
+  if (!sim && d.email) {
+    var dEmail = d.email.toLowerCase().trim();
+    var dEnt = (d.entreprise||'').toLowerCase().trim();
+    var matchingSims = allSims.filter(function(s){
+      if ((s.email||'').toLowerCase().trim() !== dEmail) return false;
+      if (dEnt && (s.entreprise||'').toLowerCase().trim() !== dEnt) return false;
+      return true;
+    });
+    if (matchingSims.length > 0) {
+      matchingSims.sort(function(a,b){ return (b.timestamp||0) - (a.timestamp||0); });
+      sim = matchingSims[0];
+    }
+  }
+  window._simForDealCache.map[cacheKey] = sim;
+  return sim;
+}
+
 // Helper unique : retourne 'clemence' ou 'marie' (ou null) pour une lettre donnée
 // Source de vérité unique pour le routage ADV. Utilisé dans :
 //   - Tableau Deals : filtre ADV (_getADVForDeal)
@@ -9394,15 +9449,32 @@ function getCellValue(d, key){
       return forfaitVal.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j';
     case 'km_aller':
       // Affiche l'indemnité km en €/j calculée depuis km_aller + puissance fiscale
+      // Fallback : si km_aller manquant dans le deal, chercher dans la SIMU liée
       var kmA = parseFloat(d.km_aller) || 0;
+      var puissForCalc = parseInt(d.puissance) || 0;
+      var nbJForCalc = parseInt(d.nb_jours) || 0;
+      var jPresForCalc = parseInt(d.jours_presentiels) || 0;
+      var ik1ereForCalc = (d.ik_1ere !== undefined) ? d.ik_1ere : null;
+      // Si pas dans le deal → fallback SIMU (rétro-compat des anciens deals)
+      if (kmA <= 0 || nbJForCalc <= 0 || puissForCalc <= 0) {
+        var simIK = _findSimForDeal(d);
+        if (simIK) {
+          if (kmA <= 0) kmA = parseFloat(simIK.km_aller) || 0;
+          if (puissForCalc <= 0) puissForCalc = parseInt(simIK.puissance_fiscale) || 5;
+          if (nbJForCalc <= 0) nbJForCalc = parseInt(simIK.nb_jours) || 21;
+          if (jPresForCalc <= 0) jPresForCalc = parseInt(simIK.jours_presentiels) || (nbJForCalc - (parseInt(simIK.jours_tt)||0));
+          if (ik1ereForCalc === null) ik1ereForCalc = simIK.ik_1ere !== false;
+        }
+      }
       if (kmA <= 0) return '\u2014';
       try {
-        var puiss = parseInt(d.puissance) || 5;
-        var nbJ = parseInt(d.nb_jours) || 21;
-        var jPres = parseInt(d.jours_presentiels) || (nbJ - (parseInt(d.jours_tt)||0));
-        if (jPres <= 0) jPres = nbJ;
+        if (puissForCalc <= 0) puissForCalc = 5;
+        if (nbJForCalc <= 0) nbJForCalc = 21;
+        if (jPresForCalc <= 0) jPresForCalc = nbJForCalc - (parseInt(d.jours_tt)||0);
+        if (jPresForCalc <= 0) jPresForCalc = nbJForCalc;
+        if (ik1ereForCalc === null) ik1ereForCalc = true;
         if (typeof calcIK === 'function') {
-          var ikRes = calcIK(kmA, puiss, jPres, nbJ, d.ik_1ere !== false);
+          var ikRes = calcIK(kmA, puissForCalc, jPresForCalc, nbJForCalc, ik1ereForCalc);
           if (ikRes && ikRes.journaliere > 0) {
             return ikRes.journaliere.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j (' + kmA + ' km)';
           }
@@ -9410,46 +9482,43 @@ function getCellValue(d, key){
       } catch(e) {}
       return kmA + ' km';
     case 'abo_transport':
+      // Source : deal en priorité, fallback SIMU si manquant
       var _tr = parseFloat(d.abo_transport) || 0;
-      return _tr > 0 ? (_tr / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
+      if (_tr <= 0) {
+        var simTr = _findSimForDeal(d);
+        if (simTr) _tr = parseFloat(simTr.abo_transport) || 0;
+      }
+      // Le frais transport = 75% de l'abonnement (selon règle Seven Portage)
+      return _tr > 0 ? ((_tr * 0.75) / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
     case 'tt':
       // Affiche l'indemnité télétravail journalière depuis la SIMU.
       // Source : champ "frais_tt" (mensuel) déjà calculé et sauvegardé dans la SIMU
       // (visible dans le panneau "Frais professionnels exonérés" → ligne Télétravail).
-      // On divise par nb_jours pour avoir le €/jour, identique à la valeur affichée à droite.
       // Ne jamais afficher "Oui" ou "Non" — soit un montant €/j, soit le nb de jours TT, soit —
       if (d.tt === 'Non' || !d.tt) return '\u2014';
-      var simTT = null;
-      try {
-        if (typeof getHistory === 'function') {
-          var allSims = getHistory();
-          // Méthode 1 : chercher par sim_ts exact (cas normal)
-          if (d.sim_ts) {
-            simTT = allSims.find(function(s){ return s.timestamp === d.sim_ts; }) || null;
-          }
-          // Méthode 2 (fallback) : si sim_ts cassé/absent, chercher la SIMU la plus récente
-          // pour le même candidat (par email + entreprise)
-          if (!simTT && d.email) {
-            var dEmail = d.email.toLowerCase().trim();
-            var dEnt = (d.entreprise||'').toLowerCase().trim();
-            var matchingSims = allSims.filter(function(s){
-              if ((s.email||'').toLowerCase().trim() !== dEmail) return false;
-              if (dEnt && (s.entreprise||'').toLowerCase().trim() !== dEnt) return false;
-              return true;
-            });
-            // Trier par timestamp décroissant — prendre la plus récente
-            if (matchingSims.length > 0) {
-              matchingSims.sort(function(a,b){ return (b.timestamp||0) - (a.timestamp||0); });
-              simTT = matchingSims[0];
-            }
-          }
-        }
-      } catch(e) {}
+      var simTT = _findSimForDeal(d);
       if (simTT) {
         // Méthode 1 (préférée) : utiliser frais_tt mensuel directement depuis la SIMU
         var fraisTTMois = parseFloat(simTT.frais_tt) || 0;
         var nbJoursSim = parseInt(simTT.nb_jours) || 21;
         var jTT = parseInt(simTT.jours_tt) || 0;
+
+        // Si frais_tt absent, tenter de le récupérer depuis le snapshot (SIMUs anciennes)
+        // Le snapshot contient les valeurs brutes du formulaire au moment de la SIMU
+        if (!fraisTTMois && simTT.snapshot) {
+          var snap = simTT.snapshot;
+          if (!jTT) jTT = parseInt(snap.jours_tt) || 0;
+          // Recalcul depuis les charges du snapshot
+          var totalChgSnap = (parseFloat(snap.tt_loyer)||0) + (parseFloat(snap.tt_elec)||0)
+                           + (parseFloat(snap.tt_chauffage)||0) + (parseFloat(snap.tt_taxe)||0)
+                           + (parseFloat(snap.tt_assurance)||0) + (parseFloat(snap.tt_internet)||0)
+                           + (parseFloat(snap.tt_mobile)||0);
+          if (totalChgSnap > 0 && jTT > 0) {
+            // Formule officielle: total_charges × 15% × (jours_tt/5) / 21 × nb_jours
+            fraisTTMois = totalChgSnap * 0.15 * (jTT / 5) / 21 * nbJoursSim;
+          }
+        }
+
         if (fraisTTMois > 0 && nbJoursSim > 0) {
           var ttJour = fraisTTMois / nbJoursSim;
           return ttJour.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' + (jTT > 0 ? ' (' + jTT + 'j TT)' : '');
@@ -9469,8 +9538,19 @@ function getCellValue(d, key){
       // Cas final : pas de SIMU exploitable mais d.tt = 'Oui' → placeholder explicite
       return '<span style="color:#9E94C4;font-style:italic;font-size:11px;" title="SIMU manquante ou incomplète pour calculer l\'indemnité TT">à calculer</span>';
     case 'telnet': 
-      var totalTelnet = (parseFloat(d.abo_tel)||0) + (parseFloat(d.abo_internet)||0);
-      return totalTelnet > 0 ? (totalTelnet / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
+      // Source : deal en priorité, fallback SIMU si manquant.
+      // abo_tel + abo_internet = montant mensuel total → /21 pour le €/jour.
+      var _telVal = (parseFloat(d.abo_tel)||0) + (parseFloat(d.abo_internet)||0);
+      if (_telVal <= 0) {
+        var simTelnet = _findSimForDeal(d);
+        if (simTelnet) {
+          _telVal = (parseFloat(simTelnet.abo_tel)||0) + (parseFloat(simTelnet.abo_internet)||0);
+          // Cas particulier : SIMU stocke parfois tout dans abo_telnet (champ unifié)
+          if (_telVal <= 0 && simTelnet.abo_telnet) _telVal = parseFloat(simTelnet.abo_telnet) || 0;
+        }
+      }
+      // Règle Seven Portage : 50% pris en charge (cf calc() ligne ~2525)
+      return _telVal > 0 ? ((_telVal / 21) / 2).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
     case 'grand_dep':
       // Seulement si repas === 'GD' — on affiche le montant journalier (taux GD par jour)
       if (d.repas !== 'GD' && d.repas !== 'gd') return '\u2014';
@@ -9483,10 +9563,20 @@ function getCellValue(d, key){
       if (_taux <= 0) return '\u2014';
       return _taux.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j (' + _lieu + ')';
     case 'frais_formation': 
+      // Source : deal en priorité, fallback SIMU
       var formVal = parseFloat(d.frais_formation)||0;
+      if (formVal <= 0) {
+        var simForm = _findSimForDeal(d);
+        if (simForm) formVal = parseFloat(simForm.frais_formation) || 0;
+      }
       return formVal > 0 ? (formVal / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
     case 'frais_materiel': 
+      // Source : deal en priorité, fallback SIMU
       var matVal = parseFloat(d.frais_materiel)||0;
+      if (matVal <= 0) {
+        var simMat = _findSimForDeal(d);
+        if (simMat) matVal = parseFloat(simMat.frais_materiel) || 0;
+      }
       return matVal > 0 ? (matVal / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
     case 'cp':
       var cpVal = (d.cp || '').toString().toLowerCase();
@@ -23499,7 +23589,13 @@ function uploadClientDocFromFile(clid, docKey, docLabel, file) {
       ensureOdFolder(folderPath, function(ok, errDetails){
         if (!ok) {
           if (cont) cont.innerHTML = buildClientDocsHTML(cl);
+          // Si c'est un throttle 429, le message est déjà très clair (formaté par ensureOdFolder).
+        // Sinon, afficher l'erreur technique pour diagnostic.
+        if (errDetails && errDetails.indexOf('Microsoft Graph est saturé') >= 0) {
+          alert(errDetails);
+        } else {
           alert('Erreur création dossier SharePoint.\n\nChemin tenté: ' + folderPath + '\n\n' + (errDetails || ''));
+        }
           return;
         }
         var filePathSegments = filePath.split('/').filter(Boolean).map(function(p){return encodeURIComponent(p);}).join('/');
@@ -23743,7 +23839,13 @@ function uploadCandDoc(input) {
     ensureOdFolder(folderPath, function(ok, errDetails) {
       if (!ok) {
         if (cont) cont.innerHTML = buildCandDocsHTML(cand);
-        alert('Erreur création dossier SharePoint.\n\nChemin tenté: ' + folderPath + '\n\n' + (errDetails || ''));
+        // Si c'est un throttle 429, le message est déjà très clair (formaté par ensureOdFolder).
+        // Sinon, afficher l'erreur technique pour diagnostic.
+        if (errDetails && errDetails.indexOf('Microsoft Graph est saturé') >= 0) {
+          alert(errDetails);
+        } else {
+          alert('Erreur création dossier SharePoint.\n\nChemin tenté: ' + folderPath + '\n\n' + (errDetails || ''));
+        }
         return;
       }
       // Encoder chaque segment du chemin séparément (garder les / littéraux)
@@ -23784,6 +23886,14 @@ function uploadCandDoc(input) {
 }
 
 function ensureOdFolder(folderPath, cb) {
+  // Cache : si on a déjà vérifié/créé ce dossier dans cette session, on saute le GET
+  // (économie d'appels Microsoft Graph pour éviter le throttle 429 sur les uploads multiples)
+  if (!window._odFolderCache) window._odFolderCache = {};
+  if (window._odFolderCache[folderPath]) {
+    cb(true, '');
+    return;
+  }
+
   // Parcours récursif : pour chaque niveau, GET d'abord (existe ?) puis POST si absent.
   // Ce pattern évite le 403 sur /General qui est le dossier-canal Teams (non-supprimable
   // par l'app, donc conflictBehavior:'replace' échoue avec accessDenied).
@@ -23792,7 +23902,12 @@ function ensureOdFolder(folderPath, cb) {
 
   var idx = 0;
   function processNext() {
-    if (idx >= parts.length) { cb(true, ''); return; }
+    if (idx >= parts.length) {
+      // Tout le chemin existe : marquer en cache pour les prochains uploads
+      window._odFolderCache[folderPath] = true;
+      cb(true, '');
+      return;
+    }
     var parentParts = parts.slice(0, idx);
     var currentParts = parts.slice(0, idx + 1);
     var folderName = parts[idx];
@@ -23803,14 +23918,29 @@ function ensureOdFolder(folderPath, cb) {
       : '';
     var currentPath = '/' + currentParts.map(function(p){return encodeURIComponent(p);}).join('/');
 
+    // Si on a déjà ce sous-chemin en cache, on saute aussi
+    var subPath = '/' + currentParts.join('/');
+    if (window._odFolderCache[subPath]) {
+      processNext();
+      return;
+    }
+
     // 1. GET : le dossier existe-t-il déjà ?
     var checkUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + currentPath;
 
     fetch(checkUrl, { headers: { 'Authorization': 'Bearer ' + odToken } })
       .then(function(r) {
         if (r.ok) {
-          // Déjà présent → ne rien faire, passer au niveau suivant
+          // Déjà présent → marquer en cache, passer au niveau suivant
+          window._odFolderCache[subPath] = true;
           processNext();
+          return;
+        }
+        // Cas spécial 429 : throttle Microsoft Graph
+        // Le message est détecté plus haut par l'intercepteur fetch qui aura déjà retry,
+        // donc si on arrive ici avec 429 c'est que les retries ont échoué → message clair
+        if (r.status === 429) {
+          cb(false, '⏸ Microsoft Graph est saturé.\n\nRéessayez dans 10-15 minutes.\nNe cliquez pas plusieurs fois sur Sync, ça aggrave le problème.');
           return;
         }
         if (r.status !== 404) {
@@ -23834,12 +23964,19 @@ function ensureOdFolder(folderPath, cb) {
           })
         }).then(function(cr) {
           if (cr.ok) {
+            window._odFolderCache[subPath] = true;
             processNext();
             return;
           }
           // Race condition : créé entre notre GET et notre POST → continuer quand même
           if (cr.status === 409) {
+            window._odFolderCache[subPath] = true;
             processNext();
+            return;
+          }
+          // Throttle sur création
+          if (cr.status === 429) {
+            cb(false, '⏸ Microsoft Graph est saturé.\n\nRéessayez dans 10-15 minutes.\nNe cliquez pas plusieurs fois sur Sync, ça aggrave le problème.');
             return;
           }
           return cr.text().then(function(txt) {
