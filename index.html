@@ -1534,9 +1534,14 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       <div class="params-acc-body" id="acc-emails">
         <div style="padding:12px;">
           <div id="internal-emails-container"></div>
-          <div style="font-size:10px;color:#9E9E9E;margin-top:8px;line-height:1.5;">R&egrave;gle d'envoi automatique &agrave; la cr&eacute;ation d'un placement :<br>
-            &#8226; Nom candidat <strong>A &agrave; H</strong> &rarr; Cl&eacute;mence + ADV<br>
-            &#8226; Nom candidat <strong>I &agrave; Z</strong> &rarr; Marie + ADV
+          <!-- Configuration ADV : qui gère quelles lettres -->
+          <div style="margin-top:14px;padding:14px;background:#F5F3FF;border:1.5px solid #E4E0FA;border-radius:10px;">
+            <div style="font-size:13px;font-weight:700;color:#7343EE;margin-bottom:8px;">⚙️ Règle d'attribution ADV par lettre du nom du consultant</div>
+            <div style="font-size:11px;color:#6B5E9C;margin-bottom:12px;line-height:1.5;">
+              Cochez les lettres de l'alphabet pour chaque ADV. À la création d'un placement, l'ADV destinataire est déterminé selon la 1ère lettre du nom du consultant.
+            </div>
+            <div id="adv-letters-config-container">Chargement…</div>
+            <div id="adv-letters-validation" style="margin-top:10px;padding:8px 12px;border-radius:7px;font-size:11.5px;display:none;"></div>
           </div>
         </div>
       </div>
@@ -1886,6 +1891,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="__all__">&Eacute;tranger : Les deux</option>
           <option value="oui">&Eacute;tranger : Oui</option>
           <option value="non">&Eacute;tranger : Non</option>
+        </select>
+        <select id="deal-filter-adv" onchange="dealFilterADV=this.value;renderDeals();" title="Filtrer selon l'ADV qui gère le consultant (selon la 1ère lettre du nom : A-H = Clémence, I-Z = Marie)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;color:#1A1033;background:#fff;cursor:pointer;">
+          <option value="__all__">Tous ADV</option>
+          <option value="clemence">👩 Clémence (A-H)</option>
+          <option value="marie">👩 Marie (I-Z)</option>
         </select>
         <select id="deal-view-select" onchange="applyDealView(this.value)" style="padding:6px 10px;border:1.5px solid #7343EE;border-radius:8px;font-size:12px;color:#7343EE;background:#F5F3FF;cursor:pointer;font-weight:600;">
           <option value="__all__">Vue par défaut</option>
@@ -3076,6 +3086,9 @@ function calc() {
   const net_a_payer = Math.round((net_apres_impot + TOTAL_FRAIS) * 100) / 100;
   const taux_restitution = facturation > 0 ? net_a_payer / facturation : 0;
   const cout_global = BRUT + TOTAL_PAT;
+  // Valeur saisie par l'utilisateur (ex: 5 pour 5%) — utilisée pour l'affichage du bulletin de paie
+  // et pour la sauvegarde dans la SIMU (pas /100, c'est le pourcentage brut affiché)
+  const taux_impot = f('taux_impot');
 
   // === SEUIL ALERTE ===
   const seuilAlert = NB_JOURS < 22 && BRUT >= 4350 && BRUT <= 4500;
@@ -4171,8 +4184,9 @@ function buildBulletinPaieHTML(data) {
     + '<div class="bp-bandeau-net"><span>NET A PAYER AVANT IMPÔT SUR LE REVENU</span><span>' + _bpFmt(bd.net_avant_impot, 2) + ' €</span></div>'
 
     // ═══ Impôt sur le revenu ═══
+    // bd.taux_impot est stocké en pourcentage brut (ex: 5 pour 5%) donc on divise par 100 pour le calcul
     + '<div class="bp-impot-row"><span>IMPOT SUR LE REVENU</span><span>BASE</span><span>TAUX</span><span>MONTANT</span></div>'
-    + '<div class="bp-impot-row white" style="color:#1a1a1a;"><span>IMPOT SUR LE REVENU PRELEVE A LA SOURCE</span><span style="text-align:right;">' + _bpFmt(bd.net_avant_impot, 2) + ' €</span><span style="text-align:right;">' + _bpPct(bd.taux_impot || 0) + '</span><span style="text-align:right;">' + _bpFmt(bd.net_avant_impot * (bd.taux_impot || 0), 2) + ' €</span></div>'
+    + '<div class="bp-impot-row white" style="color:#1a1a1a;"><span>IMPOT SUR LE REVENU PRELEVE A LA SOURCE</span><span style="text-align:right;">' + _bpFmt(bd.net_avant_impot, 2) + ' €</span><span style="text-align:right;">' + _bpPct((bd.taux_impot || 0) / 100) + '</span><span style="text-align:right;">' + _bpFmt(bd.net_avant_impot * ((bd.taux_impot || 0) / 100), 2) + ' €</span></div>'
 
     // ═══ Bloc final : TOTAL FRAIS / NET APRES IMPOT / NET A PAYER ═══
     + '<div class="bp-final-grid">'
@@ -5985,6 +5999,7 @@ var _SHARED_CONFIG_KEYS = [
   { ls: 'sp_matching_jours_v1',      field: 'matching_jours' },
   { ls: 'sp_custom_doc_types_v1',    field: 'custom_doc_types' },
   { ls: 'sp_custom_client_doc_types_v1', field: 'custom_client_doc_types' },
+  { ls: 'sp_adv_letters_v1',         field: 'adv_letters' },
   { ls: 'sp_tombstones_v1',          field: 'tombstones' }
 ];
 
@@ -6659,8 +6674,9 @@ function odFilterCommercial(val) {
 var DEALS_KEY = 'sp_deals_v1';
 var currentPlacementTs = null;
 var dealFilterEtat = '__all__';
-var dealFilterComm = '__mine__';
+var dealFilterComm = '__all__';  // Vue par défaut : tous les commerciaux
 var dealFilterEtranger = '__all__';
+var dealFilterADV = '__all__';
 
 function getDeals() {
   try { return JSON.parse(localStorage.getItem(DEALS_KEY) || '[]'); } catch(e) { return []; }
@@ -8225,10 +8241,11 @@ function sendSortantNotificationEmail(sortant, deal, isEdit) {
   var cfg = getSortantsConfig();
 
   // ── Destinataires principaux (hard-coded règle prod) ──
-  // Clémence ou Marie selon le NOM du consultant (A-H / I-Z)
+  // Clémence ou Marie selon le NOM du consultant (règle configurable, A-H/I-Z par défaut)
   var nomConsultant = ((deal.nom || sortant.nom || '') + '').trim();
   var firstLetter = nomConsultant.charAt(0).toUpperCase();
-  var isAH = firstLetter >= 'A' && firstLetter <= 'H';
+  var advForLetter = (typeof _getADVByLetter === 'function') ? _getADVByLetter(firstLetter) : (firstLetter >= 'A' && firstLetter <= 'H' ? 'clemence' : 'marie');
+  var isAH = (advForLetter === 'clemence');
   var emails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
   var rhEmail = isAH ? (emails.clemence || '') : (emails.marie || '');
 
@@ -8444,6 +8461,38 @@ function showDealsTab() {
   renderDeals();
 }
 
+// Helper : retourne 'clemence' ou 'marie' selon la 1ère lettre du nom du consultant
+// Règle métier : configurable dans Paramètres → Emails internes (A-H = Clémence, I-Z = Marie par défaut).
+// Cette logique est cohérente avec celle utilisée dans les emails de placement.
+function _getADVForDeal(d) {
+  if (!d) return null;
+  var name = (d.nom || '').trim();
+  if (!name) return null;
+  var firstLetter = name.charAt(0).toUpperCase();
+  // Normaliser les accents (ex: É → E)
+  firstLetter = firstLetter.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return _getADVByLetter(firstLetter);
+}
+
+// Helper unique : retourne 'clemence' ou 'marie' (ou null) pour une lettre donnée
+// Source de vérité unique pour le routage ADV. Utilisé dans :
+//   - Tableau Deals : filtre ADV (_getADVForDeal)
+//   - Création de placement : email envoyé (getPlacementRecipients)
+//   - Production : email envoyé (production)
+//   - Demandes / Sortants / etc. : routage divers
+function _getADVByLetter(letter) {
+  if (!letter) return null;
+  var L = String(letter).charAt(0).toUpperCase();
+  L = L.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  var cfg = (typeof getADVLettersConfig === 'function') ? getADVLettersConfig() : null;
+  if (cfg && cfg.clemence && cfg.clemence.indexOf(L) >= 0) return 'clemence';
+  if (cfg && cfg.marie && cfg.marie.indexOf(L) >= 0) return 'marie';
+  // Fallback (avant config créée) : règle historique A-H Clémence, I-Z Marie
+  if (L >= 'A' && L <= 'H') return 'clemence';
+  if (L >= 'I' && L <= 'Z') return 'marie';
+  return null;
+}
+
 function renderDeals() {
   var deals = getDeals();
   // Filtres
@@ -8456,6 +8505,13 @@ function renderDeals() {
   }
   if (dealFilterEtranger === 'oui') deals = deals.filter(function(d) { return d.salarie_etranger === true; });
   if (dealFilterEtranger === 'non') deals = deals.filter(function(d) { return d.salarie_etranger !== true; });
+
+  // ── Filtre ADV (Clémence A-H / Marie I-Z selon la 1ère lettre du nom du consultant) ──
+  if (dealFilterADV === 'clemence') {
+    deals = deals.filter(function(d){ return _getADVForDeal(d) === 'clemence'; });
+  } else if (dealFilterADV === 'marie') {
+    deals = deals.filter(function(d){ return _getADVForDeal(d) === 'marie'; });
+  }
 
   // ── Filtre recherche consultant (par nom/prénom/email/entreprise) ──
   // Si window._dealConsultantFilter est défini (string), on filtre sur tous les champs
@@ -9076,12 +9132,13 @@ function renderDealViewSelect(){
 }
 
 function resetDealFilters(){
-  dealFilterEtat='__all__'; dealFilterComm='__all__'; dealFilterEtranger='__all__';
+  dealFilterEtat='__all__'; dealFilterComm='__all__'; dealFilterEtranger='__all__'; dealFilterADV='__all__';
   dealVisibleCols=DEAL_DEFAULT_COLS.slice();
   localStorage.setItem('sp_deal_cols',JSON.stringify(dealVisibleCols));
   var se=document.getElementById('deal-filter-etat'); if(se) se.value='__all__';
   var sc=document.getElementById('deal-filter-comm'); if(sc) sc.value='__all__';
   var se3=document.getElementById('deal-filter-etranger'); if(se3) se3.value='__all__';
+  var sa=document.getElementById('deal-filter-adv'); if(sa) sa.value='__all__';
   var sv=document.getElementById('deal-view-select'); if(sv) sv.value='__all__';
   // Reset recherche consultant
   window._dealConsultantFilter = '';
@@ -11112,13 +11169,13 @@ function sendProlongationRelance(deal, niveau) {
   var ccList = [];
   // 1. Expéditeur (lui-même en copie pour archivage/traçabilité)
   if (senderEmail) ccList.push(senderEmail);
-  // 2. RÈGLE PROD : Clémence (A-H) ou Marie (I-Z) selon le nom du consultant
+  // 2. RÈGLE PROD : Clémence ou Marie selon le nom du consultant (config A-H/I-Z par défaut)
   try {
     var _nom = ((deal.nom||'') + '').trim();
     var _firstL = _nom.charAt(0).toUpperCase();
-    var _isAH = _firstL >= 'A' && _firstL <= 'H';
+    var _adv = (typeof _getADVByLetter === 'function') ? _getADVByLetter(_firstL) : (_firstL >= 'A' && _firstL <= 'H' ? 'clemence' : 'marie');
     var _intEmails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
-    var _rhEmail = _isAH ? (_intEmails.clemence || '') : (_intEmails.marie || '');
+    var _rhEmail = (_adv === 'clemence') ? (_intEmails.clemence || '') : (_intEmails.marie || '');
     if (_rhEmail) ccList.push(_rhEmail);
   } catch(e) { console.warn('[Prolong] RH routing:', e); }
   // 3. social@seven-portage.fr systématiquement
@@ -14045,7 +14102,7 @@ function openProlongationSimplePopup(dealId) {
   // Détermination de l'ADV cible selon règle A-H/I-Z (sur le nom)
   var nomForRule = (deal.nom || '').trim();
   var firstLetter = nomForRule.charAt(0).toUpperCase();
-  var isAH = firstLetter >= 'A' && firstLetter <= 'H';
+  var isAH = (typeof _getADVByLetter === 'function' ? _getADVByLetter(firstLetter) === 'clemence' : (firstLetter >= 'A' && firstLetter <= 'H'));
   var advLabel = isAH ? 'Clémence' : 'Marie';
 
   modal.innerHTML = ''
@@ -14146,7 +14203,7 @@ function sendProlongationSimpleEmail(deal, ancienneDateFin, nouvelleDateFin, com
   // Routage A-H / I-Z basé sur le nom
   var nomConsultant = ((deal.nom||'') + '').trim();
   var firstLetter = nomConsultant.charAt(0).toUpperCase();
-  var isAH = firstLetter >= 'A' && firstLetter <= 'H';
+  var isAH = (typeof _getADVByLetter === 'function' ? _getADVByLetter(firstLetter) === 'clemence' : (firstLetter >= 'A' && firstLetter <= 'H'));
   var emails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
   var advEmail = isAH ? (emails.clemence || '') : (emails.marie || '');
 
@@ -14519,7 +14576,7 @@ function renderAvenantPopupBody(simTimestamp) {
   // Notification email règle
   var nomForRule = (deal.nom || '').trim();
   var firstLetter = nomForRule.charAt(0).toUpperCase();
-  var isAH = firstLetter >= 'A' && firstLetter <= 'H';
+  var isAH = (typeof _getADVByLetter === 'function' ? _getADVByLetter(firstLetter) === 'clemence' : (firstLetter >= 'A' && firstLetter <= 'H'));
   var advLabel = isAH ? 'Clémence' : 'Marie';
   html += '<div style="padding:10px 12px;background:#EEF4FF;border:1.5px solid #B8D0F5;border-radius:8px;font-size:11.5px;color:#1A4F96;line-height:1.5;">'
     + '<strong>📧 Email automatique sera envoyé à :</strong> '
@@ -14692,7 +14749,7 @@ function sendProlongationAvenantEmail(deal, avenant, oldFrais, newFrais) {
   }
   var nomConsultant = ((deal.nom||'') + '').trim();
   var firstLetter = nomConsultant.charAt(0).toUpperCase();
-  var isAH = firstLetter >= 'A' && firstLetter <= 'H';
+  var isAH = (typeof _getADVByLetter === 'function' ? _getADVByLetter(firstLetter) === 'clemence' : (firstLetter >= 'A' && firstLetter <= 'H'));
   var emails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
   var advEmail = isAH ? (emails.clemence || '') : (emails.marie || '');
 
@@ -22441,7 +22498,7 @@ function updateUserSignature(val) {
 function getPlacementRecipients(nomCandidat) {
   var emails = getInternalEmails();
   var firstLetter = (nomCandidat||'').trim().charAt(0).toUpperCase();
-  var isAH = firstLetter >= 'A' && firstLetter <= 'H';
+  var isAH = (typeof _getADVByLetter === 'function' ? _getADVByLetter(firstLetter) === 'clemence' : (firstLetter >= 'A' && firstLetter <= 'H'));
   if (isAH) {
     return [emails.clemence, emails.adv].filter(Boolean);
   } else {
@@ -25834,9 +25891,13 @@ function renderInternalEmailsParams() {
   var rowStyle = 'display:grid;grid-template-columns:180px 1fr;gap:8px;align-items:center;margin-bottom:6px;';
   var labelStyle = 'font-size:11px;font-weight:700;color:#6B5E9C;';
   var inputStyle = 'padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;';
+  // Récupérer les lettres dynamiquement pour les afficher dans les labels
+  var advCfg = getADVLettersConfig();
+  var clemencePlage = _formatLettersForLabel(advCfg.clemence);
+  var mariePlage = _formatLettersForLabel(advCfg.marie);
   el.innerHTML = ''
-    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Clémence (A-H) :</label><input type="email" value="' + (e.clemence||'') + '" onchange="updateInternalEmail(\'clemence\',this.value)" style="' + inputStyle + '"></div>'
-    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Marie (I-Z) :</label><input type="email" value="' + (e.marie||'') + '" onchange="updateInternalEmail(\'marie\',this.value)" style="' + inputStyle + '"></div>'
+    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Clémence (' + clemencePlage + ') :</label><input type="email" value="' + (e.clemence||'') + '" onchange="updateInternalEmail(\'clemence\',this.value)" style="' + inputStyle + '"></div>'
+    + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Marie (' + mariePlage + ') :</label><input type="email" value="' + (e.marie||'') + '" onchange="updateInternalEmail(\'marie\',this.value)" style="' + inputStyle + '"></div>'
     + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">ADV (dans les 2 cas) :</label><input type="email" value="' + (e.adv||'') + '" onchange="updateInternalEmail(\'adv\',this.value)" style="' + inputStyle + '"></div>'
     + '<div style="border-top:1px solid #E4E0FA;margin-top:10px;padding-top:10px;">'
     + '<div style="font-size:11px;font-weight:700;color:#7343EE;margin-bottom:6px;">Commerciaux (en copie selon qui crée le deal)</div>'
@@ -25848,6 +25909,158 @@ function renderInternalEmailsParams() {
     + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Farah :</label><input type="email" value="' + (e.farah||'') + '" onchange="updateInternalEmail(\'farah\',this.value)" style="' + inputStyle + '"></div>'
     + '<div style="' + rowStyle + '"><label style="' + labelStyle + '">Joanne :</label><input type="email" value="' + (e.joanne||'') + '" onchange="updateInternalEmail(\'joanne\',this.value)" style="' + inputStyle + '"></div>'
     + '</div>';
+  // Rendu de la zone "Règle ADV par lettre"
+  if (typeof renderADVLettersConfig === 'function') renderADVLettersConfig();
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Configuration ADV : qui (Clémence ou Marie) gère quelles lettres
+// ════════════════════════════════════════════════════════════════════
+
+// Lettres par défaut (rétro-compat) : Clémence A-H, Marie I-Z
+var DEFAULT_ADV_LETTERS_CONFIG = {
+  clemence: ['A','B','C','D','E','F','G','H'],
+  marie:    ['I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z']
+};
+
+function getADVLettersConfig() {
+  try {
+    var raw = localStorage.getItem('sp_adv_letters_v1');
+    if (!raw) return JSON.parse(JSON.stringify(DEFAULT_ADV_LETTERS_CONFIG));
+    var cfg = JSON.parse(raw);
+    // Garantir que les 2 clés existent et sont des arrays
+    if (!Array.isArray(cfg.clemence)) cfg.clemence = DEFAULT_ADV_LETTERS_CONFIG.clemence.slice();
+    if (!Array.isArray(cfg.marie)) cfg.marie = DEFAULT_ADV_LETTERS_CONFIG.marie.slice();
+    return cfg;
+  } catch(e) {
+    return JSON.parse(JSON.stringify(DEFAULT_ADV_LETTERS_CONFIG));
+  }
+}
+
+function saveADVLettersConfig(cfg) {
+  localStorage.setItem('sp_adv_letters_v1', JSON.stringify(cfg));
+  if (typeof _touchAppSettings === 'function') _touchAppSettings();
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+// Mise à jour : toggle d'une lettre pour un ADV
+function toggleADVLetter(adv, letter, checked) {
+  var cfg = getADVLettersConfig();
+  if (!cfg[adv]) cfg[adv] = [];
+  if (checked) {
+    // Cocher : ajouter la lettre à cet ADV ET retirer de l'autre ADV (exclusivité)
+    if (cfg[adv].indexOf(letter) < 0) cfg[adv].push(letter);
+    var otherADV = (adv === 'clemence') ? 'marie' : 'clemence';
+    if (!cfg[otherADV]) cfg[otherADV] = [];
+    cfg[otherADV] = cfg[otherADV].filter(function(l){ return l !== letter; });
+  } else {
+    // Décocher : retirer la lettre de cet ADV
+    cfg[adv] = cfg[adv].filter(function(l){ return l !== letter; });
+  }
+  saveADVLettersConfig(cfg);
+  renderADVLettersConfig();
+  // Re-render aussi les emails internes pour mettre à jour les labels (Clémence (A-H), etc.)
+  if (typeof renderInternalEmailsParams === 'function') renderInternalEmailsParams();
+}
+
+// Aide : formate une liste de lettres en plage compacte (ex: ['A','B','C','H'] → "A-C, H")
+function _formatLettersForLabel(letters) {
+  if (!letters || letters.length === 0) return 'aucune';
+  var sorted = letters.slice().sort();
+  var ranges = [];
+  var start = sorted[0];
+  var prev = sorted[0];
+  for (var i = 1; i < sorted.length; i++) {
+    if (sorted[i].charCodeAt(0) === prev.charCodeAt(0) + 1) {
+      prev = sorted[i];
+    } else {
+      ranges.push(start === prev ? start : (start + '-' + prev));
+      start = sorted[i];
+      prev = sorted[i];
+    }
+  }
+  ranges.push(start === prev ? start : (start + '-' + prev));
+  return ranges.join(', ');
+}
+
+function renderADVLettersConfig() {
+  var el = document.getElementById('adv-letters-config-container');
+  if (!el) return;
+  var cfg = getADVLettersConfig();
+  var ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  var html = '';
+
+  // ── Clémence (jaune doré, comme la carte signataire) ──
+  html += '<div style="margin-bottom:14px;padding:10px 12px;background:#FFF8E1;border:1px solid #F0D88E;border-radius:8px;">'
+       + '<div style="font-size:12.5px;font-weight:700;color:#8A5F00;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">'
+       +   '<span>👩 Clémence</span>'
+       +   '<span style="font-size:10.5px;font-weight:600;color:#A07700;">' + cfg.clemence.length + ' lettre' + (cfg.clemence.length>1?'s':'') + ' : ' + _formatLettersForLabel(cfg.clemence) + '</span>'
+       + '</div>'
+       + '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+  ALPHABET.forEach(function(letter){
+    var checked = cfg.clemence.indexOf(letter) >= 0;
+    var bg = checked ? '#F0A500' : '#fff';
+    var color = checked ? '#fff' : '#9E94C4';
+    var border = checked ? '#F0A500' : '#E4E0FA';
+    var weight = checked ? '700' : '500';
+    html += '<label style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:1.5px solid ' + border + ';border-radius:6px;background:' + bg + ';color:' + color + ';font-size:13px;font-weight:' + weight + ';cursor:pointer;user-select:none;transition:all .12s;">'
+         + '<input type="checkbox"' + (checked ? ' checked' : '') + ' onchange="toggleADVLetter(\'clemence\',\'' + letter + '\',this.checked)" style="display:none;">'
+         + letter
+         + '</label>';
+  });
+  html += '</div></div>';
+
+  // ── Marie (vert, comme la carte comptable) ──
+  html += '<div style="padding:10px 12px;background:#F0FAF4;border:1px solid #9FE1CB;border-radius:8px;">'
+       + '<div style="font-size:12.5px;font-weight:700;color:#0F5132;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">'
+       +   '<span>👩 Marie</span>'
+       +   '<span style="font-size:10.5px;font-weight:600;color:#1D9E75;">' + cfg.marie.length + ' lettre' + (cfg.marie.length>1?'s':'') + ' : ' + _formatLettersForLabel(cfg.marie) + '</span>'
+       + '</div>'
+       + '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+  ALPHABET.forEach(function(letter){
+    var checked = cfg.marie.indexOf(letter) >= 0;
+    var bg = checked ? '#1D9E75' : '#fff';
+    var color = checked ? '#fff' : '#9E94C4';
+    var border = checked ? '#1D9E75' : '#E4E0FA';
+    var weight = checked ? '700' : '500';
+    html += '<label style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:1.5px solid ' + border + ';border-radius:6px;background:' + bg + ';color:' + color + ';font-size:13px;font-weight:' + weight + ';cursor:pointer;user-select:none;transition:all .12s;">'
+         + '<input type="checkbox"' + (checked ? ' checked' : '') + ' onchange="toggleADVLetter(\'marie\',\'' + letter + '\',this.checked)" style="display:none;">'
+         + letter
+         + '</label>';
+  });
+  html += '</div></div>';
+
+  el.innerHTML = html;
+
+  // ── Validation : détecter conflits / lettres manquantes ──
+  var validationEl = document.getElementById('adv-letters-validation');
+  if (validationEl) {
+    var conflicts = [];  // lettres dans les 2 ADV
+    var missing = [];    // lettres dans aucun ADV
+    ALPHABET.forEach(function(letter){
+      var inClem = cfg.clemence.indexOf(letter) >= 0;
+      var inMarie = cfg.marie.indexOf(letter) >= 0;
+      if (inClem && inMarie) conflicts.push(letter);
+      if (!inClem && !inMarie) missing.push(letter);
+    });
+    if (conflicts.length === 0 && missing.length === 0) {
+      validationEl.style.display = 'block';
+      validationEl.style.background = '#F0FAF4';
+      validationEl.style.border = '1px solid #9FE1CB';
+      validationEl.style.color = '#0F5132';
+      validationEl.innerHTML = '✓ Configuration valide : toutes les lettres A-Z sont attribuées sans conflit';
+    } else {
+      validationEl.style.display = 'block';
+      validationEl.style.background = '#FFF5F5';
+      validationEl.style.border = '1px solid #F5B5B5';
+      validationEl.style.color = '#A8322A';
+      var msg = '⚠ ';
+      if (conflicts.length > 0) msg += 'Conflit (lettres attribuées aux 2 ADV) : <strong>' + conflicts.join(', ') + '</strong>';
+      if (conflicts.length > 0 && missing.length > 0) msg += ' · ';
+      if (missing.length > 0) msg += 'Lettres non attribuées : <strong>' + missing.join(', ') + '</strong>';
+      validationEl.innerHTML = msg;
+    }
+  }
 }
 
 function renderRappelTypesParams() {
