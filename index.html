@@ -9352,7 +9352,7 @@ function getCellValue(d, key){
     case 'tel': return fmt(d.tel);
     case 'poste': return fmt(d.poste);
     case 'entreprise': return fmt(d.entreprise);
-    case 'tjm': return d.tjm ? '<span style="font-weight:600;color:#7343EE;">'+d.tjm+' €/j</span>' : '—';
+    case 'tjm': return d.tjm ? '<span style="font-weight:600;color:#7343EE;">'+d.tjm+' €</span>' : '—';
     case 'nb_jours': return fmt(d.nb_jours);
     case 'salaire_annuel': return d.salaire_annuel ? parseInt(d.salaire_annuel).toLocaleString('fr-FR')+' €' : '—';
     case 'commercial': return fmt(d.commercial);
@@ -9439,14 +9439,14 @@ function getCellValue(d, key){
       var swileType = '';
       if (d.repas === 'Reel' || d.repas === 'reel') swileType = ' (Réel)';
       else if (d.repas === 'Swile' || d.repas === 'swile') swileType = ' (TR)';
-      return swileVal.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' + swileType;
+      return swileVal.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
     case 'forfait_repas':
       // Affiche le montant journalier Forfait repas depuis les paramètres (p_forfait_repas)
       // Mutuellement exclusif avec Swile/TR — uniquement si d.repas === 'Forfait'
       if (d.repas !== 'Forfait' && d.repas !== 'forfait') return '\u2014';
       var forfaitEl = document.getElementById('p_forfait_repas');
       var forfaitVal = forfaitEl ? (parseFloat(forfaitEl.value) || 21.10) : 21.10;
-      return forfaitVal.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j';
+      return forfaitVal.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
     case 'km_aller':
       // Affiche l'indemnité km en €/j calculée depuis km_aller + puissance fiscale
       // Fallback : si km_aller manquant dans le deal, chercher dans la SIMU liée
@@ -9476,7 +9476,7 @@ function getCellValue(d, key){
         if (typeof calcIK === 'function') {
           var ikRes = calcIK(kmA, puissForCalc, jPresForCalc, nbJForCalc, ik1ereForCalc);
           if (ikRes && ikRes.journaliere > 0) {
-            return ikRes.journaliere.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j (' + kmA + ' km)';
+            return ikRes.journaliere.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
           }
         }
       } catch(e) {}
@@ -9489,7 +9489,7 @@ function getCellValue(d, key){
         if (simTr) _tr = parseFloat(simTr.abo_transport) || 0;
       }
       // Le frais transport = 75% de l'abonnement (selon règle Seven Portage)
-      return _tr > 0 ? ((_tr * 0.75) / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
+      return _tr > 0 ? ((_tr * 0.75) / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €' : '\u2014';
     case 'tt':
       // Affiche l'indemnité télétravail journalière depuis la SIMU.
       // Source : champ "frais_tt" (mensuel) déjà calculé et sauvegardé dans la SIMU
@@ -9521,7 +9521,7 @@ function getCellValue(d, key){
 
         if (fraisTTMois > 0 && nbJoursSim > 0) {
           var ttJour = fraisTTMois / nbJoursSim;
-          return ttJour.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' + (jTT > 0 ? ' (' + jTT + 'j TT)' : '');
+          return ttJour.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
         }
         // Méthode 2 (fallback) : recalcul depuis charges + jours_tt si frais_tt non stocké
         var totalChg = (parseFloat(simTT.tt_loyer)||0) + (parseFloat(simTT.tt_elec)||0)
@@ -9530,7 +9530,7 @@ function getCellValue(d, key){
                      + (parseFloat(simTT.tt_mobile)||0);
         if (totalChg > 0 && jTT > 0) {
           var indemTT = totalChg * 0.15 * (jTT / 5) / 21;  // €/j
-          return indemTT.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j (' + jTT + 'j TT)';
+          return indemTT.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
         }
         // Méthode 3 : que des jours TT, sans charges → afficher juste le nb de jours
         if (jTT > 0) return jTT + 'j TT';
@@ -9550,7 +9550,7 @@ function getCellValue(d, key){
         }
       }
       // Règle Seven Portage : 50% pris en charge (cf calc() ligne ~2525)
-      return _telVal > 0 ? ((_telVal / 21) / 2).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
+      return _telVal > 0 ? ((_telVal / 21) / 2).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €' : '\u2014';
     case 'grand_dep':
       // Seulement si repas === 'GD' — on affiche le montant journalier (taux GD par jour)
       if (d.repas !== 'GD' && d.repas !== 'gd') return '\u2014';
@@ -9561,7 +9561,7 @@ function getCellValue(d, key){
       var _lieu = (d.gd_lieu || 'IDF').toString();
       var _taux = _lieu === 'IDF' ? _tauxIdf : _tauxAutre;
       if (_taux <= 0) return '\u2014';
-      return _taux.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j (' + _lieu + ')';
+      return _taux.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
     case 'frais_formation': 
       // Source : deal en priorité, fallback SIMU
       var formVal = parseFloat(d.frais_formation)||0;
@@ -9569,7 +9569,7 @@ function getCellValue(d, key){
         var simForm = _findSimForDeal(d);
         if (simForm) formVal = parseFloat(simForm.frais_formation) || 0;
       }
-      return formVal > 0 ? (formVal / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
+      return formVal > 0 ? (formVal / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €' : '\u2014';
     case 'frais_materiel': 
       // Source : deal en priorité, fallback SIMU
       var matVal = parseFloat(d.frais_materiel)||0;
@@ -9577,7 +9577,7 @@ function getCellValue(d, key){
         var simMat = _findSimForDeal(d);
         if (simMat) matVal = parseFloat(simMat.frais_materiel) || 0;
       }
-      return matVal > 0 ? (matVal / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €/j' : '\u2014';
+      return matVal > 0 ? (matVal / 21).toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €' : '\u2014';
     case 'cp':
       var cpVal = (d.cp || '').toString().toLowerCase();
       if (cpVal === 'cp' || cpVal === 'provisionnes' || cpVal === 'provisionnés' || cpVal === 'oui') return '<span style="color:#1D9E75;font-weight:600;">Oui</span>';
