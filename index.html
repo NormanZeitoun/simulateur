@@ -8769,6 +8769,8 @@ var DEAL_ALL_COLS = [
   {key:'lieu_mission',label:'Lieu de mission'},
   {key:'nom_signataire', label:'Signataire'},
   {key:'email_compta',label:'Email comptable'},
+  {key:'banque_client',label:'Banque client'},
+  {key:'delai_paiement_client',label:'Délai paiement'},
   {key:'frais_gestion',label:'Frais gest.'},
   {key:'mutuelle',    label:'Mutuelle'},
   {key:'repas',       label:'Swile/TR'},
@@ -9249,13 +9251,56 @@ function getCellValue(d, key){
     case 'date_fin':    return _fmtDateJMA(d.date_fin);
     case 'duree_contrat': return _calcDureeContrat(d.date_entree, d.date_fin);
     case 'lieu_mission': return fmt(d.lieu_mission || d.adresse_exec || '—');
-    case 'nom_signataire': return fmt(d.nom_signataire || '—');
-    case 'email_compta':
-      // Récupérer email comptable depuis le client (s'il existe dans le client lié)
-      if (d.email_compta) return d.email_compta;
+    case 'nom_signataire':
+      // Lien cliquable : ouvre le popup éditeur signataire du client lié
+      var sigName = '';
+      var sigClientId = null;
       try {
-        var clCompta = (typeof getClients === 'function') ? getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === (d.entreprise||'').trim().toLowerCase(); }) : null;
-        if (clCompta && clCompta.email_compta) return clCompta.email_compta;
+        var sigClient = (typeof getClients === 'function') ? getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === (d.entreprise||'').trim().toLowerCase(); }) : null;
+        if (sigClient) {
+          sigName = d.nom_signataire || sigClient.nom_signataire || '';
+          sigClientId = sigClient.id;
+        } else {
+          sigName = d.nom_signataire || '';
+        }
+      } catch(e) { sigName = d.nom_signataire || ''; }
+      if (!sigName) return '\u2014';
+      if (sigClientId) {
+        return '<span onclick="event.stopPropagation();openSignataireEditor(' + sigClientId + ')" '
+          + 'style="color:#A07700;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" '
+          + 'title="Cliquer pour ouvrir la fiche signataire">' + sigName + '</span>';
+      }
+      return fmt(sigName);
+    case 'email_compta':
+      // Lien cliquable : ouvre le popup éditeur comptable du client lié
+      var comptaEmail = d.email_compta || '';
+      var comptaClientId = null;
+      try {
+        var comptaCli = (typeof getClients === 'function') ? getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === (d.entreprise||'').trim().toLowerCase(); }) : null;
+        if (comptaCli) {
+          if (!comptaEmail) comptaEmail = comptaCli.email_compta || '';
+          comptaClientId = comptaCli.id;
+        }
+      } catch(e) {}
+      if (!comptaEmail) return '\u2014';
+      if (comptaClientId) {
+        return '<span onclick="event.stopPropagation();openComptaEditor(' + comptaClientId + ')" '
+          + 'style="color:#0F5132;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" '
+          + 'title="Cliquer pour ouvrir la fiche service comptable">' + comptaEmail + '</span>';
+      }
+      return fmt(comptaEmail);
+    case 'banque_client':
+      // Récupérer la banque depuis le client lié (cl.banque)
+      try {
+        var bankCli = (typeof getClients === 'function') ? getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === (d.entreprise||'').trim().toLowerCase(); }) : null;
+        if (bankCli && bankCli.banque) return bankCli.banque;
+      } catch(e) {}
+      return '\u2014';
+    case 'delai_paiement_client':
+      // Récupérer le délai de paiement depuis le client lié (cl.delai_paiement)
+      try {
+        var delCli = (typeof getClients === 'function') ? getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === (d.entreprise||'').trim().toLowerCase(); }) : null;
+        if (delCli && delCli.delai_paiement) return delCli.delai_paiement;
       } catch(e) {}
       return '\u2014';
     case 'frais_gestion': return d.frais_gestion ? d.frais_gestion+'%' : '—';
