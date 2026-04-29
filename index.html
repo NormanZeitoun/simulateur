@@ -8562,7 +8562,13 @@ function renderDeals() {
 
   renderDealViewSelect();
   var visKeys = dealVisibleCols.length > 0 ? dealVisibleCols : DEAL_DEFAULT_COLS;
-  var visColDefs = DEAL_ALL_COLS.filter(function(col){ return visKeys.indexOf(col.key)>=0; });
+  // FIX BUG : on map dans l'ordre de visKeys (l'utilisateur a réordonné via drag-drop)
+  // au lieu de filtrer DEAL_ALL_COLS (qui a un ordre fixe).
+  // Avant : DEAL_ALL_COLS.filter(...)  → conservait l'ordre fixe de DEAL_ALL_COLS
+  // Après : visKeys.map(...)           → respecte l'ordre choisi par l'utilisateur
+  var _colMap = {};
+  DEAL_ALL_COLS.forEach(function(c){ _colMap[c.key] = c; });
+  var visColDefs = visKeys.map(function(key){ return _colMap[key]; }).filter(Boolean);
   var ECOLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
 
   var html = '<div class="deals-table-wrap"><table class="deals-table"><thead><tr>';
