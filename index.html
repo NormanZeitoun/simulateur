@@ -1860,6 +1860,17 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       </div>
       <!-- Filtres -->
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <div style="position:relative;flex:1;min-width:240px;max-width:380px;">
+          <input id="deal-search-consultant" type="text" autocomplete="off"
+                 oninput="onDealConsultantSearchInput()"
+                 onfocus="onDealConsultantSearchInput()"
+                 onblur="setTimeout(hideDealConsultantDropdown, 200)"
+                 placeholder="🔎 Rechercher un consultant (nom, prénom, email, entreprise)..."
+                 style="width:100%;padding:8px 30px 8px 32px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;background:#FAFBFF;">
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#7343EE;font-size:14px;pointer-events:none;">&#128269;</span>
+          <button id="deal-search-clear" onclick="clearDealConsultantSearch()" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);background:#FCEBEB;color:#A8322A;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;font-size:14px;line-height:1;padding:0;font-family:inherit;">×</button>
+          <div id="deal-consultant-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:200;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:280px;overflow-y:auto;margin-top:2px;"></div>
+        </div>
         <select id="deal-filter-etat" onchange="dealFilterEtat=this.value;renderDeals();" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;color:#1A1033;background:#fff;cursor:pointer;">
           <option value="__all__">Tous états</option>
           <option value="Nouveau placement">Nouveau placement</option>
@@ -8446,6 +8457,21 @@ function renderDeals() {
   if (dealFilterEtranger === 'oui') deals = deals.filter(function(d) { return d.salarie_etranger === true; });
   if (dealFilterEtranger === 'non') deals = deals.filter(function(d) { return d.salarie_etranger !== true; });
 
+  // ── Filtre recherche consultant (par nom/prénom/email/entreprise) ──
+  // Si window._dealConsultantFilter est défini (string), on filtre sur tous les champs
+  // de manière insensible à la casse et aux accents.
+  if (window._dealConsultantFilter) {
+    var qNorm = _normalizeForSearch(window._dealConsultantFilter);
+    if (qNorm) {
+      deals = deals.filter(function(d){
+        var fields = [
+          d.prenom, d.nom, d.email, d.tel, d.entreprise, d.poste, d.commercial
+        ].filter(Boolean).join(' ');
+        return _normalizeForSearch(fields).indexOf(qNorm) >= 0;
+      });
+    }
+  }
+
   var listEl = document.getElementById('deals-list');
   if (!listEl) return;
 
@@ -8828,7 +8854,6 @@ function renderDealColCheckboxes(){
   DEAL_ALL_COLS.forEach(function(c){ colMap[c.key] = c; });
 
   // Liste 1 : colonnes VISIBLES dans l'ordre actuel (réordonnable par drag-drop)
-  // dealVisibleCols contient l'ordre choisi par l'utilisateur
   var visibleColKeys = dealVisibleCols.filter(function(k){ return colMap[k]; });
 
   // Liste 2 : colonnes NON visibles (à activer si besoin)
@@ -8836,40 +8861,62 @@ function renderDealColCheckboxes(){
 
   var html = '';
 
-  // ── Section 1 : colonnes affichées (drag-drop pour réordonner) ──
-  html += '<div style="font-size:11px;color:#7343EE;font-weight:700;margin:8px 0 6px 0;text-transform:uppercase;letter-spacing:0.04em;">'
-       + '✓ Colonnes affichées (' + visibleColKeys.length + ')'
-       + '<span style="margin-left:8px;color:#9E94C4;font-weight:400;text-transform:none;letter-spacing:0;">— glissez pour réordonner</span>'
+  // ── Section 1 : colonnes affichées (lignes pleine largeur, drag pour réordonner) ──
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 8px 0;">'
+       + '<div style="font-size:11.5px;color:#7343EE;font-weight:800;text-transform:uppercase;letter-spacing:0.04em;">'
+       +   '✓ Colonnes affichées (' + visibleColKeys.length + ')'
+       + '</div>'
+       + '<div style="font-size:10.5px;color:#9E94C4;">⋮⋮ Glissez pour réordonner · × pour masquer</div>'
        + '</div>';
-  html += '<div id="deal-col-visible-list" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;padding:8px;background:#FAFAFA;border-radius:7px;border:1px dashed #D9CFFA;min-height:40px;">';
-  visibleColKeys.forEach(function(key){
+  html += '<div id="deal-col-visible-list" '
+       + 'ondragover="_dealColDragOver(event)" '
+       + 'ondrop="_dealColDropOnContainer(event)" '
+       + 'style="background:#FAFAFA;border-radius:8px;border:1.5px solid #D9CFFA;padding:6px;margin-bottom:14px;max-height:340px;overflow-y:auto;">';
+  visibleColKeys.forEach(function(key, idx){
     var col = colMap[key];
     if (!col) return;
-    var tag = col.freeze ? ' ❄' : '';
-    html += '<div draggable="true" data-col="' + col.key + '" '
+    var freezeTag = col.freeze ? '<span style="font-size:10px;color:#7343EE;background:#F5F3FF;padding:1px 6px;border-radius:4px;margin-left:6px;">❄ Figée</span>' : '';
+    var posBadge = '<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#7343EE;color:#fff;font-size:10px;font-weight:700;border-radius:4px;flex-shrink:0;">' + (idx + 1) + '</span>';
+    html += '<div draggable="true" data-col="' + col.key + '" data-idx="' + idx + '" '
          +   'ondragstart="_dealColDragStart(event,this)" '
-         +   'ondragover="_dealColDragOver(event)" '
+         +   'ondragover="_dealColDragOverItem(event,this)" '
+         +   'ondragleave="_dealColDragLeave(event,this)" '
          +   'ondrop="_dealColDrop(event,this)" '
          +   'ondragend="_dealColDragEnd(event,this)" '
-         +   'style="display:inline-flex;align-items:center;gap:6px;padding:5px 9px 5px 7px;background:#fff;border:1.5px solid #D9CFFA;border-radius:6px;cursor:move;font-size:11.5px;color:#1A1033;user-select:none;">'
-         + '<span style="color:#9E94C4;font-size:11px;">⋮⋮</span>'
-         + '<span>' + col.label + tag + '</span>'
-         + '<button onclick="toggleDealCol(\'' + col.key + '\',false)" title="Masquer cette colonne" style="background:none;border:none;color:#A8322A;cursor:pointer;font-size:13px;padding:0;line-height:1;">×</button>'
+         +   'style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#fff;border:1px solid #E4E0FA;border-radius:7px;margin-bottom:5px;cursor:grab;font-size:12.5px;color:#1A1033;user-select:none;transition:all .12s;" '
+         +   'onmouseover="this.style.borderColor=\'#7343EE\';this.style.boxShadow=\'0 2px 6px rgba(115,67,238,0.12)\'" '
+         +   'onmouseout="this.style.borderColor=\'#E4E0FA\';this.style.boxShadow=\'none\'">'
+         + '<span style="color:#9E94C4;font-size:14px;cursor:grab;line-height:1;">⋮⋮</span>'
+         + posBadge
+         + '<div style="flex:1;display:flex;align-items:center;gap:6px;">'
+         +   '<span style="font-weight:600;">' + col.label + '</span>'
+         +   freezeTag
+         + '</div>'
+         + '<div style="display:flex;gap:4px;flex-shrink:0;">'
+         + (idx > 0 ? '<button onclick="event.stopPropagation();_dealColMove(\'' + col.key + '\',-1)" title="Monter" style="width:24px;height:24px;background:#F5F3FF;color:#7343EE;border:1px solid #D9CFFA;border-radius:5px;cursor:pointer;font-size:11px;line-height:1;padding:0;font-family:inherit;">↑</button>' : '<span style="width:24px;"></span>')
+         + (idx < visibleColKeys.length - 1 ? '<button onclick="event.stopPropagation();_dealColMove(\'' + col.key + '\',1)" title="Descendre" style="width:24px;height:24px;background:#F5F3FF;color:#7343EE;border:1px solid #D9CFFA;border-radius:5px;cursor:pointer;font-size:11px;line-height:1;padding:0;font-family:inherit;">↓</button>' : '<span style="width:24px;"></span>')
+         +   '<button onclick="event.stopPropagation();toggleDealCol(\'' + col.key + '\',false)" title="Masquer cette colonne" style="width:24px;height:24px;background:#FCEBEB;color:#A8322A;border:1px solid #F5B5B5;border-radius:5px;cursor:pointer;font-size:13px;line-height:1;padding:0;font-family:inherit;">×</button>'
+         + '</div>'
          + '</div>';
   });
+  if (visibleColKeys.length === 0) {
+    html += '<div style="text-align:center;padding:20px;color:#9E94C4;font-size:12px;">Aucune colonne affichée — cochez ci-dessous pour ajouter</div>';
+  }
   html += '</div>';
 
   // ── Section 2 : colonnes masquées (à cocher pour ajouter) ──
   if (hiddenCols.length > 0) {
-    html += '<div style="font-size:11px;color:#9E94C4;font-weight:700;margin:8px 0 6px 0;text-transform:uppercase;letter-spacing:0.04em;">'
+    html += '<div style="font-size:11.5px;color:#9E94C4;font-weight:800;margin:4px 0 8px 0;text-transform:uppercase;letter-spacing:0.04em;">'
          + '+ Colonnes disponibles (' + hiddenCols.length + ')'
          + '</div>';
-    html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:5px;">';
     hiddenCols.forEach(function(col){
-      var tag = col.freeze ? ' <span style="font-size:9px;color:#7343EE;">❄</span>' : '';
-      html += '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;cursor:pointer;padding:4px 8px;border-radius:5px;border:1px solid #E4E0FA;background:#fff;color:#6B5E9C;">'
-           + '<input type="checkbox" data-col="' + col.key + '" onchange="toggleDealCol(this.dataset.col,this.checked)" style="accent-color:#7343EE;">'
-           + col.label + tag + '</label>';
+      var freezeTag = col.freeze ? ' <span style="font-size:9px;color:#7343EE;">❄</span>' : '';
+      html += '<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:5px 10px;border-radius:6px;border:1px solid #E4E0FA;background:#fff;color:#6B5E9C;transition:all .12s;" '
+           + 'onmouseover="this.style.background=\'#F5F3FF\';this.style.borderColor=\'#D9CFFA\';this.style.color=\'#4B36EC\'" '
+           + 'onmouseout="this.style.background=\'#fff\';this.style.borderColor=\'#E4E0FA\';this.style.color=\'#6B5E9C\'">'
+           + '<input type="checkbox" data-col="' + col.key + '" onchange="toggleDealCol(this.dataset.col,this.checked)" style="accent-color:#7343EE;cursor:pointer;">'
+           + col.label + freezeTag + '</label>';
     });
     html += '</div>';
   }
@@ -8877,7 +8924,7 @@ function renderDealColCheckboxes(){
   el.innerHTML = html;
 }
 
-// ─── Drag-and-drop des colonnes affichées ───
+// ─── Drag-and-drop des colonnes affichées (UI lignes pleine largeur) ───
 window._dealColDragStart = function(e, elt) {
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData('text/plain', elt.dataset.col);
@@ -8888,9 +8935,23 @@ window._dealColDragOver = function(e) {
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
 };
+window._dealColDragOverItem = function(e, elt) {
+  e.preventDefault();
+  e.stopPropagation();
+  e.dataTransfer.dropEffect = 'move';
+  // Indicateur visuel : ligne destination en violet
+  elt.style.background = '#F5F3FF';
+  elt.style.borderColor = '#7343EE';
+};
+window._dealColDragLeave = function(e, elt) {
+  elt.style.background = '#fff';
+  elt.style.borderColor = '#E4E0FA';
+};
 window._dealColDrop = function(e, targetElt) {
   e.preventDefault();
   e.stopPropagation();
+  targetElt.style.background = '#fff';
+  targetElt.style.borderColor = '#E4E0FA';
   var draggedKey = window._dealDraggedColKey;
   var targetKey = targetElt.dataset.col;
   if (!draggedKey || !targetKey || draggedKey === targetKey) return;
@@ -8898,18 +8959,30 @@ window._dealColDrop = function(e, targetElt) {
   var idxFrom = dealVisibleCols.indexOf(draggedKey);
   var idxTo = dealVisibleCols.indexOf(targetKey);
   if (idxFrom < 0 || idxTo < 0) return;
-  // Retirer l'élément de sa position d'origine
+  // Retirer l'élément
   dealVisibleCols.splice(idxFrom, 1);
-  // Le réinsérer à la nouvelle position
-  // Si on droppait après l'élément cible
+  // Réinsérer à la bonne position
   var newIdx = dealVisibleCols.indexOf(targetKey);
-  // Insérer après le target si dragged venait d'avant, sinon avant
   if (idxFrom < idxTo) {
     dealVisibleCols.splice(newIdx + 1, 0, draggedKey);
   } else {
     dealVisibleCols.splice(newIdx, 0, draggedKey);
   }
-  // Sauvegarder en local (perso, pas synchronisé entre commerciaux)
+  // Sauvegarder en local + re-render le panneau ET le tableau
+  localStorage.setItem('sp_deal_cols', JSON.stringify(dealVisibleCols));
+  renderDealColCheckboxes();
+  renderDeals();
+};
+window._dealColDropOnContainer = function(e) {
+  // Drop dans la zone vide du conteneur (pas sur un item) → on déplace en fin de liste
+  e.preventDefault();
+  if (e.target.id !== 'deal-col-visible-list') return;  // ignore si target = item
+  var draggedKey = window._dealDraggedColKey;
+  if (!draggedKey) return;
+  var idxFrom = dealVisibleCols.indexOf(draggedKey);
+  if (idxFrom < 0) return;
+  dealVisibleCols.splice(idxFrom, 1);
+  dealVisibleCols.push(draggedKey);
   localStorage.setItem('sp_deal_cols', JSON.stringify(dealVisibleCols));
   renderDealColCheckboxes();
   renderDeals();
@@ -8917,6 +8990,21 @@ window._dealColDrop = function(e, targetElt) {
 window._dealColDragEnd = function(e, elt) {
   elt.style.opacity = '1';
   window._dealDraggedColKey = null;
+};
+
+// Boutons ↑↓ pour réordonner sans drag (alternative simple et fiable)
+window._dealColMove = function(key, direction) {
+  var idx = dealVisibleCols.indexOf(key);
+  if (idx < 0) return;
+  var newIdx = idx + direction;
+  if (newIdx < 0 || newIdx >= dealVisibleCols.length) return;
+  // Swap
+  var tmp = dealVisibleCols[idx];
+  dealVisibleCols[idx] = dealVisibleCols[newIdx];
+  dealVisibleCols[newIdx] = tmp;
+  localStorage.setItem('sp_deal_cols', JSON.stringify(dealVisibleCols));
+  renderDealColCheckboxes();
+  renderDeals();
 };
 
 function toggleDealCol(key, checked){
@@ -9000,6 +9088,138 @@ function resetDealFilters(){
   var sc=document.getElementById('deal-filter-comm'); if(sc) sc.value='__all__';
   var se3=document.getElementById('deal-filter-etranger'); if(se3) se3.value='__all__';
   var sv=document.getElementById('deal-view-select'); if(sv) sv.value='__all__';
+  // Reset recherche consultant
+  window._dealConsultantFilter = '';
+  var sci=document.getElementById('deal-search-consultant'); if(sci) sci.value='';
+  var scc=document.getElementById('deal-search-clear'); if(scc) scc.style.display='none';
+  hideDealConsultantDropdown();
+  renderDeals();
+}
+
+// ─── Moteur de recherche consultant pour le tableau Deals ───
+// Affiche un dropdown autocomplete avec les consultants distincts (par email).
+// Quand on clique sur un consultant, le filtre est posé et le tableau est filtré sur lui.
+
+// Helper : normalise une chaîne (lowercase + sans accents) pour comparaison
+function _normalizeForSearch(s) {
+  if (!s) return '';
+  return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+// Highlight : mettre en surbrillance la partie qui matche la recherche
+function _highlightMatch(text, query) {
+  if (!text) return '';
+  if (!query) return text;
+  var qNorm = _normalizeForSearch(query);
+  var tNorm = _normalizeForSearch(text);
+  var idx = tNorm.indexOf(qNorm);
+  if (idx < 0) return text;
+  return text.substring(0, idx)
+    + '<strong style="background:#FFF8C5;color:#7343EE;">' + text.substring(idx, idx + query.length) + '</strong>'
+    + text.substring(idx + query.length);
+}
+
+function onDealConsultantSearchInput() {
+  var input = document.getElementById('deal-search-consultant');
+  if (!input) return;
+  var query = input.value;
+  var clearBtn = document.getElementById('deal-search-clear');
+  if (clearBtn) clearBtn.style.display = query ? 'block' : 'none';
+
+  // Mettre à jour le filtre actif → re-render le tableau immédiatement
+  window._dealConsultantFilter = query;
+  if (typeof renderDeals === 'function') renderDeals();
+
+  // Afficher le dropdown avec les suggestions
+  var dropdown = document.getElementById('deal-consultant-dropdown');
+  if (!dropdown) return;
+  if (!query || query.trim().length < 1) {
+    dropdown.style.display = 'none';
+    return;
+  }
+
+  // Construire la liste des consultants distincts (par email) à partir des deals
+  var deals = getDeals();
+  var qNorm = _normalizeForSearch(query);
+  var seen = {};
+  var matches = [];
+  deals.forEach(function(d){
+    var email = (d.email || '').toLowerCase();
+    if (!email || seen[email]) return;
+    var fullName = ((d.prenom||'') + ' ' + (d.nom||'')).trim();
+    var searchable = _normalizeForSearch([d.prenom, d.nom, d.email, d.entreprise, d.poste].filter(Boolean).join(' '));
+    if (searchable.indexOf(qNorm) < 0) return;
+    seen[email] = true;
+    matches.push({
+      email: d.email,
+      fullName: fullName || '(sans nom)',
+      entreprise: d.entreprise || '',
+      poste: d.poste || '',
+      etat: d.etat || ''
+    });
+  });
+
+  if (matches.length === 0) {
+    dropdown.innerHTML = '<div style="padding:12px;color:#9E94C4;font-size:12px;text-align:center;">Aucun consultant trouvé</div>';
+    dropdown.style.display = 'block';
+    return;
+  }
+
+  // Limiter à 15 suggestions pour ne pas surcharger l'UI
+  var html = matches.slice(0, 15).map(function(m){
+    var etatColor = '#9E94C4';
+    if (m.etat === 'Signé') etatColor = '#1D9E75';
+    else if (m.etat === 'En cours') etatColor = '#F0A500';
+    else if (m.etat === 'Annulé') etatColor = '#A8322A';
+    return '<div onclick="selectDealConsultant(\'' + m.email.replace(/'/g, "\\'") + '\')" '
+         + 'style="padding:8px 12px;border-bottom:1px solid #F0EDF9;cursor:pointer;transition:background .12s;" '
+         + 'onmouseover="this.style.background=\'#F5F3FF\'" '
+         + 'onmouseout="this.style.background=\'#fff\'">'
+         + '<div style="font-size:12.5px;font-weight:600;color:#1A1033;">'
+         +   _highlightMatch(m.fullName, query)
+         +   (m.etat ? ' <span style="font-size:10px;font-weight:700;color:' + etatColor + ';margin-left:6px;">● ' + m.etat + '</span>' : '')
+         + '</div>'
+         + '<div style="font-size:11px;color:#6B5E9C;margin-top:1px;">'
+         +   _highlightMatch(m.email, query)
+         +   (m.entreprise ? ' · ' + _highlightMatch(m.entreprise, query) : '')
+         + '</div>'
+         + '</div>';
+  }).join('');
+  if (matches.length > 15) {
+    html += '<div style="padding:8px;font-size:11px;color:#9E94C4;text-align:center;background:#FAFAFA;">… ' + (matches.length - 15) + ' autres résultats. Affinez votre recherche.</div>';
+  }
+  dropdown.innerHTML = html;
+  dropdown.style.display = 'block';
+}
+
+function selectDealConsultant(email) {
+  // L'utilisateur a cliqué sur une suggestion : on remplit la barre de recherche
+  // avec l'email exact pour avoir un filtre stable
+  var deals = getDeals();
+  var d = deals.find(function(x){ return (x.email||'').toLowerCase() === (email||'').toLowerCase(); });
+  if (!d) return;
+  var fullName = ((d.prenom||'') + ' ' + (d.nom||'')).trim();
+  var input = document.getElementById('deal-search-consultant');
+  if (input) {
+    input.value = fullName || email;
+    window._dealConsultantFilter = input.value;
+  }
+  hideDealConsultantDropdown();
+  renderDeals();
+}
+
+function hideDealConsultantDropdown() {
+  var dropdown = document.getElementById('deal-consultant-dropdown');
+  if (dropdown) dropdown.style.display = 'none';
+}
+
+function clearDealConsultantSearch() {
+  var input = document.getElementById('deal-search-consultant');
+  if (input) input.value = '';
+  window._dealConsultantFilter = '';
+  var clearBtn = document.getElementById('deal-search-clear');
+  if (clearBtn) clearBtn.style.display = 'none';
+  hideDealConsultantDropdown();
   renderDeals();
 }
 
