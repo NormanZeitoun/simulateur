@@ -5699,6 +5699,58 @@ function _odFetchWith401Retry(url, options) {
   if (window._graphFetchInterceptorInstalled) return;
   window._graphFetchInterceptorInstalled = true;
   var _originalFetch = window.fetch.bind(window);
+
+  // Helper : retry avec backoff exponentiel pour 429 (throttle)
+  // Microsoft Graph renvoie un header Retry-After (en secondes) qu'on respecte si présent.
+  // Sinon : 5s, 10s, 30s avant abandon.
+  function _retryAfterThrottle(input, init, response, attempt) {
+    attempt = attempt || 1;
+    if (attempt > 3) {
+      // Abandon après 3 tentatives — retourne la 429 originale
+      console.warn('[Fetch interceptor] 429 abandon après 3 retries');
+      // Notifier l'utilisateur (une seule fois)
+      if (!window._odThrottleNotified) {
+        window._odThrottleNotified = true;
+        setTimeout(function(){
+          if (typeof odSetStatus === 'function') odSetStatus('Microsoft Graph saturé, réessayez plus tard', true);
+          if (typeof showNotifToast === 'function') showNotifToast('⏸ Microsoft Graph saturé. Reprenez dans 10-15 min.');
+          setTimeout(function(){ window._odThrottleNotified = false; }, 60000);  // reset 1 min après
+        }, 100);
+      }
+      return response;
+    }
+    // Délai : header Retry-After en priorité, sinon exponentiel
+    var retryAfterHeader = response.headers ? response.headers.get('Retry-After') : null;
+    var delaySec = retryAfterHeader ? parseInt(retryAfterHeader) : null;
+    if (!delaySec || isNaN(delaySec)) {
+      // Exponentiel : 5s, 10s, 30s
+      delaySec = attempt === 1 ? 5 : (attempt === 2 ? 10 : 30);
+    }
+    // Plafonner à 60s pour ne pas geler l'app
+    if (delaySec > 60) delaySec = 60;
+    console.log('[Fetch interceptor] 429 throttle, retry #' + attempt + ' dans ' + delaySec + 's');
+    // Notifier l'utilisateur du délai (sans spam)
+    if (typeof showNotifToast === 'function' && attempt === 1) {
+      showNotifToast('⏳ Microsoft attend ' + delaySec + 's (sync différée)');
+    }
+    return new Promise(function(resolve){
+      setTimeout(function(){
+        var retryUrl = (typeof input === 'string') ? input : (input && input.url) || '';
+        _originalFetch(retryUrl, init).then(function(retryResp){
+          if (retryResp.status === 429) {
+            // Toujours throttle → rebelote avec attempt+1
+            resolve(_retryAfterThrottle(input, init, retryResp, attempt + 1));
+          } else {
+            resolve(retryResp);
+          }
+        }).catch(function(err){
+          console.error('[Fetch interceptor] erreur retry 429:', err);
+          resolve(response);
+        });
+      }, delaySec * 1000);
+    });
+  }
+
   window.fetch = function(input, init){
     // Récupérer l'URL en string
     var urlStr = (typeof input === 'string') ? input : (input && input.url) || '';
@@ -5706,8 +5758,13 @@ function _odFetchWith401Retry(url, options) {
     if (!isGraphCall) {
       return _originalFetch(input, init);
     }
-    // Appel Graph : on encapsule pour gérer le 401
+    // Appel Graph : on encapsule pour gérer 401 et 429
     return _originalFetch(input, init).then(function(response){
+      // ── Cas 1 : 429 throttle → backoff et retry ──
+      if (response.status === 429) {
+        return _retryAfterThrottle(input, init, response, 1);
+      }
+      // ── Cas 2 : 401 (déjà géré : refresh token + retry) ──
       if (response.status !== 401) return response;
       return response.clone().text().then(function(body){
         var isExpired = body.indexOf('InvalidAuthenticationToken') >= 0
@@ -6451,10 +6508,13 @@ function odAutoSync() {
     console.warn('[odAutoSync] reporté : sync initiale pas encore faite');
     return;
   }
-  // Debounce : si plusieurs appels s'enchaînent (ex: simu + placement dans la foulée),
-  // on annule le précédent timeout et on relance — un seul aller-retour réseau au lieu de N.
+  // Debounce ÉLARGI à 2 minutes (au lieu de 1.2s) pour limiter les sync vers Microsoft Graph.
+  // Les modifs successives (ex: changement champ + ajout commentaire + édition placement)
+  // sont regroupées en une seule sync 2 min après la dernière modif.
+  // Ceci protège contre les throttles 429 dûs à un usage intensif.
+  // Si plusieurs modifs s'enchaînent : on annule le timer précédent et on relance.
   if (window._odAutoSyncTimer) { clearTimeout(window._odAutoSyncTimer); }
-  window._odAutoSyncTimer = setTimeout(odSilentFullSync, 1200);
+  window._odAutoSyncTimer = setTimeout(odSilentFullSync, 120000);
 }
 
 function odSilentFullSync() {
@@ -8600,6 +8660,68 @@ function refreshCandFicheSimsIfOpen(deal) {
 // ════════════════════════════════════════════════════
 // GESTION COLONNES ET VUES
 // ════════════════════════════════════════════════════
+
+// Helper : formatte une date en JJ-MM-AAAA (sépare avec tirets)
+// Accepte : 'YYYY-MM-DD', 'DD/MM/YYYY', timestamp, ou Date object
+function _fmtDateJMA(v) {
+  if (!v) return '\u2014';
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return '\u2014';
+    return String(v.getDate()).padStart(2,'0') + '-' + String(v.getMonth()+1).padStart(2,'0') + '-' + v.getFullYear();
+  }
+  var s = String(v).trim();
+  if (!s || s === '—') return '\u2014';
+  // Format DD/MM/YYYY ou DD-MM-YYYY
+  var m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) return String(m[1]).padStart(2,'0') + '-' + String(m[2]).padStart(2,'0') + '-' + m[3];
+  // Format YYYY-MM-DD (ISO)
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return String(m[3]).padStart(2,'0') + '-' + String(m[2]).padStart(2,'0') + '-' + m[1];
+  // Sinon retour brut
+  return s;
+}
+
+// Helper : calcule la durée entre 2 dates au format "Xm Yj"
+// Accepte les mêmes formats que _fmtDateJMA
+function _calcDureeContrat(dateDebut, dateFin) {
+  if (!dateDebut || !dateFin) return '\u2014';
+  var d1 = _parseAnyDate(dateDebut);
+  var d2 = _parseAnyDate(dateFin);
+  if (!d1 || !d2) return '\u2014';
+  if (d2 < d1) return '\u2014';
+  // Calcul du nombre de mois pleins + jours restants
+  var months = (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
+  var days = d2.getDate() - d1.getDate();
+  if (days < 0) {
+    months--;
+    // Nombre de jours dans le mois précédant d2
+    var prevMonth = new Date(d2.getFullYear(), d2.getMonth(), 0);
+    days += prevMonth.getDate();
+  }
+  if (months < 0) return '\u2014';
+  if (months === 0 && days === 0) return '0j';
+  var parts = [];
+  if (months > 0) parts.push(months + 'm');
+  if (days > 0) parts.push(days + 'j');
+  return parts.join(' ');
+}
+
+// Helper : parse une date depuis 'YYYY-MM-DD', 'DD/MM/YYYY', 'DD-MM-YYYY' ou timestamp
+function _parseAnyDate(v) {
+  if (!v) return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+  var s = String(v).trim();
+  // YYYY-MM-DD
+  var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
+  // DD/MM/YYYY ou DD-MM-YYYY
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (m) return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
+  // Fallback : tentative de parsing direct
+  var d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 var DEAL_ALL_COLS = [
   {key:'etat',     label:'État',          freeze:'f1'},
   {key:'candidat', label:'Candidat',      freeze:'f2'},
@@ -8616,6 +8738,11 @@ var DEAL_ALL_COLS = [
   {key:'contrat',     label:'Contrat'},
   {key:'type_contrat_client', label:'Type contrat (Seven/Client)'},
   {key:'date_entree', label:'Date entrée'},
+  {key:'date_fin',    label:'Date de fin'},
+  {key:'duree_contrat', label:'Durée contrat'},
+  {key:'lieu_mission',label:'Lieu de mission'},
+  {key:'nom_signataire', label:'Signataire'},
+  {key:'email_compta',label:'Email comptable'},
   {key:'frais_gestion',label:'Frais gest.'},
   {key:'mutuelle',    label:'Mutuelle'},
   {key:'repas',       label:'Swile/TR'},
@@ -8695,23 +8822,110 @@ function toggleDealsParams(){
 function renderDealColCheckboxes(){
   var el = document.getElementById('deal-col-checkboxes');
   if (!el) return;
+
+  // Map des colonnes par clé pour lookup rapide
+  var colMap = {};
+  DEAL_ALL_COLS.forEach(function(c){ colMap[c.key] = c; });
+
+  // Liste 1 : colonnes VISIBLES dans l'ordre actuel (réordonnable par drag-drop)
+  // dealVisibleCols contient l'ordre choisi par l'utilisateur
+  var visibleColKeys = dealVisibleCols.filter(function(k){ return colMap[k]; });
+
+  // Liste 2 : colonnes NON visibles (à activer si besoin)
+  var hiddenCols = DEAL_ALL_COLS.filter(function(c){ return visibleColKeys.indexOf(c.key) < 0; });
+
   var html = '';
-  DEAL_ALL_COLS.forEach(function(col){
-    var chk = dealVisibleCols.indexOf(col.key)>=0 ? 'checked' : '';
-    var tag = col.freeze ? ' <span style="font-size:9px;color:#7343EE;">❄</span>' : '';
-    var cbHtml = '<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding:3px 6px;border-radius:5px;border:1px solid #E4E0FA;">'
-          + '<input type="checkbox" ' + chk + ' data-col="' + col.key + '" onchange="toggleDealCol(this.dataset.col,this.checked)" style="accent-color:#7343EE;">'
-          + col.label + tag + '</label>';
-    html += cbHtml;
+
+  // ── Section 1 : colonnes affichées (drag-drop pour réordonner) ──
+  html += '<div style="font-size:11px;color:#7343EE;font-weight:700;margin:8px 0 6px 0;text-transform:uppercase;letter-spacing:0.04em;">'
+       + '✓ Colonnes affichées (' + visibleColKeys.length + ')'
+       + '<span style="margin-left:8px;color:#9E94C4;font-weight:400;text-transform:none;letter-spacing:0;">— glissez pour réordonner</span>'
+       + '</div>';
+  html += '<div id="deal-col-visible-list" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;padding:8px;background:#FAFAFA;border-radius:7px;border:1px dashed #D9CFFA;min-height:40px;">';
+  visibleColKeys.forEach(function(key){
+    var col = colMap[key];
+    if (!col) return;
+    var tag = col.freeze ? ' ❄' : '';
+    html += '<div draggable="true" data-col="' + col.key + '" '
+         +   'ondragstart="_dealColDragStart(event,this)" '
+         +   'ondragover="_dealColDragOver(event)" '
+         +   'ondrop="_dealColDrop(event,this)" '
+         +   'ondragend="_dealColDragEnd(event,this)" '
+         +   'style="display:inline-flex;align-items:center;gap:6px;padding:5px 9px 5px 7px;background:#fff;border:1.5px solid #D9CFFA;border-radius:6px;cursor:move;font-size:11.5px;color:#1A1033;user-select:none;">'
+         + '<span style="color:#9E94C4;font-size:11px;">⋮⋮</span>'
+         + '<span>' + col.label + tag + '</span>'
+         + '<button onclick="toggleDealCol(\'' + col.key + '\',false)" title="Masquer cette colonne" style="background:none;border:none;color:#A8322A;cursor:pointer;font-size:13px;padding:0;line-height:1;">×</button>'
+         + '</div>';
   });
+  html += '</div>';
+
+  // ── Section 2 : colonnes masquées (à cocher pour ajouter) ──
+  if (hiddenCols.length > 0) {
+    html += '<div style="font-size:11px;color:#9E94C4;font-weight:700;margin:8px 0 6px 0;text-transform:uppercase;letter-spacing:0.04em;">'
+         + '+ Colonnes disponibles (' + hiddenCols.length + ')'
+         + '</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+    hiddenCols.forEach(function(col){
+      var tag = col.freeze ? ' <span style="font-size:9px;color:#7343EE;">❄</span>' : '';
+      html += '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;cursor:pointer;padding:4px 8px;border-radius:5px;border:1px solid #E4E0FA;background:#fff;color:#6B5E9C;">'
+           + '<input type="checkbox" data-col="' + col.key + '" onchange="toggleDealCol(this.dataset.col,this.checked)" style="accent-color:#7343EE;">'
+           + col.label + tag + '</label>';
+    });
+    html += '</div>';
+  }
+
   el.innerHTML = html;
 }
+
+// ─── Drag-and-drop des colonnes affichées ───
+window._dealColDragStart = function(e, elt) {
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', elt.dataset.col);
+  elt.style.opacity = '0.4';
+  window._dealDraggedColKey = elt.dataset.col;
+};
+window._dealColDragOver = function(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+};
+window._dealColDrop = function(e, targetElt) {
+  e.preventDefault();
+  e.stopPropagation();
+  var draggedKey = window._dealDraggedColKey;
+  var targetKey = targetElt.dataset.col;
+  if (!draggedKey || !targetKey || draggedKey === targetKey) return;
+  // Réordonner dealVisibleCols
+  var idxFrom = dealVisibleCols.indexOf(draggedKey);
+  var idxTo = dealVisibleCols.indexOf(targetKey);
+  if (idxFrom < 0 || idxTo < 0) return;
+  // Retirer l'élément de sa position d'origine
+  dealVisibleCols.splice(idxFrom, 1);
+  // Le réinsérer à la nouvelle position
+  // Si on droppait après l'élément cible
+  var newIdx = dealVisibleCols.indexOf(targetKey);
+  // Insérer après le target si dragged venait d'avant, sinon avant
+  if (idxFrom < idxTo) {
+    dealVisibleCols.splice(newIdx + 1, 0, draggedKey);
+  } else {
+    dealVisibleCols.splice(newIdx, 0, draggedKey);
+  }
+  // Sauvegarder en local (perso, pas synchronisé entre commerciaux)
+  localStorage.setItem('sp_deal_cols', JSON.stringify(dealVisibleCols));
+  renderDealColCheckboxes();
+  renderDeals();
+};
+window._dealColDragEnd = function(e, elt) {
+  elt.style.opacity = '1';
+  window._dealDraggedColKey = null;
+};
 
 function toggleDealCol(key, checked){
   if (checked && dealVisibleCols.indexOf(key)<0) dealVisibleCols.push(key);
   if (!checked) dealVisibleCols = dealVisibleCols.filter(function(k){ return k!==key; });
   localStorage.setItem('sp_deal_cols', JSON.stringify(dealVisibleCols));
   renderDeals();
+  // Rafraîchir le panneau pour voir l'évolution Visible/Masqué
+  if (typeof renderDealColCheckboxes === 'function') renderDealColCheckboxes();
 }
 
 function saveDealView(){
@@ -8809,7 +9023,7 @@ function getCellValue(d, key){
     case 'nb_jours': return fmt(d.nb_jours);
     case 'salaire_annuel': return d.salaire_annuel ? parseInt(d.salaire_annuel).toLocaleString('fr-FR')+' €' : '—';
     case 'commercial': return fmt(d.commercial);
-    case 'date_deal': return fmt(d.date_deal);
+    case 'date_deal': return _fmtDateJMA(d.date_deal);
     case 'origine': return fmt(d.origine);
     case 'contrat': return fmt(d.contrat);
     case 'type_contrat_client':
@@ -8818,7 +9032,19 @@ function getCellValue(d, key){
       var tccColor = d.type_contrat_client === 'Seven' ? '#7343EE' : '#F0A500';
       var tccBg = d.type_contrat_client === 'Seven' ? '#F5F3FF' : '#FFF4D6';
       return '<span style="background:' + tccBg + ';color:' + tccColor + ';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;">' + tccLabel + '</span>';
-    case 'date_entree': return fmt(d.date_entree);
+    case 'date_entree': return _fmtDateJMA(d.date_entree);
+    case 'date_fin':    return _fmtDateJMA(d.date_fin);
+    case 'duree_contrat': return _calcDureeContrat(d.date_entree, d.date_fin);
+    case 'lieu_mission': return fmt(d.lieu_mission || d.adresse_exec || '—');
+    case 'nom_signataire': return fmt(d.nom_signataire || '—');
+    case 'email_compta':
+      // Récupérer email comptable depuis le client (s'il existe dans le client lié)
+      if (d.email_compta) return d.email_compta;
+      try {
+        var clCompta = (typeof getClients === 'function') ? getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === (d.entreprise||'').trim().toLowerCase(); }) : null;
+        if (clCompta && clCompta.email_compta) return clCompta.email_compta;
+      } catch(e) {}
+      return '\u2014';
     case 'frais_gestion': return d.frais_gestion ? d.frais_gestion+'%' : '—';
     case 'mutuelle': 
       var mutLabels = { 'isolee':'Isol\u00e9e', 'famille':'Famille', 'isolee_seven':'Isol\u00e9e (Seven)', 'renoncement':'Non', 'non':'Non' };
@@ -8874,13 +9100,32 @@ function getCellValue(d, key){
       if (d.tt === 'Non' || !d.tt) return '\u2014';
       var simTT = null;
       try {
-        if (d.sim_ts && typeof getHistory === 'function') {
-          simTT = getHistory().find(function(s){ return s.timestamp === d.sim_ts; }) || null;
+        if (typeof getHistory === 'function') {
+          var allSims = getHistory();
+          // Méthode 1 : chercher par sim_ts exact (cas normal)
+          if (d.sim_ts) {
+            simTT = allSims.find(function(s){ return s.timestamp === d.sim_ts; }) || null;
+          }
+          // Méthode 2 (fallback) : si sim_ts cassé/absent, chercher la SIMU la plus récente
+          // pour le même candidat (par email + entreprise)
+          if (!simTT && d.email) {
+            var dEmail = d.email.toLowerCase().trim();
+            var dEnt = (d.entreprise||'').toLowerCase().trim();
+            var matchingSims = allSims.filter(function(s){
+              if ((s.email||'').toLowerCase().trim() !== dEmail) return false;
+              if (dEnt && (s.entreprise||'').toLowerCase().trim() !== dEnt) return false;
+              return true;
+            });
+            // Trier par timestamp décroissant — prendre la plus récente
+            if (matchingSims.length > 0) {
+              matchingSims.sort(function(a,b){ return (b.timestamp||0) - (a.timestamp||0); });
+              simTT = matchingSims[0];
+            }
+          }
         }
       } catch(e) {}
       if (simTT) {
         // Méthode 1 (préférée) : utiliser frais_tt mensuel directement depuis la SIMU
-        // Identique à ce que l'utilisateur voit dans "Frais pro exonérés" panneau de droite
         var fraisTTMois = parseFloat(simTT.frais_tt) || 0;
         var nbJoursSim = parseInt(simTT.nb_jours) || 21;
         var jTT = parseInt(simTT.jours_tt) || 0;
