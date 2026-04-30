@@ -3385,6 +3385,12 @@ window.addEventListener('DOMContentLoaded', () => {
   // Purger les tombstones anciens (>60j) pour ne pas grossir localStorage indéfiniment
   try { if (typeof purgeOldTombstones === 'function') purgeOldTombstones(); } catch(e) {}
 
+  // Appliquer les tombstones reçus aux fiches locales (cas : un autre user a fusionné une fiche
+  // chez lui, la table tombstones est arrivée chez nous mais notre fiche locale est encore vivante)
+  try {
+    if (typeof _applyCandTombstonesLocally === 'function') _applyCandTombstonesLocally();
+  } catch(e) {}
+
   // Restore params from localStorage
   const saved = localStorage.getItem('sp_params_v2');
   if (saved) {
@@ -10103,10 +10109,16 @@ function confirmMergeCandidats(targetId) {
   target.updated = new Date().toLocaleDateString('fr-FR');
 
   // Marquer la source comme supprimée + tombstone
+  // IMPORTANT : on garde email/tel sur le tombstone pour que mergeCandidats
+  // puisse retrouver la fiche locale correspondante chez les autres users.
   var srcIdx = cands.findIndex(function(c){ return c.id === source.id; });
   if (srcIdx >= 0) {
     cands[srcIdx] = {
       id: source.id,
+      email: source.email || '',     // ← AJOUTÉ : nécessaire pour la propagation cross-user
+      tel: source.tel || '',         // ← AJOUTÉ : fallback si pas d'email
+      prenom: source.prenom || '',   // ← AJOUTÉ : utile pour le debug
+      nom: source.nom || '',         // ← AJOUTÉ : utile pour le debug
       _deleted: true,
       deleted_at: Date.now(),
       updated_ts: Date.now(),
@@ -10114,9 +10126,19 @@ function confirmMergeCandidats(targetId) {
     };
   }
 
-  // Ajouter au tombstone (par email source) pour empêcher réapparition après sync
-  if (typeof addTombstone === 'function' && source.email) {
-    addTombstone('candidats', source.email.toLowerCase());
+  // Tombstones multiples pour fiabilité maximale :
+  //   - par ID (clé unique, jamais ambigüe)
+  //   - par email (compatibilité ancien code, utile si l'ID change)
+  if (typeof addTombstone === 'function') {
+    addTombstone('candidats', 'id:' + String(source.id));
+    if (source.email) {
+      var srcEmailLc = source.email.toLowerCase().trim();
+      var tgtEmailLc = (target.email||'').toLowerCase().trim();
+      // Ne pas tombstoner par email si target a le même email (sinon on tuerait target aussi)
+      if (srcEmailLc && srcEmailLc !== tgtEmailLc) {
+        addTombstone('candidats', srcEmailLc);
+      }
+    }
   }
 
   saveCandidatsArr(cands);
@@ -20955,6 +20977,50 @@ function mergeHistorique(remote) {
   if (typeof odBuildCommercialSelect === 'function') odBuildCommercialSelect(merged);
 }
 
+// Helper exposé : applique les tombstones de la table aux fiches locales (idempotent).
+// Utile au démarrage de l'app et après un sync, pour que les fiches supprimées chez d'autres
+// users disparaissent visuellement chez nous sans devoir attendre un sync complet.
+function _applyCandTombstonesLocally() {
+  var local = getCandidats();
+  var allTombs = (typeof getTombstones === 'function') ? (getTombstones().candidats || {}) : {};
+  if (!Object.keys(allTombs).length) return false;
+
+  var emailCount = {};
+  local.forEach(function(c) {
+    if (!c || c._deleted) return;
+    var ek = (c.email||'').toLowerCase().trim();
+    if (ek) emailCount[ek] = (emailCount[ek]||0) + 1;
+  });
+
+  var changed = false;
+  local.forEach(function(c) {
+    if (!c || c._deleted) return;
+    if (allTombs['id:' + String(c.id)]) {
+      c._deleted = true;
+      c.deleted_at = c.deleted_at || Date.now();
+      c.updated_at = Date.now();
+      c.updated_ts = Date.now();
+      changed = true;
+      return;
+    }
+    var emailKey = (c.email||'').toLowerCase().trim();
+    if (emailKey && allTombs[emailKey] && emailCount[emailKey] === 1) {
+      c._deleted = true;
+      c.deleted_at = c.deleted_at || Date.now();
+      c.updated_at = Date.now();
+      c.updated_ts = Date.now();
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    saveCandidatsArr(local);
+    if (typeof renderCandidats === 'function') renderCandidats();
+    console.log('[_applyCandTombstonesLocally] Fiches tombstonées localement.');
+  }
+  return changed;
+}
+
 function mergeCandidats(remote) {
   var local = getCandidats();
   // Helper : normalise un téléphone (retire espaces, points, tirets, plus, parenthèses)
@@ -20962,6 +21028,50 @@ function mergeCandidats(remote) {
     if (!t) return '';
     return String(t).replace(/[\s.\-+()]/g, '').trim();
   }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FIX FUSION : propager les tombstones aux fiches LOCALES
+  // Si un autre user a fusionné/supprimé une fiche, sa table tombstones
+  // est synchronisée chez nous. On doit appliquer ces tombstones à nos
+  // fiches locales (sinon notre fiche reste vivante alors qu'elle a été
+  // supprimée ailleurs).
+  // ═══════════════════════════════════════════════════════════════
+  try {
+    var allTombs = (typeof getTombstones === 'function') ? (getTombstones().candidats || {}) : {};
+    if (Object.keys(allTombs).length) {
+      // Compter combien de fiches LIVE locales partagent chaque email
+      // (si 2 fiches LIVE ont le même email, on ne tombstone par email
+      //  pour aucune — ambigu — on attend le tombstone par ID)
+      var emailCount = {};
+      local.forEach(function(c) {
+        if (!c || c._deleted) return;
+        var ek = (c.email||'').toLowerCase().trim();
+        if (ek) emailCount[ek] = (emailCount[ek]||0) + 1;
+      });
+
+      local.forEach(function(c) {
+        if (!c || c._deleted) return;
+
+        // Tombstone par ID — toujours fiable
+        if (allTombs['id:' + String(c.id)]) {
+          c._deleted = true;
+          c.deleted_at = c.deleted_at || Date.now();
+          c.updated_at = Date.now();
+          c.updated_ts = Date.now();
+          return;
+        }
+
+        // Tombstone par email — seulement si UNE SEULE fiche locale a cet email
+        var emailKey = (c.email||'').toLowerCase().trim();
+        if (emailKey && allTombs[emailKey] && emailCount[emailKey] === 1) {
+          c._deleted = true;
+          c.deleted_at = c.deleted_at || Date.now();
+          c.updated_at = Date.now();
+          c.updated_ts = Date.now();
+        }
+      });
+    }
+  } catch(e) { console.warn('[mergeCandidats tombstone propagation]', e); }
   // Index multiples : email ET téléphone
   var emailMap = {};
   var telMap = {};
@@ -20974,10 +21084,30 @@ function mergeCandidats(remote) {
     var emailKey = (rc.email||'').toLowerCase().trim();
     var telKey = normTel(rc.tel);
     // Skip les candidats tombstonés (supprimés par un autre user)
-    // Pour le tombstone, on cherche par email en priorité, sinon par téléphone
+    // Vérifier par ID, email ET téléphone
     if (typeof isTombstoned === 'function') {
+      if (rc.id && isTombstoned('candidats', 'id:' + String(rc.id))) return;
       if (emailKey && isTombstoned('candidats', emailKey)) return;
       if (!emailKey && telKey && isTombstoned('candidats', telKey)) return;
+    }
+
+    // ── FIX FUSION : si le remote EST un tombstone (_deleted), propager au local ──
+    // Le remote nous dit "cette fiche est supprimée chez moi" → on doit faire pareil.
+    if (rc._deleted) {
+      var lmDel = null;
+      if (emailKey && emailMap[emailKey]) lmDel = emailMap[emailKey];
+      else if (telKey && telKey.length >= 8 && telMap[telKey]) lmDel = telMap[telKey];
+      else lmDel = local.find(function(c){ return c.id === rc.id; });
+      if (lmDel) {
+        lmDel._deleted = true;
+        lmDel.deleted_at = rc.deleted_at || Date.now();
+        lmDel.updated_at = rc.updated_at || Date.now();
+        lmDel.updated_ts = rc.updated_ts || Date.now();
+      } else {
+        // Aucun local match : on conserve le tombstone tel quel pour qu'il survive aux merges futurs
+        emailMap['tomb:' + rc.id] = rc;
+      }
+      return;  // ne pas continuer la fusion sims/docs sur un tombstone
     }
     // Trouver le match local : email d'abord, puis téléphone en fallback
     var localMatch = null;
