@@ -10697,6 +10697,8 @@ function renderCandidats() {
   var el = document.getElementById('candidats-list');
   if (!el) return;
   var cands = getCandidats();
+  // FIX : exclure les fiches tombstonées (supprimées via fusion ou suppression cross-user)
+  cands = cands.filter(function(c){ return c && !c._deleted; });
   var q = (document.getElementById('cand-search') ? document.getElementById('cand-search').value : '').toLowerCase().trim();
   var filtStatut = document.getElementById('cand-filter-statut') ? document.getElementById('cand-filter-statut').value : '';
   var filtComm = document.getElementById('cand-filter-commercial') ? document.getElementById('cand-filter-commercial').value : '__mine__';
@@ -10707,6 +10709,7 @@ function renderCandidats() {
   if (commEl) {
     var allCommercials = {};
     getCandidats().forEach(function(c){
+      if (!c || c._deleted) return;  // FIX : ignorer les fiches tombstonées
       if (c.commercial) allCommercials[c.commercial] = true;
       (c.simulations||[]).forEach(function(s){ if (s.commercial) allCommercials[s.commercial] = true; });
     });
