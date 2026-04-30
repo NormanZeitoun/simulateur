@@ -9853,6 +9853,286 @@ function closeCandFiche() {
   if (m) m.remove();
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// FUSION MANUELLE DE 2 FICHES CANDIDATS (cas doublon créé par sync)
+// ═══════════════════════════════════════════════════════════════════
+// Le candidat ouvert (cand) sera la fiche CIBLE : ses informations d'identité
+// (prénom, nom, email, téléphone, statut, commercial, etc.) sont conservées.
+// Tout le contenu de la fiche source (SIMUs, placements liés, documents,
+// commentaires, rappels, avances) est REPRIS sur la fiche cible.
+// La fiche source est ensuite supprimée (avec tombstone pour la sync).
+function openMergeCandidatPopup(targetCandId) {
+  var cands = getCandidats();
+  var target = cands.find(function(c){ return c.id === targetCandId; });
+  if (!target) { alert('Fiche cible introuvable.'); return; }
+
+  // Liste des candidats potentiellement fusionnables (homonymes ou similaires)
+  var targetPrenom = (target.prenom||'').toLowerCase().trim();
+  var targetNom = (target.nom||'').toLowerCase().trim();
+  var candidates = cands.filter(function(c){
+    if (c.id === target.id) return false;
+    if (c._deleted) return false;
+    var p = (c.prenom||'').toLowerCase().trim();
+    var n = (c.nom||'').toLowerCase().trim();
+    // Match exact prénom + nom OU au moins l'un des deux + (email OU téléphone partagé partiellement)
+    if (p === targetPrenom && n === targetNom) return true;
+    return false;
+  });
+
+  // Tous les autres candidats (au cas où l'utilisateur veut chercher manuellement)
+  var others = cands.filter(function(c){
+    return c.id !== target.id && !c._deleted;
+  });
+  others.sort(function(a,b){
+    return ((a.nom||'') + (a.prenom||'')).localeCompare((b.nom||'') + (b.prenom||''));
+  });
+
+  // Construire le modal
+  var existing = document.getElementById('modal-merge-candidat');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'modal-merge-candidat';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(20,10,60,0.6);backdrop-filter:blur(4px);z-index:10001;display:flex;align-items:center;justify-content:center;';
+
+  var html = '<div style="background:#fff;border-radius:14px;width:600px;max-width:92vw;max-height:88vh;overflow:auto;padding:0;">'
+    + '<div style="padding:18px 22px;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border-radius:14px 14px 0 0;">'
+    +   '<div style="font-size:18px;font-weight:700;display:flex;align-items:center;gap:10px;">🔀 Fusionner 2 fiches candidat</div>'
+    +   '<div style="font-size:11.5px;opacity:0.9;margin-top:4px;line-height:1.5;">'
+    +     'Les SIMUs, placements, documents et commentaires de la fiche source seront repris sur la fiche actuelle. '
+    +     'Les informations d\'identité (nom, email, etc.) de la fiche actuelle restent inchangées.'
+    +   '</div>'
+    + '</div>'
+    + '<div style="padding:18px 22px;">'
+    + '<div style="background:#F5F3FF;border:1.5px solid #D9CFFA;border-radius:8px;padding:12px;margin-bottom:14px;">'
+    +   '<div style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">Fiche actuelle (CONSERVÉE)</div>'
+    +   '<div style="font-size:14px;font-weight:700;color:#1A1033;">' + (target.prenom||'') + ' ' + (target.nom||'') + '</div>'
+    +   '<div style="font-size:11.5px;color:#6B5E9C;margin-top:3px;">'
+    +     (target.email ? '✉ ' + target.email + ' &nbsp; ' : '')
+    +     (target.tel ? '📞 ' + target.tel + ' &nbsp; ' : '')
+    +     (target.commercial ? 'Commercial: ' + target.commercial : '')
+    +   '</div>'
+    +   '<div style="font-size:11.5px;color:#6B5E9C;margin-top:3px;">'
+    +     (target.simulations||[]).length + ' simulation(s) · '
+    +     Object.keys(target.documents||{}).length + ' document(s)'
+    +   '</div>'
+    + '</div>'
+    + '<label style="font-size:11.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;display:block;">Sélectionner la fiche à fusionner (qui sera supprimée) :</label>';
+
+  if (candidates.length > 0) {
+    html += '<div style="background:#FFF4E5;border:1.5px solid #F0A500;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11.5px;color:#8A5F00;">'
+      + '⚠ <strong>Doublons détectés</strong> (même prénom + nom) :'
+      + '</div>';
+  }
+
+  html += '<select id="merge-source-select" style="width:100%;padding:9px 11px;border:1.5px solid #D9CFFA;border-radius:8px;font-size:13px;margin-bottom:14px;">'
+    + '<option value="">— Sélectionner —</option>';
+
+  // Doublons en premier
+  candidates.forEach(function(c){
+    var label = c.prenom + ' ' + c.nom;
+    if (c.email) label += ' (' + c.email + ')';
+    else if (c.tel) label += ' (' + c.tel + ')';
+    label += ' — ' + (c.simulations||[]).length + ' simu(s)';
+    if (c.commercial) label += ' · ' + c.commercial;
+    html += '<option value="' + c.id + '" data-doublon="1">⚠ ' + label + '</option>';
+  });
+
+  // Séparateur si doublons + autres
+  if (candidates.length > 0 && others.length > candidates.length) {
+    html += '<option disabled>───────────────</option>';
+  }
+
+  // Autres candidats (hors doublons déjà listés)
+  others.forEach(function(c){
+    if (candidates.find(function(d){ return d.id === c.id; })) return;
+    var label = c.prenom + ' ' + c.nom;
+    if (c.email) label += ' (' + c.email + ')';
+    else if (c.tel) label += ' (' + c.tel + ')';
+    html += '<option value="' + c.id + '">' + label + '</option>';
+  });
+
+  html += '</select>'
+    + '<div id="merge-preview" style="display:none;background:#FAFAFA;border:1.5px solid #E4E0FA;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;"></div>'
+    + '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+    +   '<button onclick="closeMergeCandidatPopup()" style="padding:9px 18px;background:#fff;border:1.5px solid #D9CFFA;color:#6B5E9C;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">Annuler</button>'
+    +   '<button onclick="confirmMergeCandidats(' + target.id + ')" style="padding:9px 18px;background:#7343EE;border:none;color:#fff;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">🔀 Fusionner</button>'
+    + '</div>'
+    + '</div>'
+    + '</div>';
+
+  modal.innerHTML = html;
+  document.body.appendChild(modal);
+
+  // Mise à jour de la preview au changement de sélection
+  document.getElementById('merge-source-select').addEventListener('change', function(){
+    var sourceId = parseInt(this.value);
+    var preview = document.getElementById('merge-preview');
+    if (!sourceId) { preview.style.display = 'none'; return; }
+    var source = cands.find(function(c){ return c.id === sourceId; });
+    if (!source) return;
+    var prevHtml = '<div style="font-weight:700;color:#7343EE;margin-bottom:6px;">📋 Aperçu de la fusion :</div>';
+    prevHtml += '<div style="margin-bottom:4px;"><strong>Source supprimée :</strong> ' + source.prenom + ' ' + source.nom + (source.email ? ' (' + source.email + ')' : '') + '</div>';
+    prevHtml += '<div style="margin-bottom:4px;"><strong>Sera transféré vers la fiche actuelle :</strong></div>';
+    prevHtml += '<ul style="margin:4px 0 4px 20px;color:#6B5E9C;line-height:1.6;">';
+    prevHtml += '<li>' + (source.simulations||[]).length + ' simulation(s)</li>';
+    prevHtml += '<li>' + Object.keys(source.documents||{}).filter(function(k){ return !source.documents[k]._deleted; }).length + ' document(s)</li>';
+    if (source.commentaire) prevHtml += '<li>Commentaires</li>';
+    if (source.commentaires && source.commentaires.length) prevHtml += '<li>' + source.commentaires.length + ' note(s)</li>';
+    if (source.rappels && source.rappels.length) prevHtml += '<li>' + source.rappels.length + ' rappel(s)</li>';
+    // Compter aussi les placements liés
+    try {
+      var deals = (typeof getDeals === 'function') ? getDeals() : [];
+      var srcEmail = (source.email||'').toLowerCase().trim();
+      var dealsCount = srcEmail ? deals.filter(function(d){ return (d.email||'').toLowerCase().trim() === srcEmail; }).length : 0;
+      if (dealsCount > 0) prevHtml += '<li>' + dealsCount + ' placement(s) (l\'email du candidat sera mis à jour sur ces deals)</li>';
+    } catch(e) {}
+    prevHtml += '</ul>';
+    prevHtml += '<div style="margin-top:6px;font-size:11.5px;color:#A8322A;font-weight:600;">⚠ Cette action est irréversible.</div>';
+    preview.innerHTML = prevHtml;
+    preview.style.display = 'block';
+  });
+}
+
+function closeMergeCandidatPopup() {
+  var m = document.getElementById('modal-merge-candidat');
+  if (m) m.remove();
+}
+
+function confirmMergeCandidats(targetId) {
+  var sourceIdEl = document.getElementById('merge-source-select');
+  var sourceId = parseInt(sourceIdEl ? sourceIdEl.value : '');
+  if (!sourceId) { alert('⚠ Sélectionnez une fiche à fusionner.'); return; }
+  if (sourceId === targetId) { alert('⚠ Vous ne pouvez pas fusionner une fiche avec elle-même.'); return; }
+
+  var cands = getCandidats();
+  var target = cands.find(function(c){ return c.id === targetId; });
+  var source = cands.find(function(c){ return c.id === sourceId; });
+  if (!target || !source) { alert('⚠ Fiche introuvable.'); return; }
+
+  if (!confirm('Confirmer la fusion ?\n\nLa fiche "' + source.prenom + ' ' + source.nom + '"' +
+    (source.email ? ' (' + source.email + ')' : '') +
+    ' sera supprimée. Toutes ses SIMUs, placements, documents et commentaires seront transférés vers la fiche actuelle.\n\nCette action est irréversible.')) return;
+
+  // ── 1. Fusion des SIMUs ──
+  var targetSims = target.simulations || [];
+  var sourceSims = source.simulations || [];
+  var existingTs = {};
+  targetSims.forEach(function(s){ existingTs[s.timestamp] = 1; });
+  sourceSims.forEach(function(s){
+    if (!existingTs[s.timestamp]) targetSims.push(s);
+  });
+  targetSims.sort(function(a,b){ return (b.timestamp||0) - (a.timestamp||0); });
+  target.simulations = targetSims;
+
+  // ── 2. Fusion des documents (clé par clé) ──
+  var targetDocs = target.documents || {};
+  var sourceDocs = source.documents || {};
+  Object.keys(sourceDocs).forEach(function(k){
+    if (!targetDocs[k] && sourceDocs[k] && !sourceDocs[k]._deleted) {
+      targetDocs[k] = sourceDocs[k];
+    }
+  });
+  target.documents = targetDocs;
+
+  // ── 3. Fusion des commentaires ──
+  if (source.commentaire && !target.commentaire) {
+    target.commentaire = source.commentaire;
+  } else if (source.commentaire && target.commentaire && source.commentaire !== target.commentaire) {
+    target.commentaire = (target.commentaire || '') + '\n\n[Fusionné depuis fiche supprimée]\n' + source.commentaire;
+  }
+
+  // Notes (si existant)
+  if (Array.isArray(source.commentaires) && source.commentaires.length) {
+    if (!Array.isArray(target.commentaires)) target.commentaires = [];
+    source.commentaires.forEach(function(n){ target.commentaires.push(n); });
+  }
+
+  // Rappels (si existant)
+  if (Array.isArray(source.rappels) && source.rappels.length) {
+    if (!Array.isArray(target.rappels)) target.rappels = [];
+    source.rappels.forEach(function(r){ target.rappels.push(r); });
+  }
+
+  // ── 4. Mise à jour des deals/placements liés à la source ──
+  try {
+    var deals = getDeals();
+    var srcEmail = (source.email||'').toLowerCase().trim();
+    var tgtEmail = (target.email||'').toLowerCase().trim();
+    if (srcEmail && tgtEmail && srcEmail !== tgtEmail) {
+      deals.forEach(function(d){
+        if ((d.email||'').toLowerCase().trim() === srcEmail) {
+          d.email = target.email;
+          d.updated_at = Date.now();
+        }
+      });
+      saveDeals(deals);
+    }
+  } catch(e) { console.warn('[merge] update deals:', e); }
+
+  // ── 5. Mise à jour des avances liées ──
+  try {
+    var avances = JSON.parse(localStorage.getItem('sp_avances_v1') || '[]');
+    avances.forEach(function(a){
+      if (a.candidat_id === source.id) {
+        a.candidat_id = target.id;
+        a.prenom = target.prenom;
+        a.nom = target.nom;
+        a.email = target.email;
+      }
+    });
+    localStorage.setItem('sp_avances_v1', JSON.stringify(avances));
+  } catch(e) {}
+
+  // ── 6. Mise à jour des demandes liées ──
+  try {
+    var demandes = JSON.parse(localStorage.getItem('sp_demandes_v1') || '[]');
+    demandes.forEach(function(d){
+      if (d.candidat_id === source.id) {
+        d.candidat_id = target.id;
+        d.prenom = target.prenom;
+        d.nom = target.nom;
+        d.email = target.email;
+      }
+    });
+    localStorage.setItem('sp_demandes_v1', JSON.stringify(demandes));
+  } catch(e) {}
+
+  // ── 7. Cibler updated_at + tombstone source ──
+  target.updated_at = Date.now();
+  target.updated = new Date().toLocaleDateString('fr-FR');
+
+  // Marquer la source comme supprimée + tombstone
+  var srcIdx = cands.findIndex(function(c){ return c.id === source.id; });
+  if (srcIdx >= 0) {
+    cands[srcIdx] = {
+      id: source.id,
+      _deleted: true,
+      deleted_at: Date.now(),
+      updated_ts: Date.now(),
+      updated_at: Date.now()
+    };
+  }
+
+  // Ajouter au tombstone (par email source) pour empêcher réapparition après sync
+  if (typeof addTombstone === 'function' && source.email) {
+    addTombstone('candidats', source.email.toLowerCase());
+  }
+
+  saveCandidatsArr(cands);
+
+  // ── 8. Re-render + sync ──
+  closeMergeCandidatPopup();
+  closeCandFiche();
+  if (typeof renderCandidats === 'function') renderCandidats();
+  if (typeof odAutoSync === 'function') odAutoSync();
+  if (typeof showNotifToast === 'function') {
+    showNotifToast('✓ Fusion réussie : ' + (target.prenom + ' ' + target.nom));
+  } else {
+    alert('✓ Fusion réussie.\n\nLa fiche "' + (source.prenom + ' ' + source.nom) + '" a été supprimée. Toutes ses données ont été transférées vers la fiche actuelle.');
+  }
+}
+
 function getCandidats() {
   try { return JSON.parse(localStorage.getItem(CAND_KEY) || '[]'); } catch(e) { return []; }
 }
@@ -10103,6 +10383,33 @@ function saveNewCandidat() {
   if (cands.some(function(c){ return (c.email||'').toLowerCase() === emailLc; })) {
     alert('⚠ Un candidat avec cet email existe déjà.');
     return;
+  }
+
+  // Détection des homonymes : un candidat avec le même prénom + nom existe-t-il déjà
+  // (mais avec un autre email, donc qui passerait à travers le filtre ci-dessus) ?
+  var prenomLc = prenom.toLowerCase().trim();
+  var nomLc = nom.toLowerCase().trim();
+  var homonymes = cands.filter(function(c){
+    if ((c.prenom||'').toLowerCase().trim() !== prenomLc) return false;
+    if ((c.nom||'').toLowerCase().trim() !== nomLc) return false;
+    // Exclure les candidats supprimés (tombstoned)
+    if (c._deleted) return false;
+    return true;
+  });
+  if (homonymes.length > 0) {
+    var msg = '⚠ ATTENTION — Candidat(s) similaire(s) déjà existant(s) :\n\n';
+    homonymes.slice(0, 5).forEach(function(h, i){
+      msg += (i+1) + '. ' + h.prenom + ' ' + h.nom;
+      if (h.email) msg += ' — ' + h.email;
+      if (h.tel) msg += ' — ' + h.tel;
+      if (h.commercial) msg += ' (' + h.commercial + ')';
+      msg += '\n';
+    });
+    if (homonymes.length > 5) msg += '... et ' + (homonymes.length - 5) + ' autre(s)\n';
+    msg += '\nVoulez-vous quand même créer ce nouveau candidat ?\n';
+    msg += '\n• OK = Créer (nouveau candidat distinct)';
+    msg += '\n• Annuler = Annuler la création (vérifier d\'abord)';
+    if (!confirm(msg)) return;
   }
 
   var newCand = {
@@ -19851,6 +20158,7 @@ function buildCandFicheHTML(cand) {
     + '</div>'
     + '<div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">'
     +   buildFicheEditBarHTML('candidat', cand.id)
+    +   '<button onclick="openMergeCandidatPopup(' + cand.id + ')" title="Fusionner cette fiche avec un doublon (ex: même candidat saisi 2 fois)" style="background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.3);color:#fff;font-size:11px;font-weight:600;padding:6px 11px;border-radius:7px;cursor:pointer;">🔀 Fusionner</button>'
     +   '<button onclick="closeCandFiche()" style="background:none;border:none;font-size:22px;cursor:pointer;color:rgba(255,255,255,0.8);line-height:1;">&#215;</button>'
     + '</div>'
     + '</div>'
@@ -20649,18 +20957,63 @@ function mergeHistorique(remote) {
 
 function mergeCandidats(remote) {
   var local = getCandidats();
+  // Helper : normalise un téléphone (retire espaces, points, tirets, plus, parenthèses)
+  function normTel(t) {
+    if (!t) return '';
+    return String(t).replace(/[\s.\-+()]/g, '').trim();
+  }
+  // Index multiples : email ET téléphone
   var emailMap = {};
-  local.forEach(function(c) { if (c.email) emailMap[c.email.toLowerCase()] = c; });
+  var telMap = {};
+  local.forEach(function(c) {
+    if (c.email) emailMap[c.email.toLowerCase().trim()] = c;
+    var nt = normTel(c.tel);
+    if (nt && nt.length >= 8) telMap[nt] = c;  // min 8 chiffres pour éviter faux positifs
+  });
   remote.forEach(function(rc) {
-    var key = (rc.email||'').toLowerCase();
-    if (!key) return;
+    var emailKey = (rc.email||'').toLowerCase().trim();
+    var telKey = normTel(rc.tel);
     // Skip les candidats tombstonés (supprimés par un autre user)
-    if (typeof isTombstoned === 'function' && isTombstoned('candidats', key)) return;
-    if (!emailMap[key]) {
-      emailMap[key] = rc;
+    // Pour le tombstone, on cherche par email en priorité, sinon par téléphone
+    if (typeof isTombstoned === 'function') {
+      if (emailKey && isTombstoned('candidats', emailKey)) return;
+      if (!emailKey && telKey && isTombstoned('candidats', telKey)) return;
+    }
+    // Trouver le match local : email d'abord, puis téléphone en fallback
+    var localMatch = null;
+    var matchKey = null;
+    if (emailKey && emailMap[emailKey]) {
+      localMatch = emailMap[emailKey];
+      matchKey = emailKey;
+    } else if (telKey && telKey.length >= 8 && telMap[telKey]) {
+      localMatch = telMap[telKey];
+      // Vérification supplémentaire : prénom+nom doivent aussi correspondre pour éviter faux positif
+      // (cas où 2 candidats partageraient un téléphone par erreur de saisie)
+      var localFullName = ((localMatch.prenom||'') + ' ' + (localMatch.nom||'')).toLowerCase().trim();
+      var remoteFullName = ((rc.prenom||'') + ' ' + (rc.nom||'')).toLowerCase().trim();
+      // Au moins un des 2 noms doit matcher (prénom OU nom)
+      var localPrenom = (localMatch.prenom||'').toLowerCase().trim();
+      var localNom = (localMatch.nom||'').toLowerCase().trim();
+      var remotePrenom = (rc.prenom||'').toLowerCase().trim();
+      var remoteNom = (rc.nom||'').toLowerCase().trim();
+      var nameMatches = (localPrenom && localPrenom === remotePrenom) || (localNom && localNom === remoteNom);
+      if (!nameMatches) {
+        localMatch = null;  // Téléphone match mais nom différent → c'est un autre candidat
+      } else {
+        matchKey = emailKey || ('tel:' + telKey);
+      }
+    }
+    if (!localMatch) {
+      // Nouveau candidat : ajouter aux 2 index
+      if (emailKey) emailMap[emailKey] = rc;
+      if (telKey && telKey.length >= 8) telMap[telKey] = rc;
+      // Si pas d'email, on stocke quand même via le téléphone uniquement
+      if (!emailKey && telKey) emailMap['tel:' + telKey] = rc;
+      // Si ni email ni téléphone, on ajoute via un id unique pour ne pas perdre la fiche
+      if (!emailKey && !telKey) emailMap['id:' + rc.id] = rc;
     } else {
       // Fusionner simulations (en respectant les tombstones simulations)
-      var sims = emailMap[key].simulations || [];
+      var sims = localMatch.simulations || [];
       var tsSet = {};
       sims.forEach(function(s) { tsSet[s.timestamp] = 1; });
       (rc.simulations||[]).forEach(function(s) {
@@ -20668,13 +21021,17 @@ function mergeCandidats(remote) {
         if (!tsSet[s.timestamp]) sims.push(s);
       });
       sims.sort(function(a,b){ return (b.timestamp||0)-(a.timestamp||0); });
-      emailMap[key].simulations = sims;
+      localMatch.simulations = sims;
       // Garder le SP-ID si absent
-      if (!emailMap[key].sp_id && rc.sp_id) emailMap[key].sp_id = rc.sp_id;
+      if (!localMatch.sp_id && rc.sp_id) localMatch.sp_id = rc.sp_id;
+      // Récupérer email/tel manquants depuis le remote
+      if (!localMatch.email && rc.email) localMatch.email = rc.email;
+      if (!localMatch.tel && rc.tel) localMatch.tel = rc.tel;
 
       // ── Fusion des documents (clé par clé, last-write-wins) ──
+      // ── Fusion des documents (clé par clé, last-write-wins) ──
       // Quand un commercial upload un doc d'un côté, l'autre doit le voir au sync.
-      var localDocs = emailMap[key].documents || {};
+      var localDocs = localMatch.documents || {};
       var remoteDocs = rc.documents || {};
       var mergedDocs = Object.assign({}, localDocs);
       Object.keys(remoteDocs).forEach(function(docKey){
@@ -20699,11 +21056,11 @@ function mergeCandidats(remote) {
         var rDate = _parseFRDate(remoteDoc.uploaded);
         if (rDate > lDate) mergedDocs[docKey] = remoteDoc;
       });
-      if (Object.keys(mergedDocs).length > 0) emailMap[key].documents = mergedDocs;
+      if (Object.keys(mergedDocs).length > 0) localMatch.documents = mergedDocs;
 
       // ── Fusion des autres champs simples : prendre le plus récemment mis à jour ──
       // Comparaison prioritaire sur updated_at (timestamp millis), fallback sur "updated" (DD/MM/YYYY).
-      var localUpdated = emailMap[key].updated_at || _parseFRDate(emailMap[key].updated) || 0;
+      var localUpdated = localMatch.updated_at || _parseFRDate(localMatch.updated) || 0;
       var remoteUpdated = rc.updated_at || _parseFRDate(rc.updated) || 0;
       if (remoteUpdated > localUpdated) {
         // Champs à propager si remote est plus récent (sans toucher aux simulations/documents déjà gérés)
@@ -20712,7 +21069,7 @@ function mergeCandidats(remote) {
                             'civilite', 'disponibilite', 'anniversaire', 'statut', 'updated', 'updated_at'];
         simpleFields.forEach(function(f){
           if (rc[f] !== undefined && rc[f] !== null && rc[f] !== '') {
-            emailMap[key][f] = rc[f];
+            localMatch[f] = rc[f];
           }
         });
       }
@@ -20746,7 +21103,18 @@ function mergeCandidats(remote) {
     });
   } catch(e) { console.warn('[mergeCandidats alignement deal] :', e); }
 
-  saveCandidatsArr(Object.values(emailMap));
+  // Dédoublonnage final : Object.values peut contenir des doublons si une même fiche a été
+  // ajoutée à la fois sous email et sous 'tel:xxx' (ne devrait pas arriver mais sécurité).
+  var allCands = Object.values(emailMap);
+  var seenIds = {};
+  var deduped = [];
+  allCands.forEach(function(c){
+    if (!c || !c.id) return;
+    if (seenIds[c.id]) return;
+    seenIds[c.id] = true;
+    deduped.push(c);
+  });
+  saveCandidatsArr(deduped);
   if (typeof renderCandidats === 'function') renderCandidats();
 }
 
