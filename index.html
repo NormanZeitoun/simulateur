@@ -3117,15 +3117,20 @@ function calc() {
   document.getElementById('r-brut-an').textContent = fmt(BRUT * 12);
   // Salaire annuel brut contrat = BRUT recalculé sur 21j × 12
   // Affiché uniquement si CP=Non ET RTT=0
+  // Stockage : on garde toujours la valeur dans dataset pour le placement,
+  // même quand la carte n'est pas affichée (le placement peut en avoir besoin)
   var showContrat = (CP !== 'CP') && (state.rtt === 0);
   var cardContrat = document.getElementById('card-brut-contrat');
   var valContrat  = document.getElementById('r-brut-contrat');
+  // Calcul systématique du brut base 21j pour stockage
+  var brutBase21Sys = NB_JOURS > 0 && NB_JOURS !== 21 ? Math.round(BRUT * 21 / NB_JOURS) : BRUT;
+  var brutContratAnnuelSys = brutBase21Sys * 12;
+  // Stocker la valeur sur le body via dataset pour récupération facile
+  document.body.dataset.brutContratAnnuel = brutContratAnnuelSys;
   if (cardContrat) {
     if (showContrat) {
-      // Ramener le brut à une base 21j si nb_jours diffère
-      var brutBase21 = NB_JOURS > 0 && NB_JOURS !== 21 ? Math.round(BRUT * 21 / NB_JOURS) : BRUT;
       cardContrat.style.display = 'block';
-      if (valContrat) valContrat.textContent = fmt(brutBase21 * 12);
+      if (valContrat) valContrat.textContent = fmt(brutContratAnnuelSys);
     } else {
       cardContrat.style.display = 'none';
     }
@@ -3617,6 +3622,11 @@ function getSimData() {
       var fr = parseFloat((fmt('r-frais-total')||'0').replace(/[^\d.,]/g,'').replace(',','.')) || 0;
       var nb = parseFloat((document.getElementById('nb_jours')||{value:21}).value) || 21;
       return (fr / nb).toFixed(2);
+    })(),
+    // Salaire annuel brut sur contrat (base 21j × 12) - lu depuis dataset stocké par calc()
+    brut_contrat_annuel: (function() {
+      var v = document.body.dataset.brutContratAnnuel;
+      return v ? parseInt(v) : 0;
     })(),
     mutuelle:      window.state ? window.state.mutuelle : '',
     source_origine: (function(){ var el=document.getElementById('source_origine'); return el ? el.value : ''; })(),
@@ -6899,9 +6909,19 @@ function openPlacementPopup(ts) {
 
   document.getElementById('pl-tjm').value = sim.tjm ? sim.tjm + ' €/j' : '—';
   document.getElementById('pl-nb-jours').value = sim.nb_jours ? sim.nb_jours + 'j' : '—';
-  // Salaire annuel sur contrat = brut mensuel × 12 (base 21j)
-  var brutMens = parseFloat((sim.brut||'').replace(/[^0-9.,]/g,'').replace(',','.')) || 0;
-  var brutContratAnnuel = brutMens > 0 ? Math.round(brutMens * 12).toLocaleString('fr-FR') + ' €' : '—';
+  // Salaire annuel sur contrat = valeur déjà calculée et stockée dans la SIMU
+  // (champ brut_contrat_annuel = BRUT × 21/nb_jours × 12, calculé par calc())
+  // Fallback pour les anciennes SIMUs sans ce champ : recalcul à la volée
+  var brutContratAnnuel;
+  if (sim.brut_contrat_annuel && parseInt(sim.brut_contrat_annuel) > 0) {
+    brutContratAnnuel = parseInt(sim.brut_contrat_annuel).toLocaleString('fr-FR') + ' €';
+  } else {
+    // Fallback compatible anciennes SIMUs : recalcul depuis brut + nb_jours
+    var brutMensFb = parseFloat((sim.brut||'').replace(/[^0-9.,]/g,'').replace(',','.')) || 0;
+    var nbJoursFb = parseInt(sim.nb_jours) || 21;
+    var brutBase21Fb = nbJoursFb > 0 && nbJoursFb !== 21 ? Math.round(brutMensFb * 21 / nbJoursFb) : brutMensFb;
+    brutContratAnnuel = brutBase21Fb > 0 ? Math.round(brutBase21Fb * 12).toLocaleString('fr-FR') + ' €' : '—';
+  }
   document.getElementById('pl-salaire-contrat').value = brutContratAnnuel;
   document.getElementById('pl-frais-gest').value = sim.marge ? sim.marge + '%' : '—';
 
@@ -7739,6 +7759,18 @@ function savePlacement() {
   var idx = deals.findIndex(function(d) { return d.sim_ts === currentPlacementTs; });
 
   var brutMens = sim ? (parseFloat((sim.brut||'').replace(/[^0-9.,]/g,'').replace(',','.')) || 0) : 0;
+  // Salaire annuel sur contrat = valeur brut_contrat_annuel stockée par calc()
+  // Fallback : recalcul base 21j si SIMU ancienne sans ce champ
+  var salaireAnnuelContrat = '';
+  if (sim) {
+    if (sim.brut_contrat_annuel && parseInt(sim.brut_contrat_annuel) > 0) {
+      salaireAnnuelContrat = String(parseInt(sim.brut_contrat_annuel));
+    } else if (brutMens > 0) {
+      var nbJ = parseInt(sim.nb_jours) || 21;
+      var brutBase21 = nbJ > 0 && nbJ !== 21 ? Math.round(brutMens * 21 / nbJ) : brutMens;
+      salaireAnnuelContrat = String(brutBase21 * 12);
+    }
+  }
 
   var deal = {
     id: idx >= 0 ? deals[idx].id : Date.now(),
@@ -7786,7 +7818,7 @@ function savePlacement() {
     // Simulation — TOUS les champs transférés intégralement
     tjm: sim ? sim.tjm : '',
     nb_jours: sim ? sim.nb_jours : '',
-    salaire_annuel: brutMens > 0 ? String(Math.round(brutMens * 12)) : '',
+    salaire_annuel: salaireAnnuelContrat,
     brut: sim ? sim.brut : '',
     net_payer: sim ? sim.net_payer : '',
     net_avant: sim ? sim.net_avant : '',
