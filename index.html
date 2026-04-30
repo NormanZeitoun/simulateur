@@ -6122,6 +6122,27 @@ function isTombstoned(entity, id) {
   return !!(all[entity] && all[entity][String(id)]);
 }
 
+// Version "active" du check : prend en compte le timestamp de la fiche.
+// Si la fiche a été modifiée APRÈS la pose du tombstone, la suppression est
+// considérée obsolète et le tombstone est purgé automatiquement.
+// Cela permet de "ressusciter" une fiche supprimée par erreur en la modifiant
+// (un simple sauvegarde suffit à mettre à jour son updated_at).
+function isActiveTombstone(entity, id, comparedTs) {
+  if (!entity || id === undefined || id === null) return false;
+  var all = getTombstones();
+  if (!all[entity]) return false;
+  var tombTs = all[entity][String(id)];
+  if (!tombTs) return false;
+  // Si la fiche est plus récente que le tombstone, le tombstone est obsolète
+  if (comparedTs && comparedTs > tombTs) {
+    delete all[entity][String(id)];
+    saveTombstones(all);
+    console.log('[isActiveTombstone] Tombstone obsolète purgé :', entity, id);
+    return false;
+  }
+  return true;
+}
+
 // Filtre un array en retirant les éléments tombstonés (par propriété idKey, ex: 'id' ou 'timestamp')
 function filterTombstoned(entity, arr, idKey) {
   if (!Array.isArray(arr) || !entity) return arr;
@@ -20998,7 +21019,10 @@ function _applyCandTombstonesLocally() {
   var changed = false;
   local.forEach(function(c) {
     if (!c || c._deleted) return;
-    if (allTombs['id:' + String(c.id)]) {
+    var cTs = c.updated_at || _parseFRDate(c.updated) || 0;
+
+    var tombIdTs = allTombs['id:' + String(c.id)];
+    if (tombIdTs && cTs <= tombIdTs) {
       c._deleted = true;
       c.deleted_at = c.deleted_at || Date.now();
       c.updated_at = Date.now();
@@ -21007,7 +21031,8 @@ function _applyCandTombstonesLocally() {
       return;
     }
     var emailKey = (c.email||'').toLowerCase().trim();
-    if (emailKey && allTombs[emailKey] && emailCount[emailKey] === 1) {
+    var tombEmailTs = emailKey ? allTombs[emailKey] : 0;
+    if (tombEmailTs && emailCount[emailKey] === 1 && cTs <= tombEmailTs) {
       c._deleted = true;
       c.deleted_at = c.deleted_at || Date.now();
       c.updated_at = Date.now();
@@ -21055,8 +21080,11 @@ function mergeCandidats(remote) {
       local.forEach(function(c) {
         if (!c || c._deleted) return;
 
-        // Tombstone par ID — toujours fiable
-        if (allTombs['id:' + String(c.id)]) {
+        var cTs = c.updated_at || _parseFRDate(c.updated) || 0;
+
+        // Tombstone par ID — toujours fiable, mais respecter le timestamp
+        var tombIdTs = allTombs['id:' + String(c.id)];
+        if (tombIdTs && cTs <= tombIdTs) {
           c._deleted = true;
           c.deleted_at = c.deleted_at || Date.now();
           c.updated_at = Date.now();
@@ -21066,7 +21094,8 @@ function mergeCandidats(remote) {
 
         // Tombstone par email — seulement si UNE SEULE fiche locale a cet email
         var emailKey = (c.email||'').toLowerCase().trim();
-        if (emailKey && allTombs[emailKey] && emailCount[emailKey] === 1) {
+        var tombEmailTs = emailKey ? allTombs[emailKey] : 0;
+        if (tombEmailTs && emailCount[emailKey] === 1 && cTs <= tombEmailTs) {
           c._deleted = true;
           c.deleted_at = c.deleted_at || Date.now();
           c.updated_at = Date.now();
@@ -21087,8 +21116,15 @@ function mergeCandidats(remote) {
     var emailKey = (rc.email||'').toLowerCase().trim();
     var telKey = normTel(rc.tel);
     // Skip les candidats tombstonés (supprimés par un autre user)
-    // Vérifier par ID, email ET téléphone
-    if (typeof isTombstoned === 'function') {
+    // MAIS : si la fiche remote est plus récente que le tombstone, on ignore le
+    // tombstone (la fiche a été modifiée APRÈS la suppression — donc on la garde).
+    var rcTs = rc.updated_at || _parseFRDate(rc.updated) || 0;
+    if (typeof isActiveTombstone === 'function') {
+      if (rc.id && isActiveTombstone('candidats', 'id:' + String(rc.id), rcTs)) return;
+      if (emailKey && isActiveTombstone('candidats', emailKey, rcTs)) return;
+      if (telKey && telKey.length >= 8 && isActiveTombstone('candidats', 'tel:' + telKey, rcTs)) return;
+      if (telKey && telKey.length >= 8 && isActiveTombstone('candidats', telKey, rcTs)) return;
+    } else if (typeof isTombstoned === 'function') {
       if (rc.id && isTombstoned('candidats', 'id:' + String(rc.id))) return;
       if (emailKey && isTombstoned('candidats', emailKey)) return;
       if (!emailKey && telKey && isTombstoned('candidats', telKey)) return;
