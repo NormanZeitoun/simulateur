@@ -15333,7 +15333,10 @@ var IMPAYES_FILTER = {
   client: 'all',       // dropdown client
   banque: 'all',       // dropdown banque (compte bancaire)
   commercial: 'all',   // dropdown chargé de clientèle
-  bucket: 'all'        // pills retard (< 30 / 30-60 / > 60)
+  bucket: 'all',       // pills retard (< 30 / 30-60 / > 60)
+  exclude_clients: [], // liste de clients exclus (multi)
+  sort_col: 'retard',  // colonne de tri : client | echeance | retard | ht | ttc | banque | consultant | commercial
+  sort_dir: 'desc'     // 'asc' | 'desc'
 };
 
 function getImpayes() {
@@ -15463,10 +15466,46 @@ function renderImpayes() {
 
 function buildImpayesContent() {
   var impayes = getImpayes();
-  // Stats
+
+  // Helper : applique tous les filtres SAUF un (pour calculer les listes adaptatives)
+  function applyFilters(rows, except) {
+    return rows.filter(function(r){
+      if (except !== 'bucket' && IMPAYES_FILTER.bucket !== 'all') {
+        var c = _impayeColorClass(r.date_echeance);
+        if (IMPAYES_FILTER.bucket !== c) return false;
+      }
+      if (except !== 'client' && IMPAYES_FILTER.client !== 'all') {
+        if ((r.client || '') !== IMPAYES_FILTER.client) return false;
+      }
+      if (except !== 'exclude_clients' && IMPAYES_FILTER.exclude_clients && IMPAYES_FILTER.exclude_clients.length) {
+        if (IMPAYES_FILTER.exclude_clients.indexOf(r.client || '') >= 0) return false;
+      }
+      if (except !== 'banque' && IMPAYES_FILTER.banque !== 'all') {
+        if ((r.banque || '') !== IMPAYES_FILTER.banque) return false;
+      }
+      if (except !== 'commercial' && IMPAYES_FILTER.commercial !== 'all') {
+        if ((r.commercial || '') !== IMPAYES_FILTER.commercial) return false;
+      }
+      if (except !== 'search_fact' && IMPAYES_FILTER.search_fact) {
+        var q = IMPAYES_FILTER.search_fact.toLowerCase();
+        if ((r.num_fact || '').toLowerCase().indexOf(q) < 0) return false;
+      }
+      if (except !== 'search_name' && IMPAYES_FILTER.search_name) {
+        var q2 = IMPAYES_FILTER.search_name.toLowerCase();
+        var hay = ((r.client || '') + ' ' + (r.consultant || '')).toLowerCase();
+        if (hay.indexOf(q2) < 0) return false;
+      }
+      return true;
+    });
+  }
+
+  // Filtered = appliquer TOUS les filtres
+  var filtered = applyFilters(impayes, null);
+
+  // Stats SUR LES DONNÉES FILTRÉES (modif #4)
   var totalTTC = 0;
   var count30 = 0, count60 = 0, count90 = 0, countNeutral = 0;
-  impayes.forEach(function(r){
+  filtered.forEach(function(r){
     totalTTC += _parseImpayeNumber(r.mt_ttc) || 0;
     var cls = _impayeColorClass(r.date_echeance);
     if (cls === 'green') count30++;
@@ -15475,40 +15514,52 @@ function buildImpayesContent() {
     else countNeutral++;
   });
 
-  // Filter + render
-  var filtered = impayes.filter(function(r){
-    if (IMPAYES_FILTER.bucket !== 'all') {
-      var c = _impayeColorClass(r.date_echeance);
-      if (IMPAYES_FILTER.bucket !== c) return false;
-    }
-    if (IMPAYES_FILTER.client !== 'all') {
-      if ((r.client || '') !== IMPAYES_FILTER.client) return false;
-    }
-    if (IMPAYES_FILTER.banque !== 'all') {
-      if ((r.banque || '') !== IMPAYES_FILTER.banque) return false;
-    }
-    if (IMPAYES_FILTER.commercial !== 'all') {
-      if ((r.commercial || '') !== IMPAYES_FILTER.commercial) return false;
-    }
-    if (IMPAYES_FILTER.search_fact) {
-      var q = IMPAYES_FILTER.search_fact.toLowerCase();
-      if ((r.num_fact || '').toLowerCase().indexOf(q) < 0) return false;
-    }
-    if (IMPAYES_FILTER.search_name) {
-      var q2 = IMPAYES_FILTER.search_name.toLowerCase();
-      var hay = ((r.client || '') + ' ' + (r.consultant || '')).toLowerCase();
-      if (hay.indexOf(q2) < 0) return false;
-    }
-    return true;
+  // Pour les pills de retard : compter EN IGNORANT le filtre bucket
+  // (sinon en cliquant "30-60j", les compteurs des autres pills tombent à 0)
+  var rowsForBuckets = applyFilters(impayes, 'bucket');
+  var pillCount30 = 0, pillCount60 = 0, pillCount90 = 0, pillCountAll = rowsForBuckets.length;
+  rowsForBuckets.forEach(function(r){
+    var cls = _impayeColorClass(r.date_echeance);
+    if (cls === 'green') pillCount30++;
+    else if (cls === 'orange') pillCount60++;
+    else if (cls === 'red') pillCount90++;
   });
 
-  // Tri : par retard décroissant
+  // ── Tri configurable (modif #2) ──
+  var sortCol = IMPAYES_FILTER.sort_col || 'retard';
+  var sortDir = IMPAYES_FILTER.sort_dir || 'desc';
+  var dirMul = (sortDir === 'asc') ? 1 : -1;
   filtered.sort(function(a, b){
-    var da = _daysSinceEcheance(a.date_echeance);
-    var db = _daysSinceEcheance(b.date_echeance);
-    if (da === null) da = -9999;
-    if (db === null) db = -9999;
-    return db - da;
+    var va, vb;
+    switch (sortCol) {
+      case 'client':
+        va = (a.client||'').toLowerCase(); vb = (b.client||'').toLowerCase();
+        return va.localeCompare(vb, 'fr') * dirMul;
+      case 'echeance':
+        va = _parseImpayeDate(a.date_echeance); vb = _parseImpayeDate(b.date_echeance);
+        va = va ? va.getTime() : 0; vb = vb ? vb.getTime() : 0;
+        return (va - vb) * dirMul;
+      case 'ht':
+        va = _parseImpayeNumber(a.mt_ht) || 0; vb = _parseImpayeNumber(b.mt_ht) || 0;
+        return (va - vb) * dirMul;
+      case 'ttc':
+        va = _parseImpayeNumber(a.mt_ttc) || 0; vb = _parseImpayeNumber(b.mt_ttc) || 0;
+        return (va - vb) * dirMul;
+      case 'banque':
+        va = (a.banque||'').toLowerCase(); vb = (b.banque||'').toLowerCase();
+        return va.localeCompare(vb, 'fr') * dirMul;
+      case 'consultant':
+        va = (a.consultant||'').toLowerCase(); vb = (b.consultant||'').toLowerCase();
+        return va.localeCompare(vb, 'fr') * dirMul;
+      case 'commercial':
+        va = (a.commercial||'').toLowerCase(); vb = (b.commercial||'').toLowerCase();
+        return va.localeCompare(vb, 'fr') * dirMul;
+      case 'retard':
+      default:
+        va = _daysSinceEcheance(a.date_echeance); vb = _daysSinceEcheance(b.date_echeance);
+        if (va === null) va = -9999; if (vb === null) vb = -9999;
+        return (va - vb) * dirMul;
+    }
   });
 
   var html = ''
@@ -15579,12 +15630,33 @@ function buildImpayesContent() {
     +   '</div>'
     + '';
 
-  // Stats
+  // Stats — calculer aussi le total brut pour comparaison
+  var hasAnyFilter = IMPAYES_FILTER.bucket !== 'all' || IMPAYES_FILTER.client !== 'all'
+    || IMPAYES_FILTER.banque !== 'all' || IMPAYES_FILTER.commercial !== 'all'
+    || IMPAYES_FILTER.search_fact || IMPAYES_FILTER.search_name
+    || (IMPAYES_FILTER.exclude_clients && IMPAYES_FILTER.exclude_clients.length);
+  var totalBrut = 0, brutCount30 = 0, brutCount60 = 0, brutCount90 = 0;
+  impayes.forEach(function(r){
+    totalBrut += _parseImpayeNumber(r.mt_ttc) || 0;
+    var cls = _impayeColorClass(r.date_echeance);
+    if (cls === 'green') brutCount30++;
+    else if (cls === 'orange') brutCount60++;
+    else if (cls === 'red') brutCount90++;
+  });
+  var fSubTtc = hasAnyFilter && totalTTC !== totalBrut
+    ? '<div style="font-size:9.5px;color:#9E94C4;margin-top:2px;font-weight:600;">sur ' + _fmtImpayeEur(totalBrut) + ' au total</div>' : '';
+  var fSub30 = hasAnyFilter && count30 !== brutCount30
+    ? '<div style="font-size:9.5px;color:#0F5132;margin-top:2px;font-weight:600;opacity:0.7;">sur ' + brutCount30 + '</div>' : '';
+  var fSub60 = hasAnyFilter && count60 !== brutCount60
+    ? '<div style="font-size:9.5px;color:#8A5F00;margin-top:2px;font-weight:600;opacity:0.7;">sur ' + brutCount60 + '</div>' : '';
+  var fSub90 = hasAnyFilter && count90 !== brutCount90
+    ? '<div style="font-size:9.5px;color:#8A0A0A;margin-top:2px;font-weight:600;opacity:0.7;">sur ' + brutCount90 + '</div>' : '';
+
   html += '<div class="imp-stats">'
-    + '<div class="imp-stat"><div class="imp-stat-lbl">Total TTC dû</div><div class="imp-stat-val">' + _fmtImpayeEur(totalTTC) + '</div></div>'
-    + '<div class="imp-stat green"><div class="imp-stat-lbl">🟢 &lt; 30 jours</div><div class="imp-stat-val">' + count30 + '</div></div>'
-    + '<div class="imp-stat orange"><div class="imp-stat-lbl">🟠 30 à 60 jours</div><div class="imp-stat-val">' + count60 + '</div></div>'
-    + '<div class="imp-stat red"><div class="imp-stat-lbl">🔴 &gt; 60 jours</div><div class="imp-stat-val">' + count90 + '</div></div>'
+    + '<div class="imp-stat"><div class="imp-stat-lbl">' + (hasAnyFilter?'Total TTC filtré':'Total TTC dû') + '</div><div class="imp-stat-val">' + _fmtImpayeEur(totalTTC) + '</div>' + fSubTtc + '</div>'
+    + '<div class="imp-stat green"><div class="imp-stat-lbl">🟢 &lt; 30 jours</div><div class="imp-stat-val">' + count30 + '</div>' + fSub30 + '</div>'
+    + '<div class="imp-stat orange"><div class="imp-stat-lbl">🟠 30 à 60 jours</div><div class="imp-stat-val">' + count60 + '</div>' + fSub60 + '</div>'
+    + '<div class="imp-stat red"><div class="imp-stat-lbl">🔴 &gt; 60 jours</div><div class="imp-stat-val">' + count90 + '</div>' + fSub90 + '</div>'
     + '</div>';
 
   if (impayes.length === 0) {
@@ -15598,37 +15670,47 @@ function buildImpayesContent() {
     return html;
   }
 
-  // Filter bar — deux rangées : dropdowns (Client / Banque / Commercial / Retard) + recherches (N° Fact / Client&Consultant)
-  // Construire listes uniques
+  // Filter bar — listes dropdowns ADAPTATIVES (modif #1)
+  var rowsForClient = applyFilters(impayes, 'client');
+  var rowsForBanque = applyFilters(impayes, 'banque');
+  var rowsForCommercial = applyFilters(impayes, 'commercial');
+
   var clientsSet = {};
   var banquesSet = {};
   var commerciauxSet = {};
-  impayes.forEach(function(r){
-    if (r.client) clientsSet[r.client] = (clientsSet[r.client] || 0) + 1;
-    if (r.banque) banquesSet[r.banque] = (banquesSet[r.banque] || 0) + 1;
-    if (r.commercial) commerciauxSet[r.commercial] = (commerciauxSet[r.commercial] || 0) + 1;
-  });
+  rowsForClient.forEach(function(r){ if (r.client) clientsSet[r.client] = (clientsSet[r.client] || 0) + 1; });
+  rowsForBanque.forEach(function(r){ if (r.banque) banquesSet[r.banque] = (banquesSet[r.banque] || 0) + 1; });
+  rowsForCommercial.forEach(function(r){ if (r.commercial) commerciauxSet[r.commercial] = (commerciauxSet[r.commercial] || 0) + 1; });
+
   var clientsList = Object.keys(clientsSet).sort(function(a,b){ return a.localeCompare(b,'fr'); });
   var banquesList = Object.keys(banquesSet).sort(function(a,b){ return a.localeCompare(b,'fr'); });
   var commerciauxList = Object.keys(commerciauxSet).sort(function(a,b){ return a.localeCompare(b,'fr'); });
 
   var hasActiveFilter = IMPAYES_FILTER.bucket !== 'all' || IMPAYES_FILTER.client !== 'all' || IMPAYES_FILTER.banque !== 'all'
-    || IMPAYES_FILTER.commercial !== 'all' || IMPAYES_FILTER.search_fact || IMPAYES_FILTER.search_name;
+    || IMPAYES_FILTER.commercial !== 'all' || IMPAYES_FILTER.search_fact || IMPAYES_FILTER.search_name
+    || (IMPAYES_FILTER.exclude_clients && IMPAYES_FILTER.exclude_clients.length);
 
   html += '<div style="background:#fff;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;">';
 
   // Rangée 1 : Dropdowns de filtre (Client / Banque / Retard pills)
   html += '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">';
-  // Client
-  html += '<div style="min-width:180px;flex:1;max-width:280px;">'
+  // Client + bouton Exclure (modif #3)
+  var nbExcluded = (IMPAYES_FILTER.exclude_clients||[]).length;
+  html += '<div style="min-width:180px;flex:1;max-width:340px;">'
     + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Client</label>'
-    + '<select onchange="IMPAYES_FILTER.client=this.value;renderImpayes();" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;background:#fff;cursor:pointer;">'
+    + '<div style="display:flex;gap:6px;">'
+    + '<select onchange="IMPAYES_FILTER.client=this.value;renderImpayes();" style="flex:1;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;background:#fff;cursor:pointer;min-width:0;">'
     +   '<option value="all"' + (IMPAYES_FILTER.client==='all'?' selected':'') + '>Tous les clients (' + clientsList.length + ')</option>';
   clientsList.forEach(function(c){
     var sel = IMPAYES_FILTER.client === c ? ' selected' : '';
     html += '<option value="' + c.replace(/"/g,'&quot;') + '"' + sel + '>' + c + ' (' + clientsSet[c] + ')</option>';
   });
-  html += '</select></div>';
+  html += '</select>'
+    + '<button onclick="openImpayesExcludeModal()" title="Exclure des clients de l\'affichage" '
+    + 'style="padding:8px 10px;border:1.5px solid ' + (nbExcluded>0?'#E24B4A':'#E4E0FA') + ';background:' + (nbExcluded>0?'#FDECEC':'#fff') + ';color:' + (nbExcluded>0?'#A8322A':'#6B5E9C') + ';border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;">'
+    + (nbExcluded>0 ? '🚫 ' + nbExcluded + ' exclu' + (nbExcluded>1?'s':'') : '🚫 Exclure')
+    + '</button>'
+    + '</div></div>';
 
   // Banque
   html += '<div style="min-width:160px;flex:1;max-width:240px;">'
@@ -15656,10 +15738,10 @@ function buildImpayesContent() {
   html += '<div style="flex:1;min-width:320px;">'
     + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Retard</label>'
     + '<div class="imp-bucket-pills" style="display:inline-flex;">'
-    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='all'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'all\';renderImpayes();">Tous (' + impayes.length + ')</button>'
-    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='green'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'green\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='green'?'background:#1D9E75;':'') + '">🟢 &lt;30j (' + count30 + ')</button>'
-    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='orange'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'orange\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='orange'?'background:#F0A500;':'') + '">🟠 30-60j (' + count60 + ')</button>'
-    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='red'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'red\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='red'?'background:#E24B4A;':'') + '">🔴 &gt;60j (' + count90 + ')</button>'
+    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='all'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'all\';renderImpayes();">Tous (' + pillCountAll + ')</button>'
+    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='green'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'green\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='green'?'background:#1D9E75;':'') + '">🟢 &lt;30j (' + pillCount30 + ')</button>'
+    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='orange'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'orange\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='orange'?'background:#F0A500;':'') + '">🟠 30-60j (' + pillCount60 + ')</button>'
+    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='red'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'red\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='red'?'background:#E24B4A;':'') + '">🔴 &gt;60j (' + pillCount90 + ')</button>'
     + '</div>'
     + '</div>';
   html += '</div>';  // fin rangée 1
