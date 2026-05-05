@@ -2229,17 +2229,20 @@ function calcIK(km_aller, puissance, jours_presentiels, nb_jours, ik_1ere) {
   const threshold = ik_1ere ? 100000 : 0;
   const useHaut = distAnnuelle < threshold;
   const bareme = getBareme(puissance, useHaut);
-  const journaliere = (km_aller * 2 * bareme) * (jours_presentiels / 5);
+  // Indemnité linéaire en nb_jours (comme Swile, sans prorata jours_pres/5)
+  // Le montant journalier reste constant quel que soit le nb_jours saisi
+  const journaliere = km_aller * 2 * bareme;
   const mensuelle = journaliere * nb_jours;
   return { journaliere, mensuelle };
 }
 
 // ============================================
 // TÉLÉTRAVAIL
-// Formule Excel: total_charges × 15% × (jours_tt/5) / 21 × nb_jours
+// Formule : total_charges × 15% / 21 × nb_jours (linéaire en nb_jours, comme Swile)
+// Le montant journalier (= total × 15% / 21) reste constant quel que soit le nb_jours
 // ============================================
 function calcTT(jours_tt, nb_jours) {
-  if (!state.tt || jours_tt <= 0) return 0;
+  if (!state.tt) return 0;
   const total = f('tt_loyer') + f('tt_elec') + f('tt_chauffage') +
                 f('tt_taxe') + f('tt_assurance') + f('tt_internet') + f('tt_mobile');
   const box = document.getElementById('tt-total-box');
@@ -2247,7 +2250,8 @@ function calcTT(jours_tt, nb_jours) {
     if (box) box.style.display = 'none';
     return 0;
   }
-  const ind_mensuelle = total * 0.15 * (jours_tt / 5) / 21 * nb_jours;
+  // Linéaire en nb_jours — montant journalier constant
+  const ind_mensuelle = total * 0.15 / 21 * nb_jours;
   const fmt = n => n.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2});
   if (box) { box.style.display = 'block'; box.textContent = `Total charges : ${fmt(total)} € → Indemnité : ${fmt(ind_mensuelle)} €/mois`; }
   return ind_mensuelle;
@@ -2317,19 +2321,19 @@ function updateProrata() {
     var warn = document.getElementById('rtt-warning'); if (warn) warn.style.display = 'none';
   }
 
-  // Formule : jours_semaine = nb_jours / 21 * 5, arrondi à 0.5
-  // Ex: 21j→5, 18j→4.5, 10.5j→2.5, 15j→3.5
-  const jours_calc = arrondiDemi(nb / 21 * 5);
-
-  // Jours présentiels IK — toujours mis à jour
-  const elJP = document.getElementById('jours_presentiels');
-  if (elJP) elJP.value = jours_calc;
-
-  // Jours TT — mis à jour seulement si TT actif
-  const elJT = document.getElementById('jours_tt');
-  if (elJT && state.tt) {
-    elJT.value = jours_calc;
-  }
+  // ── DÉSACTIVÉ : Le recalcul automatique de jours_pres / jours_tt produisait
+  // un double prorata buggé (ex : à 7j/mois, jours_pres passait à 1.5 → IK et 
+  // forfait repas étaient divisés deux fois). Tous les frais sont désormais
+  // linéaires en nb_jours (comme Swile), donc ce recalcul n'est plus nécessaire.
+  // Les champs jours_presentiels et jours_tt restent saisissables manuellement
+  // si l'utilisateur en a besoin (mais ne sont plus utilisés dans le calcul).
+  //
+  // Ancienne formule (conservée en commentaire) :
+  //   const jours_calc = arrondiDemi(nb / 21 * 5);
+  //   const elJP = document.getElementById('jours_presentiels');
+  //   if (elJP) elJP.value = jours_calc;
+  //   const elJT = document.getElementById('jours_tt');
+  //   if (elJT && state.tt) elJT.value = jours_calc;
 }
 
 function syncTelnetField() {
@@ -2501,15 +2505,19 @@ function calcFraisMensuels(nb_jours) {
   if (state.repas === 'Swile') {
     frais_repas = f('swile_val') * nb_jours;
   } else if (state.repas === 'Forfait') {
-    // Forfait repas = p_forfait_repas * (jours_présentiels/5) * nb_jours
-    // Bloqué si Swile ou Grand déplacement
-    frais_repas = f('p_forfait_repas') * (jours_pres / 5) * nb_jours;
+    // Forfait repas = p_forfait_repas × nb_jours (linéaire, comme Swile)
+    // Le montant journalier reste constant quel que soit le nb_jours
+    frais_repas = f('p_forfait_repas') * nb_jours;
   } else if (state.repas === 'GD') {
     const taux_gd = state.gd_lieu === 'IDF' ? f('p_gd_idf') : f('p_gd_autre');
-    frais_repas = taux_gd * (jours_pres / 5) * nb_jours;
+    // Le grand déplacement s'applique sur tous les jours travaillés (comme Swile),
+    // sans prorata des jours présentiels. Cohérent avec une mission ponctuelle :
+    // si le consultant fait 7 jours dans le mois, c'est 7 jours de GD plein.
+    frais_repas = taux_gd * nb_jours;
   }
-  // Transport
-  const frais_transport = f('abo_transport') * 0.75; // 75% pris en charge par l'employeur (config Seven Portage)
+  // Transport — prorata sur nb_jours / 21 (linéaire comme les autres frais)
+  // À mois complet (21j) = 75% de l'abo. À 7j = 75% × 7/21 = 25% de l'abo.
+  const frais_transport = f('abo_transport') * 0.75 * nb_jours / 21;
   // Télétravail
   let frais_tt = 0;
   if (state.tt) {
@@ -3039,14 +3047,17 @@ function calc() {
   if (state.repas === 'Swile') {
     frais_repas = f('swile_val') * NB_JOURS;
   } else if (state.repas === 'Forfait') {
-    frais_repas = f('p_forfait_repas') * (jours_pres / 5) * NB_JOURS;
+    // Linéaire en NB_JOURS, comme Swile
+    frais_repas = f('p_forfait_repas') * NB_JOURS;
   } else if (state.repas === 'GD') {
     const taux_gd = state.gd_lieu === 'IDF' ? f('p_gd_idf') : f('p_gd_autre');
-    frais_repas = taux_gd * (jours_pres / 5) * NB_JOURS;
+    // Le grand déplacement s'applique sur tous les jours travaillés (comme Swile),
+    // sans prorata des jours présentiels. Cohérent avec une mission ponctuelle.
+    frais_repas = taux_gd * NB_JOURS;
   }
 
   // Transport
-  const frais_transport = f('abo_transport') * 0.75; // 75% pris en charge par l'employeur (config Seven Portage)
+  const frais_transport = f('abo_transport') * 0.75 * NB_JOURS / 21; // 75% pris en charge par l'employeur (config Seven Portage)
 
   // Télétravail
   let frais_tt = 0;
