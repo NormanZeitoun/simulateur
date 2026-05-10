@@ -15346,8 +15346,9 @@ var IMPAYES_FILTER = {
   commercial: 'all',   // dropdown chargé de clientèle
   bucket: 'all',       // pills retard (< 30 / 30-60 / > 60)
   exclude_clients: [], // liste de clients exclus (multi)
-  sort_col: 'retard',  // colonne de tri : client | echeance | retard | ht | ttc | banque | consultant | commercial
-  sort_dir: 'desc'     // 'asc' | 'desc'
+  sort_col: 'retard',  // colonne de tri
+  sort_dir: 'desc',    // 'asc' | 'desc'
+  view_mode: 'open'    // 'open' (impayés en cours) | 'paid' (payées récentes) | 'all'
 };
 
 function getImpayes() {
@@ -15375,11 +15376,22 @@ function mergeImpayes(remote) {
     var curCommentTs = cur.commentaire_ts || 0;
     var rCommentTs = r.commentaire_ts || 0;
     var keepLocalComment = curCommentTs >= rCommentTs;
+    // ── NOUVEAU : gérer le statut 'paye' avec last-write-wins par paiement_ts ──
+    var curPaiementTs = cur.paiement_ts || 0;
+    var rPaiementTs = r.paiement_ts || 0;
+    var keepLocalPaiement = curPaiementTs >= rPaiementTs;
     byKey[r.num_fact] = Object.assign({}, cur, r);
     if (keepLocalComment) {
       byKey[r.num_fact].commentaire = cur.commentaire || '';
       byKey[r.num_fact].commentaire_by = cur.commentaire_by || '';
       byKey[r.num_fact].commentaire_ts = cur.commentaire_ts || 0;
+    }
+    if (keepLocalPaiement) {
+      byKey[r.num_fact].statut = cur.statut || '';
+      byKey[r.num_fact].date_paiement = cur.date_paiement || '';
+      byKey[r.num_fact].paiement_ts = cur.paiement_ts || 0;
+      byKey[r.num_fact].paiement_by = cur.paiement_by || '';
+      byKey[r.num_fact].delai_paiement_j = cur.delai_paiement_j;
     }
   });
   saveImpayes(Object.values(byKey));
@@ -15445,6 +15457,317 @@ function _impayeColorClass(echeance) {
   return 'red';
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// HELPERS STATS HEBDOMADAIRES (performance recouvrement)
+// ═══════════════════════════════════════════════════════════════════
+
+// Lundi 00:00 d'une date donnée (semaine ISO)
+function _impStartOfWeek(d) {
+  var x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  var day = x.getDay(); // 0 = dim, 1 = lun, ..., 6 = sam
+  var diff = (day === 0 ? -6 : 1 - day);
+  x.setDate(x.getDate() + diff);
+  return x;
+}
+
+// Renvoie la classe de tranche de retard pour une date d'échéance, à un instant T donné
+// (utilisé pour calculer rétroactivement l'état au début/fin d'une semaine)
+function _impColorAtTime(echeance, T) {
+  var d = _impayeParseDate ? _impayeParseDate(echeance) : _parseImpayeDate(echeance);
+  if (!d) return 'neutral';
+  var days = Math.floor((T.getTime() - d.getTime()) / 86400000);
+  if (days < 0) return 'neutral'; // pas encore échue
+  if (days < 30) return 'green';
+  if (days < 60) return 'orange';
+  return 'red';
+}
+
+// Une facture était-elle "active" (impayée) à l'instant T ?
+function _impWasOpenAt(rec, T) {
+  var due = _parseImpayeDate(rec.date_echeance);
+  if (!due) return false;
+  if (due.getTime() > T.getTime()) return false; // pas encore échue
+  // Si payée et date_paiement <= T → déjà résolue à T
+  if (rec.statut === 'paye' && rec.paiement_ts && rec.paiement_ts <= T.getTime()) return false;
+  return true;
+}
+
+// Calcule les stats pour une fenêtre [start, end] et une tranche de couleur
+// Retourne { stockEnd, stockStart, nouveaux, payees, montantStockEnd, montantPayees, montantNouveaux }
+function _impStatsForBucketWindow(rows, color, start, end) {
+  var stockStartCount = 0, stockEndCount = 0;
+  var stockStartMt = 0, stockEndMt = 0;
+  var nouveaux = 0, nouveauxMt = 0;
+  var payees = 0, payeesMt = 0;
+  var startMs = start.getTime();
+  var endMs = end.getTime();
+
+  rows.forEach(function(r) {
+    var due = _parseImpayeDate(r.date_echeance);
+    if (!due) return;
+    var ttc = _parseImpayeNumber(r.mt_ttc) || 0;
+
+    // État au DÉBUT de la fenêtre
+    var openAtStart = _impWasOpenAt(r, start);
+    var colorAtStart = openAtStart ? _impColorAtTime(r.date_echeance, start) : null;
+    if (openAtStart && colorAtStart === color) {
+      stockStartCount++;
+      stockStartMt += ttc;
+    }
+
+    // État à la FIN de la fenêtre
+    var openAtEnd = _impWasOpenAt(r, end);
+    var colorAtEnd = openAtEnd ? _impColorAtTime(r.date_echeance, end) : null;
+    if (openAtEnd && colorAtEnd === color) {
+      stockEndCount++;
+      stockEndMt += ttc;
+    }
+
+    // "Nouveau" cette semaine = la facture est passée DANS cette tranche pendant la fenêtre
+    // (soit elle vient d'arriver, soit elle vient de basculer depuis une tranche moins grave)
+    var enteredBucket = !((openAtStart && colorAtStart === color)) && (openAtEnd && colorAtEnd === color);
+    if (enteredBucket) {
+      nouveaux++;
+      nouveauxMt += ttc;
+    }
+
+    // "Payée" = quitter le stock impayé pendant la fenêtre
+    // ET la facture était dans cette tranche AU MOMENT du paiement (ou juste avant)
+    if (r.statut === 'paye' && r.paiement_ts && r.paiement_ts > startMs && r.paiement_ts <= endMs) {
+      var payDate = new Date(r.paiement_ts);
+      var colorAtPay = _impColorAtTime(r.date_echeance, payDate);
+      if (colorAtPay === color) {
+        payees++;
+        payeesMt += ttc;
+      }
+    }
+  });
+
+  return {
+    stockStartCount: stockStartCount, stockStartMt: stockStartMt,
+    stockEndCount: stockEndCount, stockEndMt: stockEndMt,
+    nouveaux: nouveaux, nouveauxMt: nouveauxMt,
+    payees: payees, payeesMt: payeesMt
+  };
+}
+
+// Calcule l'activité de relance (nb de commentaires modifiés) sur une fenêtre
+function _impRelancesInWindow(rows, start, end) {
+  var n = 0;
+  var startMs = start.getTime();
+  var endMs = end.getTime();
+  rows.forEach(function(r) {
+    if (r.commentaire_ts && r.commentaire_ts > startMs && r.commentaire_ts <= endMs && r.commentaire) {
+      n++;
+    }
+  });
+  return n;
+}
+
+// Stats sur les 8 dernières semaines (pour le graphique)
+function _impStatsLast8Weeks(rows) {
+  var weeks = [];
+  var thisWeekStart = _impStartOfWeek(new Date());
+  for (var i = 7; i >= 0; i--) {
+    var wStart = new Date(thisWeekStart);
+    wStart.setDate(wStart.getDate() - 7 * i);
+    var wEnd = new Date(wStart);
+    wEnd.setDate(wEnd.getDate() + 7);
+    wEnd.setMilliseconds(-1); // dim 23:59:59.999
+
+    // Pour la semaine en cours, on borne à maintenant
+    var actualEnd = (i === 0) ? new Date() : wEnd;
+
+    var totalNouveaux = 0, totalNouveauxMt = 0;
+    var totalPayees = 0, totalPayeesMt = 0;
+    var totalStockEnd = 0, totalStockEndMt = 0;
+    ['red','orange','green'].forEach(function(col){
+      var s = _impStatsForBucketWindow(rows, col, wStart, actualEnd);
+      totalNouveaux += s.nouveaux;
+      totalNouveauxMt += s.nouveauxMt;
+      totalPayees += s.payees;
+      totalPayeesMt += s.payeesMt;
+      totalStockEnd += s.stockEndCount;
+      totalStockEndMt += s.stockEndMt;
+    });
+
+    weeks.push({
+      weekStart: wStart,
+      weekEnd: actualEnd,
+      label: 'S' + (i === 0 ? '' : '-' + i),
+      nouveaux: totalNouveaux,
+      nouveauxMt: totalNouveauxMt,
+      payees: totalPayees,
+      payeesMt: totalPayeesMt,
+      stockEnd: totalStockEnd,
+      stockEndMt: totalStockEndMt
+    });
+  }
+  return weeks;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// WIDGET "Performance Recouvrement" : 3 cards par tranche + mini-graphique
+// ═══════════════════════════════════════════════════════════════════
+function _impBuildPerfWidget(allRows) {
+  // Cette semaine (lundi → maintenant) et semaine dernière (lundi-1 → dim-1)
+  var thisWeekStart = _impStartOfWeek(new Date());
+  var now = new Date();
+  var lastWeekStart = new Date(thisWeekStart); lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+  var lastWeekEnd = new Date(thisWeekStart); lastWeekEnd.setMilliseconds(-1); // dim 23:59:59.999
+
+  // Activité globale cette semaine
+  var relancesThis = _impRelancesInWindow(allRows, thisWeekStart, now);
+  var relancesLast = _impRelancesInWindow(allRows, lastWeekStart, lastWeekEnd);
+
+  // Stats par tranche
+  var bucketsConfig = [
+    { key: 'red',    label: '> 60 JOURS',      icon: '🔴', color: '#E24B4A', bg: '#FDECEC', tc: '#A8322A' },
+    { key: 'orange', label: '30 - 60 JOURS',   icon: '🟠', color: '#F0A500', bg: '#FFF4D6', tc: '#8A5F00' },
+    { key: 'green',  label: '< 30 JOURS',      icon: '🟢', color: '#1D9E75', bg: '#E5F5EE', tc: '#0F5132' }
+  ];
+
+  var html = '<div style="margin:18px 0 12px 0;">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+    + '<div><span style="font-size:14px;font-weight:800;color:#1A1033;">📈 Performance recouvrement</span>'
+    + '<span style="font-size:11px;color:#6B5E9C;margin-left:10px;">Semaine du ' + thisWeekStart.toLocaleDateString('fr-FR') + ' au ' + now.toLocaleDateString('fr-FR') + '</span></div>'
+    + '<div style="font-size:11px;color:#6B5E9C;font-weight:600;">Activité relances : <strong style="color:#372EB6;font-size:13px;">' + relancesThis + '</strong> cette semaine'
+    + (relancesLast > 0 ? ' <span style="opacity:0.6;">(' + relancesLast + ' la précédente)</span>' : '')
+    + '</div>'
+    + '</div>';
+
+  html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">';
+
+  bucketsConfig.forEach(function(cfg) {
+    var thisStats = _impStatsForBucketWindow(allRows, cfg.key, thisWeekStart, now);
+    var lastStats = _impStatsForBucketWindow(allRows, cfg.key, lastWeekStart, lastWeekEnd);
+
+    var deltaCount = thisStats.stockEndCount - lastStats.stockEndCount;
+    var pctChange = lastStats.stockEndCount > 0
+      ? Math.round(((thisStats.stockEndCount - lastStats.stockEndCount) / lastStats.stockEndCount) * 100)
+      : (thisStats.stockEndCount > 0 ? 100 : 0);
+    // ↘ baisse = positif pour nous (on récupère). ↗ hausse = négatif.
+    var arrow = pctChange < 0 ? '↘' : (pctChange > 0 ? '↗' : '→');
+    var arrowColor = pctChange < 0 ? '#1D9E75' : (pctChange > 0 ? '#E24B4A' : '#6B5E9C');
+    var pctTxt = pctChange === 0 ? 'stable' : (pctChange > 0 ? '+' : '') + pctChange + '%';
+
+    html += '<div style="background:linear-gradient(135deg,' + cfg.bg + ' 0%, #fff 100%);border:1.5px solid ' + cfg.color + '40;border-radius:12px;padding:14px;box-shadow:0 2px 8px rgba(20,15,40,0.04);">';
+
+    // Header
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+      + '<div style="font-size:10.5px;font-weight:800;color:' + cfg.tc + ';text-transform:uppercase;letter-spacing:0.06em;">' + cfg.icon + ' ' + cfg.label + '</div>'
+      + '</div>';
+
+    // Chiffre principal
+    html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;">'
+      + '<div style="font-size:26px;font-weight:800;color:' + cfg.tc + ';line-height:1;">' + thisStats.stockEndCount + '</div>'
+      + '<div style="font-size:12px;color:#6B5E9C;font-weight:600;">facture' + (thisStats.stockEndCount > 1 ? 's' : '') + '</div>'
+      + '</div>';
+
+    html += '<div style="font-size:13px;color:' + cfg.tc + ';font-weight:700;margin-bottom:10px;">' + _fmtImpayeEur(thisStats.stockEndMt) + '</div>';
+
+    // Delta vs semaine dernière
+    html += '<div style="font-size:11.5px;color:' + arrowColor + ';font-weight:700;margin-bottom:10px;">'
+      + arrow + ' ' + pctTxt + ' '
+      + '<span style="color:#9E94C4;font-weight:600;font-size:10.5px;">vs S-1 (' + lastStats.stockEndCount + ')</span>'
+      + '</div>';
+
+    // Détail mouvements
+    html += '<div style="border-top:1px dashed ' + cfg.color + '40;padding-top:8px;font-size:11px;color:#4A3F7A;line-height:1.7;">';
+    if (thisStats.payees > 0) {
+      html += '<div>✓ <strong style="color:#1D9E75;">' + thisStats.payees + ' payée' + (thisStats.payees>1?'s':'') + '</strong> <span style="color:#6B5E9C;">(' + _fmtImpayeEur(thisStats.payeesMt) + ')</span></div>';
+    }
+    if (thisStats.nouveaux > 0) {
+      html += '<div>+ <strong style="color:#E24B4A;">' + thisStats.nouveaux + ' nouvelle' + (thisStats.nouveaux>1?'s':'') + '</strong> <span style="color:#6B5E9C;">(' + _fmtImpayeEur(thisStats.nouveauxMt) + ')</span></div>';
+    }
+    if (thisStats.payees === 0 && thisStats.nouveaux === 0) {
+      html += '<div style="color:#9E94C4;font-style:italic;">Aucun mouvement cette semaine</div>';
+    }
+    html += '</div>';
+
+    html += '</div>';
+  });
+
+  html += '</div>';
+
+  // ═══════════════════════════════════════════════════════════════
+  // MINI-GRAPHIQUE 8 SEMAINES
+  // ═══════════════════════════════════════════════════════════════
+  var weeks = _impStatsLast8Weeks(allRows);
+  var maxVal = 0;
+  weeks.forEach(function(w){
+    if (w.payees > maxVal) maxVal = w.payees;
+    if (w.nouveaux > maxVal) maxVal = w.nouveaux;
+  });
+  var maxStock = 0;
+  weeks.forEach(function(w){ if (w.stockEnd > maxStock) maxStock = w.stockEnd; });
+
+  if (maxVal > 0 || maxStock > 0) {
+    html += '<div style="margin-top:14px;background:#fff;border:1.5px solid #E4E0FA;border-radius:12px;padding:14px;">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
+      + '<div style="font-size:12.5px;font-weight:700;color:#1A1033;">📊 Évolution sur 8 semaines</div>'
+      + '<div style="display:flex;gap:14px;font-size:10.5px;color:#6B5E9C;">'
+      + '<span><span style="display:inline-block;width:10px;height:10px;background:#E24B4A;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Nouveaux impayés</span>'
+      + '<span><span style="display:inline-block;width:10px;height:10px;background:#1D9E75;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Payées</span>'
+      + '<span><span style="display:inline-block;width:14px;height:2px;background:#7343EE;vertical-align:middle;margin-right:4px;"></span>Stock fin de semaine</span>'
+      + '</div>'
+      + '</div>';
+
+    html += '<div style="display:flex;align-items:flex-end;gap:8px;height:140px;padding:0 4px;border-bottom:1px solid #E4E0FA;position:relative;">';
+    weeks.forEach(function(w, idx) {
+      var hPay = maxVal > 0 ? (w.payees / maxVal * 100) : 0;
+      var hNew = maxVal > 0 ? (w.nouveaux / maxVal * 100) : 0;
+      var hStock = maxStock > 0 ? (w.stockEnd / maxStock * 110) : 0; // 110 pour dépasser un peu
+      var stockTop = 100 - hStock; // position depuis le haut
+
+      html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;height:100%;position:relative;">';
+
+      // Container barres
+      html += '<div style="display:flex;align-items:flex-end;gap:3px;width:100%;height:100%;position:relative;">';
+
+      // Barre nouveaux (rouge)
+      html += '<div title="' + w.nouveaux + ' nouveaux (' + _fmtImpayeEur(w.nouveauxMt) + ')" '
+        + 'style="flex:1;height:' + hNew + '%;background:#E24B4A;border-radius:3px 3px 0 0;min-height:' + (w.nouveaux > 0 ? '4px' : '0') + ';transition:opacity 0.2s;cursor:default;" '
+        + 'onmouseenter="this.style.opacity=\'0.8\'" onmouseleave="this.style.opacity=\'1\'"></div>';
+
+      // Barre payées (vert)
+      html += '<div title="' + w.payees + ' payées (' + _fmtImpayeEur(w.payeesMt) + ')" '
+        + 'style="flex:1;height:' + hPay + '%;background:#1D9E75;border-radius:3px 3px 0 0;min-height:' + (w.payees > 0 ? '4px' : '0') + ';transition:opacity 0.2s;cursor:default;" '
+        + 'onmouseenter="this.style.opacity=\'0.8\'" onmouseleave="this.style.opacity=\'1\'"></div>';
+
+      // Marqueur stock (point sur ligne)
+      if (w.stockEnd > 0 && maxStock > 0) {
+        html += '<div title="Stock fin semaine : ' + w.stockEnd + ' (' + _fmtImpayeEur(w.stockEndMt) + ')" '
+          + 'style="position:absolute;left:50%;top:' + stockTop + '%;width:8px;height:8px;background:#7343EE;border:2px solid #fff;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 0 1px #7343EE;cursor:default;"></div>';
+      }
+
+      html += '</div>'; // fin container barres
+
+      // Label semaine
+      html += '<div style="font-size:9.5px;color:#6B5E9C;font-weight:600;margin-top:4px;text-align:center;">' + w.label + '</div>';
+
+      html += '</div>'; // fin colonne semaine
+    });
+    html += '</div>';
+
+    // Légende dates (1ère et dernière semaine)
+    if (weeks.length > 0) {
+      var firstW = weeks[0];
+      var lastW = weeks[weeks.length - 1];
+      html += '<div style="display:flex;justify-content:space-between;font-size:9.5px;color:#9E94C4;margin-top:6px;font-weight:500;">'
+        + '<span>' + firstW.weekStart.toLocaleDateString('fr-FR', {day:'2-digit',month:'short'}) + '</span>'
+        + '<span>' + lastW.weekEnd.toLocaleDateString('fr-FR', {day:'2-digit',month:'short'}) + '</span>'
+        + '</div>';
+    }
+
+    html += '</div>';
+  }
+
+  html += '</div>'; // fin du widget global
+  return html;
+}
+
 // ── Vue principale ──
 function showImpayesView() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
@@ -15476,7 +15799,21 @@ function renderImpayes() {
 }
 
 function buildImpayesContent() {
-  var impayes = getImpayes();
+  var impayesAll = getImpayes();
+
+  // ── Filtrer selon le view_mode AVANT toute autre logique ──
+  var nowMs = Date.now();
+  var ms90j = 90 * 86400000;
+  var impayes;
+  if (IMPAYES_FILTER.view_mode === 'paid') {
+    impayes = impayesAll.filter(function(r){
+      return r.statut === 'paye' && r.paiement_ts && (nowMs - r.paiement_ts) <= ms90j;
+    });
+  } else if (IMPAYES_FILTER.view_mode === 'all') {
+    impayes = impayesAll.slice();
+  } else { // 'open' (défaut)
+    impayes = impayesAll.filter(function(r){ return r.statut !== 'paye'; });
+  }
 
   // Helper : applique tous les filtres SAUF un (pour calculer les listes adaptatives)
   function applyFilters(rows, except) {
@@ -15670,6 +16007,32 @@ function buildImpayesContent() {
     + '<div class="imp-stat red"><div class="imp-stat-lbl">🔴 &gt; 60 jours</div><div class="imp-stat-val">' + count90 + '</div>' + fSub90 + '</div>'
     + '</div>';
 
+  // ═══════════════════════════════════════════════════════════════
+  // WIDGET PERFORMANCE RECOUVREMENT (3 cards par tranche + graphique 8 semaines)
+  // Toujours basé sur impayesAll (données complètes) — pas sur le subset filtré.
+  // ═══════════════════════════════════════════════════════════════
+  html += _impBuildPerfWidget(impayesAll);
+
+  // ═══════════════════════════════════════════════════════════════
+  // TOGGLE VIEW MODE (En cours / Payées / Toutes)
+  // ═══════════════════════════════════════════════════════════════
+  var nbOpen = impayesAll.filter(function(r){ return r.statut !== 'paye'; }).length;
+  var nbPaid90 = impayesAll.filter(function(r){
+    return r.statut === 'paye' && r.paiement_ts && (Date.now() - r.paiement_ts) <= 90*86400000;
+  }).length;
+  var nbAll = impayesAll.length;
+  function _viewBtn(mode, label, n) {
+    var active = IMPAYES_FILTER.view_mode === mode;
+    var bg = active ? 'background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border-color:#4B36EC;' : 'background:#fff;color:#372EB6;border-color:#E4E0FA;';
+    return '<button onclick="IMPAYES_FILTER.view_mode=\'' + mode + '\';renderImpayes();" style="padding:9px 14px;border:1.5px solid;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;' + bg + '">' + label + ' (' + n + ')</button>';
+  }
+  html += '<div style="display:flex;gap:8px;margin:14px 0 6px 0;align-items:center;">'
+    + '<span style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;margin-right:4px;">Vue :</span>'
+    + _viewBtn('open', '🔴 En cours', nbOpen)
+    + _viewBtn('paid', '✅ Payées récentes (90j)', nbPaid90)
+    + _viewBtn('all', '📊 Toutes', nbAll)
+    + '</div>';
+
   if (impayes.length === 0) {
     html += '<div class="imp-table-wrap"><div class="imp-empty">'
       + '<div class="imp-empty-ic">💳</div>'
@@ -15818,6 +16181,7 @@ function buildImpayesContent() {
     + _impSortableTh('commercial', 'Commercial', 'left')
     + '<th>Contact compta</th>'
     + '<th>Commentaire</th>'
+    + '<th style="text-align:center;width:80px;">Actions</th>'
     + '</tr></thead><tbody>';
 
   filtered.forEach(function(r){
@@ -15857,8 +16221,13 @@ function buildImpayesContent() {
       comptaCell = '—';
     }
 
-    html += '<tr class="' + cls + '">'
-      + '<td class="nowrap"><span class="imp-dot ' + cls + '"></span><span class="imp-age ' + cls + '">' + ageLbl + '</span></td>'
+    var isPaid = r.statut === 'paye';
+    var rowStyle = isPaid ? 'opacity:0.55;background:#F5F5F5;' : '';
+    var paidBadge = isPaid && r.date_paiement
+      ? ' <span style="display:inline-block;padding:1px 5px;background:#1D9E75;color:#fff;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px;vertical-align:middle;" title="Payée le ' + new Date(r.date_paiement).toLocaleDateString('fr-FR') + (r.delai_paiement_j != null ? ' (' + (r.delai_paiement_j > 0 ? 'J+' + r.delai_paiement_j : 'J' + r.delai_paiement_j) + ')' : '') + '">✓ PAYÉE</span>'
+      : '';
+    html += '<tr class="' + cls + '" style="' + rowStyle + '">'
+      + '<td class="nowrap"><span class="imp-dot ' + cls + '"></span><span class="imp-age ' + cls + '">' + ageLbl + '</span>' + paidBadge + '</td>'
       + '<td class="nowrap" style="font-weight:700;font-size:10.5px;" title="' + (r.num_fact||'').replace(/"/g,'&quot;') + '">' + (r.num_fact || '') + '</td>'
       + '<td style="font-weight:600;" title="' + (r.client||'').replace(/"/g,'&quot;') + '">' + (r.client || '') + '</td>'
       + '<td class="nowrap" style="font-weight:700;">' + _fmtImpayeDate(r.date_echeance) + '</td>'
@@ -15876,11 +16245,16 @@ function buildImpayesContent() {
       :       '<span class="imp-comment-empty">+ Ajouter un commentaire</span>')
       +   '</div>'
       + '</td>'
+      + '<td style="text-align:center;padding:6px 4px;">'
+      +   (isPaid
+      ?     '<button onclick="unmarkImpayePaid(\'' + numFact + '\')" title="Re-marquer comme impayée (annuler le paiement)" style="padding:5px 8px;background:#FFF4D6;color:#8A5F00;border:1px solid #F0A500;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">↶ Annuler</button>'
+      :     '<button onclick="markImpayePaid(\'' + numFact + '\')" title="Marquer cette facture comme payée" style="padding:5px 8px;background:#E5F5EE;color:#0F5132;border:1px solid #1D9E75;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">✓ Payée</button>')
+      + '</td>'
       + '</tr>';
   });
 
   if (filtered.length === 0) {
-    html += '<tr><td colspan="11" style="text-align:center;padding:40px;color:#9E94C4;">Aucun résultat pour ce filtre.</td></tr>';
+    html += '<tr><td colspan="12" style="text-align:center;padding:40px;color:#9E94C4;">Aucun résultat pour ce filtre.</td></tr>';
   }
 
   html += '</tbody></table></div></div>';
@@ -16031,31 +16405,50 @@ function parseAndImportImpayesFile(file) {
       });
 
       // Confirmation
+      // ── NOUVEAU : on PRÉSERVE les factures absentes mais on les marque 'payées'
+      // au lieu de les supprimer. Cela permet de garder l'historique pour les stats.
+      var nowMs = Date.now();
+      var todayIso = new Date().toISOString();
+      var nbAlreadyPaid = 0;
+      removed.forEach(function(rm){
+        if (rm.statut === 'paye') { nbAlreadyPaid++; return; } // déjà marquée
+        var dueDate = _parseImpayeDate(rm.date_echeance);
+        var delaiJ = dueDate ? Math.round((nowMs - dueDate.getTime()) / 86400000) : null;
+        rm.statut = 'paye';
+        rm.date_paiement = todayIso;
+        rm.paiement_ts = nowMs;
+        rm.paiement_by = (typeof window!=='undefined' && window.currentUserName) || 'Import';
+        rm.delai_paiement_j = delaiJ;
+        // On ré-injecte la facture marquée payée dans newByNf pour qu'elle soit conservée
+        newByNf[rm.num_fact] = rm;
+      });
+      var nbNewlyPaid = removed.length - nbAlreadyPaid;
+
       var msg = '📊 Aperçu de l\'import :\n\n';
-      msg += '✓ ' + nbCreated + ' nouvelle' + (nbCreated>1?'s':'') + ' facture' + (nbCreated>1?'s':'') + '\n';
+      msg += '✓ ' + nbCreated + ' nouvelle' + (nbCreated>1?'s':'') + ' facture' + (nbCreated>1?'s':'') + ' impayée' + (nbCreated>1?'s':'') + '\n';
       msg += '🔄 ' + nbUpdated + ' mise' + (nbUpdated>1?'s':'') + ' à jour (commentaires préservés : ' + nbCommentsPreserved + ')\n';
-      msg += '🗑 ' + removed.length + ' suppression' + (removed.length>1?'s':'') + ' (factures réglées)\n';
-      if (removed.length > 0 && removed.length <= 10) {
-        msg += '\nFactures à supprimer :\n';
+      msg += '💰 ' + nbNewlyPaid + ' marquée' + (nbNewlyPaid>1?'s':'') + ' comme payée' + (nbNewlyPaid>1?'s':'') + ' (date : ' + new Date().toLocaleDateString('fr-FR') + ')\n';
+      if (nbNewlyPaid > 0 && nbNewlyPaid <= 10) {
+        msg += '\nFactures payées :\n';
         removed.forEach(function(rm){
-          msg += '  • ' + rm.num_fact + ' — ' + (rm.client || '') + '\n';
+          if (rm.statut === 'paye' && rm.paiement_ts === nowMs) {
+            msg += '  • ' + rm.num_fact + ' — ' + (rm.client || '') + '\n';
+          }
         });
-      } else if (removed.length > 10) {
-        msg += '\n(' + (removed.length) + ' factures à supprimer — liste tronquée)\n';
+      } else if (nbNewlyPaid > 10) {
+        msg += '\n(' + nbNewlyPaid + ' factures payées — liste tronquée)\n';
       }
+      msg += '\n💡 Les factures payées sont conservées pour les statistiques de recouvrement.\n';
       msg += '\nConfirmer l\'import ?';
 
       if (!confirm(msg)) return;
 
-      // Appliquer
+      // Appliquer (newByNf inclut maintenant les factures impayées + les nouvellement payées)
       var finalArr = Object.values(newByNf);
       saveImpayes(finalArr);
-      removed.forEach(function(rm){
-        if (typeof addTombstone === 'function') addTombstone('impayes', rm.num_fact);
-      });
 
       if (typeof showNotifToast === 'function') {
-        showNotifToast('✓ Import : ' + nbCreated + ' ajoutée(s), ' + nbUpdated + ' mise(s) à jour, ' + removed.length + ' supprimée(s)');
+        showNotifToast('✓ Import : ' + nbCreated + ' ajoutée(s), ' + nbUpdated + ' mise(s) à jour, ' + nbNewlyPaid + ' payée(s)');
       }
       renderImpayes();
 
@@ -16136,6 +16529,77 @@ function saveImpayeComment(numFact) {
 }
 
 // Remet tous les filtres à zéro
+// ═══════════════════════════════════════════════════════════════════
+// Marquer une facture comme payée (manuel, hors import)
+// ═══════════════════════════════════════════════════════════════════
+function markImpayePaid(numFact) {
+  if (!numFact) return;
+  var all = getImpayes();
+  var idx = all.findIndex(function(r){ return r.num_fact === numFact; });
+  if (idx < 0) { alert('Facture introuvable'); return; }
+  var rec = all[idx];
+
+  // Demander la date de paiement (défaut = aujourd'hui)
+  var todayFr = new Date().toLocaleDateString('fr-FR');
+  var inputDate = prompt('Date de paiement de la facture ' + numFact + ' (' + (rec.client||'') + ') ?\nFormat : JJ/MM/AAAA\n\n(Vide ou Annuler = aujourd\'hui)', todayFr);
+  if (inputDate === null) return; // annulé
+
+  var payDate;
+  if (!inputDate || inputDate.trim() === '') {
+    payDate = new Date();
+  } else {
+    payDate = _parseImpayeDate(inputDate.trim());
+    if (!payDate) {
+      alert('Date invalide. Format attendu : JJ/MM/AAAA (ex: 12/04/2026)');
+      return;
+    }
+  }
+
+  var dueDate = _parseImpayeDate(rec.date_echeance);
+  var delaiJ = dueDate ? Math.round((payDate.getTime() - dueDate.getTime()) / 86400000) : null;
+
+  rec.statut = 'paye';
+  rec.date_paiement = payDate.toISOString();
+  rec.paiement_ts = payDate.getTime();
+  rec.paiement_by = (typeof window!=='undefined' && window.currentUserName) || 'Manuel';
+  rec.delai_paiement_j = delaiJ;
+
+  saveImpayes(all);
+  if (typeof odAutoSync === 'function') odAutoSync();
+  renderImpayes();
+
+  if (typeof showNotifToast === 'function') {
+    showNotifToast('✓ Facture ' + numFact + ' marquée payée le ' + payDate.toLocaleDateString('fr-FR'));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Annuler le marquage payée (re-passer en impayée)
+// ═══════════════════════════════════════════════════════════════════
+function unmarkImpayePaid(numFact) {
+  if (!numFact) return;
+  var all = getImpayes();
+  var idx = all.findIndex(function(r){ return r.num_fact === numFact; });
+  if (idx < 0) { alert('Facture introuvable'); return; }
+  var rec = all[idx];
+
+  if (!confirm('Re-marquer la facture ' + numFact + ' (' + (rec.client||'') + ') comme IMPAYÉE ?\n\n(Annule le statut payé et la date de paiement)')) return;
+
+  rec.statut = '';
+  rec.date_paiement = '';
+  rec.paiement_ts = Date.now(); // ts récent pour gagner le merge LWW
+  rec.paiement_by = '';
+  rec.delai_paiement_j = null;
+
+  saveImpayes(all);
+  if (typeof odAutoSync === 'function') odAutoSync();
+  renderImpayes();
+
+  if (typeof showNotifToast === 'function') {
+    showNotifToast('↶ Facture ' + numFact + ' re-marquée impayée');
+  }
+}
+
 function clearImpayesFilters() {
   IMPAYES_FILTER.search_fact = '';
   IMPAYES_FILTER.search_name = '';
@@ -16144,7 +16608,7 @@ function clearImpayesFilters() {
   IMPAYES_FILTER.commercial = 'all';
   IMPAYES_FILTER.bucket = 'all';
   IMPAYES_FILTER.exclude_clients = [];
-  // Ne pas reset le tri (préférence utilisateur)
+  // Ne pas reset le tri ni le view_mode (préférence utilisateur)
   renderImpayes();
 }
 
