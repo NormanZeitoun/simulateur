@@ -15474,7 +15474,7 @@ function _impStartOfWeek(d) {
 // Renvoie la classe de tranche de retard pour une date d'échéance, à un instant T donné
 // (utilisé pour calculer rétroactivement l'état au début/fin d'une semaine)
 function _impColorAtTime(echeance, T) {
-  var d = _impayeParseDate ? _impayeParseDate(echeance) : _parseImpayeDate(echeance);
+  var d = _parseImpayeDate(echeance);
   if (!d) return 'neutral';
   var days = Math.floor((T.getTime() - d.getTime()) / 86400000);
   if (days < 0) return 'neutral'; // pas encore échue
