@@ -15577,9 +15577,14 @@ function _parseImpayeNumber(v) {
 }
 
 // Classe couleur selon retard (en jours depuis la date d'échéance)
+// notyet  = pas encore échue ou échue aujourd'hui (days <= 0)
+// green   = échue depuis 1 à 29 jours (retard < 30j)  → JAUNE PÂLE
+// orange  = 30 à 59 jours
+// red     = >= 60 jours
 function _impayeColorClass(echeance) {
   var days = _daysSinceEcheance(echeance);
   if (days === null) return 'neutral';
+  if (days <= 0) return 'notyet';
   if (days < 30) return 'green';
   if (days < 60) return 'orange';
   return 'red';
@@ -15605,7 +15610,7 @@ function _impColorAtTime(echeance, T) {
   var d = _parseImpayeDate(echeance);
   if (!d) return 'neutral';
   var days = Math.floor((T.getTime() - d.getTime()) / 86400000);
-  if (days < 0) return 'neutral'; // pas encore échue
+  if (days <= 0) return 'notyet';  // pas encore échue ou échue ce jour
   if (days < 30) return 'green';
   if (days < 60) return 'orange';
   return 'red';
@@ -15753,7 +15758,8 @@ function _impBuildPerfWidget(allRows) {
   var bucketsConfig = [
     { key: 'red',    label: '> 60 JOURS',      icon: '🔴', color: '#E24B4A', bg: '#FDECEC', tc: '#A8322A' },
     { key: 'orange', label: '30 - 60 JOURS',   icon: '🟠', color: '#F0A500', bg: '#FFF4D6', tc: '#8A5F00' },
-    { key: 'green',  label: '< 30 JOURS',      icon: '🟢', color: '#1D9E75', bg: '#E5F5EE', tc: '#0F5132' }
+    { key: 'green',  label: '< 30 JOURS',      icon: '🟡', color: '#D4A017', bg: '#FFFBE6', tc: '#8A5F00' },
+    { key: 'notyet', label: 'J+0 OU NON ÉCHUE', icon: '🟢', color: '#1D9E75', bg: '#E5F5EE', tc: '#0F5132' }
   ];
 
   var html = '<div style="margin:18px 0 12px 0;">'
@@ -15765,7 +15771,7 @@ function _impBuildPerfWidget(allRows) {
     + '</div>'
     + '</div>';
 
-  html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">';
+  html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">';
 
   bucketsConfig.forEach(function(cfg) {
     var thisStats = _impStatsForBucketWindow(allRows, cfg.key, thisWeekStart, now);
@@ -15980,11 +15986,12 @@ function buildImpayesContent() {
 
   // Stats SUR LES DONNÉES FILTRÉES (modif #4)
   var totalTTC = 0;
-  var count30 = 0, count60 = 0, count90 = 0, countNeutral = 0;
+  var countNotyet = 0, count30 = 0, count60 = 0, count90 = 0, countNeutral = 0;
   filtered.forEach(function(r){
     totalTTC += _parseImpayeNumber(r.mt_ttc) || 0;
     var cls = _impayeColorClass(r.date_echeance);
-    if (cls === 'green') count30++;
+    if (cls === 'notyet') countNotyet++;
+    else if (cls === 'green') count30++;
     else if (cls === 'orange') count60++;
     else if (cls === 'red') count90++;
     else countNeutral++;
@@ -15993,10 +16000,11 @@ function buildImpayesContent() {
   // Pour les pills de retard : compter EN IGNORANT le filtre bucket
   // (sinon en cliquant "30-60j", les compteurs des autres pills tombent à 0)
   var rowsForBuckets = applyFilters(impayes, 'bucket');
-  var pillCount30 = 0, pillCount60 = 0, pillCount90 = 0, pillCountAll = rowsForBuckets.length;
+  var pillCountNotyet = 0, pillCount30 = 0, pillCount60 = 0, pillCount90 = 0, pillCountAll = rowsForBuckets.length;
   rowsForBuckets.forEach(function(r){
     var cls = _impayeColorClass(r.date_echeance);
-    if (cls === 'green') pillCount30++;
+    if (cls === 'notyet') pillCountNotyet++;
+    else if (cls === 'green') pillCount30++;
     else if (cls === 'orange') pillCount60++;
     else if (cls === 'red') pillCount90++;
   });
@@ -16053,7 +16061,8 @@ function buildImpayesContent() {
     + '.imp-stat{background:#fff;border:1.5px solid #E4E0FA;border-radius:10px;padding:12px 14px;}'
     + '.imp-stat-lbl{font-size:10px;font-weight:700;color:#9E94C4;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;}'
     + '.imp-stat-val{font-size:18px;font-weight:800;color:#1A1033;}'
-    + '.imp-stat.green{background:#E8F5EE;border-color:#9FE1CB;}'
+    + '.imp-stat.notyet{background:#E8F5EE;border-color:#9FE1CB;}'
+    + '.imp-stat.green{background:#FFFBE6;border-color:#F0D98A;}'
     + '.imp-stat.orange{background:#FFF4D6;border-color:#F0D98A;}'
     + '.imp-stat.red{background:#FDECEC;border-color:#F5B5B5;}'
     + '.imp-filter-bar{display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;}'
@@ -16069,17 +16078,20 @@ function buildImpayesContent() {
     + '.imp-table td.ccol{white-space:normal;}'
     + '.imp-table td.nowrap{white-space:nowrap;}'
     + '.imp-table tr.neutral{}'
-    + '.imp-table tr.green{background:#F0FAF4;}'
+    + '.imp-table tr.notyet{background:#F0FAF4;}'
+    + '.imp-table tr.green{background:#FFFBE6;}'
     + '.imp-table tr.orange{background:#FFF8E8;}'
     + '.imp-table tr.red{background:#FDECEC;}'
     + '.imp-table tr:hover{filter:brightness(0.97);}'
     + '.imp-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;}'
-    + '.imp-dot.green{background:#1D9E75;}'
+    + '.imp-dot.notyet{background:#1D9E75;}'
+    + '.imp-dot.green{background:#D4A017;}'
     + '.imp-dot.orange{background:#F0A500;}'
     + '.imp-dot.red{background:#E24B4A;}'
     + '.imp-dot.neutral{background:#9E94C4;}'
     + '.imp-age{font-weight:700;font-size:11px;}'
-    + '.imp-age.green{color:#0F5132;}'
+    + '.imp-age.notyet{color:#0F5132;}'
+    + '.imp-age.green{color:#8A5F00;}'
     + '.imp-age.orange{color:#8A5F00;}'
     + '.imp-age.red{color:#8A0A0A;}'
     + '.imp-age.neutral{color:#9E94C4;}'
@@ -16111,18 +16123,21 @@ function buildImpayesContent() {
     || IMPAYES_FILTER.banque !== 'all' || IMPAYES_FILTER.commercial !== 'all'
     || IMPAYES_FILTER.search_fact || IMPAYES_FILTER.search_name
     || (IMPAYES_FILTER.exclude_clients && IMPAYES_FILTER.exclude_clients.length);
-  var totalBrut = 0, brutCount30 = 0, brutCount60 = 0, brutCount90 = 0;
+  var totalBrut = 0, brutCountNotyet = 0, brutCount30 = 0, brutCount60 = 0, brutCount90 = 0;
   impayes.forEach(function(r){
     totalBrut += _parseImpayeNumber(r.mt_ttc) || 0;
     var cls = _impayeColorClass(r.date_echeance);
-    if (cls === 'green') brutCount30++;
+    if (cls === 'notyet') brutCountNotyet++;
+    else if (cls === 'green') brutCount30++;
     else if (cls === 'orange') brutCount60++;
     else if (cls === 'red') brutCount90++;
   });
   var fSubTtc = hasAnyFilter && totalTTC !== totalBrut
     ? '<div style="font-size:9.5px;color:#9E94C4;margin-top:2px;font-weight:600;">sur ' + _fmtImpayeEur(totalBrut) + ' au total</div>' : '';
+  var fSubNotyet = hasAnyFilter && countNotyet !== brutCountNotyet
+    ? '<div style="font-size:9.5px;color:#0F5132;margin-top:2px;font-weight:600;opacity:0.7;">sur ' + brutCountNotyet + '</div>' : '';
   var fSub30 = hasAnyFilter && count30 !== brutCount30
-    ? '<div style="font-size:9.5px;color:#0F5132;margin-top:2px;font-weight:600;opacity:0.7;">sur ' + brutCount30 + '</div>' : '';
+    ? '<div style="font-size:9.5px;color:#8A5F00;margin-top:2px;font-weight:600;opacity:0.7;">sur ' + brutCount30 + '</div>' : '';
   var fSub60 = hasAnyFilter && count60 !== brutCount60
     ? '<div style="font-size:9.5px;color:#8A5F00;margin-top:2px;font-weight:600;opacity:0.7;">sur ' + brutCount60 + '</div>' : '';
   var fSub90 = hasAnyFilter && count90 !== brutCount90
@@ -16130,7 +16145,8 @@ function buildImpayesContent() {
 
   html += '<div class="imp-stats">'
     + '<div class="imp-stat"><div class="imp-stat-lbl">' + (hasAnyFilter?'Total TTC filtré':'Total TTC dû') + '</div><div class="imp-stat-val">' + _fmtImpayeEur(totalTTC) + '</div>' + fSubTtc + '</div>'
-    + '<div class="imp-stat green"><div class="imp-stat-lbl">🟢 &lt; 30 jours</div><div class="imp-stat-val">' + count30 + '</div>' + fSub30 + '</div>'
+    + '<div class="imp-stat notyet"><div class="imp-stat-lbl">🟢 J+0 ou non échue</div><div class="imp-stat-val">' + countNotyet + '</div>' + fSubNotyet + '</div>'
+    + '<div class="imp-stat green"><div class="imp-stat-lbl">🟡 &lt; 30 jours</div><div class="imp-stat-val">' + count30 + '</div>' + fSub30 + '</div>'
     + '<div class="imp-stat orange"><div class="imp-stat-lbl">🟠 30 à 60 jours</div><div class="imp-stat-val">' + count60 + '</div>' + fSub60 + '</div>'
     + '<div class="imp-stat red"><div class="imp-stat-lbl">🔴 &gt; 60 jours</div><div class="imp-stat-val">' + count90 + '</div>' + fSub90 + '</div>'
     + '</div>';
@@ -16241,7 +16257,8 @@ function buildImpayesContent() {
     + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Retard</label>'
     + '<div class="imp-bucket-pills" style="display:inline-flex;">'
     +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='all'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'all\';renderImpayes();">Tous (' + pillCountAll + ')</button>'
-    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='green'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'green\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='green'?'background:#1D9E75;':'') + '">🟢 &lt;30j (' + pillCount30 + ')</button>'
+    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='notyet'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'notyet\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='notyet'?'background:#1D9E75;':'') + '">🟢 J+0 ou non échue (' + pillCountNotyet + ')</button>'
+    +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='green'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'green\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='green'?'background:#D4A017;':'') + '">🟡 &lt;30j (' + pillCount30 + ')</button>'
     +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='orange'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'orange\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='orange'?'background:#F0A500;':'') + '">🟠 30-60j (' + pillCount60 + ')</button>'
     +   '<button class="imp-bucket-pill' + (IMPAYES_FILTER.bucket==='red'?' active':'') + '" onclick="IMPAYES_FILTER.bucket=\'red\';renderImpayes();" style="' + (IMPAYES_FILTER.bucket==='red'?'background:#E24B4A;':'') + '">🔴 &gt;60j (' + pillCount90 + ')</button>'
     + '</div>'
@@ -16360,7 +16377,7 @@ function buildImpayesContent() {
       + '<td style="font-weight:600;" title="' + (r.client||'').replace(/"/g,'&quot;') + '">' + (r.client || '') + '</td>'
       + '<td class="nowrap" style="font-weight:700;">' + _fmtImpayeDate(r.date_echeance) + '</td>'
       + '<td class="imp-amount nowrap">' + _fmtImpayeEur(r.mt_ht) + '</td>'
-      + '<td class="imp-amount nowrap" style="color:' + (cls==='red'?'#8A0A0A':(cls==='orange'?'#8A5F00':(cls==='green'?'#0F5132':'#1A1033'))) + ';font-weight:700;">' + _fmtImpayeEur(r.mt_ttc) + '</td>'
+      + '<td class="imp-amount nowrap" style="color:' + (cls==='red'?'#8A0A0A':(cls==='orange'?'#8A5F00':(cls==='green'?'#8A5F00':(cls==='notyet'?'#0F5132':'#1A1033')))) + ';font-weight:700;">' + _fmtImpayeEur(r.mt_ttc) + '</td>'
       + '<td style="font-size:10.5px;" title="' + (r.banque||'').replace(/"/g,'&quot;') + '">' + (r.banque || '—') + '</td>'
       + '<td title="' + (r.consultant||'').replace(/"/g,'&quot;') + '">' + (r.consultant || '') + '</td>'
       + '<td title="' + (r.commercial||'').replace(/"/g,'&quot;') + '">' + (r.commercial || '') + '</td>'
