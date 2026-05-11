@@ -3388,6 +3388,45 @@ function getCommercialData() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  // ═══ PURGE CLÉS TIERCES POLLUANTES ═══
+  // L'Analyseur de Paie et d'autres outils sur le même domaine GitHub Pages
+  // partagent le localStorage avec le simulateur. Leurs données (parfois >8 Mo)
+  // peuvent saturer le quota Chrome (~10 Mo) et empêcher le sync candidats/deals.
+  // On purge automatiquement au boot.
+  try {
+    var foreignKeys = [
+      'seven_portage_paie_v3',      // Analyseur de Paie (peut peser 8+ Mo)
+      'seven_portage_paie_v2',      // ancienne version
+      'seven_portage_paie_v1',      // ancienne version
+      'seven_portage_paie'          // ancienne version
+    ];
+    foreignKeys.forEach(function(k){
+      var v = localStorage.getItem(k);
+      if (v) {
+        var sizeMo = ((k.length + v.length) * 2 / 1024 / 1024).toFixed(2);
+        localStorage.removeItem(k);
+        console.warn('[Purge] Clé tierce supprimée : ' + k + ' (' + sizeMo + ' Mo libérés)');
+      }
+    });
+  } catch(e) { console.warn('[Purge tierces]', e); }
+
+  // ═══ GARDE-FOU QUOTA LOCALSTORAGE ═══
+  // Si on dépasse 80% du quota, prévenir l'utilisateur dans la console.
+  try {
+    var total = 0;
+    for (var i = 0; i < localStorage.length; i++) {
+      var key = localStorage.key(i);
+      var val = localStorage.getItem(key) || '';
+      total += (key.length + val.length) * 2;
+    }
+    var Mo = total / 1024 / 1024;
+    if (Mo > 8) {
+      console.warn('[Storage] ATTENTION : localStorage = ' + Mo.toFixed(2) + ' Mo (proche du quota Chrome ~10 Mo). Risque de bug sync.');
+    } else {
+      console.log('[Storage] localStorage = ' + Mo.toFixed(2) + ' Mo / ~10 Mo');
+    }
+  } catch(e) {}
+
   // BLOCAGE INITIAL : empêcher tout auto-sync (push) avant le premier silentFullSync.
   // Sinon, après un reload (notamment après reset), l'app peut pousser un état local vide
   // et écraser des données valides sur OneDrive (ex: le marqueur _last_reset_ts).
@@ -10264,7 +10303,31 @@ function saveCandidatsArr(arr) {
       }
     });
   }
-  localStorage.setItem(CAND_KEY, JSON.stringify(arr));
+  // ═══ GARDE-FOU QUOTA : capter QuotaExceededError pour ne pas perdre des candidats en silence ═══
+  try {
+    localStorage.setItem(CAND_KEY, JSON.stringify(arr));
+  } catch(e) {
+    if (e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014)) {
+      console.error('[saveCandidatsArr] ⚠ QUOTA LOCALSTORAGE DÉPASSÉ — candidats NON sauvegardés localement.');
+      console.error('  → Ouvre la console et tape : localStorage.removeItem("seven_portage_paie_v3"); puis recharge.');
+      // Tenter de purger les clés tierces et réessayer une fois
+      try {
+        var purged = false;
+        ['seven_portage_paie_v3','seven_portage_paie_v2','seven_portage_paie_v1','seven_portage_paie'].forEach(function(k){
+          if (localStorage.getItem(k)) { localStorage.removeItem(k); purged = true; }
+        });
+        if (purged) {
+          console.warn('[saveCandidatsArr] Purge auto effectuée → nouvelle tentative...');
+          localStorage.setItem(CAND_KEY, JSON.stringify(arr));
+          console.log('[saveCandidatsArr] ✓ Sauvegarde réussie après purge.');
+        }
+      } catch(e2) {
+        console.error('[saveCandidatsArr] Échec même après purge :', e2.message);
+      }
+    } else {
+      throw e;
+    }
+  }
 }
 
 function saveCandidatFromEntry(entry) {
