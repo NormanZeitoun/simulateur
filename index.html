@@ -3415,11 +3415,28 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   // Save params on change
+  // ═══ FIX ANTI-PERTE : on merge avec la version stockée au lieu d'écraser ═══
+  // Avant : un seul input changé déclenchait la re-collecte de TOUS les inputs et l'écriture
+  // de l'ensemble. Si un input était temporairement vide (ex: tu effaces pour retaper) ou si
+  // un input n'existe pas dans le DOM (accordéon dynamique non encore rendu),
+  // la sauvegarde perdait la valeur stockée. On corrige en mergeant avec l'existant.
   document.querySelectorAll('#tab-params input').forEach(el => {
     el.addEventListener('change', () => {
-      const params = {};
-      document.querySelectorAll('#tab-params input').forEach(e => { params[e.id] = e.value; });
-      localStorage.setItem('sp_params_v2', JSON.stringify(params));
+      let existing = {};
+      try { existing = JSON.parse(localStorage.getItem('sp_params_v2') || '{}') || {}; } catch(e){}
+      // Collecter les valeurs courantes des inputs présents dans le DOM
+      document.querySelectorAll('#tab-params input').forEach(e => {
+        if (!e.id) return;
+        const v = e.value;
+        // Si l'input est VIDE alors qu'une valeur non-vide existait : on PRÉSERVE l'ancienne
+        // (sauf si c'est l'input qui vient de déclencher l'event ET que l'user a explicitement vidé)
+        if (v === '' && existing[e.id] && existing[e.id] !== '' && e !== el) {
+          // Ne pas écraser une valeur stockée par "" venant d'un autre input
+          return;
+        }
+        existing[e.id] = v;
+      });
+      localStorage.setItem('sp_params_v2', JSON.stringify(existing));
     });
   });
 
@@ -6089,7 +6106,34 @@ function _applySharedConfigs(shared) {
       return;
     }
     // Cas normal : on écrase avec la version remote
-    try { localStorage.setItem(c.ls, JSON.stringify(shared[c.field])); }
+    // ═══ ANTI-ÉCRASEMENT : si remote est vide ({} ou []) et local a du contenu, on GARDE local ═══
+    try {
+      var remoteVal = shared[c.field];
+      var remoteIsEmpty = (
+        remoteVal === null ||
+        remoteVal === undefined ||
+        (Array.isArray(remoteVal) && remoteVal.length === 0) ||
+        (typeof remoteVal === 'object' && !Array.isArray(remoteVal) && Object.keys(remoteVal).length === 0)
+      );
+      if (remoteIsEmpty) {
+        var localRaw = localStorage.getItem(c.ls);
+        if (localRaw) {
+          try {
+            var localParsed = JSON.parse(localRaw);
+            var localIsEmpty = (
+              localParsed === null ||
+              (Array.isArray(localParsed) && localParsed.length === 0) ||
+              (typeof localParsed === 'object' && !Array.isArray(localParsed) && Object.keys(localParsed).length === 0)
+            );
+            if (!localIsEmpty) {
+              console.warn('[applySharedConfigs] Préservation locale : ' + c.field + ' (remote vide, local non-vide gardé)');
+              return; // Skip cette clé, on garde la version locale
+            }
+          } catch(e){ /* localRaw corrompu, on continue */ }
+        }
+      }
+      localStorage.setItem(c.ls, JSON.stringify(shared[c.field]));
+    }
     catch(e) { console.warn('[app_settings apply] ' + c.field, e); }
   });
 }
@@ -10981,6 +11025,27 @@ function mergeAppSettings(remote) {
   } else {
     merged = Object.assign({}, remote, local);
   }
+
+  // ═══ ANTI-ÉCRASEMENT : protéger les valeurs scalaires non-vides locales ═══
+  // Bug fixé : si un autre user a auto-pushé un app_settings avec _updated_ts récent
+  // mais SANS notre URL Analyseur (ou tout autre champ scalaire qu'on a configuré),
+  // l'Object.assign ci-dessus écrasait notre valeur par "". On corrige champ par champ :
+  // si la valeur remote pour un champ est "" / null / undefined et la valeur locale a
+  // du contenu, on garde la version locale.
+  try {
+    Object.keys(local).forEach(function(k) {
+      if (k === '_updated_ts' || k === '_shared' || k === '_last_reset_ts' || k === '_reset_by') return;
+      var lv = local[k];
+      var rv = merged[k];
+      var localHasValue  = (typeof lv === 'string' && lv.trim() !== '') || (typeof lv === 'number' && !isNaN(lv));
+      var remoteIsEmpty  = (rv === undefined || rv === null || (typeof rv === 'string' && rv.trim() === ''));
+      if (localHasValue && remoteIsEmpty) {
+        console.warn('[mergeAppSettings] Préservation locale : ' + k + ' = "' + lv + '" (remote était vide)');
+        merged[k] = lv;
+      }
+    });
+  } catch(e) { console.warn('[mergeAppSettings] anti-écrasement:', e); }
+
   // Écriture DIRECTE pour éviter boucle de sync
   localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(merged));
   // Appliquer les configs partagées si remote est plus récent
