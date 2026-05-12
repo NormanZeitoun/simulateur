@@ -15758,7 +15758,7 @@ function _impBuildPerfWidget(allRows) {
   var bucketsConfig = [
     { key: 'red',    label: '> 60 JOURS',      icon: '🔴', color: '#E24B4A', bg: '#FDECEC', tc: '#A8322A' },
     { key: 'orange', label: '30 - 60 JOURS',   icon: '🟠', color: '#F0A500', bg: '#FFF4D6', tc: '#8A5F00' },
-    { key: 'green',  label: '< 30 JOURS',      icon: '🟡', color: '#D4A017', bg: '#FFFBE6', tc: '#8A5F00' },
+    { key: 'green',  label: '< 30 JOURS',      icon: '🟡', color: '#C77700', bg: '#FFF0CC', tc: '#7A4900' },
     { key: 'notyet', label: 'J+0 OU NON ÉCHUE', icon: '🟢', color: '#1D9E75', bg: '#E5F5EE', tc: '#0F5132' }
   ];
 
@@ -15826,77 +15826,8 @@ function _impBuildPerfWidget(allRows) {
   html += '</div>';
 
   // ═══════════════════════════════════════════════════════════════
-  // MINI-GRAPHIQUE 8 SEMAINES
+  // (Graphique 8 semaines retiré sur demande)
   // ═══════════════════════════════════════════════════════════════
-  var weeks = _impStatsLast8Weeks(allRows);
-  var maxVal = 0;
-  weeks.forEach(function(w){
-    if (w.payees > maxVal) maxVal = w.payees;
-    if (w.nouveaux > maxVal) maxVal = w.nouveaux;
-  });
-  var maxStock = 0;
-  weeks.forEach(function(w){ if (w.stockEnd > maxStock) maxStock = w.stockEnd; });
-
-  if (maxVal > 0 || maxStock > 0) {
-    html += '<div style="margin-top:14px;background:#fff;border:1.5px solid #E4E0FA;border-radius:12px;padding:14px;">'
-      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
-      + '<div style="font-size:12.5px;font-weight:700;color:#1A1033;">📊 Évolution sur 8 semaines</div>'
-      + '<div style="display:flex;gap:14px;font-size:10.5px;color:#6B5E9C;">'
-      + '<span><span style="display:inline-block;width:10px;height:10px;background:#E24B4A;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Nouveaux impayés</span>'
-      + '<span><span style="display:inline-block;width:10px;height:10px;background:#1D9E75;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Payées</span>'
-      + '<span><span style="display:inline-block;width:14px;height:2px;background:#7343EE;vertical-align:middle;margin-right:4px;"></span>Stock fin de semaine</span>'
-      + '</div>'
-      + '</div>';
-
-    html += '<div style="display:flex;align-items:flex-end;gap:8px;height:140px;padding:0 4px;border-bottom:1px solid #E4E0FA;position:relative;">';
-    weeks.forEach(function(w, idx) {
-      var hPay = maxVal > 0 ? (w.payees / maxVal * 100) : 0;
-      var hNew = maxVal > 0 ? (w.nouveaux / maxVal * 100) : 0;
-      var hStock = maxStock > 0 ? (w.stockEnd / maxStock * 110) : 0; // 110 pour dépasser un peu
-      var stockTop = 100 - hStock; // position depuis le haut
-
-      html += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;height:100%;position:relative;">';
-
-      // Container barres
-      html += '<div style="display:flex;align-items:flex-end;gap:3px;width:100%;height:100%;position:relative;">';
-
-      // Barre nouveaux (rouge)
-      html += '<div title="' + w.nouveaux + ' nouveaux (' + _fmtImpayeEur(w.nouveauxMt) + ')" '
-        + 'style="flex:1;height:' + hNew + '%;background:#E24B4A;border-radius:3px 3px 0 0;min-height:' + (w.nouveaux > 0 ? '4px' : '0') + ';transition:opacity 0.2s;cursor:default;" '
-        + 'onmouseenter="this.style.opacity=\'0.8\'" onmouseleave="this.style.opacity=\'1\'"></div>';
-
-      // Barre payées (vert)
-      html += '<div title="' + w.payees + ' payées (' + _fmtImpayeEur(w.payeesMt) + ')" '
-        + 'style="flex:1;height:' + hPay + '%;background:#1D9E75;border-radius:3px 3px 0 0;min-height:' + (w.payees > 0 ? '4px' : '0') + ';transition:opacity 0.2s;cursor:default;" '
-        + 'onmouseenter="this.style.opacity=\'0.8\'" onmouseleave="this.style.opacity=\'1\'"></div>';
-
-      // Marqueur stock (point sur ligne)
-      if (w.stockEnd > 0 && maxStock > 0) {
-        html += '<div title="Stock fin semaine : ' + w.stockEnd + ' (' + _fmtImpayeEur(w.stockEndMt) + ')" '
-          + 'style="position:absolute;left:50%;top:' + stockTop + '%;width:8px;height:8px;background:#7343EE;border:2px solid #fff;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 0 1px #7343EE;cursor:default;"></div>';
-      }
-
-      html += '</div>'; // fin container barres
-
-      // Label semaine
-      html += '<div style="font-size:9.5px;color:#6B5E9C;font-weight:600;margin-top:4px;text-align:center;">' + w.label + '</div>';
-
-      html += '</div>'; // fin colonne semaine
-    });
-    html += '</div>';
-
-    // Légende dates (1ère et dernière semaine)
-    if (weeks.length > 0) {
-      var firstW = weeks[0];
-      var lastW = weeks[weeks.length - 1];
-      html += '<div style="display:flex;justify-content:space-between;font-size:9.5px;color:#9E94C4;margin-top:6px;font-weight:500;">'
-        + '<span>' + firstW.weekStart.toLocaleDateString('fr-FR', {day:'2-digit',month:'short'}) + '</span>'
-        + '<span>' + lastW.weekEnd.toLocaleDateString('fr-FR', {day:'2-digit',month:'short'}) + '</span>'
-        + '</div>';
-    }
-
-    html += '</div>';
-  }
 
   html += '</div>'; // fin du widget global
   return html;
@@ -15974,7 +15905,7 @@ function buildImpayesContent() {
       }
       if (except !== 'search_name' && IMPAYES_FILTER.search_name) {
         var q2 = IMPAYES_FILTER.search_name.toLowerCase();
-        var hay = ((r.client || '') + ' ' + (r.consultant || '')).toLowerCase();
+        var hay = ((r.client || '') + ' ' + (r.consultant || '') + ' ' + (r.commentaire || '')).toLowerCase();
         if (hay.indexOf(q2) < 0) return false;
       }
       return true;
@@ -16278,7 +16209,7 @@ function buildImpayesContent() {
   var qN = (IMPAYES_FILTER.search_name||'').replace(/"/g,'&quot;');
   html += '<div style="min-width:240px;flex:2;">'
     + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">🔍 Client / Consultant</label>'
-    + '<input type="text" value="' + qN + '" placeholder="Ex : Dupont, Safran, Thales…" oninput="IMPAYES_FILTER.search_name=this.value;renderImpayes();setTimeout(function(){var e=document.getElementById(\'imp-search-name\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0);" id="imp-search-name" style="width:100%;padding:8px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;">'
+    + '<input type="text" value="' + qN + '" placeholder="Ex : Dupont, Safran, commentaire…" oninput="IMPAYES_FILTER.search_name=this.value;renderImpayes();setTimeout(function(){var e=document.getElementById(\'imp-search-name\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0);" id="imp-search-name" style="width:100%;padding:8px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;">'
     + '</div>';
 
   // Bouton clear filters
@@ -16326,7 +16257,7 @@ function buildImpayesContent() {
     + _impSortableTh('commercial', 'Commercial', 'left')
     + '<th>Contact compta</th>'
     + '<th>Commentaire</th>'
-    + '<th style="text-align:center;width:80px;">Actions</th>'
+    + '<th style="text-align:center;width:200px;">Type</th>'
     + '</tr></thead><tbody>';
 
   filtered.forEach(function(r){
@@ -16391,9 +16322,12 @@ function buildImpayesContent() {
       +   '</div>'
       + '</td>'
       + '<td style="text-align:center;padding:6px 4px;">'
-      +   (isPaid
-      ?     '<button onclick="unmarkImpayePaid(\'' + numFact + '\')" title="Re-marquer comme impayée (annuler le paiement)" style="padding:5px 8px;background:#FFF4D6;color:#8A5F00;border:1px solid #F0A500;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">↶ Annuler</button>'
-      :     '<button onclick="markImpayePaid(\'' + numFact + '\')" title="Marquer cette facture comme payée" style="padding:5px 8px;background:#E5F5EE;color:#0F5132;border:1px solid #1D9E75;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">✓ Payée</button>')
+      +   '<select onchange="setImpayeType(\'' + numFact + '\', this.value)" style="width:100%;padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:10.5px;font-family:inherit;background:#fff;color:#1A1033;cursor:pointer;" title="Type spécial pour cette facture">'
+      +     '<option value=""' + ((!r.type_special) ? ' selected' : '') + '>—</option>'
+      +     '<option value="astreinte_hno"' + (r.type_special === 'astreinte_hno' ? ' selected' : '') + '>Astreint/HNO</option>'
+      +     '<option value="ndf_refac"' + (r.type_special === 'ndf_refac' ? ' selected' : '') + '>Note de Frais Refacturable</option>'
+      +     '<option value="ndf_refac_paye"' + (r.type_special === 'ndf_refac_paye' ? ' selected' : '') + '>Note de Frais Refacturable payé</option>'
+      +   '</select>'
       + '</td>'
       + '</tr>';
   });
@@ -16524,7 +16458,7 @@ function parseAndImportImpayesFile(file) {
       existing.forEach(function(e){ if (e.num_fact) existingByNf[e.num_fact] = e; });
 
       var newByNf = {};
-      var nbCreated = 0, nbUpdated = 0, nbCommentsPreserved = 0;
+      var nbCreated = 0, nbUpdated = 0, nbCommentsPreserved = 0, nbTypesPreserved = 0;
       parsed.forEach(function(item){
         var old = existingByNf[item.num_fact];
         if (old) {
@@ -16533,6 +16467,13 @@ function parseAndImportImpayesFile(file) {
           item.commentaire_by = old.commentaire_by || '';
           item.commentaire_ts = old.commentaire_ts || 0;
           if (item.commentaire) nbCommentsPreserved++;
+          // Préserver le type spécial (Astreint/HNO, Note de Frais, etc.) + ses métadonnées
+          if (old.type_special) {
+            item.type_special = old.type_special;
+            item.type_special_ts = old.type_special_ts || 0;
+            item.type_special_by = old.type_special_by || '';
+            nbTypesPreserved++;
+          }
           nbUpdated++;
         } else {
           item.commentaire = '';
@@ -16571,7 +16512,7 @@ function parseAndImportImpayesFile(file) {
 
       var msg = '📊 Aperçu de l\'import :\n\n';
       msg += '✓ ' + nbCreated + ' nouvelle' + (nbCreated>1?'s':'') + ' facture' + (nbCreated>1?'s':'') + ' impayée' + (nbCreated>1?'s':'') + '\n';
-      msg += '🔄 ' + nbUpdated + ' mise' + (nbUpdated>1?'s':'') + ' à jour (commentaires préservés : ' + nbCommentsPreserved + ')\n';
+      msg += '🔄 ' + nbUpdated + ' mise' + (nbUpdated>1?'s':'') + ' à jour (commentaires préservés : ' + nbCommentsPreserved + (nbTypesPreserved > 0 ? ', types préservés : ' + nbTypesPreserved : '') + ')\n';
       msg += '💰 ' + nbNewlyPaid + ' marquée' + (nbNewlyPaid>1?'s':'') + ' comme payée' + (nbNewlyPaid>1?'s':'') + ' (date : ' + new Date().toLocaleDateString('fr-FR') + ')\n';
       if (nbNewlyPaid > 0 && nbNewlyPaid <= 10) {
         msg += '\nFactures payées :\n';
@@ -16677,6 +16618,32 @@ function saveImpayeComment(numFact) {
 // ═══════════════════════════════════════════════════════════════════
 // Marquer une facture comme payée (manuel, hors import)
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// Définir le type spécial d'une facture (Astreint/HNO, Note de Frais, etc.)
+// Persisté sur OneDrive et préservé au réimport Excel
+// ═══════════════════════════════════════════════════════════════════
+function setImpayeType(numFact, typeValue) {
+  if (!numFact) return;
+  var all = getImpayes();
+  var idx = all.findIndex(function(r){ return r.num_fact === numFact; });
+  if (idx < 0) return;
+  var rec = all[idx];
+
+  // Si valeur vide : on retire le champ pour garder le JSON propre
+  if (!typeValue) {
+    delete rec.type_special;
+    delete rec.type_special_ts;
+    delete rec.type_special_by;
+  } else {
+    rec.type_special = typeValue;
+    rec.type_special_ts = Date.now();
+    rec.type_special_by = (typeof window!=='undefined' && window.currentUserName) || 'Manuel';
+  }
+
+  saveImpayes(all);
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
 function markImpayePaid(numFact) {
   if (!numFact) return;
   var all = getImpayes();
