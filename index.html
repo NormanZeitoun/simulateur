@@ -31,7 +31,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .badge-commercial { background: rgba(255,255,255,0.2); color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 
 /* LAYOUT */
-.app { display: grid; grid-template-columns: 1fr 2fr; gap: 0; min-height: calc(100vh - 64px); }
+.app { display: grid; grid-template-columns: 1.2fr 1.8fr; gap: 0; min-height: calc(100vh - 64px); }
 .panel-left { background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; padding: 20px; }
 .panel-right { padding: 20px; overflow-y: auto; }
 
@@ -126,6 +126,33 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 @media (max-width: 900px) {
   .app { grid-template-columns: 1fr; }
   .panel-left { border-right: none; border-bottom: 1px solid var(--border); }
+}
+
+/* GRILLE MISSION : 2 colonnes Consultant/Facturation côte à côte avec vrai cadre visuel */
+.mission-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.mission-2col .section {
+  margin: 0;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.mission-2col .section > .section-body { flex: 1; }
+.mission-toggle-bottom {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--muted); font-weight: 500; cursor: pointer;
+}
+.mission-toggle-bottom input[type="checkbox"] { accent-color: #7343EE; width: 13px; height: 13px; }
+
+/* GARDE-FOU : si panneau gauche trop étroit, bascule en 1 colonne */
+@media (max-width: 1400px) {
+  .mission-2col { grid-template-columns: 1fr; }
 }
 
 /* TOOLTIP */
@@ -1027,24 +1054,136 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   <!-- TAB MISSION -->
   <div id="tab-mission">
 
-    <div class="section">
-      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
-        <span>Identification</span>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:var(--muted);font-weight:500;">
-          <input type="checkbox" id="sim-connait-tjm" checked style="accent-color:#7343EE;width:13px;height:13px;">
+    <!-- ═══════════════════════════════════════════════════════════
+         DISPOSITION FINALE :
+         - 2 colonnes : Consultant (gauche) + Facturation (droite)
+         - Toggles "Connaît son TJM" et "Masquer TJM mail" en BAS de chaque section
+         - Récap CA pleine largeur en dessous
+         - Section Mission pleine largeur en dessous
+         - Garde-fou responsive : si écran trop étroit → 1 colonne empilée
+         ═══════════════════════════════════════════════════════════ -->
+    <div class="mission-2col">
+
+      <!-- ───────── COLONNE GAUCHE : CONSULTANT ───────── -->
+      <div class="section">
+        <div class="section-title"><span>👤 Consultant</span></div>
+        <div class="section-body">
+        <div class="field-row">
+          <div class="field" style="max-width:140px;flex:0 0 140px;">
+            <label>Civilité</label>
+            <select id="civilite" onchange="calc()" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;font-family:inherit;cursor:pointer;width:100%;">
+              <option value="">—</option>
+              <option value="M.">M.</option>
+              <option value="Mme">Mme</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field" style="position:relative;">
+            <label>Prénom candidat</label>
+            <input type="text" id="prenom" placeholder="Laurent" oninput="calc();filterSimCandidat()" onblur="setTimeout(hideSimCandidatDrop,200)" autocomplete="off">
+            <div id="sim-candidat-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:260px;overflow-y:auto;margin-top:2px;"></div>
+          </div>
+          <div class="field" style="position:relative;">
+            <label>Nom candidat</label>
+            <input type="text" id="nom" placeholder="Devoulon" oninput="calc();filterSimCandidat()" onblur="setTimeout(hideSimCandidatDrop,200)" autocomplete="off">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Email candidat</label><input type="text" id="email" placeholder="candidat@domaine.fr" oninput="calc()"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Téléphone candidat</label><input type="tel" id="tel" placeholder="06 XX XX XX XX" oninput="calc()"></div>
+        </div>
+        <div class="field-row">
+          <div class="field" style="position:relative;"><label>Poste</label><input type="text" id="poste" placeholder="Dev Senior, Chef de projet..." oninput="calc();onPosteInputChange(this)" onfocus="onPosteInputChange(this)" onblur="setTimeout(function(){var d=document.getElementById('sim-poste-dropdown');if(d)d.style.display='none';},200)" autocomplete="off">
+            <div id="sim-poste-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:220px;overflow-y:auto;margin-top:2px;"></div>
+          </div>
+        </div>
+        </div>
+        <!-- TOGGLE EN BAS DE SECTION : Connaît son TJM -->
+        <label class="mission-toggle-bottom">
+          <input type="checkbox" id="sim-connait-tjm" checked>
           Connaît son TJM
         </label>
       </div>
-      <div class="field-row">
-        <div class="field" style="max-width:140px;flex:0 0 140px;">
-          <label>Civilité</label>
-          <select id="civilite" onchange="calc()" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;font-family:inherit;cursor:pointer;width:100%;">
-            <option value="">—</option>
-            <option value="M.">M.</option>
-            <option value="Mme">Mme</option>
-          </select>
+
+      <!-- ───────── COLONNE DROITE : FACTURATION ───────── -->
+      <div class="section">
+        <div class="section-title"><span>💰 Facturation</span></div>
+        <div class="section-body">
+
+        <!-- Ligne 1: TJM + Nb jours -->
+        <div class="field-row">
+          <div class="field">
+            <label>TJM HT (€) <span style="font-size:10px;color:var(--brand);font-weight:600;" id="tjm-source-badge"></span></label>
+            <input type="number" id="tjm" value="610" min="0" step="5" oninput="onTJMChange()">
+          </div>
+          <div class="field"><label>Nb jours / mois</label><input type="number" id="nb_jours" value="21" min="1" max="23" step="1" oninput="onContextChange()"></div>
         </div>
-        <div class="field"><label>Origine Leads</label>
+
+        <!-- Ligne 2: Brut annuel + Brut mensuel -->
+        <div class="field-row">
+          <div class="field">
+            <label>BRUT annuel (€) <span style="font-size:10px;color:#9B6EF5;font-weight:600;">→ mensuel auto</span></label>
+            <input type="number" id="brut_annuel" value="" min="0" step="100" oninput="onBRUTAnnuelChange()" placeholder="Ex : 60000" style="font-weight:600;color:#4B36EC;">
+          </div>
+          <div class="field">
+            <label>BRUT mensuel (€) <span style="font-size:10px;color:var(--success);font-weight:600;" id="brut-source-badge">← calculé</span></label>
+            <input type="number" id="brut" value="" min="0" step="10" oninput="onBRUTChange()" style="font-weight:700;">
+          </div>
+        </div>
+        <!-- Ligne 3: Frais Gestion + Frais Affiché -->
+        <div class="field-row">
+          <div class="field">
+            <label>Frais Gestion Seven (%)</label>
+            <input type="number" id="marge" value="5" min="0" max="20" step="0.5" oninput="onContextChange()">
+          </div>
+          <div class="field">
+            <label style="font-size:11px;color:var(--muted);">Frais Seven Affiché (%)</label>
+            <input type="number" id="marge_affichee" min="0" max="100" step="0.5" placeholder="" style="color:#7343EE;">
+          </div>
+        </div>
+
+        <!-- TJM équivalent affiché quand on saisit BRUT -->
+        <div id="tjm-equiv-box" style="display:none;font-size:11px;padding:6px 10px;background:#F0FDF8;border-radius:6px;border:1px solid #9FE1CB;color:#0F6E56;margin-bottom:8px;font-weight:600;"></div>
+
+        <div id="seuil-warning" class="seuil-warning">⚠️ ALERTE SEUIL 2,5 SMIC — Brut entre 4 350€ et 4 500€ : vérifiez le CA dispo</div>
+        </div>
+
+        <!-- TOGGLE EN BAS DE SECTION : Masquer TJM dans mail -->
+        <label class="mission-toggle-bottom">
+          <input type="checkbox" id="hide-tjm-mail" onchange="calc()">
+          Masquer TJM dans le mail
+        </label>
+      </div>
+
+    </div>
+
+    <!-- ───────── INFO CA (pleine largeur sous les 2 colonnes) ───────── -->
+    <div id="ca-info" style="font-size:11px;color:var(--muted);padding:6px 10px;background:#F5F3FF;border-radius:6px;margin:14px 0;"></div>
+
+    <!-- ───────── SECTION MISSION (pleine largeur) ───────── -->
+    <div class="section">
+      <div class="section-title">💼 Mission</div>
+      <div class="field-row">
+        <div class="field" style="position:relative;">
+          <label>Entreprise cliente</label>
+          <input type="text" id="entreprise" placeholder="Nom entreprise" oninput="calc();filterSimClient()" onblur="setTimeout(hideSimClientDrop,200)" autocomplete="off">
+          <div id="sim-client-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:260px;overflow-y:auto;margin-top:2px;"></div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field" style="position:relative;">
+          <label>Manager / Contact</label>
+          <input type="text" id="manager" placeholder="Nom manager" oninput="calc();filterSimManager()" onfocus="filterSimManager()" onblur="setTimeout(hideSimManagerDrop,200)" autocomplete="off">
+          <div id="sim-manager-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:260px;overflow-y:auto;margin-top:2px;"></div>
+        </div>
+        <div class="field"><label>Email client</label><input type="text" id="email_client" placeholder="contact@entreprise.fr" oninput="calc()"></div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Origine Leads</label>
           <select id="source_origine" onchange="calc();onSimCoopOriginChange()">
             <option value="">-- S&eacute;lectionner --</option>
             <option value="R&eacute;seau">R&eacute;seau</option>
@@ -1055,39 +1194,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
             <option value="Cooptation Candidat">🤝 Cooptation Candidat</option>
             <option value="Autre">Autre</option>
           </select>
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field" style="position:relative;">
-          <label>Prénom candidat</label>
-          <input type="text" id="prenom" placeholder="Laurent" oninput="calc();filterSimCandidat()" onblur="setTimeout(hideSimCandidatDrop,200)" autocomplete="off">
-          <div id="sim-candidat-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:260px;overflow-y:auto;margin-top:2px;"></div>
-        </div>
-        <div class="field" style="position:relative;">
-          <label>Nom candidat</label>
-          <input type="text" id="nom" placeholder="Devoulon" oninput="calc();filterSimCandidat()" onblur="setTimeout(hideSimCandidatDrop,200)" autocomplete="off">
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field" style="position:relative;">
-          <label>Entreprise cliente</label>
-          <input type="text" id="entreprise" placeholder="Nom entreprise" oninput="calc();filterSimClient()" onblur="setTimeout(hideSimClientDrop,200)" autocomplete="off">
-          <div id="sim-client-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:260px;overflow-y:auto;margin-top:2px;"></div>
-        </div>
-        <div class="field" style="position:relative;">
-          <label>Manager / Contact</label>
-          <input type="text" id="manager" placeholder="Nom manager" oninput="calc();filterSimManager()" onfocus="filterSimManager()" onblur="setTimeout(hideSimManagerDrop,200)" autocomplete="off">
-          <div id="sim-manager-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:260px;overflow-y:auto;margin-top:2px;"></div>
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Email candidat</label><input type="text" id="email" placeholder="candidat@domaine.fr" oninput="calc()"></div>
-        <div class="field"><label>Email client</label><input type="text" id="email_client" placeholder="contact@entreprise.fr" oninput="calc()"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Téléphone candidat</label><input type="tel" id="tel" placeholder="06 XX XX XX XX" oninput="calc()"></div>
-        <div class="field" style="position:relative;"><label>Poste</label><input type="text" id="poste" placeholder="Dev Senior, Chef de projet..." oninput="calc();onPosteInputChange(this)" onfocus="onPosteInputChange(this)" onblur="setTimeout(function(){var d=document.getElementById('sim-poste-dropdown');if(d)d.style.display='none';},200)" autocomplete="off">
-          <div id="sim-poste-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:220px;overflow-y:auto;margin-top:2px;"></div>
         </div>
       </div>
 
@@ -1108,56 +1214,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         </div>
       </div>
 
-    </div>
-
-    <div class="section">
-      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
-        <span>Facturation</span>
-        <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);font-weight:500;cursor:pointer;">
-          <input type="checkbox" id="hide-tjm-mail" onchange="calc()" style="accent-color:#7343EE;width:13px;height:13px;">
-          Masquer TJM dans le mail
-        </label>
-      </div>
-
-      <!-- Ligne 1: TJM + Nb jours -->
-      <div class="field-row">
-        <div class="field">
-          <label>TJM HT (€) <span style="font-size:10px;color:var(--brand);font-weight:600;" id="tjm-source-badge"></span></label>
-          <input type="number" id="tjm" value="610" min="0" step="5" oninput="onTJMChange()">
-        </div>
-        <div class="field"><label>Nb jours / mois</label><input type="number" id="nb_jours" value="21" min="1" max="23" step="1" oninput="onContextChange()"></div>
-      </div>
-
-      <!-- Ligne 2: Brut annuel + Brut mensuel -->
-      <div class="field-row">
-        <div class="field">
-          <label>BRUT annuel (€) <span style="font-size:10px;color:#9B6EF5;font-weight:600;">→ mensuel auto</span></label>
-          <input type="number" id="brut_annuel" value="" min="0" step="100" oninput="onBRUTAnnuelChange()" placeholder="Ex : 60000" style="font-weight:600;color:#4B36EC;">
-        </div>
-        <div class="field">
-          <label>BRUT mensuel (€) <span style="font-size:10px;color:var(--success);font-weight:600;" id="brut-source-badge">← calculé</span></label>
-          <input type="number" id="brut" value="" min="0" step="10" oninput="onBRUTChange()" style="font-weight:700;">
-        </div>
-      </div>
-      <!-- Ligne 3: Frais Gestion + Frais Affiché -->
-      <div class="field-row">
-        <div class="field">
-          <label>Frais Gestion Seven (%)</label>
-          <input type="number" id="marge" value="5" min="0" max="20" step="0.5" oninput="onContextChange()">
-        </div>
-        <div class="field">
-          <label style="font-size:11px;color:var(--muted);">Frais Seven Affiché (%)</label>
-          <input type="number" id="marge_affichee" min="0" max="100" step="0.5" placeholder="" style="color:#7343EE;">
-        </div>
-      </div>
-
-      <!-- Info CA -->
-      <div id="ca-info" style="font-size:11px;color:var(--muted);padding:6px 10px;background:#F5F3FF;border-radius:6px;margin-bottom:8px;"></div>
-
-      <!-- TJM équivalent affiché quand on saisit BRUT -->
-      <div id="tjm-equiv-box" style="display:none;font-size:11px;padding:6px 10px;background:#F0FDF8;border-radius:6px;border:1px solid #9FE1CB;color:#0F6E56;margin-bottom:8px;font-weight:600;"></div>
-
-      <div id="seuil-warning" class="seuil-warning">⚠️ ALERTE SEUIL 2,5 SMIC — Brut entre 4 350€ et 4 500€ : vérifiez le CA dispo</div>
     </div>
 
     <div class="section">
@@ -1937,9 +1993,8 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div class="taux" id="r-taux-restitution">Taux de restitution —</div>
       </div>
       <div style="text-align:right;flex-shrink:0;">
-        <div style="font-size:11px;opacity:0.7;margin-bottom:2px;">TJM</div>
-        <div style="font-size:26px;font-weight:800;letter-spacing:-0.5px;" id="r-tjm-hero">—</div>
-        <div style="font-size:11px;opacity:0.7;margin-top:1px;">€ / jour</div>
+        <div style="font-size:13px;font-weight:700;opacity:0.85;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.6px;">TJM</div>
+        <div style="font-size:34px;font-weight:800;letter-spacing:-0.5px;line-height:1;white-space:nowrap;"><span id="r-tjm-hero">—</span><span style="font-size:18px;font-weight:700;opacity:0.85;margin-left:6px;">€/jour</span></div>
       </div>
     </div>
     <div class="sub-amounts">
@@ -1962,14 +2017,86 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 
   </div>
 
+  <!-- DÉCOMPOSITION FRAIS (remontée sous le bouton Envoyer) -->
+  <div class="frais-table" id="frais-section" style="margin-bottom:18px;">
+    <div style="background:#F0FDF8;padding:10px 16px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--success);">
+      Frais professionnels exonérés
+    </div>
+    <div class="frais-row" style="background:#FAFAFA;font-size:10px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;padding:6px 16px;"><span class="label">&nbsp;</span><span style="display:flex;gap:14px;"><span style="min-width:70px;text-align:right;">/ jour</span><span style="min-width:70px;text-align:right;">/ mois</span></span></div>
+    <div class="frais-row" id="fr-ik" style="display:none;"><span class="label">Indemnités kilométriques</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-ik-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-ik-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row" id="fr-repas" style="display:none;"><span class="label">Repas / Swile</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-repas-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-repas-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row" id="fr-tt" style="display:none;"><span class="label">Télétravail</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-tt-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-tt-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row" id="fr-transport" style="display:none;"><span class="label">Transport (75%)</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-transport-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-transport-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row" id="fr-telnet" style="display:none;"><span class="label">Tél. / Internet</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-telnet-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-telnet-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row" id="fr-formation" style="display:none;"><span class="label">Formation</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-formation-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-formation-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row" id="fr-materiel" style="display:none;"><span class="label">Matériel professionnel</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-materiel-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-materiel-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
+    <div class="frais-row total"><span>Total frais exonérés</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-total-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-total" style="min-width:70px;text-align:right;">0 €</span></span></div>
+  </div>
+
   <div class="cards-grid">
-    <div class="card purple"><div class="card-label">Brut mensuel</div><div class="card-val" id="r-brut">—</div><div class="card-sub">Base de calcul cotisations</div></div>
-    <div class="card"><div class="card-label">CA disponible</div><div class="card-val" id="r-ca-dispo">—</div><div class="card-sub" id="r-marge-info">Après marge Seven</div></div>
-    <div class="card red"><div class="card-label">Charges patronales</div><div class="card-val" id="r-pat">—</div><div class="card-sub" id="r-pat-pct">Taux —%</div></div>
-    <div class="card red"><div class="card-label">Charges salariales</div><div class="card-val" id="r-sal">—</div><div class="card-sub" id="r-sal-pct">Taux —%</div></div>
-    <div class="card green"><div class="card-label">Salaire annuel brut</div><div class="card-val" id="r-brut-an">—</div><div class="card-sub">Base 12 mois</div></div>
+    <!-- Carte regroupée : Salaires bruts (mensuel + annuel + annuel contrat) -->
+    <div class="card purple" style="padding:0;overflow:hidden;">
+      <div style="padding:10px 16px 8px 16px;border-bottom:1px solid rgba(115,67,238,0.12);">
+        <div class="card-label" style="margin-bottom:0;">Salaires bruts</div>
+      </div>
+      <div style="padding:10px 16px;">
+        <div style="font-size:10px;color:#6B5E9C;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">Brut mensuel</div>
+        <div style="font-size:20px;font-weight:700;color:var(--text);line-height:1.1;" id="r-brut">—</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:2px;">Base de calcul cotisations</div>
+      </div>
+      <div style="border-top:1px dashed rgba(115,67,238,0.18);padding:10px 16px;background:rgba(115,67,238,0.04);">
+        <div style="font-size:10px;color:#7343EE;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">Salaire annuel brut</div>
+        <div style="font-size:20px;font-weight:700;color:var(--text);line-height:1.1;" id="r-brut-an">—</div>
+        <div style="font-size:10.5px;color:#7343EE;font-weight:600;margin-top:2px;">Base 12 mois</div>
+      </div>
+      <div id="card-brut-contrat-row" style="display:none;border-top:1px dashed rgba(115,67,238,0.18);padding:10px 16px;">
+        <div style="font-size:10px;color:#6B5E9C;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">Salaire annuel brut contrat &#128196;</div>
+        <div style="font-size:20px;font-weight:700;color:var(--text);line-height:1.1;" id="r-brut-contrat">—</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:2px;">Base 21j × 12 — lecture seule</div>
+      </div>
+    </div>
+
+    <!-- Carte regroupée : Marge Seven (Frais de gestion + % de marge) -->
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div style="padding:10px 16px 8px 16px;border-bottom:1px solid rgba(115,67,238,0.12);">
+        <div class="card-label" style="margin-bottom:0;">Marge Seven</div>
+      </div>
+      <div style="padding:10px 16px;">
+        <div style="font-size:10px;color:#6B5E9C;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">Frais de gestion</div>
+        <div style="font-size:20px;font-weight:700;color:var(--text);line-height:1.1;" id="r-frais-gestion">—</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:2px;">Sur facturation mensuelle</div>
+      </div>
+      <div style="border-top:1px dashed rgba(115,67,238,0.18);padding:10px 16px;">
+        <div style="font-size:10px;color:#6B5E9C;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">% de marge</div>
+        <div style="font-size:20px;font-weight:700;color:var(--text);line-height:1.1;" id="r-marge-pct">—</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:2px;">Marge Seven Portage</div>
+      </div>
+      <!-- Anciens IDs conservés cachés pour rétrocompatibilité JS -->
+      <div style="display:none;"><span id="r-ca-dispo">—</span><span id="r-marge-info">—</span></div>
+    </div>
+
+    <!-- Carte regroupée : Charges (patronales + salariales) -->
+    <div class="card red" style="padding:0;overflow:hidden;">
+      <div style="padding:10px 16px 8px 16px;border-bottom:1px solid rgba(226,75,74,0.18);">
+        <div class="card-label" style="margin-bottom:0;">Charges</div>
+      </div>
+      <div style="padding:10px 16px;">
+        <div style="font-size:10px;color:#6B5E9C;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">Charges patronales</div>
+        <div style="font-size:20px;font-weight:700;color:var(--text);line-height:1.1;" id="r-pat">—</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:2px;" id="r-pat-pct">Taux —%</div>
+      </div>
+      <div style="border-top:1px dashed rgba(226,75,74,0.22);padding:10px 16px;">
+        <div style="font-size:10px;color:#6B5E9C;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">Charges salariales</div>
+        <div style="font-size:20px;font-weight:700;color:var(--text);line-height:1.1;" id="r-sal">—</div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:2px;" id="r-sal-pct">Taux —%</div>
+      </div>
+    </div>
+
+    <!-- Coût global employeur -->
     <div class="card green"><div class="card-label">Coût global employeur</div><div class="card-val" id="r-cout-global">—</div><div class="card-sub">Brut + patronales</div></div>
-    <div class="card purple" id="card-brut-contrat" style="display:none;border:2px solid #7343EE;"><div class="card-label">Salaire annuel brut contrat &#128196;</div><div class="card-val" id="r-brut-contrat">—</div><div class="card-sub" style="color:#7343EE;font-weight:600;">Base 21j × 12 — lecture seule</div></div>
+
+    <!-- Ancien conteneur conservé (caché) pour préserver les références JS existantes -->
+    <div class="card purple" id="card-brut-contrat" style="display:none;border:2px solid #7343EE;"><div class="card-label">Salaire annuel brut contrat &#128196;</div><div class="card-val" style="display:none;">—</div><div class="card-sub" style="color:#7343EE;font-weight:600;">Base 21j × 12 — lecture seule</div></div>
   </div>
 
   <!-- BOX PROVISION CP -->
@@ -1989,21 +2116,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
     </div>
   </div>
 
-  <!-- DÉCOMPOSITION FRAIS -->
-  <div class="frais-table" id="frais-section">
-    <div style="background:#F0FDF8;padding:10px 16px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--success);">
-      Frais professionnels exonérés
-    </div>
-    <div class="frais-row" style="background:#FAFAFA;font-size:10px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;padding:6px 16px;"><span class="label">&nbsp;</span><span style="display:flex;gap:14px;"><span style="min-width:70px;text-align:right;">/ jour</span><span style="min-width:70px;text-align:right;">/ mois</span></span></div>
-    <div class="frais-row" id="fr-ik" style="display:none;"><span class="label">Indemnités kilométriques</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-ik-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-ik-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
-    <div class="frais-row" id="fr-repas" style="display:none;"><span class="label">Repas / Swile</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-repas-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-repas-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
-    <div class="frais-row" id="fr-tt" style="display:none;"><span class="label">Télétravail</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-tt-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-tt-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
-    <div class="frais-row" id="fr-transport" style="display:none;"><span class="label">Transport (75%)</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-transport-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-transport-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
-    <div class="frais-row" id="fr-telnet" style="display:none;"><span class="label">Tél. / Internet</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-telnet-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-telnet-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
-    <div class="frais-row" id="fr-formation" style="display:none;"><span class="label">Formation</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-formation-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-formation-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
-    <div class="frais-row" id="fr-materiel" style="display:none;"><span class="label">Matériel professionnel</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-materiel-val-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-materiel-val" style="min-width:70px;text-align:right;">0 €</span></span></div>
-    <div class="frais-row total"><span>Total frais exonérés</span><span style="display:flex;gap:14px;"><span class="val-jour" id="fr-total-jour" style="min-width:70px;text-align:right;color:#8378B8;font-size:11.5px;">0 €</span><span class="val" id="fr-total" style="min-width:70px;text-align:right;">0 €</span></span></div>
-  </div>
+  <!-- (Le bloc "Frais professionnels exonérés" a été remonté sous le bouton Envoyer) -->
 
   <!-- Cotisations → voir onglet "Cotisations" -->
   <div id="breakdown-pat" style="display:none;"></div>
@@ -3121,6 +3234,11 @@ function calc() {
   document.getElementById('r-brut').textContent = fmt(BRUT, 2);
   document.getElementById('r-ca-dispo').textContent = fmt(ca_dispo, 2);
   document.getElementById('r-marge-info').textContent = `Frais gestion : ${fmt(frais_gestion, 2)}`;
+  // Nouveaux IDs pour la carte "Marge Seven"
+  var elFraisGestion = document.getElementById('r-frais-gestion');
+  if (elFraisGestion) elFraisGestion.textContent = fmt(frais_gestion, 2) + ' €';
+  var elMargePct = document.getElementById('r-marge-pct');
+  if (elMargePct) elMargePct.textContent = (MARGE * 100).toLocaleString('fr-FR', {minimumFractionDigits:0, maximumFractionDigits:2}) + ' %';
   document.getElementById('r-pat').textContent = fmt(TOTAL_PAT, 2);
   document.getElementById('r-pat-pct').textContent = `Taux ${pct(TOTAL_PAT/BRUT)}`;
   document.getElementById('r-sal').textContent = fmt(TOTAL_SAL, 2);
@@ -3132,6 +3250,7 @@ function calc() {
   // même quand la carte n'est pas affichée (le placement peut en avoir besoin)
   var showContrat = (CP !== 'CP') && (state.rtt === 0);
   var cardContrat = document.getElementById('card-brut-contrat');
+  var rowContrat = document.getElementById('card-brut-contrat-row');
   var valContrat  = document.getElementById('r-brut-contrat');
   // Calcul systématique du brut base 21j pour stockage
   var brutBase21Sys = NB_JOURS > 0 && NB_JOURS !== 21 ? Math.round(BRUT * 21 / NB_JOURS) : BRUT;
@@ -3139,11 +3258,15 @@ function calc() {
   // Stocker la valeur sur le body via dataset pour récupération facile
   document.body.dataset.brutContratAnnuel = brutContratAnnuelSys;
   if (cardContrat) {
+    // ancienne carte cachée — conservée pour rétrocompatibilité JS, jamais affichée
+    cardContrat.style.display = 'none';
+  }
+  if (rowContrat) {
     if (showContrat) {
-      cardContrat.style.display = 'block';
+      rowContrat.style.display = 'block';
       if (valContrat) valContrat.textContent = fmt(brutContratAnnuelSys);
     } else {
-      cardContrat.style.display = 'none';
+      rowContrat.style.display = 'none';
     }
   }
   document.getElementById('r-cout-global').textContent = fmt(cout_global, 2);
@@ -15757,8 +15880,8 @@ function _impBuildPerfWidget(allRows) {
   // Stats par tranche
   var bucketsConfig = [
     { key: 'red',    label: '> 60 JOURS',      icon: '🔴', color: '#E24B4A', bg: '#FDECEC', tc: '#A8322A' },
-    { key: 'orange', label: '30 - 60 JOURS',   icon: '🟠', color: '#F0A500', bg: '#FFF4D6', tc: '#8A5F00' },
-    { key: 'green',  label: '< 30 JOURS',      icon: '🟡', color: '#C77700', bg: '#FFF0CC', tc: '#7A4900' },
+    { key: 'orange', label: '30 - 60 JOURS',   icon: '🟠', color: '#E07700', bg: '#FFE8CC', tc: '#7A3F00' },
+    { key: 'green',  label: '< 30 JOURS',      icon: '🟡', color: '#D4A017', bg: '#FFFBE6', tc: '#8A5F00' },
     { key: 'notyet', label: 'J+0 OU NON ÉCHUE', icon: '🟢', color: '#1D9E75', bg: '#E5F5EE', tc: '#0F5132' }
   ];
 
