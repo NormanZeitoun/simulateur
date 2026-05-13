@@ -25240,10 +25240,14 @@ function uploadClientDocFromFile(clid, docKey, docLabel, file) {
             if (typeof showNotifToast === 'function') showNotifToast('\u2713 ' + docLabel + ' uploadé');
           } else {
             if (cont) cont.innerHTML = buildClientDocsHTML(clients[idx]);
+            // Idem côté erreur : ré-attacher les listeners
+            setTimeout(function(){ setupClientDocsDragDrop(clients[idx]); }, 50);
             alert('Erreur upload : ' + JSON.stringify(data.error||data));
           }
         }).catch(function(e){
           if (cont) cont.innerHTML = buildClientDocsHTML(clients[idx]);
+          // Idem côté erreur réseau
+          setTimeout(function(){ setupClientDocsDragDrop(clients[idx]); }, 50);
           alert('Erreur upload : ' + e.message);
         });
       });
@@ -25481,12 +25485,25 @@ function uploadCandDoc(input) {
           saveCandidatsArr(cands);
           // Rafraîchir l'onglet docs
           if (cont) cont.innerHTML = buildCandDocsHTML(cands[idx]);
+          // CRITIQUE : ré-attacher les listeners drag-drop sur le nouveau DOM
+          // Sinon le 2e drag-drop ne fonctionne pas (les listeners étaient sur l'ancien DOM détruit)
+          if (typeof setupCandDocsDragDrop === 'function') {
+            try { setupCandDocsDragDrop(cands[idx]); } catch(e){ console.warn('[setup drag-drop reattach]', e); }
+          }
         } else {
           if (cont) cont.innerHTML = buildCandDocsHTML(cands[idx]);
+          // Idem en cas d'erreur (le HTML a quand même été régénéré)
+          if (typeof setupCandDocsDragDrop === 'function') {
+            try { setupCandDocsDragDrop(cands[idx]); } catch(e){}
+          }
           alert('Erreur upload : ' + JSON.stringify(data.error||data));
         }
       }).catch(function(e) {
         if (cont) cont.innerHTML = buildCandDocsHTML(cands[idx]);
+        // Idem en cas d'erreur réseau
+        if (typeof setupCandDocsDragDrop === 'function') {
+          try { setupCandDocsDragDrop(cands[idx]); } catch(e){}
+        }
         alert('Erreur réseau : ' + e.message);
       });
     });
