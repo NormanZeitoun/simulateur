@@ -2517,8 +2517,17 @@ function resetSimulateur() {
     abo_transport: '0',
     abo_tel: '0',
     abo_internet: '0',
+    abo_telnet: '0',
     frais_formation: '0',
-    frais_materiel: '0'
+    frais_materiel: '0',
+    // Frais télétravail détaillés
+    tt_loyer: '0',
+    tt_elec: '0',
+    tt_chauffage: '0',
+    tt_taxe: '0',
+    tt_assurance: '0',
+    tt_internet: '0',
+    tt_mobile: '0'
   };
 
   Object.keys(defaults).forEach(function(id) {
@@ -11185,7 +11194,7 @@ function renderCandidats() {
     var initials = ((cand.prenom||'').charAt(0)+(cand.nom||'').charAt(0)).toUpperCase();
     var statut = computeCandStatutAuto(cand);
     var scfg = statutCfg[statut] || statutCfg['Prospect'];
-    var commercial = lastSim ? (lastSim.commercial||'') : '';
+    var commercial = (lastSim && lastSim.commercial) || cand.commercial || '';
     var tjm = cand.tjm_actuel || (lastSim ? lastSim.tjm : '') || '';
     var brut = lastSim ? lastSim.brut : '';
     var brutMensuel = '';
