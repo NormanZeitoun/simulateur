@@ -4471,7 +4471,11 @@ function buildBulletinPaiePDFb64(data, callback) {
 
       document.body.appendChild(container);
 
-      var nom = (data.consultant || 'simulation').replace(/[^a-zA-Z0-9]/g, '_');
+      var nomBrut = (data.consultant || 'simulation').trim();
+      var nom = nomBrut.replace(/[^a-zA-Z0-9]/g, '_')
+                       .replace(/_+/g, '_')      // double underscore → simple
+                       .replace(/^_|_$/g, '');   // pas d'underscore au début/fin
+      if (!nom) nom = 'simulation';
       var filename = 'Bulletin_Paie_' + nom + '.pdf';
 
       var opt = {
@@ -4487,8 +4491,12 @@ function buildBulletinPaiePDFb64(data, callback) {
         // Cleanup
         try { document.body.removeChild(container); } catch(e){}
         var st = document.getElementById(styleId); if (st) st.remove();
-        // Extraire le base64 pur (sans le prefix data:application/pdf;base64,)
-        var b64 = dataUri.replace(/^data:application\/pdf;base64,/, '');
+        // Extraire le base64 pur — robuste à toute variation de préfixe Data URI
+        // (ex: "data:application/pdf;base64," OU "data:application/pdf;filename=generated.pdf;base64,")
+        var commaIdx = dataUri.indexOf(',');
+        var b64 = commaIdx >= 0 ? dataUri.substring(commaIdx + 1) : dataUri;
+        // Sécurité : retirer tout saut de ligne éventuel dans le base64 (Outlook strict)
+        b64 = b64.replace(/[\r\n\s]/g, '');
         callback(b64, filename);
       }).catch(function(err) {
         try { document.body.removeChild(container); } catch(e){}
@@ -7670,7 +7678,7 @@ function createSimCoopFromSearch() {
       tel: (mgrTel||'').trim(),
       deals: []
     });
-    saveClients(clients);
+    saveClientsArr(clients);
     var newMgrIdx = chosen.managers.length - 1;
     selectSimCoopteur('mgr:' + chosen.id + ':' + newMgrIdx);
     if (typeof odAutoSync === 'function') odAutoSync();
@@ -7877,7 +7885,7 @@ function createPlCoopFromSearch() {
       tel: (mgrTel||'').trim(),
       deals: []
     });
-    saveClients(clients);
+    saveClientsArr(clients);
     // Sélectionner ce nouveau manager
     var newMgrIdx = chosen.managers.length - 1;
     selectPlCoopteur('mgr:' + chosen.id + ':' + newMgrIdx);
@@ -10578,7 +10586,7 @@ function saveClientManagerFromEntry(entry) {
     }
   }
 
-  saveClients(clients);
+  saveClientsArr(clients);
   return { created_client: createdClient, created_manager: createdManager };
 }
 
@@ -10850,7 +10858,7 @@ function saveNewClient() {
     updated: new Date().toLocaleDateString('fr-FR')
   };
   clients.unshift(newClient);
-  saveClients(clients);
+  saveClientsArr(clients);
 
   document.getElementById('modal-new-client').remove();
   if (typeof renderClients === 'function') renderClients();
