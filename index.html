@@ -4072,10 +4072,26 @@ function doEnvoi() {
         closeModal('modal-envoi');
       }
 
-      // Vérifier si la checkbox "Joindre bulletin de paie" est cochée
+      // Vérifier si la checkbox "Télécharger aussi le bulletin de paie" est cochée
       var chkBull = document.getElementById('envoi-bulletin-paie');
       if (chkBull && chkBull.checked) {
-        // Afficher un overlay "Génération PDF en cours..."
+        // ═══════════════════════════════════════════════════════════
+        // NOUVEAU WORKFLOW : Téléchargement séparé du bulletin PDF
+        // ═══════════════════════════════════════════════════════════
+        // L'attachement automatique au .eml ne fonctionne plus (html2pdf
+        // génère un PDF blanc en mode 'outputPdf' sur cette config).
+        // On déclenche donc un téléchargement séparé du bulletin via
+        // html2pdf().save() qui utilise le mode 'save' (qui marche).
+        // L'utilisateur glisse-dépose ensuite le PDF dans son mail Outlook.
+        //
+        // SI LE BUG html2pdf 'outputPdf' EST RÉSOLU UN JOUR :
+        // → Réactiver le code commenté ci-dessous et supprimer ce bloc.
+        // ═══════════════════════════════════════════════════════════
+        downloadBulletinPaiePDFSeparate(data, function() {
+          finalizeEml();
+        });
+
+        /* ANCIEN CODE (désactivé — PDF blanc) :
         var loadingOverlay = document.createElement('div');
         loadingOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.65);z-index:9998;display:flex;align-items:center;justify-content:center;';
         loadingOverlay.innerHTML = '<div style="background:#fff;padding:28px 40px;border-radius:12px;text-align:center;font-family:inherit;"><div style="font-size:36px;margin-bottom:10px;">📄</div><div style="font-weight:700;color:#4B36EC;">Génération du bulletin de paie...</div><div style="font-size:11.5px;color:#6B5E9C;margin-top:5px;">Quelques secondes</div></div>';
@@ -4092,11 +4108,84 @@ function doEnvoi() {
           }
           finalizeEml();
         });
+        */
       } else {
         finalizeEml();
       }
     });
   });
+}
+
+// ═══════════════════════════════════════════════════════════
+// Téléchargement séparé du bulletin de paie en PDF
+// Utilise html2pdf().save() (mode 'save') au lieu de .outputPdf()
+// car ce dernier génère un PDF blanc sur certaines configurations.
+// L'utilisateur devra glisser-déposer le PDF dans son mail.
+// ═══════════════════════════════════════════════════════════
+function downloadBulletinPaiePDFSeparate(data, callback) {
+  if (typeof html2pdf === 'undefined') {
+    console.warn('[Bulletin PDF] html2pdf non chargée');
+    callback();
+    return;
+  }
+  try {
+    var html = buildBulletinPaieHTML(data);
+
+    // Container invisible (même config que buildBulletinPaiePDFb64)
+    var container = document.createElement('div');
+    container.style.cssText = 'position:absolute;left:-99999px;top:0;width:210mm;background:#fff;';
+    var bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    var headMatch = html.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+    if (!bodyMatch) {
+      console.warn('[Bulletin PDF] Impossible d\'extraire le body');
+      callback();
+      return;
+    }
+    var styleId = 'bp-temp-style-dl-' + Date.now();
+    if (headMatch) {
+      var styleTag = document.createElement('style');
+      styleTag.id = styleId;
+      styleTag.innerHTML = headMatch[1];
+      document.head.appendChild(styleTag);
+    }
+    container.innerHTML = bodyMatch[1];
+    var printBtns = container.querySelectorAll('.bp-print-btn');
+    printBtns.forEach(function(b){ b.remove(); });
+    document.body.appendChild(container);
+
+    // Nom de fichier sanitisé
+    var nomBrut = (data.consultant || 'simulation').trim();
+    var nom = nomBrut.replace(/[^a-zA-Z0-9]/g, '_')
+                     .replace(/_+/g, '_')
+                     .replace(/^_|_$/g, '');
+    if (!nom) nom = 'simulation';
+    var filename = 'Bulletin_Paie_' + nom + '.pdf';
+
+    var opt = {
+      margin: [5, 5, 5, 5],
+      filename: filename,
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    };
+
+    // Mode 'save' = déclenche le téléchargement natif (équivalent Ctrl+P)
+    // Ce mode marche, contrairement à 'outputPdf' qui génère un PDF blanc.
+    html2pdf().set(opt).from(container).save().then(function() {
+      try { document.body.removeChild(container); } catch(e){}
+      var st = document.getElementById(styleId); if (st) st.remove();
+      callback();
+    }).catch(function(err) {
+      try { document.body.removeChild(container); } catch(e){}
+      var st = document.getElementById(styleId); if (st) st.remove();
+      console.error('[Bulletin PDF Download]', err);
+      callback();
+    });
+  } catch(e) {
+    console.error('[downloadBulletinPaiePDFSeparate]', e);
+    callback();
+  }
 }
 
 // Logo Seven Portage embarqué (base64)
@@ -29459,8 +29548,8 @@ function exportCommHistCSV() {
         <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
           <input type="checkbox" id="envoi-bulletin-paie" style="width:17px;height:17px;cursor:pointer;accent-color:#7343EE;flex-shrink:0;">
           <div style="flex:1;">
-            <div style="font-weight:700;color:#4B36EC;">📋 Joindre le bulletin de paie au mail</div>
-            <div style="font-size:11px;color:#6B5E9C;margin-top:2px;">Il sera ajouté au .eml avec les autres PDFs</div>
+            <div style="font-weight:700;color:#4B36EC;">📋 Télécharger aussi le bulletin de paie (.pdf séparé)</div>
+            <div style="font-size:11px;color:#6B5E9C;margin-top:2px;">Il sera téléchargé séparément — il faudra le glisser-déposer dans votre mail Outlook avant envoi</div>
           </div>
         </label>
         <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #D9CFFA;text-align:right;">
