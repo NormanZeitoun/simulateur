@@ -4123,65 +4123,71 @@ function doEnvoi() {
 // L'utilisateur devra glisser-déposer le PDF dans son mail.
 // ═══════════════════════════════════════════════════════════
 function downloadBulletinPaiePDFSeparate(data, callback) {
-  if (typeof html2pdf === 'undefined') {
-    console.warn('[Bulletin PDF] html2pdf non chargée');
-    callback();
-    return;
-  }
   try {
     var html = buildBulletinPaieHTML(data);
 
-    // Container invisible (même config que buildBulletinPaiePDFb64)
-    var container = document.createElement('div');
-    container.style.cssText = 'position:absolute;left:-99999px;top:0;width:210mm;background:#fff;';
-    var bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-    var headMatch = html.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
-    if (!bodyMatch) {
-      console.warn('[Bulletin PDF] Impossible d\'extraire le body');
-      callback();
-      return;
-    }
-    var styleId = 'bp-temp-style-dl-' + Date.now();
-    if (headMatch) {
-      var styleTag = document.createElement('style');
-      styleTag.id = styleId;
-      styleTag.innerHTML = headMatch[1];
-      document.head.appendChild(styleTag);
-    }
-    container.innerHTML = bodyMatch[1];
-    var printBtns = container.querySelectorAll('.bp-print-btn');
-    printBtns.forEach(function(b){ b.remove(); });
-    document.body.appendChild(container);
-
-    // Nom de fichier sanitisé
+    // Sanitisation du nom suggéré pour le PDF
     var nomBrut = (data.consultant || 'simulation').trim();
     var nom = nomBrut.replace(/[^a-zA-Z0-9]/g, '_')
                      .replace(/_+/g, '_')
                      .replace(/^_|_$/g, '');
     if (!nom) nom = 'simulation';
-    var filename = 'Bulletin_Paie_' + nom + '.pdf';
+    var suggestedFilename = 'Bulletin_Paie_' + nom;
 
-    var opt = {
-      margin: [5, 5, 5, 5],
-      filename: filename,
-      image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    // ═══════════════════════════════════════════════════════════
+    // SOLUTION : window.print() natif au lieu de html2pdf
+    // Ouvre une fenêtre invisible avec le bulletin, déclenche
+    // l'impression automatique (= équivalent Ctrl+P).
+    // L'utilisateur n'a qu'à choisir "Enregistrer en PDF" dans
+    // la fenêtre d'impression du navigateur.
+    //
+    // Pourquoi : html2pdf génère un PDF blanc sur cette config,
+    // alors que window.print() (= Ctrl+P natif) génère un PDF
+    // parfait. Confirmé par tests utilisateur.
+    // ═══════════════════════════════════════════════════════════
+
+    // Modifier le <title> du HTML pour suggérer un nom de fichier propre
+    // (le navigateur utilise le title comme nom par défaut dans l'impression)
+    var htmlWithTitle = html.replace(/<title>[^<]*<\/title>/i, '<title>' + suggestedFilename + '</title>');
+    if (!/<title>/i.test(htmlWithTitle)) {
+      // Si pas de balise title, l'ajouter dans le head
+      htmlWithTitle = htmlWithTitle.replace(/<head[^>]*>/i, '$&<title>' + suggestedFilename + '</title>');
+    }
+
+    // Créer une iframe invisible pour le bulletin
+    var iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;right:-9999px;bottom:-9999px;width:210mm;height:297mm;border:0;visibility:hidden;';
+    document.body.appendChild(iframe);
+
+    // Quand l'iframe est chargée, déclencher l'impression
+    iframe.onload = function() {
+      try {
+        // Petit délai pour s'assurer que tous les styles/images sont rendus
+        setTimeout(function() {
+          try {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+          } catch(e) {
+            console.error('[print iframe]', e);
+          }
+          // Cleanup après impression (l'utilisateur a eu le temps de valider)
+          setTimeout(function() {
+            try { document.body.removeChild(iframe); } catch(e){}
+            callback();
+          }, 1000);
+        }, 500);
+      } catch(e) {
+        console.error('[iframe onload]', e);
+        try { document.body.removeChild(iframe); } catch(e){}
+        callback();
+      }
     };
 
-    // Mode 'save' = déclenche le téléchargement natif (équivalent Ctrl+P)
-    // Ce mode marche, contrairement à 'outputPdf' qui génère un PDF blanc.
-    html2pdf().set(opt).from(container).save().then(function() {
-      try { document.body.removeChild(container); } catch(e){}
-      var st = document.getElementById(styleId); if (st) st.remove();
-      callback();
-    }).catch(function(err) {
-      try { document.body.removeChild(container); } catch(e){}
-      var st = document.getElementById(styleId); if (st) st.remove();
-      console.error('[Bulletin PDF Download]', err);
-      callback();
-    });
+    // Écrire le HTML dans l'iframe
+    var doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(htmlWithTitle);
+    doc.close();
   } catch(e) {
     console.error('[downloadBulletinPaiePDFSeparate]', e);
     callback();
@@ -29548,8 +29554,8 @@ function exportCommHistCSV() {
         <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
           <input type="checkbox" id="envoi-bulletin-paie" style="width:17px;height:17px;cursor:pointer;accent-color:#7343EE;flex-shrink:0;">
           <div style="flex:1;">
-            <div style="font-weight:700;color:#4B36EC;">📋 Télécharger aussi le bulletin de paie (.pdf séparé)</div>
-            <div style="font-size:11px;color:#6B5E9C;margin-top:2px;">Il sera téléchargé séparément — il faudra le glisser-déposer dans votre mail Outlook avant envoi</div>
+            <div style="font-weight:700;color:#4B36EC;">📋 Aussi imprimer le bulletin de paie (.pdf séparé)</div>
+            <div style="font-size:11px;color:#6B5E9C;margin-top:2px;">Une fenêtre d'impression s'ouvrira — choisissez "Enregistrer en PDF" puis glissez-déposez le PDF dans votre mail Outlook</div>
           </div>
         </label>
         <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #D9CFFA;text-align:right;">
