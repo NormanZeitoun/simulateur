@@ -1151,6 +1151,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <!-- TJM équivalent affiché quand on saisit BRUT -->
         <div id="tjm-equiv-box" style="display:none;font-size:11px;padding:6px 10px;background:#F0FDF8;border-radius:6px;border:1px solid #9FE1CB;color:#0F6E56;margin-bottom:8px;font-weight:600;"></div>
 
+        <!-- WARNING ROUGE : BRUT inférieur à la convention collective (2375 €) -->
+        <div id="brut-convention-warning" style="display:none;background:#FCEBEB;border:1px solid #E24B4A;border-radius:8px;padding:10px 14px;font-size:12px;color:#A32D2D;margin-top:4px;font-weight:600;">
+          ⚠️ Le salaire Brut est inférieur à la convention collective
+        </div>
+
         <div id="seuil-warning" class="seuil-warning">⚠️ ALERTE SEUIL 2,5 SMIC — Brut entre 4 350€ et 4 500€ : vérifiez le CA dispo</div>
         </div>
 
@@ -2573,7 +2578,7 @@ function resetSimulateur() {
   window.lastEdited = 'tjm';
 
   // ── Masquer warnings éventuels ──
-  ['seuil-warning','frais-over-net-warning','frais-hero-warning','tjm-equiv-box','rtt-warning','rtt-info']
+  ['seuil-warning','frais-over-net-warning','frais-hero-warning','tjm-equiv-box','rtt-warning','rtt-info','brut-convention-warning']
     .forEach(function(wid) {
       var w = document.getElementById(wid);
       if (w) w.style.display = 'none';
@@ -3229,6 +3234,14 @@ function calc() {
   // === SEUIL ALERTE ===
   const seuilAlert = NB_JOURS < 22 && BRUT >= 4350 && BRUT <= 4500;
   document.getElementById('seuil-warning').classList.toggle('show', seuilAlert);
+
+  // === ALERTE CONVENTION COLLECTIVE : BRUT mensuel < 2375 € ===
+  // Le salaire brut mensuel ne doit pas descendre sous la convention collective.
+  // Affiche un warning rouge si BRUT > 0 et BRUT < 2375
+  const brutConventionEl = document.getElementById('brut-convention-warning');
+  if (brutConventionEl) {
+    brutConventionEl.style.display = (BRUT > 0 && BRUT < 2375) ? 'block' : 'none';
+  }
 
   // ============ UPDATE UI ============
   const fmt = (n, dec=0) => n.toLocaleString('fr-FR', {minimumFractionDigits:dec, maximumFractionDigits:dec}) + ' €';
@@ -10830,7 +10843,15 @@ function saveNewCandidat() {
     entreprise: (document.getElementById('nc-entreprise').value || '').trim(),
     commercial: document.getElementById('nc-commercial').value || '',
     techno: (document.getElementById('nc-techno').value || '').trim(),
-    commentaire: (document.getElementById('nc-commentaire').value || '').trim(),
+    commentaires: (function(){
+      var txt = (document.getElementById('nc-commentaire').value || '').trim();
+      if (!txt) return [];
+      return [{
+        text: txt,
+        date: new Date().toLocaleDateString('fr-FR'),
+        author: (typeof getCurrentUserCommercial === 'function' ? getCurrentUserCommercial() : '') || (document.getElementById('nc-commercial').value || '')
+      }];
+    })(),
     profil: '',
     statut: '',
     cv_name: '',
@@ -11046,13 +11067,13 @@ function computeCandStatutAuto(cand) {
         hasPast = true;
       }
     } else if (d.etat === 'Signé' || d.etat === 'En cours' || d.etat === 'Nouveau placement') {
-      // Deal en cours : on vérifie la date de fin prévisionnelle
-      // Si la mission est terminée sur le papier (date_fin < aujourd'hui), on le traite comme un ancien porté
-      if (dateFin && dateFin < today) {
-        hasPast = true;
-      } else {
-        hasActive = true;
-      }
+      // Deal en cours : tant que l'état du deal est Signé/En cours/Nouveau placement,
+      // le candidat est considéré comme ACTIF (Porté), peu importe la date_fin théorique.
+      // → date_fin n'est qu'une indication ; les missions sont souvent renouvelées
+      // sans mise à jour systématique de cette date dans le CRM.
+      // Pour passer en "Ancien porté", il faut explicitement basculer le deal
+      // à l'état "Sorti des effectifs".
+      hasActive = true;
     }
   });
 
