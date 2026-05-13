@@ -4484,27 +4484,44 @@ function buildBulletinPaiePDFb64(data, callback) {
         margin: [5, 5, 5, 5],
         filename: filename,
         image: { type: 'jpeg', quality: 0.95 },
-        html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          // Forcer la largeur de capture pour éviter les canvas vides
+          windowWidth: container.scrollWidth || 794,
+          width: container.scrollWidth || 794
+        },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       };
 
-      html2pdf().set(opt).from(container).outputPdf('datauristring').then(function(dataUri) {
-        // Cleanup
-        try { document.body.removeChild(container); } catch(e){}
-        var st = document.getElementById(styleId); if (st) st.remove();
-        // Extraire le base64 pur — robuste à toute variation de préfixe Data URI
-        // (ex: "data:application/pdf;base64," OU "data:application/pdf;filename=generated.pdf;base64,")
-        var commaIdx = dataUri.indexOf(',');
-        var b64 = commaIdx >= 0 ? dataUri.substring(commaIdx + 1) : dataUri;
-        // Sécurité : retirer tout saut de ligne éventuel dans le base64 (Outlook strict)
-        b64 = b64.replace(/[\r\n\s]/g, '');
-        callback(b64, filename);
-      }).catch(function(err) {
-        try { document.body.removeChild(container); } catch(e){}
-        var st = document.getElementById(styleId); if (st) st.remove();
-        console.error('[html2pdf]', err);
-        callback(null, null, 'Erreur génération PDF : ' + (err.message || err));
+      // CRITIQUE : attendre que le navigateur ait rendu le HTML+CSS avant la capture
+      // Sinon html2canvas capture un canvas vide → PDF blanc
+      // Double requestAnimationFrame + setTimeout = standard de l'industrie
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          setTimeout(function() {
+            html2pdf().set(opt).from(container).outputPdf('datauristring').then(function(dataUri) {
+              // Cleanup
+              try { document.body.removeChild(container); } catch(e){}
+              var st = document.getElementById(styleId); if (st) st.remove();
+              // Extraire le base64 pur — robuste à toute variation de préfixe Data URI
+              // (ex: "data:application/pdf;base64," OU "data:application/pdf;filename=generated.pdf;base64,")
+              var commaIdx = dataUri.indexOf(',');
+              var b64 = commaIdx >= 0 ? dataUri.substring(commaIdx + 1) : dataUri;
+              // Sécurité : retirer tout saut de ligne éventuel dans le base64 (Outlook strict)
+              b64 = b64.replace(/[\r\n\s]/g, '');
+              callback(b64, filename);
+            }).catch(function(err) {
+              try { document.body.removeChild(container); } catch(e){}
+              var st = document.getElementById(styleId); if (st) st.remove();
+              console.error('[html2pdf]', err);
+              callback(null, null, 'Erreur génération PDF : ' + (err.message || err));
+            });
+          }, 250); // 250ms pour laisser le navigateur peindre les éléments (logo, CSS complexes)
+        });
       });
     } else {
       callback(null, null, 'Impossible d\'extraire le contenu du bulletin.');
