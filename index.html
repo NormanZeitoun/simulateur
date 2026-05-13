@@ -21242,7 +21242,7 @@ function buildCandFicheHTML(cand) {
     // ── Bloc identité ──
     + '<div style="padding:12px 22px;background:#FAFAFA;border-bottom:1.5px solid #E4E0FA;">'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:8px;">'
-    + sel('Civilité', cand.civilite||'', 'civilite', ['','Monsieur','Madame'])
+    + sel('Civilité', cand.civilite||'', 'civilite', ['','M.','Mme'])
     + fld('Prénom', cand.prenom, 'prenom')
     + fld('Nom', cand.nom, 'nom')
     + fld('Email', cand.email, 'email', 'email')
@@ -21256,6 +21256,7 @@ function buildCandFicheHTML(cand) {
     + selStatutPortage()
     + fld('Ville', cand.ville, 'ville')
     + fld('LinkedIn', cand.linkedin, 'linkedin')
+    + sel('Commercial référent', cand.commercial||'', 'commercial', ['','David','Rayan','Esteban','Sacha','Farah','Joanne','Norman'])
     + '</div>'
     + '</div>'
 
