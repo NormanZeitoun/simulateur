@@ -4449,9 +4449,11 @@ function buildBulletinPaiePDFb64(data, callback) {
   try {
     var html = buildBulletinPaieHTML(data);
 
-    // Créer un container invisible pour rendre le HTML
+    // Créer un container pour rendre le HTML
+    // IMPORTANT : on positionne en haut à gauche (0,0) mais invisible via opacity+pointer-events
+    // Si on met left:-99999px, html2canvas échoue à capturer (PDF blanc)
     var container = document.createElement('div');
-    container.style.cssText = 'position:absolute;left:-99999px;top:0;width:210mm;background:#fff;';
+    container.style.cssText = 'position:fixed;left:0;top:0;width:210mm;background:#fff;opacity:0;pointer-events:none;z-index:-1;';
     // Extraire le body du HTML généré
     var bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
     var headMatch = html.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
@@ -5378,6 +5380,7 @@ function saveHistorique(data, dest, email, consultantName) {
     commercial: data.commercial || '',
     poste: data.poste || '',
     civilite: data.civilite || '',
+    tel: data.tel || '',
     entreprise: data.entreprise || '',
     manager: data.manager || '',
     tjm: data.tjm,
@@ -10473,6 +10476,8 @@ function saveCandidatFromEntry(entry) {
     cands[idx].nom = entry.consultant ? entry.consultant.split(' ').slice(1).join(' ') : cands[idx].nom;
     cands[idx].email = entry.email || cands[idx].email;
     // Mettre à jour les infos supplémentaires uniquement si vides localement
+    if (!cands[idx].tel && entry.tel) cands[idx].tel = entry.tel;
+    if (!cands[idx].civilite && entry.civilite) cands[idx].civilite = entry.civilite;
     if (!cands[idx].poste && entry.poste) cands[idx].poste = entry.poste;
     if (!cands[idx].tjm_actuel && entry.tjm) cands[idx].tjm_actuel = entry.tjm;
     if (!cands[idx].entreprise && entry.entreprise) cands[idx].entreprise = entry.entreprise;
@@ -10492,7 +10497,7 @@ function saveCandidatFromEntry(entry) {
     cands.unshift({
       id: Date.now(),
       sp_id: generateSpId('CAND', getCandidats()),
-      civilite: '',
+      civilite: entry.civilite || '',
       prenom: parts[0] || '',
       nom: parts.slice(1).join(' ') || '',
       email: entry.email || '',
@@ -21147,6 +21152,7 @@ function buildCandFicheHTML(cand) {
     + fld('Nom', cand.nom, 'nom')
     + fld('Email', cand.email, 'email', 'email')
     + fld('Téléphone', cand.tel, 'tel', 'tel')
+    + fld('Poste', cand.poste, 'poste')
     + sel('Profil', cand.profil||'', 'profil', ['','Consultant','Manager','Expert','Architecte','Chef de projet','Autre'])
     + fld('TJM actuel (€/j)', cand.tjm_actuel, 'tjm_actuel')
     + fld('Disponibilité', cand.disponibilite, 'disponibilite', 'date')
