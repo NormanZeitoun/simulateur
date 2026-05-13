@@ -1094,8 +1094,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         </div>
         <div class="field-row">
           <div class="field"><label>Email candidat</label><input type="text" id="email" placeholder="candidat@domaine.fr" oninput="calc()"></div>
-        </div>
-        <div class="field-row">
           <div class="field"><label>Téléphone candidat</label><input type="tel" id="tel" placeholder="06 XX XX XX XX" oninput="calc()"></div>
         </div>
         <div class="field-row">
@@ -1119,31 +1117,31 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <!-- Ligne 1: TJM + Nb jours -->
         <div class="field-row">
           <div class="field">
-            <label>TJM HT (€) <span style="font-size:10px;color:var(--brand);font-weight:600;" id="tjm-source-badge"></span></label>
+            <label style="display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:18px;">TJM HT (€) <span style="font-size:10px;color:var(--brand);font-weight:600;" id="tjm-source-badge"></span></label>
             <input type="number" id="tjm" value="610" min="0" step="5" oninput="onTJMChange()">
           </div>
-          <div class="field"><label>Nb jours / mois</label><input type="number" id="nb_jours" value="21" min="1" max="23" step="1" oninput="onContextChange()"></div>
+          <div class="field"><label style="min-height:18px;">Nb jours / mois</label><input type="number" id="nb_jours" value="21" min="1" max="23" step="1" oninput="onContextChange()"></div>
         </div>
 
         <!-- Ligne 2: Brut annuel + Brut mensuel -->
         <div class="field-row">
           <div class="field">
-            <label>BRUT annuel (€) <span style="font-size:10px;color:#9B6EF5;font-weight:600;">→ mensuel auto</span></label>
+            <label style="display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:18px;">BRUT annuel (€) <span style="font-size:10px;color:#9B6EF5;font-weight:600;">→ mensuel auto</span></label>
             <input type="number" id="brut_annuel" value="" min="0" step="100" oninput="onBRUTAnnuelChange()" placeholder="Ex : 60000" style="font-weight:600;color:#4B36EC;">
           </div>
           <div class="field">
-            <label>BRUT mensuel (€) <span style="font-size:10px;color:var(--success);font-weight:600;" id="brut-source-badge">← calculé</span></label>
+            <label style="display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:18px;">BRUT mensuel (€) <span style="font-size:10px;color:var(--success);font-weight:600;" id="brut-source-badge">← calculé</span></label>
             <input type="number" id="brut" value="" min="0" step="10" oninput="onBRUTChange()" style="font-weight:700;">
           </div>
         </div>
         <!-- Ligne 3: Frais Gestion + Frais Affiché -->
         <div class="field-row">
           <div class="field">
-            <label>Frais Gestion Seven (%)</label>
+            <label style="min-height:18px;">Frais Gestion Seven (%)</label>
             <input type="number" id="marge" value="5" min="0" max="20" step="0.5" oninput="onContextChange()">
           </div>
           <div class="field">
-            <label style="font-size:11px;color:var(--muted);">Frais Seven Affiché (%)</label>
+            <label style="font-size:11px;color:var(--muted);min-height:18px;">Frais Seven Affiché (%)</label>
             <input type="number" id="marge_affichee" min="0" max="100" step="0.5" placeholder="" style="color:#7343EE;">
           </div>
         </div>
@@ -1180,16 +1178,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <input type="text" id="entreprise" placeholder="Nom entreprise" oninput="calc();filterSimClient()" onblur="setTimeout(hideSimClientDrop,200)" autocomplete="off">
           <div id="sim-client-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:260px;overflow-y:auto;margin-top:2px;"></div>
         </div>
-      </div>
-      <div class="field-row">
-        <div class="field" style="position:relative;">
-          <label>Manager / Contact</label>
-          <input type="text" id="manager" placeholder="Nom manager" oninput="calc();filterSimManager()" onfocus="filterSimManager()" onblur="setTimeout(hideSimManagerDrop,200)" autocomplete="off">
-          <div id="sim-manager-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:260px;overflow-y:auto;margin-top:2px;"></div>
-        </div>
-        <div class="field"><label>Email client</label><input type="text" id="email_client" placeholder="contact@entreprise.fr" oninput="calc()"></div>
-      </div>
-      <div class="field-row">
         <div class="field">
           <label>Origine Leads</label>
           <select id="source_origine" onchange="calc();onSimCoopOriginChange()">
@@ -1203,6 +1191,14 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
             <option value="Autre">Autre</option>
           </select>
         </div>
+      </div>
+      <div class="field-row">
+        <div class="field" style="position:relative;">
+          <label>Manager / Contact</label>
+          <input type="text" id="manager" placeholder="Nom manager" oninput="calc();filterSimManager()" onfocus="filterSimManager()" onblur="setTimeout(hideSimManagerDrop,200)" autocomplete="off">
+          <div id="sim-manager-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #E4E0FA;border-radius:7px;box-shadow:0 4px 16px rgba(75,54,236,0.15);max-height:260px;overflow-y:auto;margin-top:2px;"></div>
+        </div>
+        <div class="field"><label>Email client</label><input type="text" id="email_client" placeholder="contact@entreprise.fr" oninput="calc()"></div>
       </div>
 
       <!-- Bloc recherche coopteur (affiché uniquement si Origine = Cooptation Client ou Candidat) -->
@@ -1353,33 +1349,34 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-title">Transport</div>
-      <div class="field"><label>Abonnement transport (€/mois)</label><input type="number" id="abo_transport" value="0" oninput="onContextChange()"></div>
-    </div>
+    <div class="section" id="section-frais-comp">
+      <div class="section-title">Frais complémentaires</div>
 
-    <div class="section" id="section-telnet">
-      <div class="section-title">Téléphone & Internet</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;padding:5px 8px;background:#FEF3E2;border-radius:6px;border:1px solid #F0C070;display:none;" id="telnet-tt-warning">
-        ⚠️ Non disponible si télétravail actif — utilisez les champs Abonnement internet/mobile dans la section Télétravail.
-      </div>
-      <div id="telnet-fields">
-        <div class="field-row">
-          <div class="field" style="flex:1;"><label>Forfait mobile &amp; Internet (€/mois)</label><input type="number" id="abo_telnet" value="0" oninput="syncTelnetField();onContextChange();"></div>
+      <!-- Ligne 1 : Transport + Téléphone/Internet (le 2e champ se cache si télétravail actif) -->
+      <div class="field-row">
+        <div class="field"><label>Abonnement transport (€/mois)</label><input type="number" id="abo_transport" value="0" oninput="onContextChange()"></div>
+        <div class="field" id="section-telnet" style="margin-bottom:12px;">
+          <div id="telnet-fields">
+            <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:500;">Forfait mobile &amp; Internet (€/mois)</label>
+            <input type="number" id="abo_telnet" value="0" oninput="syncTelnetField();onContextChange();">
+            <!-- Champs legacy pour compat calcul (un seul montant partagé) -->
+            <input type="hidden" id="abo_tel" value="0">
+            <input type="hidden" id="abo_internet" value="0">
+          </div>
         </div>
-        <!-- Champs legacy pour compat calcul (un seul montant partagé) -->
-        <input type="hidden" id="abo_tel" value="0">
-        <input type="hidden" id="abo_internet" value="0">
       </div>
-    </div>
 
-    <div class="section">
-      <div class="section-title">Frais professionnels</div>
+      <!-- Warning télétravail (sous la ligne 1) -->
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;padding:5px 8px;background:#FEF3E2;border-radius:6px;border:1px solid #F0C070;display:none;" id="telnet-tt-warning">
+        ⚠️ Tél./Internet non disponible si télétravail actif — utilisez les champs Abonnement internet/mobile dans la section Télétravail.
+      </div>
+
+      <!-- Ligne 2 : Formation + Matériel professionnel -->
       <div class="field-row">
         <div class="field"><label>Formation (€)</label><input type="number" id="frais_formation" value="0" step="10" oninput="onContextChange()"></div>
         <div class="field"><label>Matériel professionnel (€)</label><input type="number" id="frais_materiel" value="0" step="10" oninput="onContextChange()"></div>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px;">Remboursement sur justificatifs — exonéré de charges et d'impôt</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:-4px;">Formation &amp; matériel : remboursement sur justificatifs — exonéré de charges et d'impôt</div>
     </div>
 
     <!-- WARNING FRAIS > NET -->
@@ -1423,6 +1420,18 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       <div class="params-row"><label>Prénom Nom</label><input type="text" id="p_commercial_nom" placeholder="Ex : Norman Dupont" onchange="saveParamsCommercial();updateBadgeCommercial()"></div>
       <div class="params-row"><label>Téléphone</label><input type="text" id="p_commercial_tel" placeholder="Ex : 06 12 34 56 78" onchange="saveParamsCommercial()"></div>
       <div class="params-row"><label>Email</label><input type="text" id="p_commercial_email" placeholder="nom@sevenportage.fr" onchange="saveParamsCommercial()"></div>
+      <div class="params-row"><label>Page de démarrage</label>
+        <select id="p_commercial_homepage" onchange="saveParamsCommercial()">
+          <option value="mission">🏗️ Simulateur</option>
+          <option value="dashboard">📊 Dashboard</option>
+          <option value="historique">📈 Historique</option>
+          <option value="rh">💼 Suivi RH</option>
+          <option value="candidats">👤 Candidats</option>
+          <option value="clients">🏢 Clients</option>
+          <option value="taches">📅 Tâches</option>
+          <option value="commissions">💰 Commissions</option>
+        </select>
+      </div>
     </div>
 
     <!-- OneDrive Sync -->
@@ -3499,9 +3508,11 @@ function saveParamsCommercial() {
   var el_nom = document.getElementById('p_commercial_nom');
   var el_tel = document.getElementById('p_commercial_tel');
   var el_email = document.getElementById('p_commercial_email');
+  var el_homepage = document.getElementById('p_commercial_homepage');
   if (el_nom)   saved['p_commercial_nom']   = el_nom.value;
   if (el_tel)   saved['p_commercial_tel']   = el_tel.value;
   if (el_email) saved['p_commercial_email'] = el_email.value;
+  if (el_homepage) saved['p_commercial_homepage'] = el_homepage.value;
   localStorage.setItem('sp_params_v2', JSON.stringify(saved));
 }
 
@@ -3596,8 +3607,20 @@ window.addEventListener('DOMContentLoaded', () => {
       const obj = JSON.parse(saved);
       Object.keys(obj).forEach(k => {
         const el = document.getElementById(k);
-        if (el && el.tagName === 'INPUT') el.value = obj[k];
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT')) el.value = obj[k];
       });
+      // PAGE DE DÉMARRAGE PERSONNALISÉE : si l'utilisateur a choisi une page,
+      // y naviguer automatiquement. Sinon, garder Simulateur (défaut).
+      var homepage = obj['p_commercial_homepage'];
+      var validSections = ['mission','dashboard','historique','rh','candidats','clients','taches','commissions','entrees'];
+      if (homepage && validSections.indexOf(homepage) >= 0 && homepage !== 'mission') {
+        // Délai pour laisser l'app s'initialiser correctement avant la navigation
+        setTimeout(function(){
+          if (typeof mainNavTo === 'function') {
+            try { mainNavTo(homepage); } catch(e){ console.warn('[homepage]', e); }
+          }
+        }, 100);
+      }
     } catch(e) {}
   }
 
@@ -5687,10 +5710,36 @@ function newVersionSim(ts) {
 
 function deleteSim(ts) {
   if (!confirm('Supprimer cette simulation ?')) return;
+  // 1. Supprimer de l'historique global
   var hist = getHistory().filter(function(h) { return h.timestamp !== ts; });
   saveHistoryArr(hist);
   if (typeof addTombstone === 'function') addTombstone('simulations', ts);
+
+  // 2. Propager la suppression dans cand.simulations de tous les candidats
+  // (la simulation est référencée à la fois dans l'historique global ET dans la fiche candidat)
+  try {
+    var cands = (typeof getCandidats === 'function') ? getCandidats() : [];
+    var changed = false;
+    cands.forEach(function(c){
+      if (!c || !Array.isArray(c.simulations)) return;
+      var beforeLen = c.simulations.length;
+      c.simulations = c.simulations.filter(function(s){ return s && s.timestamp !== ts; });
+      if (c.simulations.length !== beforeLen) {
+        c.updated = new Date().toLocaleDateString('fr-FR');
+        changed = true;
+      }
+    });
+    if (changed && typeof saveCandidatsArr === 'function') {
+      saveCandidatsArr(cands);
+    }
+  } catch(e) { console.warn('[deleteSim] propagation candidats', e); }
+
+  // 3. Refresh des vues impactées
   renderHistorique();
+  if (typeof renderCandidats === 'function') renderCandidats();
+
+  // 4. Sync OneDrive pour propager la suppression à toute l'équipe
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 
 // ── EXPORT / IMPORT / BACKUP ──────────────────────────────
@@ -7237,12 +7286,22 @@ function openPlacementPopup(ts) {
             document.getElementById('pl-nom-signataire').value = existingMgr.name || '';
             document.getElementById('pl-tel-signataire').value = existingMgr.tel || '';
             document.getElementById('pl-email-signataire').value = existingMgr.email || '';
-            // Tel/email client = tel/email manager par défaut si pas défini sur le client
-            if (!document.getElementById('pl-tel-client').value && existingMgr.tel) {
-              document.getElementById('pl-tel-client').value = existingMgr.tel;
+          }
+        }
+        // PRÉ-REMPLISSAGE TÉLÉPHONE/EMAIL MANAGER (indépendant du signataire)
+        // Cherche le manager du placement dans la fiche client et pré-remplit
+        // pl-tel-client (Téléphone manager) et pl-email-client (Email manager)
+        if (sim.manager) {
+          var mgrName2 = sim.manager.trim().toLowerCase();
+          var managerMatch = (existingClient.managers || []).find(function(m){
+            return (m.name||'').trim().toLowerCase() === mgrName2;
+          });
+          if (managerMatch) {
+            if (!document.getElementById('pl-tel-client').value && managerMatch.tel) {
+              document.getElementById('pl-tel-client').value = managerMatch.tel;
             }
-            if (!document.getElementById('pl-email-client').value && existingMgr.email) {
-              document.getElementById('pl-email-client').value = existingMgr.email;
+            if (!document.getElementById('pl-email-client').value && managerMatch.email) {
+              document.getElementById('pl-email-client').value = managerMatch.email;
             }
           }
         }
@@ -10584,6 +10643,10 @@ function saveCandidatsArr(arr) {
 function saveCandidatFromEntry(entry) {
   var email = (entry.email || '').trim().toLowerCase();
   if (!email) return; // pas d'email = pas de candidat
+  // RÈGLE MÉTIER : si la simu est destinée au CLIENT uniquement (pas au candidat),
+  // c'est un prospect client sans candidat identifié → ne pas créer de fiche candidat.
+  // La simu reste visible dans l'Historique et dans la fiche client.
+  if (entry.dest === 'client') return;
   var cands = getCandidats();
   var idx = cands.findIndex(function(c) { return (c.email||'').trim().toLowerCase() === email; });
   var simRef = { timestamp: entry.timestamp, date: entry.date, tjm: entry.tjm, nb_jours: entry.nb_jours, brut: entry.brut, net_payer: entry.net_payer, entreprise: entry.entreprise, poste: entry.poste, commercial: entry.commercial };
@@ -29667,8 +29730,8 @@ function exportCommHistCSV() {
           </div>
           <div id="pl-client-info" style="display:none;margin-top:6px;padding:6px 10px;background:#E6F9F0;border-radius:6px;font-size:11px;color:#1D9E75;"></div>
         </div>
-        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Téléphone client</label><input id="pl-tel-client" type="tel" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
-        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Email client</label><input id="pl-email-client" type="email" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Téléphone manager</label><input id="pl-tel-client" type="tel" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Email manager</label><input id="pl-email-client" type="email" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Manager / Contact</label><input id="pl-manager" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Adresse d'exécution</label><input id="pl-adresse-exec" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Contrat</label><select id="pl-type-contrat-client" onchange="updateTaciteField()" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Seven</option><option>Client</option></select></div>
