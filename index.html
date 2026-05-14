@@ -7461,6 +7461,28 @@ function openPlacementPopup(ts) {
   var deals = getDeals();
   var existing = deals.find(function(d) { return d.sim_ts === ts; });
   if (existing) {
+    // FIX : on réhydrate AUSSI les champs candidat/client/manager/commercial
+    // qui étaient auparavant écrasés par les valeurs (parfois vides) de la sim.
+    // Règle : si le deal a une valeur non vide, elle PRIME sur celle de la sim.
+    function _setIf(id, val) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      if (val !== undefined && val !== null && val !== '') el.value = val;
+    }
+    // Candidat
+    _setIf('pl-prenom', existing.prenom);
+    _setIf('pl-nom', existing.nom);
+    _setIf('pl-email', existing.email);
+    _setIf('pl-poste', existing.poste);
+    var plCiv = document.getElementById('pl-civilite');
+    if (plCiv && existing.civilite) plCiv.value = existing.civilite;
+    // Client / Manager (top-level deal prime sur la sim)
+    _setIf('pl-entreprise', existing.entreprise);
+    _setIf('pl-email-client', existing.email_client);
+    _setIf('pl-manager', existing.manager);
+    // Commercial (le deal peut différer de la sim si réassignation)
+    _setIf('pl-commercial', existing.commercial);
+
     document.getElementById('pl-secteur').value = existing.secteur || '';
     document.getElementById('pl-tel').value = existing.tel || '';
     document.getElementById('pl-tel-client').value = existing.tel_client || '';
@@ -19039,6 +19061,161 @@ function showSortantsView() {
   renderSortants();
 }
 
+// ─────────────────────────────────────────────────────────
+// FINS DE MISSION NON TRAITÉES
+// Deals dont date_fin est passée mais qui n'ont pas de fiche Sortant
+// (et qui ne sont pas Annulé / Sorti des effectifs)
+// ─────────────────────────────────────────────────────────
+function getFinsDeMissionNonTraitees() {
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var sortants = (typeof getSortants === 'function') ? getSortants() : [];
+  // Index des deals déjà traités en sortant
+  var sortantByDealId = {};
+  var sortantBySimTs = {};
+  sortants.forEach(function(s){
+    if (s.deal_id) sortantByDealId[s.deal_id] = s;
+    if (s.sim_ts) sortantBySimTs[s.sim_ts] = s;
+  });
+  var today = new Date();
+  today.setHours(0,0,0,0);
+  var todayMs = today.getTime();
+
+  return deals.filter(function(d){
+    if (!d) return false;
+    if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return false;
+    if (!d.date_fin) return false;
+    var df = new Date(d.date_fin);
+    if (isNaN(df.getTime())) return false;
+    if (df.getTime() >= todayMs) return false; // pas encore passée
+    if (d.id && sortantByDealId[d.id]) return false;
+    if (d.sim_ts && sortantBySimTs[d.sim_ts]) return false;
+    return true;
+  }).sort(function(a,b){
+    // Plus anciennes d'abord (plus urgent)
+    return (a.date_fin || '').localeCompare(b.date_fin || '');
+  });
+}
+
+function _frDate(iso) {
+  if (!iso) return '—';
+  var p = (iso + '').split('-');
+  if (p.length !== 3) return iso;
+  return p[2] + '/' + p[1] + '/' + p[0];
+}
+
+function _daysSince(iso) {
+  if (!iso) return 0;
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return 0;
+  var today = new Date(); today.setHours(0,0,0,0);
+  return Math.floor((today.getTime() - d.getTime()) / 86400000);
+}
+
+function openFinsNonTraiteesPopup() {
+  var deals = getFinsDeMissionNonTraitees();
+  // Filtre commercial local
+  if (!window._finsNonTrFilter) window._finsNonTrFilter = { commercial: '__all__', search: '' };
+  var f = window._finsNonTrFilter;
+
+  // Commerciaux distincts
+  var comms = {};
+  deals.forEach(function(d){ if (d.commercial) comms[d.commercial] = 1; });
+
+  var filtered = deals.filter(function(d){
+    if (f.commercial !== '__all__' && (d.commercial || '') !== f.commercial) return false;
+    if (f.search) {
+      var q = f.search.toLowerCase();
+      var hay = [(d.prenom||''),(d.nom||''),(d.entreprise||''),(d.commercial||'')].join(' ').toLowerCase();
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+
+  var commOpts = '<option value="__all__">Tous commerciaux</option>' + Object.keys(comms).sort().map(function(c){
+    return '<option value="' + c.replace(/"/g,'&quot;') + '"' + (f.commercial===c?' selected':'') + '>' + c + '</option>';
+  }).join('');
+
+  // Construction du modal
+  var modalId = 'fins-non-traitees-modal';
+  var existing = document.getElementById(modalId);
+  if (existing) existing.remove();
+
+  var rows = filtered.map(function(d){
+    var days = _daysSince(d.date_fin);
+    var urgent = days >= 30;
+    var dotColor = urgent ? '#E24B4A' : (days >= 7 ? '#F0A500' : '#9B6EF5');
+    var nomComplet = ((d.prenom||'') + ' ' + (d.nom||'')).trim() || '—';
+    return '<tr style="border-bottom:1px solid #F0EDFB;">'
+      + '<td style="padding:10px 12px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + dotColor + ';margin-right:8px;vertical-align:middle;"></span><strong style="font-size:12.5px;color:#2D2358;">' + nomComplet + '</strong></td>'
+      + '<td style="padding:10px 12px;font-size:12px;color:#564878;">' + (d.entreprise || '—') + '</td>'
+      + '<td style="padding:10px 12px;font-size:12px;color:#564878;">' + (d.commercial || '—') + '</td>'
+      + '<td style="padding:10px 12px;font-size:12px;color:#2D2358;font-weight:600;">' + _frDate(d.date_fin) + '</td>'
+      + '<td style="padding:10px 12px;font-size:11.5px;color:' + (urgent?'#E24B4A':'#6B5E9C') + ';font-weight:' + (urgent?'700':'500') + ';">'
+      +   (days === 0 ? "Aujourd'hui" : (days === 1 ? 'Hier' : 'Il y a ' + days + ' jours'))
+      + '</td>'
+      + '<td style="padding:10px 12px;font-size:12px;color:#564878;">' + (d.etat || '—') + '</td>'
+      + '<td style="padding:10px 12px;text-align:right;">'
+      +   '<button onclick="closeFinsNonTraiteesPopup();setTimeout(function(){openSortiePopup(' + (d.sim_ts || 0) + ')},120);" style="padding:5px 11px;background:#E24B4A;color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;">🚪 Déclencher Sortie</button>'
+      + '</td>'
+      + '</tr>';
+  }).join('');
+
+  if (!rows) {
+    rows = '<tr><td colspan="7" style="padding:40px 20px;text-align:center;color:#9C92C2;font-size:13px;">'
+      + (deals.length === 0
+          ? '✅ Aucune fin de mission en retard — tous les deals à jour.'
+          : 'Aucun résultat pour ces filtres.')
+      + '</td></tr>';
+  }
+
+  var html = ''
+    + '<div id="' + modalId + '" style="position:fixed;inset:0;background:rgba(40,30,80,0.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto;" onclick="if(event.target===this)closeFinsNonTraiteesPopup()">'
+    +   '<div style="background:#fff;border-radius:14px;width:100%;max-width:1100px;max-height:calc(100vh - 80px);overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,0.3);display:flex;flex-direction:column;">'
+    +     '<div style="background:linear-gradient(135deg,#A8322A 0%, #E24B4A 100%);color:#fff;padding:18px 24px;display:flex;justify-content:space-between;align-items:center;">'
+    +       '<div>'
+    +         '<div style="font-size:17px;font-weight:700;">⚠️ Fins de mission non traitées</div>'
+    +         '<div style="font-size:12px;opacity:0.92;margin-top:3px;">' + deals.length + ' deal' + (deals.length>1?'s':'') + ' avec date de fin passée sans fiche Sortant créée</div>'
+    +       '</div>'
+    +       '<button onclick="closeFinsNonTraiteesPopup()" style="background:rgba(255,255,255,0.2);color:#fff;border:none;border-radius:50%;width:34px;height:34px;font-size:18px;cursor:pointer;">×</button>'
+    +     '</div>'
+    +     '<div style="padding:14px 20px;border-bottom:1px solid #F0EDFB;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#FAF8FF;">'
+    +       '<input type="text" placeholder="🔎 Rechercher (nom, entreprise, commercial)..." value="' + (f.search||'').replace(/"/g,'&quot;') + '" oninput="window._finsNonTrFilter.search=this.value;openFinsNonTraiteesPopup();" style="flex:1;min-width:240px;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    +       '<select onchange="window._finsNonTrFilter.commercial=this.value;openFinsNonTraiteesPopup();" style="padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;background:#fff;cursor:pointer;font-family:inherit;">' + commOpts + '</select>'
+    +       '<button onclick="window._finsNonTrFilter={commercial:\'__all__\',search:\'\'};openFinsNonTraiteesPopup();" style="padding:8px 12px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:8px;font-size:11.5px;font-weight:600;cursor:pointer;">↻ Réinit.</button>'
+    +     '</div>'
+    +     '<div style="overflow-y:auto;flex:1;">'
+    +       '<table style="width:100%;border-collapse:collapse;">'
+    +         '<thead style="background:#F5F3FF;position:sticky;top:0;z-index:1;">'
+    +           '<tr>'
+    +             '<th style="padding:11px 12px;text-align:left;font-size:10.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">Candidat</th>'
+    +             '<th style="padding:11px 12px;text-align:left;font-size:10.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">Entreprise</th>'
+    +             '<th style="padding:11px 12px;text-align:left;font-size:10.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">Commercial</th>'
+    +             '<th style="padding:11px 12px;text-align:left;font-size:10.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">Date fin</th>'
+    +             '<th style="padding:11px 12px;text-align:left;font-size:10.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">Retard</th>'
+    +             '<th style="padding:11px 12px;text-align:left;font-size:10.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">État</th>'
+    +             '<th style="padding:11px 12px;text-align:right;font-size:10.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">Action</th>'
+    +           '</tr>'
+    +         '</thead>'
+    +         '<tbody>' + rows + '</tbody>'
+    +       '</table>'
+    +     '</div>'
+    +     '<div style="padding:11px 20px;border-top:1px solid #F0EDFB;background:#FAF8FF;font-size:11px;color:#9C92C2;display:flex;justify-content:space-between;align-items:center;">'
+    +       '<div>🔴 ≥30j de retard · 🟠 ≥7j · 🟣 récent</div>'
+    +       '<div>' + filtered.length + ' affiché' + (filtered.length>1?'s':'') + ' / ' + deals.length + ' au total</div>'
+    +     '</div>'
+    +   '</div>'
+    + '</div>';
+
+  var div = document.createElement('div');
+  div.innerHTML = html;
+  document.body.appendChild(div.firstChild);
+}
+
+function closeFinsNonTraiteesPopup() {
+  var m = document.getElementById('fins-non-traitees-modal');
+  if (m) m.remove();
+}
+
 function renderSortants() {
   var container = document.getElementById('sortants-container');
   if (!container) return;
@@ -19112,10 +19289,26 @@ function renderSortants() {
   var nbDocsEnvoyes = filtered.filter(function(s){ return s.doc_fin_envoye === 'Oui'; }).length;
   var nbLaya = filtered.filter(function(s){ return s.laya === 'Oui'; }).length;
 
+  // Compteur fins de mission non traitées (pour badge bouton)
+  var nbFinsNonTr = 0;
+  try {
+    if (typeof getFinsDeMissionNonTraitees === 'function') {
+      nbFinsNonTr = getFinsDeMissionNonTraitees().length;
+    }
+  } catch(e) {}
+
   var html = '<div style="padding:4px 0 24px;">';
 
   // Hero
-  html += '<div class="comm-hero" style="background:linear-gradient(135deg,#A8322A 0%, #C0392B 50%, #E24B4A 100%);box-shadow:0 6px 20px rgba(226,75,74,0.22);">'
+  html += '<div class="comm-hero" style="background:linear-gradient(135deg,#A8322A 0%, #C0392B 50%, #E24B4A 100%);box-shadow:0 6px 20px rgba(226,75,74,0.22);position:relative;">'
+    + '<div style="position:absolute;top:14px;right:14px;">'
+    +   '<button onclick="openFinsNonTraiteesPopup()" style="padding:9px 14px;background:rgba(255,255,255,0.18);color:#fff;border:1.5px solid rgba(255,255,255,0.45);border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:8px;backdrop-filter:blur(4px);">'
+    +     '⚠️ Fins de mission non traitées'
+    +     (nbFinsNonTr > 0
+        ? '<span style="background:#fff;color:#A8322A;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:800;min-width:22px;text-align:center;">' + nbFinsNonTr + '</span>'
+        : '<span style="background:rgba(255,255,255,0.25);color:#fff;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:700;">0</span>')
+    +   '</button>'
+    + '</div>'
     + '<div class="comm-hero-title">🚪 Sortants</div>'
     + '<div class="comm-hero-sub">' + nbTotal + ' fiche' + (nbTotal>1?'s':'') + ' de sortie · gestion fin de mission & fin de contrat</div>'
     + '<div class="comm-stats">'
@@ -23293,16 +23486,46 @@ function buildClientPageHTML(cl) {
   // Tab "Documents" : KBIS, TVA, URSSAF + perso (déjà géré par buildClientDocsHTML)
   var tabDocsHtml = '<div id="cl-docs-content-' + cl.id + '">' + buildClientDocsHTML(cl) + '</div>';
 
-  // Tab "Placements" : tous les deals associés à ce client (via managers)
+  // Tab "Placements" : tous les deals associés à ce client
+  // FIX : on utilise sp_deals_v1 comme SOURCE DE VÉRITÉ pour les infos
+  // (commercial, tjm, date_entree, état actuel). cl.managers[].deals sert
+  // uniquement à connaître l'association sim_ts ↔ manager du client.
   var allClientDeals = [];
+  var allDeals = (typeof getDeals === 'function') ? getDeals() : [];
+  var dealsBySimTs = {};
+  allDeals.forEach(function(d){ if (d && d.sim_ts) dealsBySimTs[d.sim_ts] = d; });
+  var managerBySimTs = {};
   (cl.managers||[]).forEach(function(m){
     (m.deals||[]).forEach(function(d){
-      allClientDeals.push({ manager: m.name, sim_ts: d.sim_ts, candidat_name: d.candidat_name, etat: d.etat });
+      if (d && d.sim_ts) managerBySimTs[d.sim_ts] = m.name;
     });
   });
-  // Récupérer aussi les deals depuis sp_deals_v1 par entreprise
+
+  // 1) Deals déclarés dans cl.managers — toujours résolus depuis sp_deals_v1 si dispo
+  (cl.managers||[]).forEach(function(m){
+    (m.deals||[]).forEach(function(d){
+      if (!d || !d.sim_ts) return;
+      var src = dealsBySimTs[d.sim_ts];
+      if (src) {
+        allClientDeals.push({
+          manager: m.name,
+          sim_ts: src.sim_ts,
+          candidat_name: ((src.prenom||'') + ' ' + (src.nom||'')).trim() || d.candidat_name || '',
+          etat: src.etat || d.etat || '',
+          commercial: src.commercial || '',
+          tjm: src.tjm,
+          date_entree: src.date_entree,
+          date_fin: src.date_fin
+        });
+      } else {
+        // Fallback : pas trouvé dans sp_deals_v1 → on garde la copie figée
+        allClientDeals.push({ manager: m.name, sim_ts: d.sim_ts, candidat_name: d.candidat_name, etat: d.etat });
+      }
+    });
+  });
+  // 2) Compléter avec les deals présents dans sp_deals_v1 dont l'entreprise correspond
+  //    et dont le sim_ts n'a pas déjà été ramené par les managers ci-dessus
   try {
-    var allDeals = (typeof getDeals === 'function') ? getDeals() : [];
     var clientDealsRaw = allDeals.filter(function(d){
       return ((d.entreprise||'').trim().toLowerCase() === (cl.name||'').trim().toLowerCase());
     });
@@ -23311,7 +23534,7 @@ function buildClientPageHTML(cl) {
     clientDealsRaw.forEach(function(d){
       if (!seenTs[d.sim_ts]) {
         allClientDeals.push({
-          manager: d.manager || '—',
+          manager: managerBySimTs[d.sim_ts] || d.manager || '—',
           sim_ts: d.sim_ts,
           candidat_name: ((d.prenom||'') + ' ' + (d.nom||'')).trim(),
           etat: d.etat,
@@ -23748,7 +23971,29 @@ function buildManagerFicheHTML(cl, mgridx, m) {
   });
 
   // ── Placements = deals de ce manager ──
-  var mgrDeals = m.deals || [];
+  // FIX : on résout chaque deal depuis sp_deals_v1 (source de vérité) pour avoir
+  // candidat / TJM / état / commercial à jour, au lieu de la copie figée stockée
+  // dans m.deals au moment du placement.
+  var _allDealsForMgr = (typeof getDeals === 'function') ? getDeals() : [];
+  var _dealsBySimTsMgr = {};
+  _allDealsForMgr.forEach(function(x){ if (x && x.sim_ts) _dealsBySimTsMgr[x.sim_ts] = x; });
+  var mgrDeals = (m.deals || []).map(function(d){
+    if (!d) return d;
+    var src = d.sim_ts ? _dealsBySimTsMgr[d.sim_ts] : null;
+    if (!src) return d; // fallback : on garde la copie figée
+    return {
+      sim_ts: src.sim_ts,
+      candidat: ((src.prenom||'') + ' ' + (src.nom||'')).trim() || d.candidat || '',
+      email_candidat: src.email || d.email_candidat || '',
+      poste: src.poste || d.poste || '',
+      tjm: src.tjm || d.tjm || '',
+      etat: src.etat || d.etat || '',
+      commercial: src.commercial || d.commercial || '',
+      date_deal: src.date_deal || d.date_deal || '',
+      date_entree: src.date_entree || d.date_entree || '',
+      date_fin: src.date_fin || d.date_fin || ''
+    };
+  });
 
   // ── Commentaires ──
   var comments = m.commentaires || [];
@@ -27612,6 +27857,12 @@ function saveRappel(existingId, linkedType, linkedId, linkedName) {
       rappels[idx].datetime = datetime;
       rappels[idx].type = type;
       rappels[idx].comment = comment;
+      // FIX : propager aussi l'association (linked_type / linked_id / linked_name)
+      // — auparavant l'édition d'un rappel sans lien ne sauvegardait pas le candidat
+      //   ajouté via le sélecteur "Associer à"
+      if (typeof linkedType !== 'undefined') rappels[idx].linked_type = linkedType || '';
+      if (typeof linkedId !== 'undefined')   rappels[idx].linked_id = linkedId || '';
+      if (typeof linkedName !== 'undefined') rappels[idx].linked_name = linkedName || '';
       rappels[idx].updated = new Date().toISOString();
     }
   } else {
