@@ -3618,15 +3618,21 @@ window.addEventListener('DOMContentLoaded', () => {
       // y naviguer automatiquement. Sinon, garder Simulateur (défaut).
       var homepage = obj['p_commercial_homepage'];
       var validSections = ['mission','dashboard','historique','rh','candidats','clients','taches','commissions','entrees'];
+      console.log('[Homepage] Valeur stockée :', homepage);
       if (homepage && validSections.indexOf(homepage) >= 0 && homepage !== 'mission') {
-        // Délai pour laisser l'app s'initialiser correctement avant la navigation
+        // Délai augmenté à 350ms pour laisser le DOM, les listeners et les autres
+        // inits asynchrones (OneDrive, restoreFromHash, etc.) finir avant la navigation.
+        // 100ms s'avère trop court sur certaines machines.
         setTimeout(function(){
           if (typeof mainNavTo === 'function') {
+            console.log('[Homepage] Navigation vers :', homepage);
             try { mainNavTo(homepage); } catch(e){ console.warn('[homepage]', e); }
+          } else {
+            console.warn('[Homepage] mainNavTo introuvable');
           }
-        }, 100);
+        }, 350);
       }
-    } catch(e) {}
+    } catch(e) { console.warn('[Homepage] erreur restauration', e); }
   }
 
   // Save params on change
@@ -19342,6 +19348,22 @@ function renderSortants() {
       if (y) years[y] = 1;
     }
   });
+  // FIX : la table Sortants est souvent vide → le select Année ne montrait que
+  // "Toutes années". On complète avec les années des DEALS (date_fin), pour que
+  // l'utilisateur puisse filtrer par année même sans fiche Sortant existante.
+  // (les filtres ne montreront évidemment rien s'il n'y a pas de fiche, mais au
+  // moins le sélecteur reflète les périodes potentielles.)
+  try {
+    var _allDeals = (typeof getDeals === 'function') ? getDeals() : [];
+    _allDeals.forEach(function(d){
+      if (d && d.date_fin) {
+        var y2 = (d.date_fin + '').slice(0, 4);
+        if (y2 && /^\d{4}$/.test(y2)) years[y2] = 1;
+      }
+    });
+  } catch(e){}
+  // Toujours inclure l'année courante au minimum
+  years[String(new Date().getFullYear())] = 1;
 
   // Filtrage
   var filtered = all.filter(function(s){
