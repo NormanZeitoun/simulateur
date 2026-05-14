@@ -107,6 +107,8 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .params-row:first-child { border-top: none; }
 .params-row label { color: var(--muted); }
 .params-row input { width: 100px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 12px; text-align: right; }
+.params-row select { padding: 4px 26px 4px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 12px; background: #fff; color: var(--text); cursor: pointer; font-family: inherit; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 4l3 3 3-3' fill='none' stroke='%236B5E9C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>"); background-repeat: no-repeat; background-position: right 8px center; }
+.params-row select:focus { outline: none; border-color: var(--brand); }
 .params-section { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--brand); background: #F5F3FF; padding: 6px 16px; }
 .params-acc-header { display:flex; align-items:center; justify-content:space-between; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:var(--brand); background:#F5F3FF; padding:6px 16px; cursor:pointer; user-select:none; }
 .params-acc-header:hover { background:#EDE9FF; }
@@ -3638,11 +3640,23 @@ window.addEventListener('DOMContentLoaded', () => {
   // et on force une sauvegarde sur beforeunload + visibilitychange (extinction, onglet caché).
   // L'événement 'change' ne tire qu'au blur — si l'utilisateur éteint son ordi pendant
   // la frappe ou bascule directement vers un autre onglet, la valeur tapée est perdue.
+  //
+  // ═══ V2.1 : RESTRICTION DE SCOPE ═══
+  // On NE touche PAS aux inputs qui ont déjà un attribut onchange inline (ex: section
+  // Commercial Seven Portage qui appelle saveParamsCommercial() / page de démarrage),
+  // ni aux <select>. Ces inputs ont déjà leur logique propre — y superposer notre
+  // _saveParamsNow peut casser leur comportement (sauvegarde fantôme, conflits).
+  // On vise UNIQUEMENT les inputs "passifs" qui dépendent du listener global.
   // ═══════════════════════════════════════════════════════════════════════════════
+  function _isParamInputManaged(el) {
+    // un input/select qui a déjà sa propre logique onchange inline n'a pas besoin
+    // de notre listener global
+    return !!(el.getAttribute && el.getAttribute('onchange'));
+  }
   function _saveParamsNow(triggerEl) {
     let existing = {};
     try { existing = JSON.parse(localStorage.getItem('sp_params_v2') || '{}') || {}; } catch(e){}
-    document.querySelectorAll('#tab-params input, #tab-params select').forEach(e => {
+    document.querySelectorAll('#tab-params input').forEach(e => {
       if (!e.id) return;
       const v = e.value;
       // Si l'input est VIDE alors qu'une valeur non-vide existait : on PRÉSERVE l'ancienne
@@ -3662,7 +3676,9 @@ window.addEventListener('DOMContentLoaded', () => {
     _paramsSaveTimer = setTimeout(function(){ _saveParamsNow(triggerEl); }, 400);
   }
 
-  document.querySelectorAll('#tab-params input, #tab-params select').forEach(el => {
+  document.querySelectorAll('#tab-params input').forEach(el => {
+    // Ne pas dupliquer la logique pour les inputs qui ont déjà leur propre onchange inline
+    if (_isParamInputManaged(el)) return;
     // 'change' : sauvegarde immédiate (blur ou sélection)
     el.addEventListener('change', () => { _saveParamsNow(el); });
     // 'input' : sauvegarde différée (frappe en cours, debounced 400ms)
@@ -3671,16 +3687,24 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   // Sauvegarde forcée juste avant fermeture / extinction
-  window.addEventListener('beforeunload', function(){
+  // (sauve TOUS les inputs/selects du tab-params, y compris ceux gérés par onchange inline,
+  // car leur valeur en cours peut ne pas avoir encore été persistée)
+  function _saveAllParamsBeforeUnload() {
     if (_paramsSaveTimer) { clearTimeout(_paramsSaveTimer); _paramsSaveTimer = null; }
-    _saveParamsNow(null);
-  });
+    let existing = {};
+    try { existing = JSON.parse(localStorage.getItem('sp_params_v2') || '{}') || {}; } catch(e){}
+    document.querySelectorAll('#tab-params input, #tab-params select').forEach(e => {
+      if (!e.id) return;
+      const v = e.value;
+      if (v === '' && existing[e.id] && existing[e.id] !== '') return;
+      existing[e.id] = v;
+    });
+    try { localStorage.setItem('sp_params_v2', JSON.stringify(existing)); } catch(e) {}
+  }
+  window.addEventListener('beforeunload', _saveAllParamsBeforeUnload);
   // Sauvegarde quand l'onglet devient masqué (extinction, lock screen, switch app mobile)
   document.addEventListener('visibilitychange', function(){
-    if (document.visibilityState === 'hidden') {
-      if (_paramsSaveTimer) { clearTimeout(_paramsSaveTimer); _paramsSaveTimer = null; }
-      _saveParamsNow(null);
-    }
+    if (document.visibilityState === 'hidden') _saveAllParamsBeforeUnload();
   });
 
   updateProrata();
@@ -7258,6 +7282,11 @@ function openPlacementPopup(ts) {
   if (!sim) return;
   currentPlacementTs = ts;
 
+  // Reset du tracker de client courant — sera initialisé après les pré-remplissages
+  // pour ne pas déclencher un faux "changement" qui viderait les champs venant d'être
+  // remplis depuis la simulation ou le deal existant.
+  window._plLastClientId = null;
+
   // ── Candidat ──
   var parts = (sim.consultant || '').trim().split(' ');
   document.getElementById('pl-prenom').value = parts[0] || '';
@@ -8137,6 +8166,35 @@ function onEntrepriseChange() {
   var clients = getClients();
   var cl = clients.find(function(c){ return (c.name||'').toLowerCase() === name; });
 
+  // ═══ FIX : détecter un changement de client et vider les champs hérités ═══
+  // Quand l'utilisateur change d'entreprise (ex: trompé de client), il faut
+  // réinitialiser tout ce qui était spécifique au client/manager précédent :
+  // — Manager, signataire, tel/email manager, adresse, délai, banque, etc.
+  // Sans ça, les coordonnées du manager du Client A persistent quand on passe au Client B.
+  var previousClientId = window._plLastClientId || null;
+  var currentClientId  = cl ? cl.id : ('__new__:' + name);
+  if (previousClientId && previousClientId !== currentClientId) {
+    // Champs liés au manager
+    var mgrField = document.getElementById('pl-manager');           if (mgrField) mgrField.value = '';
+    var telCli  = document.getElementById('pl-tel-client');         if (telCli)  telCli.value  = '';
+    var mailCli = document.getElementById('pl-email-client');       if (mailCli) mailCli.value = '';
+    // Signataire (tributaire du manager ou du client)
+    var sigNom  = document.getElementById('pl-nom-signataire');     if (sigNom)  sigNom.value  = '';
+    var sigTel  = document.getElementById('pl-tel-signataire');     if (sigTel)  sigTel.value  = '';
+    var sigMail = document.getElementById('pl-email-signataire');   if (sigMail) sigMail.value = '';
+    // Champs purement "client" : on les efface aussi pour pouvoir réappliquer
+    // les valeurs du NOUVEAU client via setIfEmpty plus bas
+    var adr = document.getElementById('pl-adresse-exec');           if (adr)  adr.value  = '';
+    var sec = document.getElementById('pl-secteur');                if (sec)  sec.value  = '';
+    var del = document.getElementById('pl-delai-paiement');         if (del)  del.value  = '';
+    var bnq = document.getElementById('pl-banque');                 if (bnq)  bnq.value  = '';
+    // Service comptable (lié au client précédent)
+    var compP = document.getElementById('pl-prenom-compta');        if (compP) compP.value = '';
+    var compN = document.getElementById('pl-nom-compta');           if (compN) compN.value = '';
+    var compM = document.getElementById('pl-email-compta');         if (compM) compM.value = '';
+  }
+  window._plLastClientId = currentClientId;
+
   if (cl) {
     // Client existant : pré-remplir les infos générales
     if (info) {
@@ -8154,6 +8212,10 @@ function onEntrepriseChange() {
     setIfEmpty('pl-secteur', cl.secteur);
     setIfEmpty('pl-delai-paiement', cl.delai_paiement);
     setIfEmpty('pl-banque', cl.banque);
+    // Service comptable du nouveau client (peut différer du précédent)
+    setIfEmpty('pl-prenom-compta', cl.prenom_compta);
+    setIfEmpty('pl-nom-compta',    cl.nom_compta);
+    setIfEmpty('pl-email-compta',  cl.email_compta);
     // Type contrat Seven/Client : pré-remplir si défini sur la fiche client
     if (cl.type_contrat_client) {
       var tccEl = document.getElementById('pl-type-contrat-client');
