@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Seven Portage — Simulateur Salarial 2025</title>
+<!-- Favicon Seven Portage : carré violet brand + "7" blanc (cohérent avec le style des badges type LAYA) -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIHJ5PSIxNCIgZmlsbD0iIzRCMzZFQyIvPjx0ZXh0IHg9IjMyIiB5PSI0NiIgZm9udC1mYW1pbHk9IlNlZ29lIFVJLCBBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSI0NCIgZm9udC13ZWlnaHQ9IjgwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZmZmZiI+NzwvdGV4dD48L3N2Zz4=">
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIHJ5PSIxNCIgZmlsbD0iIzRCMzZFQyIvPjx0ZXh0IHg9IjMyIiB5PSI0NiIgZm9udC1mYW1pbHk9IlNlZ29lIFVJLCBBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSI0NCIgZm9udC13ZWlnaHQ9IjgwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2ZmZmZmZiI+NzwvdGV4dD48L3N2Zz4=">
 <style>
 :root {
   --brand: #7343EE;
@@ -3630,24 +3633,54 @@ window.addEventListener('DOMContentLoaded', () => {
   // de l'ensemble. Si un input était temporairement vide (ex: tu effaces pour retaper) ou si
   // un input n'existe pas dans le DOM (accordéon dynamique non encore rendu),
   // la sauvegarde perdait la valeur stockée. On corrige en mergeant avec l'existant.
-  document.querySelectorAll('#tab-params input').forEach(el => {
-    el.addEventListener('change', () => {
-      let existing = {};
-      try { existing = JSON.parse(localStorage.getItem('sp_params_v2') || '{}') || {}; } catch(e){}
-      // Collecter les valeurs courantes des inputs présents dans le DOM
-      document.querySelectorAll('#tab-params input').forEach(e => {
-        if (!e.id) return;
-        const v = e.value;
-        // Si l'input est VIDE alors qu'une valeur non-vide existait : on PRÉSERVE l'ancienne
-        // (sauf si c'est l'input qui vient de déclencher l'event ET que l'user a explicitement vidé)
-        if (v === '' && existing[e.id] && existing[e.id] !== '' && e !== el) {
-          // Ne pas écraser une valeur stockée par "" venant d'un autre input
-          return;
-        }
-        existing[e.id] = v;
-      });
-      localStorage.setItem('sp_params_v2', JSON.stringify(existing));
+  //
+  // ═══ FIX ANTI-PERTE V2 : on déclenche aussi sur 'input' (à la frappe, debounced)
+  // et on force une sauvegarde sur beforeunload + visibilitychange (extinction, onglet caché).
+  // L'événement 'change' ne tire qu'au blur — si l'utilisateur éteint son ordi pendant
+  // la frappe ou bascule directement vers un autre onglet, la valeur tapée est perdue.
+  // ═══════════════════════════════════════════════════════════════════════════════
+  function _saveParamsNow(triggerEl) {
+    let existing = {};
+    try { existing = JSON.parse(localStorage.getItem('sp_params_v2') || '{}') || {}; } catch(e){}
+    document.querySelectorAll('#tab-params input, #tab-params select').forEach(e => {
+      if (!e.id) return;
+      const v = e.value;
+      // Si l'input est VIDE alors qu'une valeur non-vide existait : on PRÉSERVE l'ancienne
+      // (sauf si c'est l'input qui vient de déclencher l'event ET que l'user a explicitement vidé)
+      if (v === '' && existing[e.id] && existing[e.id] !== '' && e !== triggerEl) {
+        return;
+      }
+      existing[e.id] = v;
     });
+    try { localStorage.setItem('sp_params_v2', JSON.stringify(existing)); } catch(e) { console.warn('[params save]', e); }
+  }
+
+  // Debounce pour l'event 'input' (frappe en cours)
+  var _paramsSaveTimer = null;
+  function _scheduleParamsSave(triggerEl) {
+    if (_paramsSaveTimer) clearTimeout(_paramsSaveTimer);
+    _paramsSaveTimer = setTimeout(function(){ _saveParamsNow(triggerEl); }, 400);
+  }
+
+  document.querySelectorAll('#tab-params input, #tab-params select').forEach(el => {
+    // 'change' : sauvegarde immédiate (blur ou sélection)
+    el.addEventListener('change', () => { _saveParamsNow(el); });
+    // 'input' : sauvegarde différée (frappe en cours, debounced 400ms)
+    // pour éviter de perdre les saisies en cas d'extinction brutale
+    el.addEventListener('input', () => { _scheduleParamsSave(el); });
+  });
+
+  // Sauvegarde forcée juste avant fermeture / extinction
+  window.addEventListener('beforeunload', function(){
+    if (_paramsSaveTimer) { clearTimeout(_paramsSaveTimer); _paramsSaveTimer = null; }
+    _saveParamsNow(null);
+  });
+  // Sauvegarde quand l'onglet devient masqué (extinction, lock screen, switch app mobile)
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'hidden') {
+      if (_paramsSaveTimer) { clearTimeout(_paramsSaveTimer); _paramsSaveTimer = null; }
+      _saveParamsNow(null);
+    }
   });
 
   updateProrata();
@@ -8113,8 +8146,10 @@ function onEntrepriseChange() {
       info.innerHTML = '&#9989; Client existant (' + (cl.sp_id||'') + ') · <strong>' + (cl.managers||[]).length + ' manager(s)</strong>';
     }
     // Pré-remplir les champs si vides
-    setIfEmpty('pl-tel-client', cl.tel);
-    setIfEmpty('pl-email-client', cl.email);
+    // FIX : on NE pré-remplit PAS pl-tel-client / pl-email-client ici car ce sont
+    // les coordonnées du MANAGER (pas du client global). cl.tel/cl.email correspondent
+    // par défaut au premier manager créé. Le pré-remplissage tel/email se fait
+    // dans onManagerSelect(), quand l'utilisateur a explicitement choisi un manager.
     setIfEmpty('pl-adresse-exec', cl.adresse);
     setIfEmpty('pl-secteur', cl.secteur);
     setIfEmpty('pl-delai-paiement', cl.delai_paiement);
@@ -8183,6 +8218,13 @@ function onManagerSelect() {
   if (!mgr) return;
   // Charger les infos du manager
   document.getElementById('pl-manager').value = mgr.name || '';
+  // FIX : tel + email manager (pl-tel-client / pl-email-client) sont maintenant
+  // pré-remplis ici, au moment où l'utilisateur sélectionne explicitement un manager.
+  // Ils étaient auparavant injectés à tort dès la sélection du client (depuis cl.tel/cl.email
+  // qui correspondent au premier manager créé).
+  // On écrase systématiquement à la sélection d'un manager existant pour refléter le bon manager.
+  if (mgr.tel) document.getElementById('pl-tel-client').value = mgr.tel;
+  if (mgr.email) document.getElementById('pl-email-client').value = mgr.email;
   document.getElementById('pl-tel-signataire').value = mgr.tel || '';
   document.getElementById('pl-email-signataire').value = mgr.email || '';
   // Le nom signataire = manager par défaut si vide
@@ -13142,7 +13184,7 @@ function buildAnalyseurConfigCard() {
     + '<div style="display:flex;flex-direction:column;gap:12px;">'
     +   '<div>'
     +     '<label style="font-size:11px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em;">URL de l\'analyseur de paie</label>'
-    +     '<input id="analyseur-url-input" type="url" value="' + (url||'').replace(/"/g,'&quot;') + '" onchange="updateAnalyseurPaieUrl(this.value);renderParamsAnalyseurAccordion();" placeholder="https://sevenportage.sharepoint.com/..." style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;">'
+    +     '<input id="analyseur-url-input" type="url" value="' + (url||'').replace(/"/g,'&quot;') + '" oninput="updateAnalyseurPaieUrl(this.value);" onchange="updateAnalyseurPaieUrl(this.value);renderParamsAnalyseurAccordion();" placeholder="https://sevenportage.sharepoint.com/..." style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;font-family:inherit;">'
     +     '<div style="font-size:10.5px;color:#9E94C4;margin-top:5px;">📎 Collez ici le lien SharePoint (ou URL web) vers le fichier HTML de l\'analyseur de paie.</div>'
     +   '</div>'
     +   (hasUrl
