@@ -7311,6 +7311,8 @@ function openPlacementPopup(ts) {
   document.getElementById('pl-email-client').value = sim.email_client || '';
   document.getElementById('pl-manager').value = sim.manager || '';
   document.getElementById('pl-adresse-exec').value = '';
+  var _aSiegeReset = document.getElementById('pl-adresse-siege');
+  if (_aSiegeReset) _aSiegeReset.value = '';
   document.getElementById('pl-date-fin').value = '';
   document.getElementById('pl-nom-signataire').value = '';
   document.getElementById('pl-tel-signataire').value = '';
@@ -7328,8 +7330,9 @@ function openPlacementPopup(ts) {
     if (entName) {
       var existingClient = getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === entName; });
       if (existingClient) {
-        // Champs client : adresse, délai, banque, signataire niveau client
-        if (existingClient.adresse) document.getElementById('pl-adresse-exec').value = existingClient.adresse;
+        // Champs client : adresse SIÈGE (pas adresse exec), délai, banque, signataire niveau client
+        var _aSiegeEl = document.getElementById('pl-adresse-siege');
+        if (existingClient.adresse && _aSiegeEl) _aSiegeEl.value = existingClient.adresse;
         if (existingClient.delai_paiement) document.getElementById('pl-delai-paiement').value = existingClient.delai_paiement;
         if (existingClient.banque) document.getElementById('pl-banque').value = existingClient.banque;
         // Signataire niveau client (prioritaire)
@@ -7568,6 +7571,20 @@ function openPlacementPopup(ts) {
     document.getElementById('pl-tel').value = existing.tel || '';
     document.getElementById('pl-tel-client').value = existing.tel_client || '';
     document.getElementById('pl-adresse-exec').value = existing.adresse_exec || '';
+    // Adresse siège : priorité au champ du deal (si saisi), sinon fallback sur le
+    // client lié (rétrocompat avec les deals créés avant l'introduction du champ).
+    var _aSiegeEd = document.getElementById('pl-adresse-siege');
+    if (_aSiegeEd) {
+      if (existing.adresse_siege) {
+        _aSiegeEd.value = existing.adresse_siege;
+      } else {
+        // Fallback : récupérer depuis le client lié
+        try {
+          var _clEd = getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === (existing.entreprise||'').trim().toLowerCase(); });
+          _aSiegeEd.value = (_clEd && _clEd.adresse) ? _clEd.adresse : '';
+        } catch(e){ _aSiegeEd.value = ''; }
+      }
+    }
     document.getElementById('pl-type-contrat-client').value = existing.type_contrat_client || 'Seven';
     document.getElementById('pl-date-fin').value = existing.date_fin || '';
     document.getElementById('pl-tacite').value = existing.tacite || 'Non';
@@ -8203,7 +8220,8 @@ function onEntrepriseChange() {
     var sigMail = document.getElementById('pl-email-signataire');   if (sigMail) sigMail.value = '';
     // Champs purement "client" : on les efface aussi pour pouvoir réappliquer
     // les valeurs du NOUVEAU client via setIfEmpty plus bas
-    var adr = document.getElementById('pl-adresse-exec');           if (adr)  adr.value  = '';
+    var adr  = document.getElementById('pl-adresse-exec');           if (adr)  adr.value  = '';
+    var adrS = document.getElementById('pl-adresse-siege');          if (adrS) adrS.value = '';
     var sec = document.getElementById('pl-secteur');                if (sec)  sec.value  = '';
     var del = document.getElementById('pl-delai-paiement');         if (del)  del.value  = '';
     var bnq = document.getElementById('pl-banque');                 if (bnq)  bnq.value  = '';
@@ -8227,7 +8245,12 @@ function onEntrepriseChange() {
     // les coordonnées du MANAGER (pas du client global). cl.tel/cl.email correspondent
     // par défaut au premier manager créé. Le pré-remplissage tel/email se fait
     // dans onManagerSelect(), quand l'utilisateur a explicitement choisi un manager.
-    setIfEmpty('pl-adresse-exec', cl.adresse);
+    //
+    // IMPORTANT : cl.adresse = ADRESSE DU SIÈGE social du client.
+    // → on alimente pl-adresse-siege (PAS pl-adresse-exec, qui est le lieu de mission).
+    // L'adresse d'exécution se saisit manuellement dans la section Deal car elle peut
+    // être différente du siège (mission sur site client, autre filiale, etc.)
+    setIfEmpty('pl-adresse-siege', cl.adresse);
     setIfEmpty('pl-secteur', cl.secteur);
     setIfEmpty('pl-delai-paiement', cl.delai_paiement);
     setIfEmpty('pl-banque', cl.banque);
@@ -8371,6 +8394,9 @@ function savePlacement() {
     email_client: document.getElementById('pl-email-client').value,
     manager: document.getElementById('pl-manager').value,
     adresse_exec: document.getElementById('pl-adresse-exec').value,
+    // Adresse SIÈGE social du client — distincte de l'adresse d'exécution.
+    // Stockée aussi sur le deal pour pouvoir mettre à jour la fiche client en aval.
+    adresse_siege: (function(){ var el = document.getElementById('pl-adresse-siege'); return el ? el.value : ''; })(),
     type_contrat_client: document.getElementById('pl-type-contrat-client').value,
     date_fin: document.getElementById('pl-date-fin').value,
     tacite: document.getElementById('pl-tacite').value,
@@ -23300,7 +23326,10 @@ function saveClientFromDeal(deal) {
   if (idx >= 0) {
     clients[idx].tel = deal.tel_client || clients[idx].tel || '';
     clients[idx].email = deal.email_client || clients[idx].email || '';
-    clients[idx].adresse = deal.adresse_exec || clients[idx].adresse || '';
+    // FIX : cl.adresse = adresse du SIÈGE social du client (pas le lieu d'exécution).
+    // On utilise deal.adresse_siege ; deal.adresse_exec n'est pas écrit ici (il reste
+    // sur le deal uniquement, et alimente la colonne "Lieu de mission" du tableau).
+    clients[idx].adresse = deal.adresse_siege || clients[idx].adresse || '';
     clients[idx].delai_paiement = deal.delai_paiement || clients[idx].delai_paiement || '';
     clients[idx].banque = deal.banque || clients[idx].banque || '';
     clients[idx].type_contrat_client = deal.type_contrat_client || clients[idx].type_contrat_client || '';
@@ -23339,7 +23368,7 @@ function saveClientFromDeal(deal) {
       name: name,
       tel: deal.tel_client||'',
       email: deal.email_client||'',
-      adresse: deal.adresse_exec||'',
+      adresse: deal.adresse_siege||'', // SIÈGE social (pas le lieu d'exécution)
       secteur: deal.secteur||'',
       delai_paiement: deal.delai_paiement||'',
       banque: deal.banque||'',
@@ -30162,6 +30191,8 @@ function exportCommHistCSV() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Email manager</label><input id="pl-email-client" type="email" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Manager / Contact</label><input id="pl-manager" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Contrat</label><select id="pl-type-contrat-client" onchange="updateTaciteField()" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Seven</option><option>Client</option></select></div>
+        <!-- Adresse siège social (en pleine largeur) -->
+        <div style="grid-column:1/-1;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Adresse siège social <span style="font-weight:500;text-transform:none;color:#9E94C4;">(adresse postale du client)</span></label><input id="pl-adresse-siege" type="text" placeholder="Siège social du client (facturation, courrier)" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Date de fin prévisionnelle</label><input id="pl-date-fin" type="date" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Tacite reconduction</label><select id="pl-tacite" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option value="Non">Non</option><option value="Oui">Oui</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Nom signataire</label><input id="pl-nom-signataire" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
