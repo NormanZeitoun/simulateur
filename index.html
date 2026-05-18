@@ -4475,8 +4475,10 @@ function buildBulletinPaieHTML(data) {
   tableRows += row('EXONERATIONS DE COTISATIONS EMPLOYEUR (réduction fillon)', 0, 0, 0, null, null, null);
 
   // === TOTAUX ===
-  tableRows += row('TOTAL RETENUES (SANS MUTUELLE)', null, tauxPatSansMut, totalPatSansMut, tauxSalSansMut, totalSalSansMut, null, {bold:true, topBorder:true});
-  tableRows += row('TOTAL RETENUES (AVEC MUTUELLE)', null, tauxPatAvecMut, bd.TOTAL_PAT, tauxSalAvecMut, bd.TOTAL_SAL, -bd.TOTAL_SAL, {bold:true});
+  // Les colonnes "Taux Pat." et "Taux Sal." sont volontairement masquées
+  // sur les lignes TOTAL RETENUES (pas pertinent en cumul global)
+  tableRows += row('TOTAL RETENUES (SANS MUTUELLE)', null, null, totalPatSansMut, null, totalSalSansMut, null, {bold:true, topBorder:true});
+  tableRows += row('TOTAL RETENUES (AVEC MUTUELLE)', null, null, bd.TOTAL_PAT, null, bd.TOTAL_SAL, -bd.TOTAL_SAL, {bold:true});
 
   // === FRAIS avec 3 colonnes (montant/jour | jours | montant total) ===
   // Structure spéciale : label | ../jour | NB_JOURS | total
@@ -7538,10 +7540,21 @@ function openPlacementPopup(ts) {
       if (val !== undefined && val !== null && val !== '') el.value = val;
     }
     // Candidat
-    _setIf('pl-prenom', existing.prenom);
-    _setIf('pl-nom', existing.nom);
-    _setIf('pl-email', existing.email);
-    _setIf('pl-poste', existing.poste);
+    // FIX : on FORCE la valeur du deal à écraser celle de la sim si elle existe,
+    // pour ne pas perdre les modifs faites dans la popup placement.
+    // (avant : _setIf ne touchait que si le champ était vide, mais le champ avait
+    // déjà été pré-rempli par sim.poste/sim.email/etc. → la modif faite côté
+    // placement était perdue à la ré-ouverture de la popup)
+    function _setForce(id, val) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      if (val !== undefined && val !== null && val !== '') el.value = val;
+      // Si val est vide, on garde ce qui a été mis par la sim plus haut
+    }
+    _setForce('pl-prenom', existing.prenom);
+    _setForce('pl-nom', existing.nom);
+    _setForce('pl-email', existing.email);
+    _setForce('pl-poste', existing.poste);
     var plCiv = document.getElementById('pl-civilite');
     if (plCiv && existing.civilite) plCiv.value = existing.civilite;
     // Client / Manager (top-level deal prime sur la sim)
@@ -8461,7 +8474,13 @@ function savePlacement() {
 
   closeModal('modal-placement');
   renderHistorique();
-  if (document.getElementById('tab-deals') && document.getElementById('tab-deals').style.display !== 'none') renderDeals();
+  // FIX : on appelle TOUJOURS renderDeals (pas seulement si l'onglet est ouvert).
+  // Le DOM du tableau peut exister hors écran ; le re-rendre garantit qu'il sera à jour
+  // (poste, commercial, état, etc.) la prochaine fois que l'utilisateur ouvrira l'onglet,
+  // sans race condition avec d'autres affichages.
+  if (typeof renderDeals === 'function') {
+    try { renderDeals(); } catch(e){ console.warn('[savePlacement] renderDeals:', e); }
+  }
   // Bug fix : la liste candidats peut afficher l'ancien commercial sur la carte si on ne re-rend pas
   if (typeof renderCandidats === 'function') {
     try { renderCandidats(); } catch(e) {}
@@ -11100,7 +11119,7 @@ function openNewClientPopup() {
     +       '<div><label style="' + LBL + '">SIRET</label><input id="ncl-siret" style="' + INP + '" placeholder="123 456 789 00012"></div>'
     +     '</div>'
     +     '<div style="margin-bottom:12px;">'
-    +       '<label style="' + LBL + '">Adresse</label>'
+    +       '<label style="' + LBL + '">Adresse postale (siège)</label>'
     +       '<input id="ncl-adresse" style="' + INP + '" placeholder="12 rue de la République, 75001 Paris">'
     +     '</div>'
     +     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px;">'
@@ -21711,9 +21730,41 @@ function updateCandField(input) {
   var cands = getCandidats();
   var idx = cands.findIndex(function(c) { return c.id === id; });
   if (idx < 0) return;
+  var oldValue = cands[idx][field];
   cands[idx][field] = input.value;
   cands[idx].updated = new Date().toLocaleDateString('fr-FR');
   saveCandidatsArr(cands);
+
+  // ═══ FIX : propagation aux deals liés au candidat ═══
+  // Quand certains champs candidat sont modifiés, ils doivent se refléter
+  // automatiquement sur les deals existants liés à ce candidat (matching par email).
+  // Concerne : poste, prenom, nom, email, tel, civilite — c.-à-d. les champs
+  // qui sont aussi présents sur le deal.
+  var fieldsToPropagate = ['poste','prenom','nom','email','tel','civilite'];
+  if (fieldsToPropagate.indexOf(field) >= 0 && oldValue !== input.value) {
+    try {
+      var deals = (typeof getDeals === 'function') ? getDeals() : [];
+      var candEmail = (cands[idx].email || '').trim().toLowerCase();
+      var changed = false;
+      if (candEmail) {
+        deals.forEach(function(d){
+          if ((d.email || '').trim().toLowerCase() === candEmail) {
+            // Si le champ candidat est modifié, on aligne sur le deal aussi
+            d[field] = input.value;
+            changed = true;
+          }
+        });
+      }
+      if (changed) {
+        if (typeof saveDeals === 'function') saveDeals(deals);
+        // Re-render du tableau de deals si présent
+        if (typeof renderDeals === 'function') { try { renderDeals(); } catch(e){} }
+        // Re-render historique pour synchroniser le poste (s'il est affiché)
+        if (typeof renderHistorique === 'function') { try { renderHistorique(); } catch(e){} }
+      }
+    } catch(e) { console.warn('[updateCandField propagation deals]', e); }
+  }
+
   renderCandidats();
 }
 
@@ -23564,7 +23615,7 @@ function buildClientPageHTML(cl) {
 
   // Tab "Infos" : Adresse + informations contractuelles + Commentaire
   var tabInfosHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;">'
-    + fld('Adresse', cl.adresse, 'adresse', 'Rue, ville, code postal')
+    + fld('Adresse postale (siège)', cl.adresse, 'adresse', 'Rue, ville, code postal')
     + fld('Secteur', cl.secteur, 'secteur', 'IT / Finance …')
     + fldSelect('Délai de paiement', cl.delai_paiement, 'delai_paiement', 'delais_paiement')
     + fldSelect('Banque Seven', cl.banque, 'banque', 'banques')
@@ -30110,7 +30161,6 @@ function exportCommHistCSV() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Téléphone manager</label><input id="pl-tel-client" type="tel" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Email manager</label><input id="pl-email-client" type="email" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Manager / Contact</label><input id="pl-manager" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
-        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Adresse d'exécution</label><input id="pl-adresse-exec" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Contrat</label><select id="pl-type-contrat-client" onchange="updateTaciteField()" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Seven</option><option>Client</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Date de fin prévisionnelle</label><input id="pl-date-fin" type="date" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Tacite reconduction</label><select id="pl-tacite" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option value="Non">Non</option><option value="Oui">Oui</option></select></div>
@@ -30139,6 +30189,8 @@ function exportCommHistCSV() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">État dossier <span style="font-weight:500;text-transform:none;color:#9E94C4;">(« Signé » est calculé auto)</span></label><select id="pl-etat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Nouveau placement</option><option>En cours</option><option>Annulé</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Type de contrat</label><select id="pl-contrat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>CDI</option><option>CDD</option><option>Portage</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Date d'entrée / Starter</label><input id="pl-date-entree" type="date" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
+        <!-- Adresse d'exécution : champ DEAL (lieu spécifique de la mission, peut différer du siège du client) -->
+        <div style="grid-column:1/-1;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Adresse d'exécution <span style="font-weight:500;text-transform:none;color:#9E94C4;">(lieu de la mission)</span></label><input id="pl-adresse-exec" type="text" placeholder="Adresse de réalisation de la mission" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
       </div>
 
       <!-- COOPTATION : pilotée par le champ "Origine deal" (ci-dessus) -->
