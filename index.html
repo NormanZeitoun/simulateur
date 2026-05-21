@@ -1422,9 +1422,12 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
     <!-- Section Commercial : toujours accessible -->
     <div class="params-table" style="margin-bottom:10px;">
       <div class="params-section">Commercial Seven Portage</div>
-      <div class="params-row"><label>Prénom Nom</label><input type="text" id="p_commercial_nom" placeholder="Ex : Norman Dupont" onchange="saveParamsCommercial();updateBadgeCommercial()"></div>
-      <div class="params-row"><label>Téléphone</label><input type="text" id="p_commercial_tel" placeholder="Ex : 06 12 34 56 78" onchange="saveParamsCommercial()"></div>
-      <div class="params-row"><label>Email</label><input type="text" id="p_commercial_email" placeholder="nom@sevenportage.fr" onchange="saveParamsCommercial()"></div>
+      <!-- FIX anti-perte : oninput déclenche la sauvegarde à chaque frappe (en plus du onchange au blur).
+           Sans ça, si l'utilisateur ferme l'onglet/éteint son PC sans cliquer ailleurs après avoir tapé,
+           le onchange ne se déclenche jamais → la valeur tapée est perdue. -->
+      <div class="params-row"><label>Prénom Nom</label><input type="text" id="p_commercial_nom" placeholder="Ex : Norman Dupont" oninput="saveParamsCommercial();updateBadgeCommercial()" onchange="saveParamsCommercial();updateBadgeCommercial()"></div>
+      <div class="params-row"><label>Téléphone</label><input type="text" id="p_commercial_tel" placeholder="Ex : 06 12 34 56 78" oninput="saveParamsCommercial()" onchange="saveParamsCommercial()"></div>
+      <div class="params-row"><label>Email</label><input type="text" id="p_commercial_email" placeholder="nom@sevenportage.fr" oninput="saveParamsCommercial()" onchange="saveParamsCommercial()"></div>
       <div class="params-row"><label>Page de démarrage</label>
         <select id="p_commercial_homepage" onchange="saveParamsCommercial()">
           <option value="mission">🏗️ Simulateur</option>
@@ -3519,6 +3522,9 @@ function saveParamsCommercial() {
   if (el_email) saved['p_commercial_email'] = el_email.value;
   if (el_homepage) saved['p_commercial_homepage'] = el_homepage.value;
   localStorage.setItem('sp_params_v2', JSON.stringify(saved));
+  // FIX : déclencher la sync OneDrive (debouncée par odAutoSync) pour que les infos
+  // commercial soient propagées en cas d'utilisation multi-postes ou de réinstallation
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 
 function updateBadgeCommercial() {
@@ -3647,61 +3653,69 @@ window.addEventListener('DOMContentLoaded', () => {
   // L'événement 'change' ne tire qu'au blur — si l'utilisateur éteint son ordi pendant
   // la frappe ou bascule directement vers un autre onglet, la valeur tapée est perdue.
   //
-  // ═══ V2.1 : RESTRICTION DE SCOPE ═══
-  // On NE touche PAS aux inputs qui ont déjà un attribut onchange inline (ex: section
-  // Commercial Seven Portage qui appelle saveParamsCommercial() / page de démarrage),
-  // ni aux <select>. Ces inputs ont déjà leur logique propre — y superposer notre
-  // _saveParamsNow peut casser leur comportement (sauvegarde fantôme, conflits).
-  // On vise UNIQUEMENT les inputs "passifs" qui dépendent du listener global.
+  // ═══ V2.2 : SAUVEGARDE UNIVERSELLE À LA FRAPPE ═══
+  // On attache le listener 'input' à TOUS les inputs/selects de #tab-params,
+  // y compris ceux avec onchange inline. Notre listener écrit juste la valeur
+  // courante en localStorage — il n'interfère PAS avec les onchange inline
+  // qui font du calcul (calc(), saveParamsCommercial(), etc.) car ces derniers
+  // lisent simplement la valeur du DOM. Aucun conflit possible.
+  //
+  // POURQUOI cette extension : auparavant seuls les inputs "passifs" (sans onchange)
+  // recevaient le listener. Or 90% des params ont onchange="calc()" → ils étaient
+  // exclus. Du coup, leur seule chance de sauvegarde était onchange (au blur) ou
+  // le filet beforeunload/visibilitychange. En cas d'extinction brutale du PC
+  // (coupure courant, shutdown forcé), ces events ne se déclenchent pas → valeur perdue.
   // ═══════════════════════════════════════════════════════════════════════════════
-  function _isParamInputManaged(el) {
-    // un input/select qui a déjà sa propre logique onchange inline n'a pas besoin
-    // de notre listener global
-    return !!(el.getAttribute && el.getAttribute('onchange'));
-  }
-  function _saveParamsNow(triggerEl) {
-    let existing = {};
+
+  // Sauvegarde ATOMIQUE d'un seul input (pas une boucle sur tous les inputs).
+  // Plus rapide et plus sûr : on lit le localStorage existant, on met à jour
+  // SEULEMENT le champ qui vient d'être modifié, on réécrit.
+  function _saveOneParam(el) {
+    if (!el || !el.id) return;
+    var existing = {};
     try { existing = JSON.parse(localStorage.getItem('sp_params_v2') || '{}') || {}; } catch(e){}
-    document.querySelectorAll('#tab-params input').forEach(e => {
-      if (!e.id) return;
-      const v = e.value;
-      // Si l'input est VIDE alors qu'une valeur non-vide existait : on PRÉSERVE l'ancienne
-      // (sauf si c'est l'input qui vient de déclencher l'event ET que l'user a explicitement vidé)
-      if (v === '' && existing[e.id] && existing[e.id] !== '' && e !== triggerEl) {
-        return;
-      }
-      existing[e.id] = v;
-    });
+    existing[el.id] = el.value;
     try { localStorage.setItem('sp_params_v2', JSON.stringify(existing)); } catch(e) { console.warn('[params save]', e); }
   }
 
-  // Debounce pour l'event 'input' (frappe en cours)
-  var _paramsSaveTimer = null;
-  function _scheduleParamsSave(triggerEl) {
-    if (_paramsSaveTimer) clearTimeout(_paramsSaveTimer);
-    _paramsSaveTimer = setTimeout(function(){ _saveParamsNow(triggerEl); }, 400);
+  // Debounce pour l'event 'input' (frappe en cours) — 400ms évite de spammer
+  // localStorage pendant la frappe rapide, tout en restant invisible pour l'user.
+  var _paramsSaveTimers = {};
+  function _scheduleParamSave(el) {
+    if (!el || !el.id) return;
+    var tid = _paramsSaveTimers[el.id];
+    if (tid) clearTimeout(tid);
+    _paramsSaveTimers[el.id] = setTimeout(function(){
+      _saveOneParam(el);
+      delete _paramsSaveTimers[el.id];
+    }, 400);
   }
 
-  document.querySelectorAll('#tab-params input').forEach(el => {
-    // Ne pas dupliquer la logique pour les inputs qui ont déjà leur propre onchange inline
-    if (_isParamInputManaged(el)) return;
-    // 'change' : sauvegarde immédiate (blur ou sélection)
-    el.addEventListener('change', () => { _saveParamsNow(el); });
-    // 'input' : sauvegarde différée (frappe en cours, debounced 400ms)
-    // pour éviter de perdre les saisies en cas d'extinction brutale
-    el.addEventListener('input', () => { _scheduleParamsSave(el); });
+  // Attacher à TOUS les inputs/selects de tab-params, sans exclusion.
+  // Notre listener input/change n'écrit QUE notre propre champ (pas tous les autres),
+  // donc aucun risque d'écraser une valeur d'un autre input avec une valeur stale.
+  document.querySelectorAll('#tab-params input, #tab-params select').forEach(el => {
+    // 'change' : sauvegarde immédiate (blur, sélection select)
+    el.addEventListener('change', function(){ _saveOneParam(el); });
+    // 'input' : sauvegarde différée à chaque frappe (debounced)
+    el.addEventListener('input', function(){ _scheduleParamSave(el); });
   });
 
   // Sauvegarde forcée juste avant fermeture / extinction
-  // (sauve TOUS les inputs/selects du tab-params, y compris ceux gérés par onchange inline,
-  // car leur valeur en cours peut ne pas avoir encore été persistée)
+  // Flush tous les timers en attente + sauvegarde l'état courant de TOUS les inputs
   function _saveAllParamsBeforeUnload() {
-    if (_paramsSaveTimer) { clearTimeout(_paramsSaveTimer); _paramsSaveTimer = null; }
+    // Flush timers en cours
+    Object.keys(_paramsSaveTimers).forEach(function(k){
+      clearTimeout(_paramsSaveTimers[k]);
+      delete _paramsSaveTimers[k];
+    });
     let existing = {};
     try { existing = JSON.parse(localStorage.getItem('sp_params_v2') || '{}') || {}; } catch(e){}
-    document.querySelectorAll('#tab-params input, #tab-params select').forEach(e => {
+    document.querySelectorAll('#tab-params input, #tab-params select').forEach(function(e){
       if (!e.id) return;
-      const v = e.value;
+      var v = e.value;
+      // Préserver une valeur stockée non-vide si l'input est temporairement vide
+      // (sécurité : évite de perdre une donnée si un input a été remis à vide juste avant)
       if (v === '' && existing[e.id] && existing[e.id] !== '') return;
       existing[e.id] = v;
     });
@@ -3712,6 +3726,9 @@ window.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'hidden') _saveAllParamsBeforeUnload();
   });
+  // pagehide : événement plus fiable que beforeunload sur certains navigateurs mobiles
+  // et pour les fermetures brutales d'onglet
+  window.addEventListener('pagehide', _saveAllParamsBeforeUnload);
 
   updateProrata();
   solveBrutFromTJM();
@@ -5211,6 +5228,17 @@ function _dashMatchCommercial(item) {
   return (item.commercial || '') === dashFilters.commercial;
 }
 
+// Helper : rafraîchit les KPIs du dashboard SI il est affiché.
+// Appelé par les actions qui peuvent modifier les compteurs : statut candidat,
+// création de candidat, modif d'un deal (qui impacte le statut auto), suppression, etc.
+function refreshDashboardIfVisible() {
+  try {
+    var dashTab = document.getElementById('tab-dashboard');
+    if (!dashTab || dashTab.style.display === 'none') return;
+    if (typeof renderDashboardKPIs === 'function') renderDashboardKPIs();
+  } catch(e) { /* silencieux */ }
+}
+
 function renderDashboardKPIs() {
   var zone = document.getElementById('dash-kpi-zone');
   if (!zone) return;
@@ -5391,6 +5419,61 @@ function renderDashboardKPIs() {
     }).join('');
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // CA GÉNÉRÉ + MARGE GÉNÉRÉE — basés sur les jours RÉELLEMENT prestés
+  // saisis dans Suivi RH → Comptes d'activité (table sp_jours_prestes_v1).
+  // Respecte les filtres dashboard (commercial + période mois/année).
+  // Formule :
+  //   CA mensuel       = Σ (nb_jours_prestés_du_mois × TJM_du_deal)
+  //   Marge mensuelle  = Σ (nb_jours_prestés_du_mois × TJM × frais_gestion%/100)
+  // ═══════════════════════════════════════════════════════════════════
+  var caGenere = 0, margeGenere = 0, nbJoursTotal = 0;
+  try {
+    var jp = (typeof getJoursPrestes === 'function') ? getJoursPrestes() : {};
+    // Reconstituer la liste des clés "YYYY-MM" à prendre en compte
+    function _expandPeriodKeys() {
+      var years  = (dashFilters.year === '__all__')
+        ? Object.keys(jp).reduce(function(acc, did){
+            Object.keys(jp[did] || {}).forEach(function(k){
+              var y = k.split('-')[0]; if (y) acc[y] = 1;
+            });
+            return acc;
+          }, {})
+        : (function(o){ o[dashFilters.year] = 1; return o; })({});
+      var months = (dashFilters.month === '__all__')
+        ? [1,2,3,4,5,6,7,8,9,10,11,12]
+        : [parseInt(dashFilters.month, 10)];
+      var keys = [];
+      Object.keys(years).forEach(function(y){
+        months.forEach(function(m){
+          keys.push(y + '-' + (m < 10 ? '0'+m : ''+m));
+        });
+      });
+      return keys;
+    }
+    var periodKeys = _expandPeriodKeys();
+    // Indexer les deals par id pour accès rapide
+    var dealById = {};
+    deals.forEach(function(d){ if (d && d.id != null) dealById[String(d.id)] = d; });
+    // Itérer sur jours prestés
+    Object.keys(jp).forEach(function(dealId){
+      var deal = dealById[String(dealId)];
+      if (!deal) return; // deal absent (supprimé)
+      if (!_dashMatchCommercial(deal)) return; // filtre commercial
+      var moisMap = jp[dealId] || {};
+      var tjm = parseFloat(deal.tjm) || 0;
+      var fg  = parseFloat(deal.frais_gestion) || 0;
+      if (tjm <= 0) return;
+      periodKeys.forEach(function(k){
+        var nbJ = parseFloat(moisMap[k]) || 0;
+        if (nbJ <= 0) return;
+        nbJoursTotal += nbJ;
+        caGenere    += nbJ * tjm;
+        margeGenere += nbJ * tjm * (fg / 100);
+      });
+    });
+  } catch(e) { console.warn('[Dashboard CA/Marge]', e); }
+
   var periodLabel = (dashFilters.month === '__all__' ? 'Toute l\'année' : ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'][parseInt(dashFilters.month)])
     + ' ' + dashFilters.year
     + (dashFilters.commercial === '__all__' ? ' · tous commerciaux' : ' · ' + dashFilters.commercial);
@@ -5421,22 +5504,22 @@ function renderDashboardKPIs() {
     +   kpi('kpi-gold',   '🧳', pctGD,           '%', 'Grand déplacement','% portés GD')
     + '</div>'
 
-    + '<div class="dash-section-title">📝 Suivi RH à traiter</div>'
-    + '<div class="dash-grid cols-4">'
+    + '<div class="dash-section-title">📝 Suivi RH &amp; délais</div>'
+    + '<div class="dash-grid cols-3">'
     +   kpi(nbAvenantsATraiter > 0 ? 'kpi-orange' : 'kpi-green', '📝', nbAvenantsATraiter, '', 'Avenants à traiter', nbAvenantsATraiter > 0 ? 'CDT, CDPS ou LAYA non finalisés' : 'Tous les avenants sont finalisés', 'AVENANTS_FILTER.statut=\'a_traiter\';mainNavTo(\'rh\');setTimeout(function(){showRHSection(\'avenants\');},100);')
+    +   kpi('kpi-gold',  '⏳', fmt(avgDaysSimToDeal), avgDaysSimToDeal === null ? '' : ' j', 'Simu → Placement', 'temps moyen de conversion')
+    +   kpi('kpi-green', '⏳', fmt(avgDaysDealToSig), avgDaysDealToSig === null ? '' : ' j', 'Placement → Signé','délai contractualisation')
     + '</div>'
 
-    + '<div class="dash-section-title">💰 Financier</div>'
+    + '<div class="dash-section-title">💰 Financier &amp; production</div>'
     + '<div class="dash-grid cols-3">'
     +   kpi('kpi-violet', '💶', avgTjm ? avgTjm.toLocaleString('fr-FR') : '—',  avgTjm ? '€' : '',    'TJM moyen',             'sur placements période')
     +   kpi('kpi-blue',   '📊', avgFraisPct === null ? '—' : avgFraisPct,       avgFraisPct === null ? '' : '%', 'Frais de gestion',      'moyenne pondérée')
     +   kpi('kpi-green',  '💰', fmtEur(avgFraisEuros),                          avgFraisEuros ? '€' : '',        'Frais de gestion moyens', 'TJM × marge × jours (par placement)')
     + '</div>'
-
-    + '<div class="dash-section-title">⏱ Délais de conversion</div>'
-    + '<div class="dash-grid cols-2">'
-    +   kpi('kpi-gold',  '⏳', fmt(avgDaysSimToDeal), avgDaysSimToDeal === null ? '' : ' j', 'Simu → Placement', 'temps moyen de conversion')
-    +   kpi('kpi-green', '⏳', fmt(avgDaysDealToSig), avgDaysDealToSig === null ? '' : ' j', 'Placement → Signé','délai contractualisation')
+    + '<div class="dash-grid cols-2" style="margin-top:10px;">'
+    +   kpi('kpi-green',  '💵', fmtEur(Math.round(caGenere)),    caGenere ? '€' : '',    'CA généré',     nbJoursTotal ? (nbJoursTotal.toLocaleString('fr-FR') + ' j prestés × TJM') : 'aucun jour saisi sur la période', 'mainNavTo(\'rh\');setTimeout(function(){showRHSection(\'comptes_act\');},120);')
+    +   kpi('kpi-violet', '💎', fmtEur(Math.round(margeGenere)), margeGenere ? '€' : '', 'Marge générée', nbJoursTotal ? ('jours prestés × TJM × %frais') : 'aucun jour saisi sur la période', 'mainNavTo(\'rh\');setTimeout(function(){showRHSection(\'comptes_act\');},120);')
     + '</div>'
 
     + '<div class="dash-section-title">🎯 Statuts candidats (temps réel)</div>'
@@ -7225,6 +7308,10 @@ function saveDeals(arr) {
     });
   }
   localStorage.setItem(DEALS_KEY, JSON.stringify(arr));
+  // FIX : rafraîchir le dashboard si visible — un changement d'état/commercial sur
+  // un deal peut impacter le statut auto du candidat (Porté ↔ Sans mission, etc.)
+  // et donc les compteurs du dashboard.
+  if (typeof refreshDashboardIfVisible === 'function') refreshDashboardIfVisible();
 }
 
 // ── Recalcul cohérence des statuts deals ──
@@ -10815,6 +10902,9 @@ function saveCandidatsArr(arr) {
       throw e;
     }
   }
+  // FIX : rafraîchir le dashboard si visible — toute modification candidat
+  // (statut, ajout, modif) impacte potentiellement les compteurs.
+  if (typeof refreshDashboardIfVisible === 'function') refreshDashboardIfVisible();
 }
 
 function saveCandidatFromEntry(entry) {
@@ -11106,6 +11196,8 @@ function saveNewCandidat() {
 
   document.getElementById('modal-new-candidat').remove();
   if (typeof renderCandidats === 'function') renderCandidats();
+  // FIX : rafraîchir le dashboard si visible (un nouveau Prospect chaud doit être compté)
+  if (typeof refreshDashboardIfVisible === 'function') refreshDashboardIfVisible();
   if (typeof odAutoSync === 'function') odAutoSync();
   if (typeof showNotifToast === 'function') showNotifToast('✓ Candidat "' + prenom + ' ' + nom + '" créé');
 }
@@ -15150,7 +15242,10 @@ function openProlongationChoicePopup(dealId) {
   if (existing) existing.remove();
 
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
-  var deal = deals.find(function(d){ return d.id === dealId; });
+  // FIX : comparaison tolérante au type (string ou number).
+  // Selon l'appelant, dealId peut arriver en string (depuis HTML onclick) ou number.
+  // d.id est généralement un number (Date.now()). On compare en string.
+  var deal = deals.find(function(d){ return String(d.id) === String(dealId); });
   if (!deal) { alert('⚠ Placement introuvable.'); return; }
 
   var modal = document.createElement('div');
@@ -15211,7 +15306,8 @@ function openProlongationSimplePopup(dealId) {
   if (existing) existing.remove();
 
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
-  var deal = deals.find(function(d){ return d.id === dealId; });
+  // FIX : comparaison tolérante au type (string ou number) — voir openProlongationChoicePopup
+  var deal = deals.find(function(d){ return String(d.id) === String(dealId); });
   if (!deal) { alert('⚠ Placement introuvable.'); return; }
 
   var modal = document.createElement('div');
@@ -15270,7 +15366,8 @@ function confirmProlongationSimple(dealId) {
   if (!newDate) { alert('⚠ Saisissez la nouvelle date de fin.'); return; }
 
   var deals = getDeals();
-  var idx = deals.findIndex(function(d){ return d.id === dealId; });
+  // FIX : comparaison tolérante au type (string ou number)
+  var idx = deals.findIndex(function(d){ return String(d.id) === String(dealId); });
   if (idx < 0) { alert('⚠ Placement introuvable.'); return; }
   var deal = deals[idx];
   var ancienneDateFin = deal.date_fin || deal.dateFinPrevisionnelle || '';
@@ -21792,6 +21889,8 @@ function updateCandField(input) {
   }
 
   renderCandidats();
+  // FIX : rafraîchir le dashboard si visible (compteurs Prospects chauds / etc.)
+  if (typeof refreshDashboardIfVisible === 'function') refreshDashboardIfVisible();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -22023,6 +22122,8 @@ function handleStatutPortageChange(select) {
       renderCandidats();
       openCandidatFiche(candId);
     }
+    // FIX : rafraîchir le dashboard si visible
+    if (typeof refreshDashboardIfVisible === 'function') refreshDashboardIfVisible();
     return;
   }
 
@@ -22035,6 +22136,8 @@ function handleStatutPortageChange(select) {
   saveCandidatsArr(cands);
   renderCandidats();
   openCandidatFiche(candId);
+  // FIX : rafraîchir le dashboard si visible (compteurs Prospects chauds / Perdus / Sans mission)
+  if (typeof refreshDashboardIfVisible === 'function') refreshDashboardIfVisible();
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 
@@ -22983,16 +23086,25 @@ function mergeParams(remote) {
   }
 
   // Rappels calendrier (collection avec id)
+  // FIX SYNC : gestion des TOMBSTONES (rappels supprimés marqués deleted:true) pour
+  // que les suppressions soient propagées entre devices. Sans ça, supprimer un rappel
+  // localement le faisait revenir au prochain sync (le serveur ignorait la suppression).
+  // Aussi : on lit le storage RAW pour conserver les tombstones locaux.
   if (Array.isArray(remote.rappels)) {
-    var localR = JSON.parse(localStorage.getItem('sp_rappels_v1') || '[]');
+    var _rawLocalR = JSON.parse(localStorage.getItem('sp_rappels_v1') || '[]');
     var mapR = {};
-    localR.forEach(function(r){ if (r && r.id) mapR[r.id] = r; });
+    _rawLocalR.forEach(function(r){ if (r && r.id) mapR[r.id] = r; });
     remote.rappels.forEach(function(rr){
       if (!rr || !rr.id) return;
       var existing = mapR[rr.id];
-      if (!existing || (rr.updated_ts || 0) > (existing.updated_ts || 0)) {
+      var remoteTs = rr.updated_ts || 0;
+      var localTs  = existing ? (existing.updated_ts || 0) : 0;
+      // Si pas d'existant local OU si distant est plus récent → on prend distant
+      // (le tombstone propage la suppression car deleted:true sera dans rr)
+      if (!existing || remoteTs > localTs) {
         mapR[rr.id] = rr;
       }
+      // Si égalité ou local plus récent → on garde local (notre version gagne)
     });
     localStorage.setItem('sp_rappels_v1', JSON.stringify(Object.values(mapR)));
   }
@@ -26498,9 +26610,16 @@ var DEFAULT_RAPPEL_TYPES = [
   { label: 'Autre', color: '#6B5E9C' }
 ];
 
-function getRappels() {
+// Récupère TOUS les rappels (y compris tombstones supprimés).
+// Utilisé par la couche sync pour propager les suppressions.
+function getRappelsRaw() {
   try { return JSON.parse(localStorage.getItem(RAPPELS_KEY) || '[]'); }
   catch(e) { return []; }
+}
+// Récupère les rappels ACTIFS (tombstones filtrés).
+// C'est l'API publique utilisée par toutes les vues.
+function getRappels() {
+  return getRappelsRaw().filter(function(r){ return r && !r.deleted; });
 }
 function saveRappels(arr) {
   localStorage.setItem(RAPPELS_KEY, JSON.stringify(arr));
@@ -28053,8 +28172,11 @@ function saveRappel(existingId, linkedType, linkedId, linkedName) {
     return;
   }
 
-  var rappels = getRappels();
+  // FIX SYNC : on lit les rappels RAW pour ne pas perdre les tombstones
+  // (sinon on ré-écrirait sans les tombstones et la sync ramenerait les supprimés)
+  var rappels = getRappelsRaw();
   var datetime = date + 'T' + time;
+  var nowTs = Date.now();
 
   if (existingId) {
     var idx = rappels.findIndex(function(r){ return r.id == existingId; });
@@ -28070,6 +28192,7 @@ function saveRappel(existingId, linkedType, linkedId, linkedName) {
       if (typeof linkedId !== 'undefined')   rappels[idx].linked_id = linkedId || '';
       if (typeof linkedName !== 'undefined') rappels[idx].linked_name = linkedName || '';
       rappels[idx].updated = new Date().toISOString();
+      rappels[idx].updated_ts = nowTs; // FIX SYNC : timestamp numérique pour comparaison merge
     }
   } else {
     var myName = getCommercialData().nom || '';
@@ -28084,7 +28207,9 @@ function saveRappel(existingId, linkedType, linkedId, linkedName) {
       linked_id: linkedId || '',
       linked_name: linkedName || '',
       created: new Date().toISOString(),
+      created_ts: nowTs,
       updated: new Date().toISOString(),
+      updated_ts: nowTs, // FIX SYNC : pour la comparaison merge
       done: false
     });
   }
@@ -28120,7 +28245,21 @@ function saveRappel(existingId, linkedType, linkedId, linkedName) {
 
 function deleteRappel(id) {
   if (!confirm('Supprimer ce rappel ?')) return;
-  var rappels = getRappels().filter(function(r){ return r.id != id; });
+  // FIX SYNC : créer un TOMBSTONE au lieu de supprimer la ligne, pour que la
+  // suppression soit propagée par la sync OneDrive/SharePoint.
+  // Sans ça, le rappel revient à chaque sync (le serveur n'est pas au courant).
+  var rappels = getRappelsRaw();
+  var nowTs = Date.now();
+  var idx = rappels.findIndex(function(r){ return r.id == id; });
+  if (idx >= 0) {
+    rappels[idx] = {
+      id: rappels[idx].id,
+      deleted: true,
+      deleted_ts: nowTs,
+      updated_ts: nowTs,
+      updated: new Date().toISOString()
+    };
+  }
   saveRappels(rappels);
   var m = document.getElementById('modal-rappel');
   if (m) m.remove();
