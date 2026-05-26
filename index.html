@@ -7282,6 +7282,18 @@ function odSilentFullSync() {
       // (sinon on risquait d'écraser des données valides avec un état local vide)
       window._initialSyncDone = true;
 
+      // RÉPARATION AUTOMATIQUE (une seule fois) : rattacher les avenants "détachés"
+      // de leur fiche candidat suite à l'ancien bug de merge sync.
+      try {
+        if (!localStorage.getItem('sp_avenants_repaired_v1') && typeof reparerAvenantsMissionSilent === 'function') {
+          var rep = reparerAvenantsMissionSilent();
+          localStorage.setItem('sp_avenants_repaired_v1', '1');
+          if (rep && rep.repares > 0) {
+            console.log('[boot] ' + rep.repares + ' avenant(s) automatiquement rattaché(s) à leur fiche.');
+          }
+        }
+      } catch(e) { console.warn('[boot] réparation avenants:', e); }
+
       // ═══ PHASE 2 : PUSH parallèle (toutes les entités après merge) ═══
       var t1 = Date.now();
       // PUT séquentiel avec retry et If-Match:* pour éviter les conflits 409/429
@@ -16366,6 +16378,113 @@ function deleteMissionParallele(avenantId) {
   if (typeof showNotifToast === 'function') showNotifToast('\u2713 Mission parall\u00e8le supprim\u00e9e');
 }
 
+// Version silencieuse (sans alert) pour la réparation automatique au démarrage
+function reparerAvenantsMissionSilent() {
+  var allAv = (typeof getAvenants === 'function') ? getAvenants() : [];
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var nbRepares = 0;
+  var avMissions = allAv.filter(function(a){
+    return a && (a.mode === 'avenant_mission' || a.mode === 'mission_parallele');
+  });
+  avMissions.forEach(function(av){
+    var deal = deals.find(function(d){ return String(d.id) === String(av.deal_id); });
+    if (!deal) {
+      var npLc = ((av.prenom_porte||'') + ' ' + (av.nom_porte||'')).trim().toLowerCase();
+      if (npLc) {
+        deal = deals.find(function(d){
+          return ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase() === npLc;
+        });
+      }
+    }
+    if (!deal) return;
+    if (!Array.isArray(deal.avenants_mission)) deal.avenants_mission = [];
+    if (deal.avenants_mission.some(function(x){ return x.avenant_id === av.id; })) return;
+    var isParallele = (av.mode === 'mission_parallele');
+    deal.avenants_mission.push({
+      avenant_id: av.id,
+      date: av.date_debut || av.date_avenant || av.date_demande || '',
+      types: isParallele ? ['\u2795 Mission parall\u00e8le'] : (av.types_coches || ['Avenant']),
+      client: av.client || '',
+      manager: av.manager || '',
+      tjm: av.tjm || '',
+      date_debut: av.date_debut || av.date_avenant || '',
+      date_fin: av.date_fin || '',
+      commentaire: av.commentaires || '',
+      sim_ts: av.sim_ts || null,
+      created_at: av.created_at || Date.now()
+    });
+    nbRepares++;
+  });
+  if (nbRepares > 0 && typeof saveDeals === 'function') saveDeals(deals);
+  return { repares: nbRepares };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RÉPARATION : reconstruit les traces deal.avenants_mission manquantes
+// à partir du tableau Avenants (sp_avenants_v1).
+// Utile pour récupérer les avenants "détachés" de la fiche candidat suite
+// à un ancien bug de merge sync. Appelable depuis la console : reparerAvenantsMission()
+// ═══════════════════════════════════════════════════════════════════
+function reparerAvenantsMission() {
+  var allAv = (typeof getAvenants === 'function') ? getAvenants() : [];
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var nbRepares = 0;
+  var details = [];
+
+  // Ne traiter que les avenants de type mission (avenant_mission ou mission_parallele)
+  var avMissions = allAv.filter(function(a){
+    return a && (a.mode === 'avenant_mission' || a.mode === 'mission_parallele');
+  });
+
+  avMissions.forEach(function(av){
+    // Retrouver le deal correspondant
+    var deal = deals.find(function(d){ return String(d.id) === String(av.deal_id); });
+    if (!deal) {
+      // Fallback : matcher par nom/prénom du porté
+      var npLc = ((av.prenom_porte||'') + ' ' + (av.nom_porte||'')).trim().toLowerCase();
+      if (npLc) {
+        deal = deals.find(function(d){
+          return ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase() === npLc;
+        });
+      }
+    }
+    if (!deal) { details.push('✗ Deal introuvable pour avenant ' + av.id); return; }
+
+    if (!Array.isArray(deal.avenants_mission)) deal.avenants_mission = [];
+    // Déjà présent ? (par avenant_id)
+    var dejaPresent = deal.avenants_mission.some(function(x){ return x.avenant_id === av.id; });
+    if (dejaPresent) return;
+
+    // Reconstruire la vignette à partir des champs de l'avenant
+    var isParallele = (av.mode === 'mission_parallele');
+    deal.avenants_mission.push({
+      avenant_id: av.id,
+      date: av.date_debut || av.date_avenant || av.date_demande || '',
+      types: isParallele ? ['\u2795 Mission parall\u00e8le'] : (av.types_coches || ['Avenant']),
+      client: av.client || '',
+      manager: av.manager || '',
+      tjm: av.tjm || '',
+      date_debut: av.date_debut || av.date_avenant || '',
+      date_fin: av.date_fin || '',
+      commentaire: av.commentaires || '',
+      sim_ts: av.sim_ts || null,
+      created_at: av.created_at || Date.now()
+    });
+    nbRepares++;
+    details.push('✓ Avenant ' + av.id + ' rattaché à ' + ((deal.prenom||'') + ' ' + (deal.nom||'')).trim());
+  });
+
+  if (nbRepares > 0) {
+    if (typeof saveDeals === 'function') saveDeals(deals);
+    if (typeof renderCandidats === 'function') { try { renderCandidats(); } catch(e){} }
+  }
+  console.log('[reparerAvenantsMission] ' + nbRepares + ' avenant(s) réparé(s)');
+  details.forEach(function(d){ console.log('  ' + d); });
+  alert('Réparation terminée :\n\n' + nbRepares + ' avenant(s) rattaché(s) à leur fiche candidat.'
+    + (nbRepares > 0 ? '\n\nRouvrez la fiche candidat pour voir l\'accordéon Avenants.' : ''));
+  return { repares: nbRepares, details: details };
+}
+
 // Rattache la mission parallèle au client concerné (crée client/manager si absent)
 function _attachMissionParalleleToClient(clientName, sim, deal, avenantId, dateDebut) {
   var clients = (typeof getClients === 'function') ? getClients() : [];
@@ -23930,6 +24049,22 @@ function mergeDeals(remote) {
   var local = getDeals();
   var idMap = {};
   local.forEach(function(d) { idMap[d.id] = d; });
+
+  // Helper : fusionne deux tableaux d'objets identifiés (par avenant_id ou created_at)
+  // sans doublon. Garantit qu'aucune trace cumulative n'est perdue au merge.
+  function _mergeTraces(arrA, arrB, idKey) {
+    var out = [];
+    var seen = {};
+    (arrA || []).concat(arrB || []).forEach(function(item){
+      if (!item) return;
+      var key = item[idKey] || item.created_at || JSON.stringify(item);
+      if (seen[key]) return;
+      seen[key] = 1;
+      out.push(item);
+    });
+    return out;
+  }
+
   remote.forEach(function(d) {
     if (typeof isTombstoned === 'function' && d && isTombstoned('deals', d.id)) return;
     if (!d || !d.id) return;
@@ -23939,13 +24074,21 @@ function mergeDeals(remote) {
       return;
     }
     // ── Last-write-wins par updated_at (timestamp millis) ──
-    // Si le deal remote a un updated_at plus récent, il gagne entièrement.
-    // Sinon on garde le local. Ça permet de propager les modifs (commercial, statut, dates, etc.)
     var rTs = d.updated_at || _parseFRDate(d.updated) || 0;
     var lTs = existing.updated_at || _parseFRDate(existing.updated) || 0;
-    if (rTs > lTs) {
-      idMap[d.id] = d;
-    }
+
+    // FIX ANTI-PERTE : avenants_mission et historique_prolongations sont des tableaux
+    // CUMULATIFS. Même si une version "gagne" le last-write-wins, on doit fusionner
+    // ces traces des deux côtés — sinon un avenant créé sur un poste disparaît quand
+    // l'autre poste avait modifié le deal (le merge écrasait le deal entier).
+    var mergedAvenants = _mergeTraces(existing.avenants_mission, d.avenants_mission, 'avenant_id');
+    var mergedHist     = _mergeTraces(existing.historique_prolongations, d.historique_prolongations, 'id');
+
+    var winner = (rTs > lTs) ? d : existing;
+    // On applique les traces fusionnées sur le gagnant
+    if (mergedAvenants.length) winner.avenants_mission = mergedAvenants;
+    if (mergedHist.length)     winner.historique_prolongations = mergedHist;
+    idMap[d.id] = winner;
   });
   var merged = Object.values(idMap).sort(function(a,b){ return (b.id||0)-(a.id||0); });
   saveDeals(merged);
