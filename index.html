@@ -3840,6 +3840,11 @@ function removeExtraPDF(idx) {
 function closeModal(id) {
   var m = document.getElementById(id);
   if (m) m.style.display = 'none';
+  // Si on ferme la popup placement, réinitialiser le mode mission parallèle
+  // (sinon le mode resterait actif et le prochain placement créerait un avenant)
+  if (id === 'modal-placement' && typeof _resetPlacementMode === 'function') {
+    _resetPlacementMode();
+  }
 }
 function openModal(id) {
   var m = document.getElementById(id);
@@ -8592,6 +8597,12 @@ function toggleDateDealLock() {
 }
 
 function savePlacement() {
+  // Si la popup est ouverte en MODE mission parallèle : on ne crée pas de deal,
+  // on crée un avenant via savePlacementAsMissionParallele().
+  if (typeof _placementMode !== 'undefined' && _placementMode === 'mission_parallele') {
+    savePlacementAsMissionParallele();
+    return;
+  }
   var hist = getHistory();
   var sim = hist.find(function(s) { return s.timestamp === currentPlacementTs; });
   var deals = getDeals();
@@ -9624,7 +9635,8 @@ function renderDeals() {
 
 function deleteDeal(id) {
   if (!confirm('Supprimer ce deal ?')) return;
-  var deals = getDeals().filter(function(d) { return d.id !== id; });
+  // FIX : comparaison tolérante au type (string ou number)
+  var deals = getDeals().filter(function(d) { return String(d.id) !== String(id); });
   saveDeals(deals);
   if (typeof addTombstone === 'function') addTombstone('deals', id);
   renderDeals();
@@ -9634,7 +9646,8 @@ function deleteDeal(id) {
 // (utilisé dans le tableau deals et dans la fiche candidat)
 function cancelDeal(id) {
   var deals = getDeals();
-  var d = deals.find(function(x){ return x.id === id; });
+  // FIX : comparaison tolérante au type (string ou number)
+  var d = deals.find(function(x){ return String(x.id) === String(id); });
   if (!d) return;
   if (d.etat === 'Annulé') { alert('Ce placement est déjà annulé.'); return; }
   var name = ((d.prenom || '') + ' ' + (d.nom || '')).trim() || 'ce placement';
@@ -9653,7 +9666,8 @@ function cancelDeal(id) {
 
 function restoreDeal(id) {
   var deals = getDeals();
-  var d = deals.find(function(x){ return x.id === id; });
+  // FIX : comparaison tolérante au type (string ou number)
+  var d = deals.find(function(x){ return String(x.id) === String(id); });
   if (!d) return;
   if (d.etat !== 'Annulé') return;
   var name = ((d.prenom || '') + ' ' + (d.nom || '')).trim() || 'ce placement';
@@ -10539,8 +10553,15 @@ function renderOnboardingSelect(d, key) {
 
 function updateDealField(dealId, key, value) {
   var deals = getDeals();
-  var idx = deals.findIndex(function(d){ return d.id === dealId; });
-  if (idx < 0) return;
+  // FIX : comparaison tolérante au type (string ou number).
+  // d.id peut être un number (Date.now()) ou une string (après import/sync JSON).
+  // Un mismatch de type faisait échouer le findIndex → updateDealField ne faisait
+  // rien → le statut du deal ne changeait pas (bug "désélection sans effet").
+  var idx = deals.findIndex(function(d){ return String(d.id) === String(dealId); });
+  if (idx < 0) {
+    console.warn('[updateDealField] Deal introuvable pour id=', dealId);
+    return;
+  }
   var previousValue = deals[idx][key];
   deals[idx][key] = value;
   deals[idx].updated = new Date().toISOString();
@@ -15960,13 +15981,19 @@ function sendAvenantMissionEmail(deal, avenant) {
 // client concerné (onglet Placements), et la fiche client/manager est
 // créée si elle n'existe pas.
 // ═══════════════════════════════════════════════════════════════════
+// État courant de la popup placement : 'deal' (normal) ou 'mission_parallele'
+var _placementMode = 'deal';
+// Quand on est en mode mission parallèle : id du deal d'origine du consultant
+var _missionParalleleOriginDealId = null;
+
+// Étape 1 : popup légère pour choisir la simulation de la 2ème mission.
 function openMissionParallelePopup(dealId) {
   var existing = document.getElementById('mission-parallele-modal');
   if (existing) existing.remove();
 
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
   var deal = deals.find(function(d){ return String(d.id) === String(dealId); });
-  if (!deal) { alert('⚠ Placement introuvable.'); return; }
+  if (!deal) { alert('\u26a0 Placement introuvable.'); return; }
 
   // Simulations du candidat (matching par email)
   var sims = [];
@@ -15979,14 +16006,10 @@ function openMissionParallelePopup(dealId) {
   } catch(e) { console.warn('[Mission //] simulations:', e); }
 
   var nomComplet = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
-  var nomForRule = (deal.nom || '').trim();
-  var firstLetter = nomForRule.charAt(0).toUpperCase();
-  var isAH = (typeof _getADVByLetter === 'function' ? _getADVByLetter(firstLetter) === 'clemence' : (firstLetter >= 'A' && firstLetter <= 'H'));
-  var advLabel = isAH ? 'Clémence' : 'Marie';
 
-  var simOptions = '<option value="">— Choisir une simulation —</option>'
+  var simOptions = '<option value="">\u2014 Choisir une simulation \u2014</option>'
     + sims.map(function(s){
-        var lbl = (s.date || '') + ' · ' + (s.entreprise || 'sans client') + ' · TJM ' + (s.tjm || '?') + '€ · ' + (s.poste || 'poste ?');
+        var lbl = (s.date || '') + ' \u00b7 ' + (s.entreprise || 'sans client') + ' \u00b7 TJM ' + (s.tjm || '?') + '\u20ac \u00b7 ' + (s.poste || 'poste ?');
         return '<option value="' + s.timestamp + '">' + lbl.replace(/</g,'&lt;') + '</option>';
       }).join('');
 
@@ -15995,43 +16018,28 @@ function openMissionParallelePopup(dealId) {
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(20,10,60,0.55);backdrop-filter:blur(4px);z-index:10000;display:flex;align-items:center;justify-content:center;padding:30px 16px;overflow-y:auto;';
 
   modal.innerHTML = ''
-    + '<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(20,10,60,0.4);width:96%;max-width:560px;max-height:calc(100vh - 60px);overflow-y:auto;">'
+    + '<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(20,10,60,0.4);width:96%;max-width:520px;">'
     +   '<div style="background:linear-gradient(135deg,#1A4F96,#2A1E82);color:#fff;padding:16px 22px;border-radius:14px 14px 0 0;display:flex;align-items:center;justify-content:space-between;">'
     +     '<div>'
-    +       '<div style="font-size:16px;font-weight:800;">➕ Mission parallèle</div>'
-    +       '<div style="font-size:12px;opacity:0.92;margin-top:2px;">2ème mission simultanée — crée un avenant, pas un nouveau deal</div>'
+    +       '<div style="font-size:16px;font-weight:800;">\u2795 Mission parall\u00e8le</div>'
+    +       '<div style="font-size:12px;opacity:0.92;margin-top:2px;">2\u00e8me mission simultan\u00e9e \u2014 \u00e9tape 1/2 : choisir la simulation</div>'
     +     '</div>'
-    +     '<button onclick="document.getElementById(\'mission-parallele-modal\').remove()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;font-size:20px;cursor:pointer;width:32px;height:32px;border-radius:50%;">×</button>'
+    +     '<button onclick="document.getElementById(\'mission-parallele-modal\').remove()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;font-size:20px;cursor:pointer;width:32px;height:32px;border-radius:50%;">\u00d7</button>'
     +   '</div>'
     +   '<div style="padding:20px 22px;">'
-
     +     '<div style="background:#F5F3FF;border:1px solid #E4E0FA;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:12px;line-height:1.6;color:#1A1033;">'
     +       '<div><strong>Consultant :</strong> ' + nomComplet + '</div>'
-    +       '<div><strong>Mission actuelle :</strong> ' + (deal.entreprise || '—') + (deal.poste ? ' · ' + deal.poste : '') + '</div>'
+    +       '<div><strong>Mission actuelle :</strong> ' + (deal.entreprise || '\u2014') + (deal.poste ? ' \u00b7 ' + deal.poste : '') + '</div>'
     +     '</div>'
-
     + (sims.length === 0
-        ? '<div style="background:#FEF3E2;border:1px solid #F0C070;border-radius:8px;padding:12px;font-size:12px;color:#8A5F00;margin-bottom:16px;">⚠️ Aucune simulation trouvée pour ce candidat. Créez d\'abord la simulation de la 2ème mission, puis revenez ici pour la rattacher.</div>'
+        ? '<div style="background:#FEF3E2;border:1px solid #F0C070;border-radius:8px;padding:12px;font-size:12px;color:#8A5F00;margin-bottom:16px;">\u26a0\ufe0f Aucune simulation pour ce candidat. Cr\u00e9ez d\'abord la simulation de la 2\u00e8me mission, puis revenez ici.</div>'
         : '')
-
-    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Simulation de la 2ème mission <span style="color:#E24B4A;">*</span></label>'
+    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Simulation de la 2\u00e8me mission <span style="color:#E24B4A;">*</span></label>'
     +     '<select id="mp-sim" onchange="_mpOnSimChange()" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;margin-bottom:4px;">' + simOptions + '</select>'
-    +     '<div id="mp-sim-info" style="font-size:11px;color:#9E94C4;margin-bottom:16px;">La 2ème mission reprend toutes ses infos (client, poste, TJM, dates) de la simulation choisie.</div>'
-
-    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Date de début de la 2ème mission</label>'
-    +     '<input type="date" id="mp-date" value="' + new Date().toISOString().slice(0,10) + '" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box;margin-bottom:16px;">'
-
-    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Commentaire</label>'
-    +     '<textarea id="mp-comment" rows="2" placeholder="Précisions sur la 2ème mission (optionnel)" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;resize:vertical;margin-bottom:16px;"></textarea>'
-
-    +     '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#1A1033;cursor:pointer;background:#F0FAF4;border:1px solid #C5E8D5;border-radius:7px;padding:9px 12px;margin-bottom:18px;">'
-    +       '<input type="checkbox" id="mp-notify" checked style="width:16px;height:16px;cursor:pointer;">'
-    +       '<span>📧 Notifier <strong>' + advLabel + '</strong> par email</span>'
-    +     '</label>'
-
+    +     '<div id="mp-sim-info" style="font-size:11px;color:#9E94C4;margin-bottom:18px;">Apr\u00e8s validation, la popup de placement compl\u00e8te s\'ouvre (pr\u00e9-remplie depuis la simu) pour saisir client, manager, dates, etc.</div>'
     +     '<div style="display:flex;gap:10px;justify-content:flex-end;">'
     +       '<button onclick="document.getElementById(\'mission-parallele-modal\').remove()" style="padding:9px 18px;background:#F0EDF9;color:#6B5E9C;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;">Annuler</button>'
-    +       '<button onclick="confirmMissionParallele(' + deal.id + ')" style="padding:9px 22px;background:linear-gradient(135deg,#1A4F96,#2A1E82);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;">✓ Créer la mission parallèle</button>'
+    +       '<button onclick="proceedMissionParallele(' + deal.id + ')" style="padding:9px 22px;background:linear-gradient(135deg,#1A4F96,#2A1E82);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;">Continuer \u2192</button>'
     +     '</div>'
     +   '</div>'
     + '</div>';
@@ -16044,7 +16052,7 @@ function _mpOnSimChange() {
   var info = document.getElementById('mp-sim-info');
   if (!sel || !info) return;
   if (!sel.value) {
-    info.textContent = 'La 2ème mission reprend toutes ses infos (client, poste, TJM, dates) de la simulation choisie.';
+    info.textContent = 'Apr\u00e8s validation, la popup de placement compl\u00e8te s\'ouvre (pr\u00e9-remplie depuis la simu) pour saisir client, manager, dates, etc.';
     info.style.color = '#9E94C4';
     return;
   }
@@ -16052,60 +16060,108 @@ function _mpOnSimChange() {
     var sims = (typeof getHistory === 'function') ? getHistory() : [];
     var s = sims.find(function(x){ return String(x.timestamp) === String(sel.value); });
     if (s) {
-      info.innerHTML = '✓ Client <strong>' + (s.entreprise || '?').replace(/</g,'&lt;') + '</strong>'
+      info.innerHTML = '\u2713 Client <strong>' + (s.entreprise || '?').replace(/</g,'&lt;') + '</strong>'
         + ', poste <strong>' + (s.poste || '?').replace(/</g,'&lt;') + '</strong>'
-        + ', TJM <strong>' + (s.tjm || '?') + ' €/j</strong>';
+        + ', TJM <strong>' + (s.tjm || '?') + ' \u20ac/j</strong>';
       info.style.color = '#1D9E75';
     }
   } catch(e) {}
 }
 
-function confirmMissionParallele(dealId) {
-  var deals = (typeof getDeals === 'function') ? getDeals() : [];
-  var deal = deals.find(function(d){ return String(d.id) === String(dealId); });
-  if (!deal) { alert('⚠ Placement introuvable.'); return; }
-
+// Étape 2 : on a la simu → on ouvre la popup placement complète en MODE mission parallèle.
+function proceedMissionParallele(dealId) {
   var simTs = (document.getElementById('mp-sim') || {}).value || '';
-  var dateDebut = (document.getElementById('mp-date') || {}).value || new Date().toISOString().slice(0,10);
-  var comment = (document.getElementById('mp-comment') || {}).value || '';
-  var notify = (document.getElementById('mp-notify') || {}).checked;
+  if (!simTs) { alert('\u26a0 S\u00e9lectionnez la simulation de la 2\u00e8me mission.'); return; }
 
-  if (!simTs) {
-    alert('⚠ Sélectionnez la simulation de la 2ème mission.');
-    return;
+  var modal = document.getElementById('mission-parallele-modal');
+  if (modal) modal.remove();
+
+  // Activer le mode mission parallèle AVANT d'ouvrir la popup placement
+  _placementMode = 'mission_parallele';
+  _missionParalleleOriginDealId = dealId;
+
+  // Ouvre la popup placement standard, pré-remplie depuis la simu choisie.
+  // openPlacementPopup gère déjà tout le pré-remplissage candidat/client/...
+  openPlacementPopup(parseInt(simTs));
+
+  // Adapter visuellement la popup au mode mission parallèle
+  setTimeout(function(){
+    var banner = document.getElementById('pl-mode-parallele-banner');
+    if (banner) banner.style.display = 'block';
+    var btn = document.getElementById('pl-save-btn');
+    if (btn) {
+      btn.innerHTML = '\u2795 Cr\u00e9er la mission parall\u00e8le';
+      btn.style.background = 'linear-gradient(135deg,#1A4F96,#2A1E82)';
+    }
+    var titleEl = document.querySelector('#modal-placement div[style*="font-size:15px"]');
+    if (titleEl) titleEl.innerHTML = '\u2795 Nouvelle mission parall\u00e8le';
+  }, 80);
+}
+
+// Réinitialise le mode placement à 'deal' (appelé à la fermeture de la popup)
+function _resetPlacementMode() {
+  _placementMode = 'deal';
+  _missionParalleleOriginDealId = null;
+  var banner = document.getElementById('pl-mode-parallele-banner');
+  if (banner) banner.style.display = 'none';
+  var btn = document.getElementById('pl-save-btn');
+  if (btn) {
+    btn.innerHTML = '\u2713 Enregistrer';
+    btn.style.background = 'linear-gradient(135deg,#1D9E75,#27C48F)';
   }
+  var titleEl = document.querySelector('#modal-placement div[style*="font-size:15px"]');
+  if (titleEl) titleEl.innerHTML = '\ud83d\udccb Convertir en placement';
+}
 
-  // Récupérer la simu rattachée
+// Crée l'avenant mission parallèle à partir des champs de la popup placement.
+// Appelé par savePlacement() quand _placementMode === 'mission_parallele'.
+function savePlacementAsMissionParallele() {
+  var originDealId = _missionParalleleOriginDealId;
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var originDeal = deals.find(function(d){ return String(d.id) === String(originDealId); });
+  if (!originDeal) { alert('\u26a0 Deal d\'origine introuvable.'); return; }
+
+  // Lecture des champs de la popup placement
+  function _v(id){ var el = document.getElementById(id); return el ? el.value : ''; }
+  var simTs = currentPlacementTs;
+  var clientParallele = _v('pl-entreprise').trim();
+  var poste = _v('pl-poste').trim();
+  var tjm = (_v('pl-tjm') || '').replace(/[^0-9.,]/g,'').replace(',','.');
+  var manager = _v('pl-manager').trim();
+  var dateDebut = _v('pl-date-entree') || _v('pl-date-deal') || new Date().toISOString().slice(0,10);
+  var commercial = _v('pl-commercial') || originDeal.commercial || '';
+  var comment = _v('pl-commentaire') || '';
+
+  if (!clientParallele) { alert('\u26a0 Renseignez l\'entreprise cliente de la 2\u00e8me mission.'); return; }
+
+  // Récupérer la simu
   var sim = null;
   try {
     var sims = (typeof getHistory === 'function') ? getHistory() : [];
     sim = sims.find(function(x){ return String(x.timestamp) === String(simTs); }) || null;
   } catch(e) {}
-  if (!sim) { alert('⚠ Simulation introuvable.'); return; }
 
   var avenantId = 'AVM-' + Date.now() + '-' + Math.floor(Math.random()*1000);
-  var clientParallele = sim.entreprise || '';
   var avenant = {
     id: avenantId,
-    deal_id: deal.id,
-    sim_ts: parseInt(simTs),
+    deal_id: originDeal.id,
+    sim_ts: simTs ? parseInt(simTs) : null,
     mode: 'mission_parallele',
     date_demande: new Date().toISOString().slice(0,10),
     date_avenant: dateDebut,
     date_debut: dateDebut,
-    commercial: sim.commercial || deal.commercial || '',
-    prenom_porte: deal.prenom || '',
-    nom_porte: deal.nom || '',
-    type_avenant: '2ème mission parallèle',
-    types_coches: ['Mission parallèle'],
-    // La 2ème mission : infos issues de la simu
+    commercial: commercial,
+    prenom_porte: originDeal.prenom || '',
+    nom_porte: originDeal.nom || '',
+    type_avenant: '2\u00e8me mission parall\u00e8le',
+    types_coches: ['Mission parall\u00e8le'],
     client: clientParallele,
-    poste: sim.poste || '',
-    tjm: sim.tjm || '',
-    new_salaire_annuel: sim.brut || '',
-    // Rappel de la mission d'origine (pour contexte)
-    mission_origine_client: deal.entreprise || '',
-    mission_origine_poste: deal.poste || '',
+    manager: manager,
+    poste: poste,
+    tjm: tjm,
+    new_salaire_annuel: sim ? (sim.brut || '') : '',
+    mission_origine_client: originDeal.entreprise || '',
+    mission_origine_poste: originDeal.poste || '',
     etat_avenant_cdt: '',
     etat_av_cdps: '',
     avenant_cdt_signe: '',
@@ -16123,40 +16179,92 @@ function confirmMissionParallele(dealId) {
   if (typeof saveAvenants === 'function') saveAvenants(allAv);
 
   // (2) Trace dans l'accordéon de la fiche candidat (sur le deal d'origine)
-  if (!Array.isArray(deal.avenants_mission)) deal.avenants_mission = [];
-  deal.avenants_mission.push({
+  if (!Array.isArray(originDeal.avenants_mission)) originDeal.avenants_mission = [];
+  originDeal.avenants_mission.push({
     avenant_id: avenantId,
     date: dateDebut,
-    types: ['➕ Mission parallèle'],
-    commentaire: (clientParallele ? '2ème mission chez ' + clientParallele : '2ème mission') + (comment ? ' — ' + comment : ''),
-    sim_ts: parseInt(simTs),
+    types: ['\u2795 Mission parall\u00e8le'],
+    commentaire: '2\u00e8me mission chez ' + clientParallele + (poste ? ' \u00b7 ' + poste : '') + (comment ? ' \u2014 ' + comment : ''),
+    sim_ts: simTs ? parseInt(simTs) : null,
     created_at: Date.now()
   });
   if (typeof saveDeals === 'function') saveDeals(deals);
 
-  // (3) IMPLICATION CLIENT : créer la fiche client/manager de la 2ème mission si besoin,
-  //     et y rattacher la mission parallèle (visible dans l'onglet Placements du client).
-  if (clientParallele) {
-    try {
-      _attachMissionParalleleToClient(clientParallele, sim, deal, avenantId, dateDebut);
-    } catch(e) { console.warn('[Mission //] implication client:', e); }
-  }
+  // (3) Implication client : créer/rattacher au client de la 2ème mission
+  try {
+    _attachMissionParalleleToClient(clientParallele, {
+      timestamp: simTs, entreprise: clientParallele, manager: manager,
+      poste: poste, tjm: tjm, secteur: (sim ? sim.secteur : '')
+    }, originDeal, avenantId, dateDebut);
+  } catch(e) { console.warn('[Mission //] implication client:', e); }
 
   // (4) Notification email
-  if (notify) {
-    try { sendMissionParalleleEmail(deal, avenant, sim); } catch(e) { console.warn('[Mission //] email:', e); }
-  }
+  try {
+    sendMissionParalleleEmail(originDeal, avenant, sim || {});
+  } catch(e) { console.warn('[Mission //] email:', e); }
 
-  var modal = document.getElementById('mission-parallele-modal');
-  if (modal) modal.remove();
+  // Fermer + reset mode
+  if (typeof closeModal === 'function') closeModal('modal-placement');
+  _resetPlacementMode();
+
   if (typeof renderAvenants === 'function') { try { renderAvenants(); } catch(e){} }
   if (typeof renderCandidats === 'function') { try { renderCandidats(); } catch(e){} }
   if (typeof renderClients === 'function') { try { renderClients(); } catch(e){} }
   if (typeof showNotifToast === 'function') {
-    showNotifToast('✓ Mission parallèle créée' + (notify ? ' et email envoyé' : ''));
+    showNotifToast('\u2713 Mission parall\u00e8le cr\u00e9\u00e9e');
   } else {
-    alert('✓ Mission parallèle créée.');
+    alert('\u2713 Mission parall\u00e8le cr\u00e9\u00e9e.');
   }
+}
+
+// Supprime une mission parallèle : nettoie le tableau Avenants, l'accordéon
+// de la fiche candidat, et le rattachement côté client.
+function deleteMissionParallele(avenantId) {
+  if (!confirm('Supprimer cette mission parall\u00e8le ?\n\nL\'avenant, la trace dans la fiche candidat et le rattachement client seront supprim\u00e9s.')) return;
+
+  // (1) Retirer du tableau Avenants
+  try {
+    var allAv = (typeof getAvenants === 'function') ? getAvenants() : [];
+    allAv = allAv.filter(function(a){ return a.id !== avenantId; });
+    if (typeof saveAvenants === 'function') saveAvenants(allAv);
+    // Tombstone pour propager la suppression en sync
+    if (typeof addTombstone === 'function') addTombstone('avenants', avenantId);
+  } catch(e) { console.warn('[delMission//] avenants:', e); }
+
+  // (2) Retirer la trace de l'accordéon (deal.avenants_mission)
+  try {
+    var deals = (typeof getDeals === 'function') ? getDeals() : [];
+    var changed = false;
+    deals.forEach(function(d){
+      if (Array.isArray(d.avenants_mission)) {
+        var before = d.avenants_mission.length;
+        d.avenants_mission = d.avenants_mission.filter(function(av){ return av.avenant_id !== avenantId; });
+        if (d.avenants_mission.length !== before) changed = true;
+      }
+    });
+    if (changed && typeof saveDeals === 'function') saveDeals(deals);
+  } catch(e) { console.warn('[delMission//] deals:', e); }
+
+  // (3) Retirer le rattachement côté client (managers[].deals avec cet avenant_id)
+  try {
+    var clients = (typeof getClients === 'function') ? getClients() : [];
+    var clChanged = false;
+    clients.forEach(function(cl){
+      (cl.managers||[]).forEach(function(m){
+        if (Array.isArray(m.deals)) {
+          var before = m.deals.length;
+          m.deals = m.deals.filter(function(d){ return d.avenant_id !== avenantId; });
+          if (m.deals.length !== before) clChanged = true;
+        }
+      });
+    });
+    if (clChanged && typeof saveClientsArr === 'function') saveClientsArr(clients);
+  } catch(e) { console.warn('[delMission//] clients:', e); }
+
+  if (typeof renderAvenants === 'function') { try { renderAvenants(); } catch(e){} }
+  if (typeof renderCandidats === 'function') { try { renderCandidats(); } catch(e){} }
+  if (typeof renderClients === 'function') { try { renderClients(); } catch(e){} }
+  if (typeof showNotifToast === 'function') showNotifToast('\u2713 Mission parall\u00e8le supprim\u00e9e');
 }
 
 // Rattache la mission parallèle au client concerné (crée client/manager si absent)
@@ -16167,9 +16275,6 @@ function _attachMissionParalleleToClient(clientName, sim, deal, avenantId, dateD
   var idx = clients.findIndex(function(c){ return (c.name||'').trim().toLowerCase() === nameLc; });
   var managerName = (sim.manager || '').trim();
 
-  // Référence "deal-like" de la mission parallèle pour l'onglet Placements du client.
-  // sim_ts négatif fictif basé sur l'avenant pour distinguer des vrais deals,
-  // mais on garde le vrai sim_ts pour pouvoir ouvrir la simu.
   var missionRef = {
     sim_ts: sim.timestamp,
     avenant_id: avenantId,
@@ -16179,13 +16284,12 @@ function _attachMissionParalleleToClient(clientName, sim, deal, avenantId, dateD
     email_candidat: deal.email || '',
     poste: sim.poste || '',
     tjm: sim.tjm || '',
-    etat: 'Mission parallèle',
+    etat: 'Mission parall\u00e8le',
     date_deal: dateDebut,
     date_entree: dateDebut
   };
 
   if (idx >= 0) {
-    // Client existe : ajouter au manager (ou créer le manager)
     if (!clients[idx].managers) clients[idx].managers = [];
     var mIdx = -1;
     if (managerName) {
@@ -16202,7 +16306,6 @@ function _attachMissionParalleleToClient(clientName, sim, deal, avenantId, dateD
     }
     clients[idx].updated = new Date().toLocaleDateString('fr-FR');
   } else {
-    // Client n'existe pas : on le crée
     var mgrs = [];
     if (managerName) {
       mgrs = [{ name: managerName, tel:'', email:'', commentaire:'', deals:[missionRef] }];
@@ -16211,9 +16314,7 @@ function _attachMissionParalleleToClient(clientName, sim, deal, avenantId, dateD
       id: Date.now(),
       sp_id: (typeof generateSpId === 'function') ? generateSpId('CLI', getClients()) : '',
       name: clientName.trim(),
-      tel: '',
-      email: '',
-      adresse: '',
+      tel: '', email: '', adresse: '',
       secteur: sim.secteur || '',
       managers: mgrs,
       created: new Date().toLocaleDateString('fr-FR'),
@@ -16226,7 +16327,7 @@ function _attachMissionParalleleToClient(clientName, sim, deal, avenantId, dateD
 // Email de notification de mission parallèle
 function sendMissionParalleleEmail(deal, avenant, sim) {
   if (typeof odToken === 'undefined' || !odToken) {
-    console.warn('[Mission //] Pas de token OneDrive — email non envoyé');
+    console.warn('[Mission //] Pas de token OneDrive \u2014 email non envoy\u00e9');
     return;
   }
   var nomConsultant = ((deal.nom||'') + '').trim();
@@ -16249,25 +16350,25 @@ function sendMissionParalleleEmail(deal, avenant, sim) {
   if (!toList.length) { console.warn('[Mission //] Pas de destinataire'); return; }
 
   var nomComplet = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
-  var subject = '[Mission parallèle] ' + nomComplet + ' — 2ème mission chez ' + (avenant.client || '');
+  var subject = '[Mission parall\u00e8le] ' + nomComplet + ' \u2014 2\u00e8me mission chez ' + (avenant.client || '');
 
   var html = '<div style="font-family:Arial,sans-serif;font-size:13px;color:#1A1033;line-height:1.6;">'
     + '<div style="background:linear-gradient(135deg,#1A4F96,#2A1E82);color:#fff;padding:14px 20px;border-radius:8px 8px 0 0;">'
-    +   '<div style="font-size:16px;font-weight:700;">➕ Mission parallèle</div>'
-    +   '<div style="font-size:12px;opacity:0.9;margin-top:3px;">Le consultant démarre une 2ème mission simultanée</div>'
+    +   '<div style="font-size:16px;font-weight:700;">\u2795 Mission parall\u00e8le</div>'
+    +   '<div style="font-size:12px;opacity:0.9;margin-top:3px;">Le consultant d\u00e9marre une 2\u00e8me mission simultan\u00e9e</div>'
     + '</div>'
     + '<div style="background:#fff;padding:18px 22px;border:1px solid #E4E0FA;border-top:none;border-radius:0 0 8px 8px;">'
     +   '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
     +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;width:42%;">Consultant</td><td style="padding:6px 0;">' + nomComplet + '</td></tr>'
-    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Commercial</td><td style="padding:6px 0;">' + (avenant.commercial || '—') + '</td></tr>'
-    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;border-top:1px solid #F0EDF9;padding-top:10px;">Mission actuelle</td><td style="padding:6px 0;border-top:1px solid #F0EDF9;padding-top:10px;color:#9E94C4;">' + (avenant.mission_origine_client || '—') + (avenant.mission_origine_poste ? ' · ' + avenant.mission_origine_poste : '') + '</td></tr>'
-    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">2ème mission — Client</td><td style="padding:6px 0;color:#1A4F96;font-weight:700;">' + (avenant.client || '—') + '</td></tr>'
-    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">2ème mission — Poste</td><td style="padding:6px 0;">' + (avenant.poste || '—') + '</td></tr>'
-    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">2ème mission — TJM</td><td style="padding:6px 0;color:#1A4F96;font-weight:700;">' + (avenant.tjm ? avenant.tjm + ' €/j' : '—') + '</td></tr>'
-    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Date de début</td><td style="padding:6px 0;">' + _fmtAvDate(avenant.date_debut) + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Commercial</td><td style="padding:6px 0;">' + (avenant.commercial || '\u2014') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;border-top:1px solid #F0EDF9;padding-top:10px;">Mission actuelle</td><td style="padding:6px 0;border-top:1px solid #F0EDF9;padding-top:10px;color:#9E94C4;">' + (avenant.mission_origine_client || '\u2014') + (avenant.mission_origine_poste ? ' \u00b7 ' + avenant.mission_origine_poste : '') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">2\u00e8me mission \u2014 Client</td><td style="padding:6px 0;color:#1A4F96;font-weight:700;">' + (avenant.client || '\u2014') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">2\u00e8me mission \u2014 Poste</td><td style="padding:6px 0;">' + (avenant.poste || '\u2014') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">2\u00e8me mission \u2014 TJM</td><td style="padding:6px 0;color:#1A4F96;font-weight:700;">' + (avenant.tjm ? avenant.tjm + ' \u20ac/j' : '\u2014') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Date de d\u00e9but</td><td style="padding:6px 0;">' + _fmtAvDate(avenant.date_debut) + '</td></tr>'
     +   '</table>'
     + (avenant.commentaires ? '<div style="margin-top:14px;padding:10px 12px;background:#EEF4FF;border-left:3px solid #1A4F96;border-radius:4px;font-size:12.5px;"><strong>Commentaire :</strong><br>' + avenant.commentaires.replace(/\n/g,'<br>') + '</div>' : '')
-    +   '<div style="margin-top:18px;padding-top:12px;border-top:1px solid #F0EDF9;font-size:11px;color:#9E94C4;">📌 Action attendue : établir le contrat de la 2ème mission et mettre à jour LAYA. Le consultant cumule désormais 2 missions.</div>'
+    +   '<div style="margin-top:18px;padding-top:12px;border-top:1px solid #F0EDF9;font-size:11px;color:#9E94C4;">\ud83d\udccc Action attendue : \u00e9tablir le contrat de la 2\u00e8me mission et mettre \u00e0 jour LAYA. Le consultant cumule d\u00e9sormais 2 missions.</div>'
     + '</div>'
     + '</div>';
 
@@ -16286,9 +16387,9 @@ function sendMissionParalleleEmail(deal, avenant, sim) {
     body: JSON.stringify(payload)
   }).then(function(r){
     if (r.ok || r.status === 202) {
-      console.log('[Mission //] Email envoyé à', toList.join(', '));
+      console.log('[Mission //] Email envoy\u00e9 \u00e0', toList.join(', '));
     } else {
-      r.text().then(function(txt){ console.error('[Mission //] Échec:', r.status, txt); });
+      r.text().then(function(txt){ console.error('[Mission //] \u00c9chec:', r.status, txt); });
     }
   }).catch(function(err){
     console.error('[Mission //] Erreur:', err);
@@ -25740,11 +25841,17 @@ function _renderPlacementHistory(deal) {
       if (av.sim_ts) {
         simBtn = '<button onclick="event.stopPropagation();closeCandFiche();setTimeout(function(){openSimFromDeal(' + av.sim_ts + ');},120);" title="Ouvrir la simulation liée" style="margin-left:4px;padding:2px 7px;background:#fff;color:#7343EE;border:1.5px solid #D9CFFA;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">📊 Simu</button>';
       }
+      // Bouton suppression (nettoie tableau Avenants + accordéon + rattachement client)
+      var delBtn = '';
+      if (av.avenant_id) {
+        delBtn = '<button onclick="event.stopPropagation();deleteMissionParallele(\'' + av.avenant_id + '\');" title="Supprimer cet avenant / cette mission parallèle" style="margin-left:4px;padding:2px 7px;background:#FCEBEB;color:#A8322A;border:1.5px solid #F5B5B5;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">🗑</button>';
+      }
       return '<div style="background:#FFFBF2;border:1px solid #F0DCAE;border-radius:7px;padding:8px 10px;margin-bottom:6px;">'
         + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px;">'
         +   '<span style="font-size:11px;font-weight:700;color:#8A5F00;">📑 Avenant</span>'
         +   '<span style="font-size:10.5px;color:#9E94C4;">' + fmtDate(av.date) + '</span>'
         +   simBtn
+        +   delBtn
         + '</div>'
         + '<div style="margin-bottom:3px;">' + typesBadges + '</div>'
         + (av.commentaire ? '<div style="font-size:10.5px;color:#6B5E9C;line-height:1.4;margin-top:3px;">' + av.commentaire.replace(/</g,'&lt;').replace(/\n/g,'<br>') + '</div>' : '')
@@ -31266,6 +31373,12 @@ function exportCommHistCSV() {
     </div>
     <div style="padding:18px 22px;">
 
+      <!-- Bandeau MODE MISSION PARALLÈLE (masqué par défaut, affiché via openMissionParalleleViaPopup) -->
+      <div id="pl-mode-parallele-banner" style="display:none;background:linear-gradient(135deg,#EEF4FF,#DCE8FF);border:1.5px solid #A9C8F0;border-radius:9px;padding:11px 14px;margin-bottom:14px;">
+        <div style="font-size:12.5px;font-weight:700;color:#1A4F96;display:flex;align-items:center;gap:7px;">➕ Mode mission parallèle</div>
+        <div style="font-size:11px;color:#3A6EA5;margin-top:3px;line-height:1.5;">Ce formulaire crée une <strong>2ème mission</strong> pour ce consultant. À l'enregistrement, un <strong>avenant</strong> sera généré (pas un nouveau deal). Le placement d'origine reste inchangé.</div>
+      </div>
+
       <!-- CANDIDAT -->
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;color:#7343EE;">&#128100; Informations candidat</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
@@ -31392,7 +31505,7 @@ function exportCommHistCSV() {
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;">
         <button onclick="closeModal('modal-placement')" style="padding:9px 18px;border:1px solid #E4E0FA;border-radius:8px;background:#fff;font-size:13px;cursor:pointer;">Annuler</button>
-        <button onclick="savePlacement()" style="padding:9px 22px;background:linear-gradient(135deg,#1D9E75,#27C48F);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">&#10003; Enregistrer</button>
+        <button id="pl-save-btn" onclick="savePlacement()" style="padding:9px 22px;background:linear-gradient(135deg,#1D9E75,#27C48F);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">&#10003; Enregistrer</button>
       </div>
     </div>
   </div>
