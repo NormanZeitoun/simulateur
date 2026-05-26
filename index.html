@@ -11820,7 +11820,10 @@ function renderCandidats() {
     var initials = ((cand.prenom||'').charAt(0)+(cand.nom||'').charAt(0)).toUpperCase();
     var statut = computeCandStatutAuto(cand);
     var scfg = statutCfg[statut] || statutCfg['Prospect'];
-    var commercial = (lastSim && lastSim.commercial) || cand.commercial || '';
+    // FIX : afficher le commercial de la FICHE (cand.commercial) — cohérent avec
+    // le filtre. Avant : on affichait celui de la dernière simulation, ce qui créait
+    // une incohérence (carte = commercial de la simu, filtre = commercial de la fiche).
+    var commercial = cand.commercial || (lastSim && lastSim.commercial) || '';
     var tjm = cand.tjm_actuel || (lastSim ? lastSim.tjm : '') || '';
     var brut = lastSim ? lastSim.brut : '';
     var brutMensuel = '';
