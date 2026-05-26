@@ -9493,9 +9493,19 @@ function renderDeals() {
   if (dealFilterEtat !== '__all__') deals = deals.filter(function(d) { return d.etat === dealFilterEtat; });
   if (dealFilterComm === '__mine__') {
     var myName = (typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
-    if (myName) deals = deals.filter(function(d) { return (d.commercial||'') === myName; });
+    // FIX : comparaison tolérante (prénom, casse, espaces) — un deal "Norman"
+    // doit matcher un utilisateur "Norman Zeitoun" et inversement.
+    if (myName) deals = deals.filter(function(d) {
+      return typeof _sameCommercial === 'function'
+        ? _sameCommercial(d.commercial, myName)
+        : ((d.commercial||'').trim().toLowerCase() === myName.toLowerCase());
+    });
   } else if (dealFilterComm !== '__all__') {
-    deals = deals.filter(function(d) { return (d.commercial||'') === dealFilterComm; });
+    deals = deals.filter(function(d) {
+      return typeof _sameCommercial === 'function'
+        ? _sameCommercial(d.commercial, dealFilterComm)
+        : ((d.commercial||'') === dealFilterComm);
+    });
   }
   if (dealFilterEtranger === 'oui') deals = deals.filter(function(d) { return d.salarie_etranger === true; });
   if (dealFilterEtranger === 'non') deals = deals.filter(function(d) { return d.salarie_etranger !== true; });
@@ -9525,17 +9535,26 @@ function renderDeals() {
   var listEl = document.getElementById('deals-list');
   if (!listEl) return;
 
-  // Peupler select commercial
+  // Peupler select commercial — DÉ-DOUBLONNÉ par prénom (voir renderCandidats)
   var allDeals = getDeals();
   var selC = document.getElementById('deal-filter-comm');
   if (selC) {
     var myName = (typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
-    var comms = {};
-    allDeals.forEach(function(d) { if (d.commercial) comms[d.commercial] = 1; });
+    var commVariantsD = {};  // prénom normalisé → libellé le plus complet
+    allDeals.forEach(function(d) {
+      if (!d.commercial) return;
+      var clean = String(d.commercial).trim().replace(/\s+/g,' ');
+      if (!clean) return;
+      var key = clean.toLowerCase().split(' ')[0];
+      if (!commVariantsD[key] || clean.length > commVariantsD[key].length) {
+        commVariantsD[key] = clean;
+      }
+    });
     selC.innerHTML = ''
       + (myName ? '<option value="__mine__">👤 Mes deals</option>' : '')
       + '<option value="__all__">Tous commerciaux</option>';
-    Object.keys(comms).sort().forEach(function(n) {
+    Object.keys(commVariantsD).sort().forEach(function(k) {
+      var n = commVariantsD[k];
       var o = document.createElement('option'); o.value = n; o.textContent = n;
       if (n === dealFilterComm) o.selected = true;
       selC.appendChild(o);
@@ -11673,18 +11692,34 @@ function renderCandidats() {
   var filtComm = document.getElementById('cand-filter-commercial') ? document.getElementById('cand-filter-commercial').value : '__mine__';
   var countEl = document.getElementById('cand-count');
 
-  // Peupler la dropdown commercial avec la liste distincte des commerciaux + option "Mes candidats"
+  // Peupler la dropdown commercial avec la liste DÉ-DOUBLONNÉE des commerciaux.
+  // FIX DOUBLON : un même commercial peut être enregistré sous plusieurs variantes
+  // ("Norman", "Norman Zeitoun", "norman"...). On regroupe par prénom normalisé
+  // pour n'afficher qu'UNE entrée par personne, avec le libellé le plus complet.
   var commEl = document.getElementById('cand-filter-commercial');
   if (commEl) {
-    var allCommercials = {};
+    var commVariants = {};  // prénom normalisé → libellé d'affichage le plus complet
+    function _collectComm(name) {
+      if (!name) return;
+      var clean = String(name).trim().replace(/\s+/g,' ');
+      if (!clean) return;
+      var key = clean.toLowerCase().split(' ')[0]; // prénom normalisé
+      // On garde comme libellé la variante la plus longue (= la plus complète)
+      if (!commVariants[key] || clean.length > commVariants[key].length) {
+        commVariants[key] = clean;
+      }
+    }
     getCandidats().forEach(function(c){
-      if (!c || c._deleted) return;  // FIX : ignorer les fiches tombstonées
-      if (c.commercial) allCommercials[c.commercial] = true;
-      (c.simulations||[]).forEach(function(s){ if (s.commercial) allCommercials[s.commercial] = true; });
+      if (!c || c._deleted) return;  // ignorer les fiches tombstonées
+      // On ne collecte QUE le commercial de la fiche (cohérent avec le filtre :
+      // un candidat appartient au commercial de sa fiche, pas de ses simulations).
+      _collectComm(c.commercial);
     });
+    var commList = Object.keys(commVariants).sort().map(function(k){ return commVariants[k]; });
     var existingVals = Array.from(commEl.options).map(function(o){ return o.value; });
-    var commList = Object.keys(allCommercials).sort();
-    var needsRebuild = commList.some(function(c){ return existingVals.indexOf(c) < 0; });
+    // Reconstruire si la liste a changé (ajout/suppression d'un commercial)
+    var needsRebuild = commList.length !== Math.max(0, existingVals.length - 2)
+      || commList.some(function(c){ return existingVals.indexOf(c) < 0; });
     if (needsRebuild) {
       var currentVal = commEl.value;
       var commOpts = '<option value="__mine__">👤 Mes candidats</option><option value="">Tous les commerciaux</option>';
@@ -11697,22 +11732,23 @@ function renderCandidats() {
   }
 
   // Filtre par commercial
+  // RÈGLE : un candidat appartient au commercial de SA FICHE (cand.commercial).
+  // On ne regarde PAS les commerciaux des simulations — sinon un candidat ayant
+  // eu une vieille simu faite par un autre commercial "fuirait" dans son filtre.
   if (filtComm === '__mine__') {
     var myName = (typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
     if (myName) {
       cands = cands.filter(function(cand) {
-        // Comparaison tolérante (insensible à la casse, prénom uniquement)
-        if (typeof _sameCommercial === 'function' ? _sameCommercial(cand.commercial, myName) : ((cand.commercial||'').trim().toLowerCase() === myName.toLowerCase())) return true;
-        // Fallback : regarder aussi les commercials des simulations
-        return (cand.simulations||[]).some(function(s){
-          return typeof _sameCommercial === 'function' ? _sameCommercial(s.commercial, myName) : ((s.commercial||'').trim().toLowerCase() === myName.toLowerCase());
-        });
+        return typeof _sameCommercial === 'function'
+          ? _sameCommercial(cand.commercial, myName)
+          : ((cand.commercial||'').trim().toLowerCase() === myName.toLowerCase());
       });
+      // Nom renseigné → retirer un éventuel avertissement
+      var infoElOK = document.getElementById('cand-no-commercial-info');
+      if (infoElOK) infoElOK.remove();
     } else {
-      // L'utilisateur n'a pas renseigné son prénom : on affiche 0 candidat (au lieu de tout) pour forcer la config
-      // Plus sûr : un commercial qui voit "0 candidat" ira chercher pourquoi vs un qui voit ceux des autres et travaille dessus
+      // Pas de prénom renseigné dans Paramètres → 0 candidat + message
       cands = [];
-      // Affiche un message d'info sous la barre de recherche (une seule fois)
       var infoEl = document.getElementById('cand-no-commercial-info');
       if (!infoEl) {
         var listEl = document.getElementById('candidats-list');
@@ -11730,11 +11766,11 @@ function renderCandidats() {
     var infoEl2 = document.getElementById('cand-no-commercial-info');
     if (infoEl2) infoEl2.remove();
     if (filtComm && filtComm !== '') {
+      // Filtre sur un commercial précis : UNIQUEMENT le commercial de la fiche
       cands = cands.filter(function(cand) {
-        if (typeof _sameCommercial === 'function' ? _sameCommercial(cand.commercial, filtComm) : ((cand.commercial||'') === filtComm)) return true;
-        return (cand.simulations||[]).some(function(s){
-          return typeof _sameCommercial === 'function' ? _sameCommercial(s.commercial, filtComm) : ((s.commercial||'') === filtComm);
-        });
+        return typeof _sameCommercial === 'function'
+          ? _sameCommercial(cand.commercial, filtComm)
+          : ((cand.commercial||'') === filtComm);
       });
     }
   }
