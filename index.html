@@ -1451,6 +1451,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
             <div style="font-size:12px;font-weight:700;color:#1A1033;">Sync OneDrive</div>
             <div id="od-status" style="font-size:11px;color:#6B5E9C;">Non connecté</div>
           </div>
+          <span id="od-pending-badge" style="display:none;margin-left:4px;padding:3px 9px;background:#FFF3E0;color:#B5651D;border:1px solid #F0C088;border-radius:10px;font-size:10px;font-weight:700;cursor:pointer;" onclick="odForceSyncNow()" title="Cliquez pour synchroniser maintenant">⚠ Modifs non synchronisées</span>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button id="od-btn-connect" onclick="odConnect()" style="padding:5px 12px;background:#0078D4;color:#fff;border:none;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;">&#128274; Se connecter</button>
@@ -6079,6 +6080,9 @@ function odInit() {
     setTimeout(odInit, 500);
     return;
   }
+  // Afficher le badge "modifs en attente" si un flag a persisté d'une session
+  // précédente (ex: PC éteint avant que le push de 2 min ait eu lieu)
+  if (typeof _odUpdatePendingBadge === 'function') _odUpdatePendingBadge();
   msalApp = new msal.PublicClientApplication({
     auth: {
       clientId: OD_CLIENT_ID,
@@ -7113,6 +7117,84 @@ function doResetTotalOneDrive() {
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// PROTECTION ANTI-PERTE DE SYNC
+// Problème résolu : si l'utilisateur fait des actions puis éteint son PC
+// avant que le debounce de 2 min ait poussé vers OneDrive, les modifs
+// restent coincées en local et les autres postes ne les voient jamais.
+//
+// Solution :
+//  1. Flag _pendingSyncSince : marqué dès qu'une modif est faite
+//  2. Badge visuel "⚠ Modifs non synchronisées"
+//  3. Push de SECOURS à la fermeture (beforeunload/pagehide) via fetch keepalive
+//     — keepalive garantit que la requête part même si la page se ferme
+// ═══════════════════════════════════════════════════════════════════
+
+function _odMarkPending() {
+  try { localStorage.setItem('sp_pending_sync_since', String(Date.now())); } catch(e){}
+  _odUpdatePendingBadge();
+}
+function _odClearPending() {
+  try { localStorage.removeItem('sp_pending_sync_since'); } catch(e){}
+  _odUpdatePendingBadge();
+}
+function _odHasPending() {
+  try { return !!localStorage.getItem('sp_pending_sync_since'); } catch(e){ return false; }
+}
+function _odUpdatePendingBadge() {
+  var badge = document.getElementById('od-pending-badge');
+  if (!badge) return;
+  badge.style.display = _odHasPending() ? 'inline-block' : 'none';
+}
+
+// Synchronisation immédiate (clic sur le badge) — bypass le debounce de 2 min
+function odForceSyncNow() {
+  if (!odToken) { alert('⚠ OneDrive non connecté.'); return; }
+  if (window._odAutoSyncTimer) { clearTimeout(window._odAutoSyncTimer); window._odAutoSyncTimer = null; }
+  odSetStatus('Synchronisation en cours...', false);
+  odSilentFullSync();
+}
+
+// Push de SECOURS à la fermeture de la page.
+// Utilise fetch({keepalive:true}) qui garantit l'envoi même si la page se ferme.
+// On ne PULL pas ici (pas le temps) — on POUSSE seulement les entités locales.
+function _odEmergencyPush() {
+  if (!odToken) return;
+  if (!_odHasPending()) return; // rien à sauvegarder
+  if (window._initialSyncDone === false) return; // sync initiale pas faite → ne pas écraser
+  try {
+    if (typeof _initSyncEntities === 'function') _initSyncEntities();
+    var entities = (typeof SYNC_ENTITIES !== 'undefined') ? SYNC_ENTITIES : [];
+    entities.forEach(function(ent){
+      if (!ent || typeof ent.getData !== 'function') return;
+      var body;
+      try { body = JSON.stringify(ent.getData()); } catch(e){ return; }
+      var putUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + _odEncPath(ent.path) + ':/content';
+      // keepalive:true → la requête survit à la fermeture de la page
+      try {
+        fetch(putUrl, {
+          method: 'PUT',
+          headers: {
+            'Authorization': 'Bearer ' + odToken,
+            'Content-Type': 'application/json'
+          },
+          body: body,
+          keepalive: true
+        });
+      } catch(e) { /* best effort */ }
+    });
+    console.log('[odEmergencyPush] Push de secours déclenché pour', entities.length, 'entités');
+  } catch(e) { console.warn('[odEmergencyPush]', e); }
+}
+
+// Brancher le push de secours sur la fermeture de page
+window.addEventListener('beforeunload', _odEmergencyPush);
+window.addEventListener('pagehide', _odEmergencyPush);
+// visibilitychange : déclenche aussi quand l'onglet est masqué (lock screen, switch)
+document.addEventListener('visibilitychange', function(){
+  if (document.visibilityState === 'hidden') _odEmergencyPush();
+});
+
 function odAutoSync() {
   // Option A : sync auto de TOUS les entités (historique, candidats, deals, clients)
   // après un envoi de simulation ou une création/édition de placement.
@@ -7129,6 +7211,11 @@ function odAutoSync() {
     console.warn('[odAutoSync] reporté : sync initiale pas encore faite');
     return;
   }
+  // FIX ANTI-PERTE : on marque qu'il y a des modifs en attente de sync.
+  // Le flag est effacé quand le push réussit (dans odSilentFullSync).
+  // Si le PC s'éteint avant le push, le flag persiste + le push de secours
+  // (_odEmergencyPush sur beforeunload) tente d'envoyer quand même.
+  _odMarkPending();
   // Debounce ÉLARGI à 2 minutes (au lieu de 1.2s) pour limiter les sync vers Microsoft Graph.
   // Les modifs successives (ex: changement champ + ajout commentaire + édition placement)
   // sont regroupées en une seule sync 2 min après la dernière modif.
@@ -7234,8 +7321,11 @@ function odSilentFullSync() {
         if (errors.length) {
           console.warn('[AutoSync] Terminé avec avertissements:', errors);
           odSetStatus('⚠ Sync partielle (' + errors.length + ')', true);
+          // Sync partielle : on GARDE le flag pending (des entités n'ont pas été poussées)
         } else {
           odSetStatus('✓ Sync auto OK (' + (Date.now() - t0) + 'ms)', false);
+          // FIX ANTI-PERTE : push réussi → on efface le flag "modifs en attente"
+          _odClearPending();
         }
       });
     });
@@ -7312,6 +7402,9 @@ function saveDeals(arr) {
   // un deal peut impacter le statut auto du candidat (Porté ↔ Sans mission, etc.)
   // et donc les compteurs du dashboard.
   if (typeof refreshDashboardIfVisible === 'function') refreshDashboardIfVisible();
+  // FIX ANTI-PERTE : déclencher la sync auto (les modifs du tableau de deals
+  // doivent être propagées et protégées contre la perte à l'extinction).
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 
 // ── Recalcul cohérence des statuts deals ──
@@ -7472,6 +7565,23 @@ function openPlacementPopup(ts) {
   // ── Deal ──
   document.getElementById('pl-commercial').value = sim.commercial || '';
   document.getElementById('pl-date-deal').value = new Date().toISOString().split('T')[0];
+  // Reverrouiller systématiquement le champ Date deal à l'ouverture
+  // (le déverrouillage par mot de passe ne vaut que pour la session de popup en cours)
+  (function(){
+    var _dd = document.getElementById('pl-date-deal');
+    var _ddLock = document.getElementById('pl-date-deal-lock');
+    if (_dd) {
+      _dd.readOnly = true;
+      _dd.style.background = '#F5F3FF';
+      _dd.style.color = '#6B5E9C';
+      _dd.style.cursor = 'not-allowed';
+      _dd.style.borderColor = '#E4E0FA';
+    }
+    if (_ddLock) {
+      _ddLock.textContent = '🔒';
+      _ddLock.title = 'Modifier la date du deal (protégé par mot de passe)';
+    }
+  })();
   document.getElementById('pl-origine').value = sim.source_origine || '';
   document.getElementById('pl-etat').value = 'Nouveau placement';
   document.getElementById('pl-contrat').value = '';
@@ -8438,6 +8548,49 @@ function updateTaciteField() {
   }
 }
 
+// Déverrouillage du champ "Date deal" dans la popup placement.
+// Protégé par le mot de passe ADMIN (le même que le verrou Paramètres,
+// source unique : getCommParams().admin_password).
+// Une fois déverrouillé, le champ reste éditable jusqu'à la fermeture de la popup.
+function toggleDateDealLock() {
+  var input = document.getElementById('pl-date-deal');
+  var lockBtn = document.getElementById('pl-date-deal-lock');
+  if (!input || !lockBtn) return;
+
+  var isLocked = input.readOnly;
+  if (isLocked) {
+    var adminPwd = (typeof getCommParams === 'function') ? (getCommParams().admin_password || 'seven2026') : 'seven2026';
+    var pwd = prompt('Mot de passe pour modifier la date du deal :\n\n(Tapez "?" si vous l\'avez oublié)');
+    if (pwd === null) return;
+    if (pwd.trim() === '?') {
+      if (typeof sendParamsPasswordRecovery === 'function') sendParamsPasswordRecovery();
+      return;
+    }
+    if (pwd !== adminPwd) {
+      alert('Mot de passe incorrect.');
+      return;
+    }
+    // Déverrouiller
+    input.readOnly = false;
+    input.style.background = '#fff';
+    input.style.color = '#1A1033';
+    input.style.cursor = 'auto';
+    input.style.borderColor = '#1D9E75';
+    lockBtn.textContent = '🔓';
+    lockBtn.title = 'Date du deal déverrouillée — cliquez pour reverrouiller';
+    input.focus();
+  } else {
+    // Reverrouiller
+    input.readOnly = true;
+    input.style.background = '#F5F3FF';
+    input.style.color = '#6B5E9C';
+    input.style.cursor = 'not-allowed';
+    input.style.borderColor = '#E4E0FA';
+    lockBtn.textContent = '🔒';
+    lockBtn.title = 'Modifier la date du deal (protégé par mot de passe)';
+  }
+}
+
 function savePlacement() {
   var hist = getHistory();
   var sim = hist.find(function(s) { return s.timestamp === currentPlacementTs; });
@@ -8549,6 +8702,9 @@ function savePlacement() {
   }
 
   var isNewDeal = (idx < 0);
+  // Capturer l'ANCIEN nom d'entreprise du deal (avant remplacement) pour pouvoir
+  // renommer la fiche client si l'utilisateur a modifié le nom dans la popup placement.
+  var _ancienNomEntreprise = (idx >= 0 && deals[idx]) ? (deals[idx].entreprise || '') : '';
   if (idx >= 0) deals[idx] = deal; else deals.unshift(deal);
   saveDeals(deals);
 
@@ -8593,6 +8749,12 @@ function savePlacement() {
   // sans race condition avec d'autres affichages.
   if (typeof renderDeals === 'function') {
     try { renderDeals(); } catch(e){ console.warn('[savePlacement] renderDeals:', e); }
+  }
+  // La date_deal peut avoir été modifiée (champ déverrouillé par mot de passe) :
+  // re-rendre le tableau "Entrées du mois" UNIQUEMENT s'il est le sous-onglet RH actif
+  // (rh-content-container est partagé : le re-rendre à tort écraserait un autre onglet).
+  if (typeof renderEntrees === 'function' && typeof currentRHSubTab !== 'undefined' && currentRHSubTab === 'entrees') {
+    try { renderEntrees(); } catch(e){ console.warn('[savePlacement] renderEntrees:', e); }
   }
   // Bug fix : la liste candidats peut afficher l'ancien commercial sur la carte si on ne re-rend pas
   if (typeof renderCandidats === 'function') {
@@ -10905,6 +11067,8 @@ function saveCandidatsArr(arr) {
   // FIX : rafraîchir le dashboard si visible — toute modification candidat
   // (statut, ajout, modif) impacte potentiellement les compteurs.
   if (typeof refreshDashboardIfVisible === 'function') refreshDashboardIfVisible();
+  // FIX ANTI-PERTE : déclencher la sync auto.
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 
 function saveCandidatFromEntry(entry) {
@@ -15485,6 +15649,649 @@ function sendProlongationSimpleEmail(deal, ancienneDateFin, nouvelleDateFin, com
     }
   }).catch(function(err){
     console.error('[Prolongation simple] Erreur:', err);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// AVENANT MISSION — changement en cours de mission
+// Le placement d'origine et le tableau de deals restent FIGÉS.
+// On crée uniquement : (1) une ligne dans le tableau Avenants,
+//                      (2) une entrée dans l'accordéon Avenants de la fiche candidat,
+//                      (3) une notification email Clémence/Marie.
+// ═══════════════════════════════════════════════════════════════════
+function openAvenantMissionPopup(dealId) {
+  var existing = document.getElementById('avenant-mission-modal');
+  if (existing) existing.remove();
+
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var deal = deals.find(function(d){ return String(d.id) === String(dealId); });
+  if (!deal) { alert('⚠ Placement introuvable.'); return; }
+
+  // Récupérer les simulations du candidat (matching par email)
+  var sims = [];
+  try {
+    var allSims = (typeof getHistory === 'function') ? getHistory() : [];
+    var candEmail = (deal.email || '').trim().toLowerCase();
+    sims = allSims.filter(function(s){
+      return candEmail && (s.email || '').trim().toLowerCase() === candEmail;
+    }).sort(function(a,b){ return (b.timestamp||0) - (a.timestamp||0); });
+  } catch(e) { console.warn('[Avenant] simulations:', e); }
+
+  var nomComplet = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
+  var nomForRule = (deal.nom || '').trim();
+  var firstLetter = nomForRule.charAt(0).toUpperCase();
+  var isAH = (typeof _getADVByLetter === 'function' ? _getADVByLetter(firstLetter) === 'clemence' : (firstLetter >= 'A' && firstLetter <= 'H'));
+  var advLabel = isAH ? 'Clémence' : 'Marie';
+
+  var simOptions = '<option value="">— Aucune simulation (saisie manuelle) —</option>'
+    + sims.map(function(s){
+        var lbl = (s.date || '') + ' · TJM ' + (s.tjm || '?') + '€ · ' + (s.entreprise || 'sans client');
+        return '<option value="' + s.timestamp + '">' + lbl.replace(/</g,'&lt;') + '</option>';
+      }).join('');
+
+  var modal = document.createElement('div');
+  modal.id = 'avenant-mission-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(20,10,60,0.55);backdrop-filter:blur(4px);z-index:10000;display:flex;align-items:center;justify-content:center;padding:30px 16px;overflow-y:auto;';
+
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(20,10,60,0.4);width:96%;max-width:560px;max-height:calc(100vh - 60px);overflow-y:auto;">'
+    +   '<div style="background:linear-gradient(135deg,#C98A00,#8A5F00);color:#fff;padding:16px 22px;border-radius:14px 14px 0 0;display:flex;align-items:center;justify-content:space-between;">'
+    +     '<div>'
+    +       '<div style="font-size:16px;font-weight:800;">📑 Avenant mission</div>'
+    +       '<div style="font-size:12px;opacity:0.92;margin-top:2px;">Changement en cours de mission — le placement d\'origine reste inchangé</div>'
+    +     '</div>'
+    +     '<button onclick="document.getElementById(\'avenant-mission-modal\').remove()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;font-size:20px;cursor:pointer;width:32px;height:32px;border-radius:50%;">×</button>'
+    +   '</div>'
+    +   '<div style="padding:20px 22px;">'
+
+    +     '<div style="background:#F5F3FF;border:1px solid #E4E0FA;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:12px;line-height:1.6;color:#1A1033;">'
+    +       '<div><strong>Consultant :</strong> ' + nomComplet + '</div>'
+    +       '<div><strong>Client :</strong> ' + (deal.entreprise || '—') + '</div>'
+    +       '<div><strong>Mission :</strong> ' + (deal.poste || '—') + '</div>'
+    +       '<div><strong>TJM actuel :</strong> ' + (deal.tjm ? deal.tjm + ' €/j' : '—') + '</div>'
+    +     '</div>'
+
+    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Simulation de référence</label>'
+    +     '<select id="avm-sim" onchange="_avmOnSimChange()" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;margin-bottom:4px;">' + simOptions + '</select>'
+    +     '<div id="avm-sim-info" style="font-size:11px;color:#9E94C4;margin-bottom:16px;">Choisissez une simulation existante du candidat, ou laissez vide pour une saisie manuelle.</div>'
+
+    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:8px;">Type d\'avenant <span style="font-weight:500;text-transform:none;color:#9E94C4;">(plusieurs choix possibles)</span></label>'
+    +     '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">'
+    +       _avmCheckRow('avm-type-tjm',      '📈 Augmentation de TJM')
+    +       _avmCheckRow('avm-type-presta',   '📄 Nouveau contrat de prestation')
+    +       _avmCheckRow('avm-type-frais',    '💼 Nouveaux frais')
+    +       _avmCheckRow('avm-type-urssaf',   '🏛️ Nouveaux frais URSSAF')
+    +     '</div>'
+
+    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Date de l\'avenant</label>'
+    +     '<input type="date" id="avm-date" value="' + new Date().toISOString().slice(0,10) + '" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box;margin-bottom:16px;">'
+
+    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Commentaire</label>'
+    +     '<textarea id="avm-comment" rows="3" placeholder="Détails du changement (ancien → nouveau TJM, nature des frais, etc.)" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;resize:vertical;margin-bottom:16px;"></textarea>'
+
+    +     '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#1A1033;cursor:pointer;background:#F0FAF4;border:1px solid #C5E8D5;border-radius:7px;padding:9px 12px;margin-bottom:18px;">'
+    +       '<input type="checkbox" id="avm-notify" checked style="width:16px;height:16px;cursor:pointer;">'
+    +       '<span>📧 Notifier <strong>' + advLabel + '</strong> par email (selon le nom du consultant)</span>'
+    +     '</label>'
+
+    +     '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+    +       '<button onclick="document.getElementById(\'avenant-mission-modal\').remove()" style="padding:9px 18px;background:#F0EDF9;color:#6B5E9C;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;">Annuler</button>'
+    +       '<button onclick="confirmAvenantMission(' + deal.id + ')" style="padding:9px 22px;background:linear-gradient(135deg,#C98A00,#8A5F00);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;">✓ Créer l\'avenant</button>'
+    +     '</div>'
+    +   '</div>'
+    + '</div>';
+
+  document.body.appendChild(modal);
+}
+
+function _avmCheckRow(id, label) {
+  return '<label style="display:flex;align-items:center;gap:9px;font-size:12.5px;color:#1A1033;cursor:pointer;border:1.5px solid #E4E0FA;border-radius:7px;padding:8px 12px;">'
+    + '<input type="checkbox" id="' + id + '" style="width:16px;height:16px;cursor:pointer;">'
+    + '<span>' + label + '</span>'
+    + '</label>';
+}
+
+function _avmOnSimChange() {
+  var sel = document.getElementById('avm-sim');
+  var info = document.getElementById('avm-sim-info');
+  if (!sel || !info) return;
+  if (!sel.value) {
+    info.textContent = 'Choisissez une simulation existante du candidat, ou laissez vide pour une saisie manuelle.';
+    info.style.color = '#9E94C4';
+    return;
+  }
+  try {
+    var sims = (typeof getHistory === 'function') ? getHistory() : [];
+    var s = sims.find(function(x){ return String(x.timestamp) === String(sel.value); });
+    if (s) {
+      info.innerHTML = '✓ Simu attachée — TJM <strong>' + (s.tjm||'?') + ' €/j</strong>, brut <strong>' + (s.brut||'?') + ' €</strong>'
+        + (s.entreprise ? ', client ' + s.entreprise.replace(/</g,'&lt;') : '');
+      info.style.color = '#1D9E75';
+    }
+  } catch(e) {}
+}
+
+function confirmAvenantMission(dealId) {
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var deal = deals.find(function(d){ return String(d.id) === String(dealId); });
+  if (!deal) { alert('⚠ Placement introuvable.'); return; }
+
+  var simTs = (document.getElementById('avm-sim') || {}).value || '';
+  var dateAvenant = (document.getElementById('avm-date') || {}).value || new Date().toISOString().slice(0,10);
+  var comment = (document.getElementById('avm-comment') || {}).value || '';
+  var notify = (document.getElementById('avm-notify') || {}).checked;
+
+  // Types cochés
+  var types = [];
+  if ((document.getElementById('avm-type-tjm')    || {}).checked) types.push('Augmentation TJM');
+  if ((document.getElementById('avm-type-presta') || {}).checked) types.push('Nouveau contrat de prestation');
+  if ((document.getElementById('avm-type-frais')  || {}).checked) types.push('Nouveaux frais');
+  if ((document.getElementById('avm-type-urssaf') || {}).checked) types.push('Nouveaux frais URSSAF');
+
+  if (types.length === 0) {
+    alert('⚠ Sélectionnez au moins un type d\'avenant.');
+    return;
+  }
+
+  // Récupérer la simu de référence (si choisie)
+  var sim = null;
+  if (simTs) {
+    try {
+      var sims = (typeof getHistory === 'function') ? getHistory() : [];
+      sim = sims.find(function(x){ return String(x.timestamp) === String(simTs); }) || null;
+    } catch(e) {}
+  }
+
+  var avenantId = 'AVM-' + Date.now() + '-' + Math.floor(Math.random()*1000);
+  var avenant = {
+    id: avenantId,
+    deal_id: deal.id,
+    sim_ts: simTs ? parseInt(simTs) : (deal.sim_ts || null),
+    mode: 'avenant_mission',  // distingue des avenants de prolongation
+    date_demande: new Date().toISOString().slice(0,10),
+    date_avenant: dateAvenant,
+    commercial: deal.commercial || '',
+    prenom_porte: deal.prenom || '',
+    nom_porte: deal.nom || '',
+    type_avenant: types.join(' + '),
+    types_coches: types,
+    client: deal.entreprise || '',
+    manager: deal.manager || '',
+    poste: deal.poste || '',
+    // Valeurs de référence (figées — le deal n'est PAS modifié)
+    tjm_actuel: deal.tjm || '',
+    tjm: sim ? (sim.tjm || '') : '',  // TJM de la nouvelle simu si attachée
+    new_salaire_annuel: sim ? (sim.brut || '') : '',
+    // Suivi (vide à la création, modifiable dans le tableau Avenants)
+    etat_avenant_cdt: '',
+    etat_av_cdps: '',
+    avenant_cdt_signe: '',
+    avenant_cdps_signe: '',
+    modif_laya: '',
+    commentaires: comment,
+    created_at: Date.now(),
+    created_by: (typeof _getCurrentUserName === 'function') ? _getCurrentUserName() : 'inconnu',
+    updated_at: Date.now()
+  };
+
+  // (1) Ajouter au tableau Avenants
+  var allAv = (typeof getAvenants === 'function') ? getAvenants() : [];
+  allAv.push(avenant);
+  if (typeof saveAvenants === 'function') saveAvenants(allAv);
+
+  // (2) Ajouter à l'accordéon de la fiche candidat — stocké sur le deal
+  //     dans un tableau dédié (sans toucher aux champs visibles du deal)
+  if (!Array.isArray(deal.avenants_mission)) deal.avenants_mission = [];
+  deal.avenants_mission.push({
+    avenant_id: avenantId,
+    date: dateAvenant,
+    types: types,
+    commentaire: comment,
+    sim_ts: simTs ? parseInt(simTs) : null,
+    created_at: Date.now()
+  });
+  // On sauvegarde le deal UNIQUEMENT pour ajouter cette trace (les champs
+  // visibles du tableau — tjm, etat, etc. — ne sont pas modifiés)
+  if (typeof saveDeals === 'function') saveDeals(deals);
+
+  // (3) Notification email Clémence/Marie
+  if (notify) {
+    try { sendAvenantMissionEmail(deal, avenant); } catch(e) { console.warn('[Avenant] email:', e); }
+  }
+
+  // Fermer + feedback
+  var modal = document.getElementById('avenant-mission-modal');
+  if (modal) modal.remove();
+  if (typeof renderAvenants === 'function') { try { renderAvenants(); } catch(e){} }
+  if (typeof renderCandidats === 'function') { try { renderCandidats(); } catch(e){} }
+  if (typeof showNotifToast === 'function') {
+    showNotifToast('✓ Avenant créé' + (notify ? ' et email envoyé' : ''));
+  } else {
+    alert('✓ Avenant créé.');
+  }
+}
+
+// Email de notification d'avenant mission
+function sendAvenantMissionEmail(deal, avenant) {
+  if (typeof odToken === 'undefined' || !odToken) {
+    console.warn('[Avenant mission] Pas de token OneDrive — email non envoyé');
+    return;
+  }
+  var nomConsultant = ((deal.nom||'') + '').trim();
+  var firstLetter = nomConsultant.charAt(0).toUpperCase();
+  var isAH = (typeof _getADVByLetter === 'function' ? _getADVByLetter(firstLetter) === 'clemence' : (firstLetter >= 'A' && firstLetter <= 'H'));
+  var emails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+  var advEmail = isAH ? (emails.clemence || '') : (emails.marie || '');
+
+  var toList = [];
+  if (advEmail) toList.push(advEmail);
+  toList.push('social@seven-portage.fr');
+
+  var ccList = [];
+  var commercialEmail = (typeof findCommercialEmailByName === 'function') ? findCommercialEmailByName(deal.commercial || '') : '';
+  if (commercialEmail) ccList.push(commercialEmail);
+
+  toList = toList.filter(function(e, i, a){ return e && a.indexOf(e) === i; });
+  ccList = ccList.filter(function(e, i, a){ return e && a.indexOf(e) === i && toList.indexOf(e) < 0; });
+
+  if (!toList.length) {
+    console.warn('[Avenant mission] Pas de destinataire — email non envoyé');
+    return;
+  }
+
+  var nomComplet = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
+  var subject = '[Avenant mission] ' + nomComplet + ' — ' + (deal.entreprise || '') + ' — ' + avenant.type_avenant;
+
+  var typesRows = (avenant.types_coches || []).map(function(t){
+    return '<li style="margin-bottom:3px;">' + t + '</li>';
+  }).join('');
+
+  var html = '<div style="font-family:Arial,sans-serif;font-size:13px;color:#1A1033;line-height:1.6;">'
+    + '<div style="background:linear-gradient(135deg,#C98A00,#8A5F00);color:#fff;padding:14px 20px;border-radius:8px 8px 0 0;">'
+    +   '<div style="font-size:16px;font-weight:700;">📑 Avenant en cours de mission</div>'
+    +   '<div style="font-size:12px;opacity:0.9;margin-top:3px;">Modification des conditions de la mission</div>'
+    + '</div>'
+    + '<div style="background:#fff;padding:18px 22px;border:1px solid #E4E0FA;border-top:none;border-radius:0 0 8px 8px;">'
+    +   '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;width:40%;">Consultant</td><td style="padding:6px 0;">' + nomComplet + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Client</td><td style="padding:6px 0;">' + (deal.entreprise || '—') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Mission / Poste</td><td style="padding:6px 0;">' + (deal.poste || '—') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Commercial</td><td style="padding:6px 0;">' + (deal.commercial || '—') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Date de l\'avenant</td><td style="padding:6px 0;">' + _fmtAvDate(avenant.date_avenant) + '</td></tr>'
+    + (avenant.tjm ? '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;border-top:1px solid #F0EDF9;padding-top:10px;">TJM actuel</td><td style="padding:6px 0;border-top:1px solid #F0EDF9;padding-top:10px;color:#9E94C4;">' + (avenant.tjm_actuel || '—') + ' €/j</td></tr>'
+                   + '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Nouveau TJM (simu)</td><td style="padding:6px 0;color:#8A5F00;font-weight:700;">' + avenant.tjm + ' €/j</td></tr>' : '')
+    +   '</table>'
+    +   '<div style="margin-top:14px;"><strong style="color:#6B5E9C;">Type(s) d\'avenant :</strong><ul style="margin:6px 0 0;padding-left:20px;">' + typesRows + '</ul></div>'
+    + (avenant.commentaires ? '<div style="margin-top:14px;padding:10px 12px;background:#FFF6E8;border-left:3px solid #C98A00;border-radius:4px;font-size:12.5px;"><strong>Commentaire :</strong><br>' + avenant.commentaires.replace(/\n/g,'<br>') + '</div>' : '')
+    +   '<div style="margin-top:18px;padding-top:12px;border-top:1px solid #F0EDF9;font-size:11px;color:#9E94C4;">📌 Action attendue : établir l\'avenant contractuel et mettre à jour LAYA. Le placement d\'origine reste inchangé dans le suivi.</div>'
+    + '</div>'
+    + '</div>';
+
+  var payload = {
+    message: {
+      subject: subject,
+      body: { contentType: 'HTML', content: html },
+      toRecipients: toList.map(function(e){ return { emailAddress: { address: e } }; }),
+      ccRecipients: ccList.map(function(e){ return { emailAddress: { address: e } }; })
+    },
+    saveToSentItems: true
+  };
+  fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(function(r){
+    if (r.ok || r.status === 202) {
+      console.log('[Avenant mission] Email envoyé à', toList.join(', '));
+    } else {
+      r.text().then(function(txt){ console.error('[Avenant mission] Échec:', r.status, txt); });
+    }
+  }).catch(function(err){
+    console.error('[Avenant mission] Erreur:', err);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MISSION PARALLÈLE — 2ème mission simultanée d'un consultant
+// Le consultant déjà placé démarre une 2ème mission en parallèle.
+// NE crée PAS de nouveau deal : rattache une nouvelle simulation +
+// génère un avenant (type 'mission_parallele').
+// Implication client : la mission parallèle apparaît dans la fiche du
+// client concerné (onglet Placements), et la fiche client/manager est
+// créée si elle n'existe pas.
+// ═══════════════════════════════════════════════════════════════════
+function openMissionParallelePopup(dealId) {
+  var existing = document.getElementById('mission-parallele-modal');
+  if (existing) existing.remove();
+
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var deal = deals.find(function(d){ return String(d.id) === String(dealId); });
+  if (!deal) { alert('⚠ Placement introuvable.'); return; }
+
+  // Simulations du candidat (matching par email)
+  var sims = [];
+  try {
+    var allSims = (typeof getHistory === 'function') ? getHistory() : [];
+    var candEmail = (deal.email || '').trim().toLowerCase();
+    sims = allSims.filter(function(s){
+      return candEmail && (s.email || '').trim().toLowerCase() === candEmail;
+    }).sort(function(a,b){ return (b.timestamp||0) - (a.timestamp||0); });
+  } catch(e) { console.warn('[Mission //] simulations:', e); }
+
+  var nomComplet = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
+  var nomForRule = (deal.nom || '').trim();
+  var firstLetter = nomForRule.charAt(0).toUpperCase();
+  var isAH = (typeof _getADVByLetter === 'function' ? _getADVByLetter(firstLetter) === 'clemence' : (firstLetter >= 'A' && firstLetter <= 'H'));
+  var advLabel = isAH ? 'Clémence' : 'Marie';
+
+  var simOptions = '<option value="">— Choisir une simulation —</option>'
+    + sims.map(function(s){
+        var lbl = (s.date || '') + ' · ' + (s.entreprise || 'sans client') + ' · TJM ' + (s.tjm || '?') + '€ · ' + (s.poste || 'poste ?');
+        return '<option value="' + s.timestamp + '">' + lbl.replace(/</g,'&lt;') + '</option>';
+      }).join('');
+
+  var modal = document.createElement('div');
+  modal.id = 'mission-parallele-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(20,10,60,0.55);backdrop-filter:blur(4px);z-index:10000;display:flex;align-items:center;justify-content:center;padding:30px 16px;overflow-y:auto;';
+
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(20,10,60,0.4);width:96%;max-width:560px;max-height:calc(100vh - 60px);overflow-y:auto;">'
+    +   '<div style="background:linear-gradient(135deg,#1A4F96,#2A1E82);color:#fff;padding:16px 22px;border-radius:14px 14px 0 0;display:flex;align-items:center;justify-content:space-between;">'
+    +     '<div>'
+    +       '<div style="font-size:16px;font-weight:800;">➕ Mission parallèle</div>'
+    +       '<div style="font-size:12px;opacity:0.92;margin-top:2px;">2ème mission simultanée — crée un avenant, pas un nouveau deal</div>'
+    +     '</div>'
+    +     '<button onclick="document.getElementById(\'mission-parallele-modal\').remove()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;font-size:20px;cursor:pointer;width:32px;height:32px;border-radius:50%;">×</button>'
+    +   '</div>'
+    +   '<div style="padding:20px 22px;">'
+
+    +     '<div style="background:#F5F3FF;border:1px solid #E4E0FA;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:12px;line-height:1.6;color:#1A1033;">'
+    +       '<div><strong>Consultant :</strong> ' + nomComplet + '</div>'
+    +       '<div><strong>Mission actuelle :</strong> ' + (deal.entreprise || '—') + (deal.poste ? ' · ' + deal.poste : '') + '</div>'
+    +     '</div>'
+
+    + (sims.length === 0
+        ? '<div style="background:#FEF3E2;border:1px solid #F0C070;border-radius:8px;padding:12px;font-size:12px;color:#8A5F00;margin-bottom:16px;">⚠️ Aucune simulation trouvée pour ce candidat. Créez d\'abord la simulation de la 2ème mission, puis revenez ici pour la rattacher.</div>'
+        : '')
+
+    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Simulation de la 2ème mission <span style="color:#E24B4A;">*</span></label>'
+    +     '<select id="mp-sim" onchange="_mpOnSimChange()" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;margin-bottom:4px;">' + simOptions + '</select>'
+    +     '<div id="mp-sim-info" style="font-size:11px;color:#9E94C4;margin-bottom:16px;">La 2ème mission reprend toutes ses infos (client, poste, TJM, dates) de la simulation choisie.</div>'
+
+    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Date de début de la 2ème mission</label>'
+    +     '<input type="date" id="mp-date" value="' + new Date().toISOString().slice(0,10) + '" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box;margin-bottom:16px;">'
+
+    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Commentaire</label>'
+    +     '<textarea id="mp-comment" rows="2" placeholder="Précisions sur la 2ème mission (optionnel)" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;resize:vertical;margin-bottom:16px;"></textarea>'
+
+    +     '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#1A1033;cursor:pointer;background:#F0FAF4;border:1px solid #C5E8D5;border-radius:7px;padding:9px 12px;margin-bottom:18px;">'
+    +       '<input type="checkbox" id="mp-notify" checked style="width:16px;height:16px;cursor:pointer;">'
+    +       '<span>📧 Notifier <strong>' + advLabel + '</strong> par email</span>'
+    +     '</label>'
+
+    +     '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+    +       '<button onclick="document.getElementById(\'mission-parallele-modal\').remove()" style="padding:9px 18px;background:#F0EDF9;color:#6B5E9C;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;">Annuler</button>'
+    +       '<button onclick="confirmMissionParallele(' + deal.id + ')" style="padding:9px 22px;background:linear-gradient(135deg,#1A4F96,#2A1E82);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;">✓ Créer la mission parallèle</button>'
+    +     '</div>'
+    +   '</div>'
+    + '</div>';
+
+  document.body.appendChild(modal);
+}
+
+function _mpOnSimChange() {
+  var sel = document.getElementById('mp-sim');
+  var info = document.getElementById('mp-sim-info');
+  if (!sel || !info) return;
+  if (!sel.value) {
+    info.textContent = 'La 2ème mission reprend toutes ses infos (client, poste, TJM, dates) de la simulation choisie.';
+    info.style.color = '#9E94C4';
+    return;
+  }
+  try {
+    var sims = (typeof getHistory === 'function') ? getHistory() : [];
+    var s = sims.find(function(x){ return String(x.timestamp) === String(sel.value); });
+    if (s) {
+      info.innerHTML = '✓ Client <strong>' + (s.entreprise || '?').replace(/</g,'&lt;') + '</strong>'
+        + ', poste <strong>' + (s.poste || '?').replace(/</g,'&lt;') + '</strong>'
+        + ', TJM <strong>' + (s.tjm || '?') + ' €/j</strong>';
+      info.style.color = '#1D9E75';
+    }
+  } catch(e) {}
+}
+
+function confirmMissionParallele(dealId) {
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var deal = deals.find(function(d){ return String(d.id) === String(dealId); });
+  if (!deal) { alert('⚠ Placement introuvable.'); return; }
+
+  var simTs = (document.getElementById('mp-sim') || {}).value || '';
+  var dateDebut = (document.getElementById('mp-date') || {}).value || new Date().toISOString().slice(0,10);
+  var comment = (document.getElementById('mp-comment') || {}).value || '';
+  var notify = (document.getElementById('mp-notify') || {}).checked;
+
+  if (!simTs) {
+    alert('⚠ Sélectionnez la simulation de la 2ème mission.');
+    return;
+  }
+
+  // Récupérer la simu rattachée
+  var sim = null;
+  try {
+    var sims = (typeof getHistory === 'function') ? getHistory() : [];
+    sim = sims.find(function(x){ return String(x.timestamp) === String(simTs); }) || null;
+  } catch(e) {}
+  if (!sim) { alert('⚠ Simulation introuvable.'); return; }
+
+  var avenantId = 'AVM-' + Date.now() + '-' + Math.floor(Math.random()*1000);
+  var clientParallele = sim.entreprise || '';
+  var avenant = {
+    id: avenantId,
+    deal_id: deal.id,
+    sim_ts: parseInt(simTs),
+    mode: 'mission_parallele',
+    date_demande: new Date().toISOString().slice(0,10),
+    date_avenant: dateDebut,
+    date_debut: dateDebut,
+    commercial: sim.commercial || deal.commercial || '',
+    prenom_porte: deal.prenom || '',
+    nom_porte: deal.nom || '',
+    type_avenant: '2ème mission parallèle',
+    types_coches: ['Mission parallèle'],
+    // La 2ème mission : infos issues de la simu
+    client: clientParallele,
+    poste: sim.poste || '',
+    tjm: sim.tjm || '',
+    new_salaire_annuel: sim.brut || '',
+    // Rappel de la mission d'origine (pour contexte)
+    mission_origine_client: deal.entreprise || '',
+    mission_origine_poste: deal.poste || '',
+    etat_avenant_cdt: '',
+    etat_av_cdps: '',
+    avenant_cdt_signe: '',
+    avenant_cdps_signe: '',
+    modif_laya: '',
+    commentaires: comment,
+    created_at: Date.now(),
+    created_by: (typeof _getCurrentUserName === 'function') ? _getCurrentUserName() : 'inconnu',
+    updated_at: Date.now()
+  };
+
+  // (1) Ligne dans le tableau Avenants
+  var allAv = (typeof getAvenants === 'function') ? getAvenants() : [];
+  allAv.push(avenant);
+  if (typeof saveAvenants === 'function') saveAvenants(allAv);
+
+  // (2) Trace dans l'accordéon de la fiche candidat (sur le deal d'origine)
+  if (!Array.isArray(deal.avenants_mission)) deal.avenants_mission = [];
+  deal.avenants_mission.push({
+    avenant_id: avenantId,
+    date: dateDebut,
+    types: ['➕ Mission parallèle'],
+    commentaire: (clientParallele ? '2ème mission chez ' + clientParallele : '2ème mission') + (comment ? ' — ' + comment : ''),
+    sim_ts: parseInt(simTs),
+    created_at: Date.now()
+  });
+  if (typeof saveDeals === 'function') saveDeals(deals);
+
+  // (3) IMPLICATION CLIENT : créer la fiche client/manager de la 2ème mission si besoin,
+  //     et y rattacher la mission parallèle (visible dans l'onglet Placements du client).
+  if (clientParallele) {
+    try {
+      _attachMissionParalleleToClient(clientParallele, sim, deal, avenantId, dateDebut);
+    } catch(e) { console.warn('[Mission //] implication client:', e); }
+  }
+
+  // (4) Notification email
+  if (notify) {
+    try { sendMissionParalleleEmail(deal, avenant, sim); } catch(e) { console.warn('[Mission //] email:', e); }
+  }
+
+  var modal = document.getElementById('mission-parallele-modal');
+  if (modal) modal.remove();
+  if (typeof renderAvenants === 'function') { try { renderAvenants(); } catch(e){} }
+  if (typeof renderCandidats === 'function') { try { renderCandidats(); } catch(e){} }
+  if (typeof renderClients === 'function') { try { renderClients(); } catch(e){} }
+  if (typeof showNotifToast === 'function') {
+    showNotifToast('✓ Mission parallèle créée' + (notify ? ' et email envoyé' : ''));
+  } else {
+    alert('✓ Mission parallèle créée.');
+  }
+}
+
+// Rattache la mission parallèle au client concerné (crée client/manager si absent)
+function _attachMissionParalleleToClient(clientName, sim, deal, avenantId, dateDebut) {
+  var clients = (typeof getClients === 'function') ? getClients() : [];
+  var nameLc = (clientName || '').trim().toLowerCase();
+  if (!nameLc) return;
+  var idx = clients.findIndex(function(c){ return (c.name||'').trim().toLowerCase() === nameLc; });
+  var managerName = (sim.manager || '').trim();
+
+  // Référence "deal-like" de la mission parallèle pour l'onglet Placements du client.
+  // sim_ts négatif fictif basé sur l'avenant pour distinguer des vrais deals,
+  // mais on garde le vrai sim_ts pour pouvoir ouvrir la simu.
+  var missionRef = {
+    sim_ts: sim.timestamp,
+    avenant_id: avenantId,
+    is_mission_parallele: true,
+    candidat: ((deal.prenom||'') + ' ' + (deal.nom||'')).trim(),
+    candidat_name: ((deal.prenom||'') + ' ' + (deal.nom||'')).trim(),
+    email_candidat: deal.email || '',
+    poste: sim.poste || '',
+    tjm: sim.tjm || '',
+    etat: 'Mission parallèle',
+    date_deal: dateDebut,
+    date_entree: dateDebut
+  };
+
+  if (idx >= 0) {
+    // Client existe : ajouter au manager (ou créer le manager)
+    if (!clients[idx].managers) clients[idx].managers = [];
+    var mIdx = -1;
+    if (managerName) {
+      mIdx = clients[idx].managers.findIndex(function(m){ return (m.name||'').toLowerCase() === managerName.toLowerCase(); });
+      if (mIdx < 0) {
+        clients[idx].managers.push({ name: managerName, tel:'', email:'', commentaire:'', deals:[], sp_id: (typeof generateSpMgrId==='function'?generateSpMgrId(clients[idx]):'') });
+        mIdx = clients[idx].managers.length - 1;
+      }
+    }
+    if (mIdx >= 0) {
+      if (!clients[idx].managers[mIdx].deals) clients[idx].managers[mIdx].deals = [];
+      var dup = clients[idx].managers[mIdx].deals.some(function(d){ return d.avenant_id === avenantId; });
+      if (!dup) clients[idx].managers[mIdx].deals.unshift(missionRef);
+    }
+    clients[idx].updated = new Date().toLocaleDateString('fr-FR');
+  } else {
+    // Client n'existe pas : on le crée
+    var mgrs = [];
+    if (managerName) {
+      mgrs = [{ name: managerName, tel:'', email:'', commentaire:'', deals:[missionRef] }];
+    }
+    clients.unshift({
+      id: Date.now(),
+      sp_id: (typeof generateSpId === 'function') ? generateSpId('CLI', getClients()) : '',
+      name: clientName.trim(),
+      tel: '',
+      email: '',
+      adresse: '',
+      secteur: sim.secteur || '',
+      managers: mgrs,
+      created: new Date().toLocaleDateString('fr-FR'),
+      updated: new Date().toLocaleDateString('fr-FR')
+    });
+  }
+  if (typeof saveClientsArr === 'function') saveClientsArr(clients);
+}
+
+// Email de notification de mission parallèle
+function sendMissionParalleleEmail(deal, avenant, sim) {
+  if (typeof odToken === 'undefined' || !odToken) {
+    console.warn('[Mission //] Pas de token OneDrive — email non envoyé');
+    return;
+  }
+  var nomConsultant = ((deal.nom||'') + '').trim();
+  var firstLetter = nomConsultant.charAt(0).toUpperCase();
+  var isAH = (typeof _getADVByLetter === 'function' ? _getADVByLetter(firstLetter) === 'clemence' : (firstLetter >= 'A' && firstLetter <= 'H'));
+  var emails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+  var advEmail = isAH ? (emails.clemence || '') : (emails.marie || '');
+
+  var toList = [];
+  if (advEmail) toList.push(advEmail);
+  toList.push('social@seven-portage.fr');
+
+  var ccList = [];
+  var commercialEmail = (typeof findCommercialEmailByName === 'function') ? findCommercialEmailByName(avenant.commercial || '') : '';
+  if (commercialEmail) ccList.push(commercialEmail);
+
+  toList = toList.filter(function(e, i, a){ return e && a.indexOf(e) === i; });
+  ccList = ccList.filter(function(e, i, a){ return e && a.indexOf(e) === i && toList.indexOf(e) < 0; });
+
+  if (!toList.length) { console.warn('[Mission //] Pas de destinataire'); return; }
+
+  var nomComplet = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
+  var subject = '[Mission parallèle] ' + nomComplet + ' — 2ème mission chez ' + (avenant.client || '');
+
+  var html = '<div style="font-family:Arial,sans-serif;font-size:13px;color:#1A1033;line-height:1.6;">'
+    + '<div style="background:linear-gradient(135deg,#1A4F96,#2A1E82);color:#fff;padding:14px 20px;border-radius:8px 8px 0 0;">'
+    +   '<div style="font-size:16px;font-weight:700;">➕ Mission parallèle</div>'
+    +   '<div style="font-size:12px;opacity:0.9;margin-top:3px;">Le consultant démarre une 2ème mission simultanée</div>'
+    + '</div>'
+    + '<div style="background:#fff;padding:18px 22px;border:1px solid #E4E0FA;border-top:none;border-radius:0 0 8px 8px;">'
+    +   '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;width:42%;">Consultant</td><td style="padding:6px 0;">' + nomComplet + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Commercial</td><td style="padding:6px 0;">' + (avenant.commercial || '—') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;border-top:1px solid #F0EDF9;padding-top:10px;">Mission actuelle</td><td style="padding:6px 0;border-top:1px solid #F0EDF9;padding-top:10px;color:#9E94C4;">' + (avenant.mission_origine_client || '—') + (avenant.mission_origine_poste ? ' · ' + avenant.mission_origine_poste : '') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">2ème mission — Client</td><td style="padding:6px 0;color:#1A4F96;font-weight:700;">' + (avenant.client || '—') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">2ème mission — Poste</td><td style="padding:6px 0;">' + (avenant.poste || '—') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">2ème mission — TJM</td><td style="padding:6px 0;color:#1A4F96;font-weight:700;">' + (avenant.tjm ? avenant.tjm + ' €/j' : '—') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Date de début</td><td style="padding:6px 0;">' + _fmtAvDate(avenant.date_debut) + '</td></tr>'
+    +   '</table>'
+    + (avenant.commentaires ? '<div style="margin-top:14px;padding:10px 12px;background:#EEF4FF;border-left:3px solid #1A4F96;border-radius:4px;font-size:12.5px;"><strong>Commentaire :</strong><br>' + avenant.commentaires.replace(/\n/g,'<br>') + '</div>' : '')
+    +   '<div style="margin-top:18px;padding-top:12px;border-top:1px solid #F0EDF9;font-size:11px;color:#9E94C4;">📌 Action attendue : établir le contrat de la 2ème mission et mettre à jour LAYA. Le consultant cumule désormais 2 missions.</div>'
+    + '</div>'
+    + '</div>';
+
+  var payload = {
+    message: {
+      subject: subject,
+      body: { contentType: 'HTML', content: html },
+      toRecipients: toList.map(function(e){ return { emailAddress: { address: e } }; }),
+      ccRecipients: ccList.map(function(e){ return { emailAddress: { address: e } }; })
+    },
+    saveToSentItems: true
+  };
+  fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(function(r){
+    if (r.ok || r.status === 202) {
+      console.log('[Mission //] Email envoyé à', toList.join(', '));
+    } else {
+      r.text().then(function(txt){ console.error('[Mission //] Échec:', r.status, txt); });
+    }
+  }).catch(function(err){
+    console.error('[Mission //] Erreur:', err);
   });
 }
 
@@ -23353,7 +24160,7 @@ var currentClientId = null;
 var currentManagerIdx = null;
 
 function getClients() { try { return JSON.parse(localStorage.getItem(CLIENTS_KEY)||'[]'); } catch(e){ return []; } }
-function saveClientsArr(arr) { localStorage.setItem(CLIENTS_KEY, JSON.stringify(arr)); }
+function saveClientsArr(arr) { localStorage.setItem(CLIENTS_KEY, JSON.stringify(arr)); if (typeof odAutoSync === 'function') odAutoSync(); }
 
 function closeClientFiche() {
   var m = document.getElementById('modal-client-fiche');
@@ -23424,6 +24231,57 @@ function saveClientFromDeal(deal) {
   if (!deal.entreprise) return;
   var clients = getClients();
   var name = deal.entreprise.trim();
+
+  // ═══ RENOMMAGE AUTOMATIQUE DU CLIENT (le nom saisi dans le deal prime) ═══
+  // Si ce deal (identifié par sim_ts) était déjà rattaché à une fiche client portant
+  // un AUTRE nom, et que le nouveau nom n'existe pas déjà comme fiche distincte,
+  // on RENOMME la fiche client existante au lieu d'en créer une nouvelle.
+  // Évite les doublons : "OMSCo" corrigé en "OMS&Co" renomme la fiche, pas de doublon.
+  if (deal.sim_ts) {
+    var ownerIdx = clients.findIndex(function(cl){
+      return (cl.managers||[]).some(function(m){
+        return (m.deals||[]).some(function(d){ return d.sim_ts === deal.sim_ts; });
+      });
+    });
+    if (ownerIdx >= 0) {
+      var ancienNom = clients[ownerIdx].name || '';
+      if (ancienNom.trim().toLowerCase() !== name.toLowerCase()) {
+        // Le nom a changé. Existe-t-il déjà une AUTRE fiche avec le nouveau nom ?
+        var conflictIdx = clients.findIndex(function(cl, i){
+          return i !== ownerIdx && (cl.name||'').trim().toLowerCase() === name.toLowerCase();
+        });
+        if (conflictIdx < 0) {
+          // Pas de conflit → on renomme simplement la fiche existante
+          clients[ownerIdx].name = name;
+          clients[ownerIdx].updated = new Date().toLocaleDateString('fr-FR');
+          saveClientsArr(clients);
+          clients = getClients(); // recharger après save
+          console.log('[saveClientFromDeal] Client renommé : "' + ancienNom + '" → "' + name + '"');
+          // Propager le nouveau nom à TOUS les autres deals rattachés à l'ancien nom
+          // pour que le tableau Suivi RH reste cohérent (sinon les anciens deals
+          // afficheraient encore l'ancienne raison sociale).
+          try {
+            var _allD = getDeals();
+            var _propagated = false;
+            _allD.forEach(function(d){
+              if (d && (d.entreprise||'').trim().toLowerCase() === ancienNom.trim().toLowerCase()
+                     && d.sim_ts !== deal.sim_ts) {
+                d.entreprise = name;
+                _propagated = true;
+              }
+            });
+            if (_propagated) {
+              saveDeals(_allD);
+              if (typeof renderDeals === 'function') { try { renderDeals(); } catch(e){} }
+            }
+          } catch(e) { console.warn('[renommage client → deals]', e); }
+        }
+        // Si conflit (le nouveau nom existe déjà comme fiche séparée) : on ne renomme pas,
+        // le rattachement plus bas se fera sur la fiche existante du nouveau nom.
+      }
+    }
+  }
+
   var idx = clients.findIndex(function(cl) { return cl.name.toLowerCase() === name.toLowerCase(); });
   var managerName = (deal.manager||'').trim();
   var dealRef = {
@@ -23835,6 +24693,21 @@ function buildClientPageHTML(cl) {
           date_entree: src.date_entree,
           date_fin: src.date_fin
         });
+      } else if (d.is_mission_parallele) {
+        // Mission parallèle : pas de deal dans sp_deals_v1 (volontaire), on prend
+        // toutes les infos depuis la copie figée stockée par confirmMissionParallele
+        allClientDeals.push({
+          manager: m.name,
+          sim_ts: d.sim_ts,
+          candidat_name: d.candidat_name || d.candidat || '',
+          etat: d.etat || 'Mission parallèle',
+          commercial: d.commercial || '',
+          tjm: d.tjm,
+          poste: d.poste,
+          date_entree: d.date_entree || d.date_deal,
+          is_mission_parallele: true,
+          avenant_id: d.avenant_id
+        });
       } else {
         // Fallback : pas trouvé dans sp_deals_v1 → on garde la copie figée
         allClientDeals.push({ manager: m.name, sim_ts: d.sim_ts, candidat_name: d.candidat_name, etat: d.etat });
@@ -23886,6 +24759,7 @@ function buildClientPageHTML(cl) {
       if (d.etat === 'Signé') { etatColor = '#fff'; etatBg = '#1D9E75'; }
       else if (d.etat === 'En cours') { etatColor = '#8A5F00'; etatBg = '#FFF8E1'; }
       else if (d.etat === 'Annulé') { etatColor = '#A8322A'; etatBg = '#FCEBEB'; }
+      else if (d.etat === 'Mission parallèle') { etatColor = '#1A4F96'; etatBg = '#EEF4FF'; }
       tabPlacementsHtml += '<tr style="border-bottom:1px solid #F0EDF9;background:' + rowBg + ';">';
       tabPlacementsHtml += '<td style="padding:8px 10px;font-weight:600;color:#1A1033;">' + (d.candidat_name || '—') + '</td>';
       tabPlacementsHtml += '<td style="padding:8px 10px;color:#4B36EC;">' + (d.manager || '—') + '</td>';
@@ -23898,6 +24772,56 @@ function buildClientPageHTML(cl) {
     tabPlacementsHtml += '</tbody></table></div>';
   }
 
+  // ─── Onglet SIMULATIONS : simus envoyées AU CLIENT (dest = client ou les_deux) ───
+  // Regroupe les simulations dont l'entreprise correspond à ce client et qui ont été
+  // envoyées au client (pas uniquement à un candidat). Utile pour retrouver les
+  // propositions tarifaires faites au client, indépendamment d'un candidat précis.
+  var tabSimulationsHtml;
+  var clientSims = [];
+  try {
+    var _allSims = (typeof getHistory === 'function') ? getHistory() : [];
+    var _clNameLc = (cl.name || '').trim().toLowerCase();
+    clientSims = _allSims.filter(function(s){
+      if (!s) return false;
+      var entOk = (s.entreprise || '').trim().toLowerCase() === _clNameLc;
+      var destOk = (s.dest === 'client' || s.dest === 'les_deux');
+      return entOk && destOk;
+    }).sort(function(a,b){ return (b.timestamp||0) - (a.timestamp||0); });
+  } catch(e) { console.warn('[fiche client] simulations:', e); }
+
+  if (clientSims.length === 0) {
+    tabSimulationsHtml = '<div style="text-align:center;color:#9E94C4;font-size:13px;padding:30px 0;">'
+      + 'Aucune simulation envoyée à ce client.<br>'
+      + '<span style="font-size:11px;">Les simulations dont le destinataire est « Client » ou « Les deux » apparaîtront ici.</span>'
+      + '</div>';
+  } else {
+    tabSimulationsHtml = '<div style="overflow-x:auto;">'
+      + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+      + '<thead><tr style="background:#F5F3FF;">'
+      +   '<th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">Date</th>'
+      +   '<th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">Poste</th>'
+      +   '<th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">TJM</th>'
+      +   '<th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">BRUT</th>'
+      +   '<th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">Commercial</th>'
+      +   '<th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">Destinataire</th>'
+      +   '<th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.04em;">Action</th>'
+      + '</tr></thead><tbody>';
+    clientSims.forEach(function(s, i){
+      var rowBg = i % 2 === 0 ? '#fff' : '#FAFAFF';
+      var destLabel = s.dest === 'les_deux' ? '👥 Les deux' : '🏢 Client';
+      tabSimulationsHtml += '<tr style="border-bottom:1px solid #F0EDF9;background:' + rowBg + ';">'
+        + '<td style="padding:8px 10px;color:#1A1033;font-weight:600;">' + (s.date || '—') + '</td>'
+        + '<td style="padding:8px 10px;color:#6B5E9C;">' + ((s.poste || '—') + '').replace(/</g,'&lt;') + '</td>'
+        + '<td style="padding:8px 10px;text-align:center;color:#7343EE;font-weight:700;">' + (s.tjm ? s.tjm + ' €' : '—') + '</td>'
+        + '<td style="padding:8px 10px;text-align:center;color:#6B5E9C;">' + (s.brut ? parseInt(s.brut).toLocaleString('fr-FR') + ' €' : '—') + '</td>'
+        + '<td style="padding:8px 10px;color:#6B5E9C;">' + ((s.commercial || '—') + '').replace(/</g,'&lt;') + '</td>'
+        + '<td style="padding:8px 10px;text-align:center;"><span style="background:#F0EDFB;color:#4B36EC;padding:2px 8px;border-radius:9px;font-size:10px;font-weight:700;">' + destLabel + '</span></td>'
+        + '<td style="padding:8px 10px;text-align:right;"><button onclick="openSimFromDeal(' + s.timestamp + ');" style="padding:4px 10px;background:#7343EE;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">📊 Voir</button></td>'
+        + '</tr>';
+    });
+    tabSimulationsHtml += '</tbody></table></div>';
+  }
+
   // ─── Stocker les contenus des onglets dans window (lus par switchClientTab) ───
   // Fait avant le return pour éviter d'embarquer un <script> dans une string HTML
   // (ce qui casserait le parsing du <script> parent).
@@ -23906,7 +24830,8 @@ function buildClientPageHTML(cl) {
     infos: tabInfosHtml,
     contacts: tabContactsHtml,
     documents: tabDocsHtml,
-    placements: tabPlacementsHtml
+    placements: tabPlacementsHtml,
+    simulations: tabSimulationsHtml
   };
 
   // ── Rendu ──
@@ -23958,6 +24883,7 @@ function buildClientPageHTML(cl) {
     +     '<button data-tab="contacts" data-clid="' + cl.id + '" onclick="switchClientTab(parseInt(this.dataset.clid),this.dataset.tab)" id="cl-btn-contacts" style="padding:11px 16px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">👥 Contacts (' + (nbMgrs+1) + ')</button>'
     +     '<button data-tab="documents" data-clid="' + cl.id + '" onclick="switchClientTab(parseInt(this.dataset.clid),this.dataset.tab)" id="cl-btn-documents" style="padding:11px 16px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">📁 Documents</button>'
     +     '<button data-tab="placements" data-clid="' + cl.id + '" onclick="switchClientTab(parseInt(this.dataset.clid),this.dataset.tab)" id="cl-btn-placements" style="padding:11px 16px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">📋 Placements (' + allClientDeals.length + ')</button>'
+    +     '<button data-tab="simulations" data-clid="' + cl.id + '" onclick="switchClientTab(parseInt(this.dataset.clid),this.dataset.tab)" id="cl-btn-simulations" style="padding:11px 16px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">📊 Simulations (' + clientSims.length + ')</button>'
     +   '</div>'
     +   '<div id="cl-tab-content-' + cl.id + '" style="padding:18px 20px;min-height:280px;">' + tabInfosHtml + '</div>'
     + '</div>'
@@ -23967,7 +24893,7 @@ function buildClientPageHTML(cl) {
 // Switch entre les onglets de la fiche client
 function switchClientTab(clid, tab) {
   // Mettre à jour les boutons (active/inactive)
-  ['infos','contacts','documents','placements'].forEach(function(t){
+  ['infos','contacts','documents','placements','simulations'].forEach(function(t){
     var btn = document.getElementById('cl-btn-' + t);
     if (!btn) return;
     var active = (t === tab);
@@ -24611,6 +25537,16 @@ function buildCandPlacementsHTML(cand) {
       // Cas 1 : prolongation simple (date fin) | Cas 2 : nouveau client | Cas 3 : nouvelle SIMU
       actionsHtml += '<button onclick="closeCandFiche();setTimeout(function(){openProlongationChoicePopup(' + d.id + ')},100);" title="Prolonger le placement (3 options : simple / nouveau client / nouvelle SIMU)" style="padding:4px 10px;background:#F0FAF4;color:#0F5132;border:1.5px solid #9FE1CB;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">⏳ Prolongation</button>';
 
+      // ── Bouton Avenant mission (changement en cours de mission) ──
+      // Ne modifie PAS le deal ni le tableau de suivi. Crée juste une ligne dans le
+      // tableau Avenants + une entrée dans l'accordéon Avenants de la fiche candidat.
+      actionsHtml += '<button onclick="closeCandFiche();setTimeout(function(){openAvenantMissionPopup(' + d.id + ')},100);" title="Avenant en cours de mission (TJM, frais, contrat presta...) — n\'impacte pas le placement d\'origine" style="padding:4px 10px;background:#FFF6E8;color:#8A5F00;border:1.5px solid #F0CE8A;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">📑 Avenant</button>';
+
+      // ── Bouton Mission parallèle (2ème mission simultanée) ──
+      // Le consultant démarre une 2ème mission EN PARALLÈLE de celle-ci.
+      // Ne crée PAS de nouveau deal : rattache une nouvelle simu + génère un avenant.
+      actionsHtml += '<button onclick="closeCandFiche();setTimeout(function(){openMissionParallelePopup(' + d.id + ')},100);" title="Le consultant démarre une 2ème mission en parallèle — rattache une nouvelle simulation, crée un avenant (pas un nouveau deal)" style="padding:4px 10px;background:#EEF4FF;color:#1A4F96;border:1.5px solid #A9C8F0;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">➕ Mission parallèle</button>';
+
       // Bouton Sortant : visible si placement actif (pas annulé, pas déjà sorti)
       var existingSortant = (typeof findSortantByDealId === 'function') ? findSortantByDealId(d.id) : null;
       var sortantLabel = existingSortant ? '&#9998; Éditer sortant' : '🚪 Sortant';
@@ -24674,7 +25610,8 @@ function buildCandPlacementsHTML(cand) {
 // ── Historique chronologique d'un placement : original + prolongations + avenants ──
 function _renderPlacementHistory(deal) {
   var hist = Array.isArray(deal.historique_prolongations) ? deal.historique_prolongations : [];
-  if (hist.length === 0) return '';
+  var avMission = Array.isArray(deal.avenants_mission) ? deal.avenants_mission : [];
+  if (hist.length === 0 && avMission.length === 0) return '';
 
   function fmtDate(v) {
     if (!v) return '—';
@@ -24789,6 +25726,44 @@ function _renderPlacementHistory(deal) {
   var histId = 'hist_' + (deal.id || Math.random().toString(36).slice(2));
   var totalEvents = timeline.length;
 
+  // ── Bloc Avenants mission (séparé de l'historique prolongations) ──
+  var avMissionHtml = '';
+  if (avMission.length > 0) {
+    var avId = 'avm_' + (deal.id || Math.random().toString(36).slice(2));
+    var avRows = avMission.slice().sort(function(a,b){
+      return (b.created_at||0) - (a.created_at||0);
+    }).map(function(av){
+      var typesBadges = (av.types || []).map(function(t){
+        return '<span style="display:inline-block;padding:1px 7px;background:#FFF6E8;color:#8A5F00;border:1px solid #F0CE8A;border-radius:9px;font-size:9.5px;font-weight:700;margin:1px 2px 1px 0;">' + t + '</span>';
+      }).join('');
+      var simBtn = '';
+      if (av.sim_ts) {
+        simBtn = '<button onclick="event.stopPropagation();closeCandFiche();setTimeout(function(){openSimFromDeal(' + av.sim_ts + ');},120);" title="Ouvrir la simulation liée" style="margin-left:4px;padding:2px 7px;background:#fff;color:#7343EE;border:1.5px solid #D9CFFA;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">📊 Simu</button>';
+      }
+      return '<div style="background:#FFFBF2;border:1px solid #F0DCAE;border-radius:7px;padding:8px 10px;margin-bottom:6px;">'
+        + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px;">'
+        +   '<span style="font-size:11px;font-weight:700;color:#8A5F00;">📑 Avenant</span>'
+        +   '<span style="font-size:10.5px;color:#9E94C4;">' + fmtDate(av.date) + '</span>'
+        +   simBtn
+        + '</div>'
+        + '<div style="margin-bottom:3px;">' + typesBadges + '</div>'
+        + (av.commentaire ? '<div style="font-size:10.5px;color:#6B5E9C;line-height:1.4;margin-top:3px;">' + av.commentaire.replace(/</g,'&lt;').replace(/\n/g,'<br>') + '</div>' : '')
+        + '</div>';
+    }).join('');
+
+    avMissionHtml = '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #F0CE8A;">'
+      + '<button onclick="var el=document.getElementById(\'' + avId + '\');var ar=document.getElementById(\'' + avId + '_arrow\');if(el.style.display===\'none\'){el.style.display=\'block\';ar.textContent=\'▼\';}else{el.style.display=\'none\';ar.textContent=\'▶\';}" style="background:none;border:none;font-size:10.5px;color:#8A5F00;cursor:pointer;padding:0;font-weight:700;font-family:inherit;display:flex;align-items:center;gap:4px;">'
+      +   '<span id="' + avId + '_arrow">▼</span> 📑 Avenants mission (' + avMission.length + ')'
+      + '</button>'
+      + '<div id="' + avId + '" style="margin-top:6px;">' + avRows + '</div>'
+      + '</div>';
+  }
+
+  // Si pas d'historique de prolongation mais des avenants mission → on retourne juste le bloc avenants
+  if (hist.length === 0) {
+    return avMissionHtml;
+  }
+
   return '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #D9CFFA;">'
     + '<button onclick="var el=document.getElementById(\'' + histId + '\');var ar=document.getElementById(\'' + histId + '_arrow\');if(el.style.display===\'none\'){el.style.display=\'block\';ar.textContent=\'▼\';}else{el.style.display=\'none\';ar.textContent=\'▶\';}" style="background:none;border:none;font-size:10.5px;color:#7343EE;cursor:pointer;padding:0;font-weight:700;font-family:inherit;display:flex;align-items:center;gap:4px;">'
     +   '<span id="' + histId + '_arrow">▼</span> Historique (' + totalEvents + ' événement' + (totalEvents>1?'s':'') + ')'
@@ -24796,7 +25771,8 @@ function _renderPlacementHistory(deal) {
     + '<div id="' + histId + '" style="margin-top:6px;padding:8px 4px 4px 4px;">'
     +   rows
     + '</div>'
-    + '</div>';
+    + '</div>'
+    + avMissionHtml;
 }
 
 // Emails internes (notifications placements)
@@ -27332,6 +28308,7 @@ function getDemandes() {
 }
 function saveDemandes(arr) {
   localStorage.setItem(DEMANDES_KEY, JSON.stringify(arr));
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 function getDemandesConfig() {
   var defaults = {
@@ -29723,6 +30700,7 @@ function getCommHistory() {
 }
 function saveCommHistory(arr) {
   localStorage.setItem(COMM_HISTORY_KEY, JSON.stringify(arr));
+  if (typeof odAutoSync === 'function') odAutoSync();
 }
 
 // Fusion local ∪ remote : dé-doublonnage sur la clé unique (type+commercial+year+month)
@@ -30353,7 +31331,13 @@ function exportCommHistCSV() {
       <!-- DEAL -->
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;color:#1D9E75;">&#128203; Informations deal</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
-        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Date deal</label><input id="pl-date-deal" type="date" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
+        <div>
+          <label style="font-size:10px;color:#6B5E9C;font-weight:700;display:flex;align-items:center;gap:6px;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">
+            Date deal
+            <button type="button" id="pl-date-deal-lock" onclick="toggleDateDealLock()" title="Modifier la date du deal (protégé par mot de passe)" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0;line-height:1;">🔒</button>
+          </label>
+          <input id="pl-date-deal" type="date" readonly style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;background:#F5F3FF;color:#6B5E9C;cursor:not-allowed;">
+        </div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Commercial</label><select id="pl-commercial" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option value="">-- Sélectionner --</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Origine deal</label><select id="pl-origine" onchange="onPlCoopTypeChange()" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>Réseau</option><option>LinkedIn</option><option>Job board</option><option>Recommandation</option><option>Cooptation Client</option><option>Cooptation Candidat</option><option>Autre</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">État dossier <span style="font-weight:500;text-transform:none;color:#9E94C4;">(« Signé » est calculé auto)</span></label><select id="pl-etat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Nouveau placement</option><option>En cours</option><option>Annulé</option></select></div>
