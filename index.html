@@ -7469,6 +7469,34 @@ function confirmRecomputeAllDealsEtat() {
   });
 }
 
+// Convertit une date (string ou Date) vers le format AAAA-MM-JJ attendu par
+// les <input type="date">. Gère les formats : JJ/MM/AAAA, JJ-MM-AAAA, AAAA-MM-JJ,
+// AAAA/MM/JJ, objets Date. Renvoie '' si la date est vide ou non interprétable.
+function _toISODateInput(v) {
+  if (!v) return '';
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return '';
+    return v.getFullYear() + '-' + String(v.getMonth()+1).padStart(2,'0') + '-' + String(v.getDate()).padStart(2,'0');
+  }
+  var s = String(v).trim();
+  if (!s || s === '—') return '';
+  // Déjà au format ISO AAAA-MM-JJ (éventuellement avec heure) → on garde la partie date
+  var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + '-' + String(m[2]).padStart(2,'0') + '-' + String(m[3]).padStart(2,'0');
+  // Format français JJ/MM/AAAA ou JJ-MM-AAAA
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) return m[3] + '-' + String(m[2]).padStart(2,'0') + '-' + String(m[1]).padStart(2,'0');
+  // Format AAAA/MM/JJ
+  m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (m) return m[1] + '-' + String(m[2]).padStart(2,'0') + '-' + String(m[3]).padStart(2,'0');
+  // Dernier recours : tenter le parsing natif
+  var d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  return '';
+}
+
 function openPlacementPopup(ts) {
   var hist = getHistory();
   var sim = hist.find(function(s) { return s.timestamp === ts; });
@@ -7808,11 +7836,15 @@ function openPlacementPopup(ts) {
     if (etatToSet === 'Signé') etatToSet = 'En cours';
     document.getElementById('pl-etat').value = etatToSet;
     document.getElementById('pl-contrat').value = existing.contrat || '';
-    document.getElementById('pl-date-entree').value = existing.date_entree || '';
+    // FIX : les champs <input type="date"> n'acceptent QUE le format AAAA-MM-JJ.
+    // Les vieux deals peuvent avoir des dates au format français JJ/MM/AAAA →
+    // le navigateur rejette la valeur et le champ reste VIDE → à la sauvegarde,
+    // le deal perdait sa date (ligne du tableau qui se vide). On normalise.
+    document.getElementById('pl-date-entree').value = _toISODateInput(existing.date_entree);
     document.getElementById('pl-commentaire').value = existing.commentaire || '';
     document.getElementById('pl-connait-tjm').value = existing.connait_tjm || 'Non';
     var se2 = document.getElementById('pl-salarie-etranger'); if (se2) se2.checked = !!existing.salarie_etranger;
-    document.getElementById('pl-date-deal').value = existing.date_deal || new Date().toISOString().split('T')[0];
+    document.getElementById('pl-date-deal').value = _toISODateInput(existing.date_deal) || new Date().toISOString().split('T')[0];
   }
 
   // Pré-remplir la cooptation :
@@ -8661,7 +8693,14 @@ function savePlacement() {
     delai_paiement: document.getElementById('pl-delai-paiement').value,
     banque: document.getElementById('pl-banque').value,
     // Deal
-    date_deal: document.getElementById('pl-date-deal').value,
+    // FIX : si le champ date est vide (cas limite), on conserve la date existante
+    // du deal plutôt que de l'écraser par du vide.
+    date_deal: (function(){
+      var v = document.getElementById('pl-date-deal').value;
+      if (v) return v;
+      if (idx >= 0 && deals[idx] && deals[idx].date_deal) return deals[idx].date_deal;
+      return new Date().toISOString().split('T')[0];
+    })(),
     commercial: document.getElementById('pl-commercial').value,
     origine: document.getElementById('pl-origine').value,
     etat: document.getElementById('pl-etat').value,
@@ -9534,17 +9573,30 @@ function renderDeals() {
   html += '</tr></thead><tbody>';
 
   deals.forEach(function(d){
-    var color = ECOLORS[d.etat]||'#6B5E9C';
-    var classList = [];
-    if (d.salarie_etranger) classList.push('row-etranger');
-    if (d.etat === 'Annulé') classList.push('row-cancelled');
-    var rowClass = classList.length ? ' class="' + classList.join(' ') + '"' : '';
-    html += '<tr' + rowClass + ' style="border-left:3px solid '+color+';">';
-    visColDefs.forEach(function(col){
-      var fc = col.freeze==='f1' ? ' class="col-freeze"' : col.freeze==='f2' ? ' class="col-freeze2"' : '';
-      html += '<td'+fc+'>'+getCellValue(d,col.key)+'</td>';
-    });
-    html += '</tr>';
+    try {
+      var color = ECOLORS[d.etat]||'#6B5E9C';
+      var classList = [];
+      if (d.salarie_etranger) classList.push('row-etranger');
+      if (d.etat === 'Annulé') classList.push('row-cancelled');
+      var rowClass = classList.length ? ' class="' + classList.join(' ') + '"' : '';
+      html += '<tr' + rowClass + ' data-deal-id="' + (d.id != null ? d.id : '') + '" style="border-left:3px solid '+color+';">';
+      visColDefs.forEach(function(col){
+        var fc = col.freeze==='f1' ? ' class="col-freeze"' : col.freeze==='f2' ? ' class="col-freeze2"' : '';
+        var cellHtml;
+        try {
+          cellHtml = getCellValue(d, col.key);
+        } catch(cellErr) {
+          // Une cellule défaillante ne doit JAMAIS vider tout le tableau :
+          // on affiche un placeholder et on log le problème.
+          console.warn('[renderDeals] cellule "' + col.key + '" en erreur pour deal', d.id, cellErr);
+          cellHtml = '<span style="color:#E24B4A;">!</span>';
+        }
+        html += '<td'+fc+'>' + (cellHtml == null ? '—' : cellHtml) + '</td>';
+      });
+      html += '</tr>';
+    } catch(rowErr) {
+      console.warn('[renderDeals] ligne en erreur pour deal', d && d.id, rowErr);
+    }
   });
   html += '</tbody></table></div>';
   // Préserver la position de scroll horizontale/verticale avant re-render
@@ -16129,6 +16181,7 @@ function savePlacementAsMissionParallele() {
   var tjm = (_v('pl-tjm') || '').replace(/[^0-9.,]/g,'').replace(',','.');
   var manager = _v('pl-manager').trim();
   var dateDebut = _v('pl-date-entree') || _v('pl-date-deal') || new Date().toISOString().slice(0,10);
+  var dateFin = _v('pl-date-fin') || '';
   var commercial = _v('pl-commercial') || originDeal.commercial || '';
   var comment = _v('pl-commentaire') || '';
 
@@ -16150,6 +16203,7 @@ function savePlacementAsMissionParallele() {
     date_demande: new Date().toISOString().slice(0,10),
     date_avenant: dateDebut,
     date_debut: dateDebut,
+    date_fin: dateFin,
     commercial: commercial,
     prenom_porte: originDeal.prenom || '',
     nom_porte: originDeal.nom || '',
@@ -16184,7 +16238,13 @@ function savePlacementAsMissionParallele() {
     avenant_id: avenantId,
     date: dateDebut,
     types: ['\u2795 Mission parall\u00e8le'],
-    commentaire: '2\u00e8me mission chez ' + clientParallele + (poste ? ' \u00b7 ' + poste : '') + (comment ? ' \u2014 ' + comment : ''),
+    // Champs détaillés pour la vignette de l'accordéon (fiche candidat)
+    client: clientParallele,
+    manager: manager,
+    tjm: tjm,
+    date_debut: dateDebut,
+    date_fin: dateFin,
+    commentaire: comment,
     sim_ts: simTs ? parseInt(simTs) : null,
     created_at: Date.now()
   });
@@ -25846,6 +25906,25 @@ function _renderPlacementHistory(deal) {
       if (av.avenant_id) {
         delBtn = '<button onclick="event.stopPropagation();deleteMissionParallele(\'' + av.avenant_id + '\');" title="Supprimer cet avenant / cette mission parallèle" style="margin-left:4px;padding:2px 7px;background:#FCEBEB;color:#A8322A;border:1.5px solid #F5B5B5;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">🗑</button>';
       }
+      // Détails de la mission parallèle (affichés seulement si présents — les
+      // anciens avenants créés avant cet enrichissement n'ont pas ces champs)
+      var detailsRows = '';
+      function _detailLine(label, val) {
+        if (!val) return '';
+        return '<div style="display:flex;gap:6px;font-size:10.5px;line-height:1.5;">'
+          + '<span style="color:#9E94C4;min-width:78px;flex-shrink:0;">' + label + '</span>'
+          + '<span style="color:#1A1033;font-weight:600;">' + String(val).replace(/</g,'&lt;') + '</span>'
+          + '</div>';
+      }
+      detailsRows += _detailLine('Client', av.client);
+      detailsRows += _detailLine('Manager', av.manager);
+      detailsRows += _detailLine('TJM', av.tjm ? (av.tjm + ' €/j') : '');
+      detailsRows += _detailLine('Début', av.date_debut ? fmtDate(av.date_debut) : '');
+      detailsRows += _detailLine('Fin', av.date_fin ? fmtDate(av.date_fin) : '');
+      var detailsBlock = detailsRows
+        ? '<div style="background:#fff;border:1px solid #F0DCAE;border-radius:6px;padding:6px 9px;margin:4px 0 3px;">' + detailsRows + '</div>'
+        : '';
+
       return '<div style="background:#FFFBF2;border:1px solid #F0DCAE;border-radius:7px;padding:8px 10px;margin-bottom:6px;">'
         + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px;">'
         +   '<span style="font-size:11px;font-weight:700;color:#8A5F00;">📑 Avenant</span>'
@@ -25854,6 +25933,7 @@ function _renderPlacementHistory(deal) {
         +   delBtn
         + '</div>'
         + '<div style="margin-bottom:3px;">' + typesBadges + '</div>'
+        + detailsBlock
         + (av.commentaire ? '<div style="font-size:10.5px;color:#6B5E9C;line-height:1.4;margin-top:3px;">' + av.commentaire.replace(/</g,'&lt;').replace(/\n/g,'<br>') + '</div>' : '')
         + '</div>';
     }).join('');
