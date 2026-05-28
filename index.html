@@ -5724,6 +5724,11 @@ function saveHistorique(data, dest, email, consultantName) {
     hide_tjm_mail: data.hide_tjm_mail || false,
     dest: dest,
     email: email,
+    // FIX : entry.email peut contenir l'email CLIENT (quand dest='client', le popup
+    // d'envoi met l'email client dans le champ). On stocke donc séparément le VRAI
+    // email du candidat, lu directement du champ candidat du simulateur (#email).
+    // C'est CE champ qui sert au rattachement candidat (jamais entry.email).
+    email_candidat_reel: (function(){ var el = document.getElementById('email'); return el ? (el.value||'').trim() : ''; })(),
     email_client: data.email_client || '',
     date: data.date,
     heure: data.heure,
@@ -11213,19 +11218,18 @@ function _splitFullName(full) {
 
 // Trouve l'index d'un candidat correspondant à l'entrée (simulation).
 // RÈGLE COMBINÉE :
-//   1) Si l'entrée a un email → match par email (prioritaire, le plus fiable)
+//   1) Email CANDIDAT (email_candidat_reel) → match par email (le plus fiable)
+//      On n'utilise JAMAIS entry.email pour ça : il peut contenir l'email CLIENT.
 //   2) Sinon → match par nom+prénom normalisés, ordre indifférent
 //      (gère accents, majuscules, et inversion prénom/nom)
 // Renvoie -1 si aucun candidat ne correspond.
 function _findCandidatIdx(cands, entry) {
-  var email = (entry.email || '').trim().toLowerCase();
-  // 1) Si un email est présent ET correspond à un candidat en BDD → match fiable
+  // Email CANDIDAT réel uniquement (jamais l'email client porté par entry.email)
+  var email = (entry.email_candidat_reel || '').trim().toLowerCase();
   if (email) {
     var byEmail = cands.findIndex(function(c){ return (c.email||'').trim().toLowerCase() === email; });
     if (byEmail >= 0) return byEmail;
-    // IMPORTANT : si l'email ne correspond à AUCUN candidat, on NE s'arrête PAS.
-    // L'email d'une simulation peut être celui du CLIENT (destinataire), pas du
-    // candidat. On retombe donc sur le matching par nom/prénom ci-dessous.
+    // Email candidat fourni mais pas trouvé → on retombe sur le nom (faute de frappe possible)
   }
   // 2) Match par identité nom/prénom (accents/casse/inversion tolérés)
   var np = _splitFullName(entry.consultant);
@@ -11242,35 +11246,31 @@ function saveCandidatFromEntry(entry) {
   // La simu reste visible dans l'Historique et dans la fiche client.
   if (entry.dest === 'client') return;
 
-  var email = (entry.email || '').trim().toLowerCase();
+  // EMAIL CANDIDAT RÉEL uniquement (le champ #email du simulateur).
+  // entry.email peut contenir l'email CLIENT → on ne l'utilise JAMAIS pour le candidat.
+  var emailCand = (entry.email_candidat_reel || '').trim().toLowerCase();
   var np = _splitFullName(entry.consultant);
-  // Il faut AU MOINS un email OU un nom/prénom exploitable pour créer/retrouver une fiche.
-  if (!email && !_personKey(np.prenom, np.nom)) return;
+  // Il faut AU MOINS un email candidat OU un nom/prénom exploitable.
+  if (!emailCand && !_personKey(np.prenom, np.nom)) return;
 
   var cands = getCandidats();
   var idx = _findCandidatIdx(cands, entry);
   var simRef = { timestamp: entry.timestamp, date: entry.date, tjm: entry.tjm, nb_jours: entry.nb_jours, brut: entry.brut, net_payer: entry.net_payer, entreprise: entry.entreprise, poste: entry.poste, commercial: entry.commercial };
   if (idx >= 0) {
-    // Déterminer COMMENT on a matché : par email candidat réel, ou par nom.
-    // L'email de la simu peut être celui du CLIENT → il ne faut PAS le prendre
-    // pour l'email du candidat dans ce cas.
     var candEmailExisting = (cands[idx].email || '').trim().toLowerCase();
-    var entryEmail = (entry.email || '').trim().toLowerCase();
-    var matchedByEmail = !!(entryEmail && candEmailExisting && entryEmail === candEmailExisting);
+    // On a matché par email candidat réel ?
+    var matchedByEmail = !!(emailCand && candEmailExisting && emailCand === candEmailExisting);
 
-    // Nom/prénom : on ne les rafraîchit QUE si on a matché par email (fiable).
-    // Si on a matché par nom, on garde l'orthographe de référence de la fiche.
+    // Nom/prénom : rafraîchis seulement si match par email (fiable).
     if (matchedByEmail && entry.consultant) {
       var _np = _splitFullName(entry.consultant);
       if (_np.prenom) cands[idx].prenom = _np.prenom;
       if (_np.nom)    cands[idx].nom = _np.nom;
     }
-    // Email : on ne renseigne l'email du candidat QUE s'il est vide ET que la simu
-    // a un email. ATTENTION : comme l'email de la simu PEUT être celui du client,
-    // on ne le met que si le candidat n'a aucun email (mieux que rien), et jamais
-    // on n'écrase un email candidat déjà présent.
-    if (!candEmailExisting && entryEmail) {
-      cands[idx].email = entry.email;
+    // Email candidat : on ne le renseigne QUE s'il est vide ET qu'on a un email
+    // candidat RÉEL. Jamais l'email client, jamais d'écrasement d'un email existant.
+    if (!candEmailExisting && emailCand) {
+      cands[idx].email = entry.email_candidat_reel;
     }
     // Mettre à jour les infos supplémentaires uniquement si vides localement
     if (!cands[idx].tel && entry.tel) cands[idx].tel = entry.tel;
@@ -11297,7 +11297,7 @@ function saveCandidatFromEntry(entry) {
       civilite: entry.civilite || '',
       prenom: parts[0] || '',
       nom: parts.slice(1).join(' ') || '',
-      email: entry.email || '',
+      email: entry.email_candidat_reel || '',
       tel: entry.tel || '',
       poste: entry.poste || '',
       profil: '',
