@@ -11175,20 +11175,94 @@ function saveCandidatsArr(arr) {
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 
-function saveCandidatFromEntry(entry) {
+// ═══════════════════════════════════════════════════════════════════
+// MATCHING CANDIDAT — combiné email + nom/prénom, tolérant
+// ═══════════════════════════════════════════════════════════════════
+// Normalise un texte pour comparaison : minuscules, sans accents, sans espaces
+// superflus, sans ponctuation. "Éric  LECAM" et "eric lecam" deviennent identiques.
+function _normName(s) {
+  return (s || '')
+    .toString()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // retire les accents
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')  // ponctuation/tirets → espace
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+// Construit une "clé de personne" insensible à l'ordre prénom/nom.
+// "eric lecam" et "lecam eric" produisent la même clé → gère les inversions.
+function _personKey(prenom, nom) {
+  var parts = (_normName(prenom) + ' ' + _normName(nom)).trim().split(' ').filter(Boolean);
+  parts.sort();              // l'ordre ne compte plus → tolère prénom/nom inversés
+  return parts.join(' ');
+}
+
+// Compare deux candidats/entrées sur leur identité (nom+prénom, ordre indifférent)
+function _samePerson(prenomA, nomA, prenomB, nomB) {
+  var ka = _personKey(prenomA, nomA);
+  var kb = _personKey(prenomB, nomB);
+  return ka !== '' && ka === kb;
+}
+
+// Sépare un nom complet "Eric Lecam" en {prenom, nom}
+function _splitFullName(full) {
+  var parts = (full || '').trim().split(/\s+/).filter(Boolean);
+  return { prenom: parts[0] || '', nom: parts.slice(1).join(' ') || '' };
+}
+
+// Trouve l'index d'un candidat correspondant à l'entrée (simulation).
+// RÈGLE COMBINÉE :
+//   1) Si l'entrée a un email → match par email (prioritaire, le plus fiable)
+//   2) Sinon → match par nom+prénom normalisés, ordre indifférent
+//      (gère accents, majuscules, et inversion prénom/nom)
+// Renvoie -1 si aucun candidat ne correspond.
+function _findCandidatIdx(cands, entry) {
   var email = (entry.email || '').trim().toLowerCase();
-  if (!email) return; // pas d'email = pas de candidat
+  if (email) {
+    var byEmail = cands.findIndex(function(c){ return (c.email||'').trim().toLowerCase() === email; });
+    if (byEmail >= 0) return byEmail;
+    // email fourni mais pas trouvé → on NE retombe PAS sur le nom :
+    // un email distinct = personne distincte (évite de fusionner deux homonymes
+    // qui ont chacun leur propre email).
+    return -1;
+  }
+  // Pas d'email sur l'entrée → match par identité nom/prénom
+  var np = _splitFullName(entry.consultant);
+  var entKey = _personKey(np.prenom, np.nom);
+  if (!entKey) return -1; // ni email ni nom exploitable
+  return cands.findIndex(function(c){
+    return _personKey(c.prenom, c.nom) === entKey;
+  });
+}
+
+function saveCandidatFromEntry(entry) {
   // RÈGLE MÉTIER : si la simu est destinée au CLIENT uniquement (pas au candidat),
   // c'est un prospect client sans candidat identifié → ne pas créer de fiche candidat.
   // La simu reste visible dans l'Historique et dans la fiche client.
   if (entry.dest === 'client') return;
+
+  var email = (entry.email || '').trim().toLowerCase();
+  var np = _splitFullName(entry.consultant);
+  // Il faut AU MOINS un email OU un nom/prénom exploitable pour créer/retrouver une fiche.
+  if (!email && !_personKey(np.prenom, np.nom)) return;
+
   var cands = getCandidats();
-  var idx = cands.findIndex(function(c) { return (c.email||'').trim().toLowerCase() === email; });
+  var idx = _findCandidatIdx(cands, entry);
   var simRef = { timestamp: entry.timestamp, date: entry.date, tjm: entry.tjm, nb_jours: entry.nb_jours, brut: entry.brut, net_payer: entry.net_payer, entreprise: entry.entreprise, poste: entry.poste, commercial: entry.commercial };
   if (idx >= 0) {
-    // Mettre à jour les infos de base
-    cands[idx].prenom = entry.consultant ? entry.consultant.split(' ')[0] : cands[idx].prenom;
-    cands[idx].nom = entry.consultant ? entry.consultant.split(' ').slice(1).join(' ') : cands[idx].nom;
+    // Mettre à jour les infos de base.
+    // IMPORTANT : si l'entrée a un EMAIL (match fiable par email), on peut rafraîchir
+    // le nom/prénom depuis la simu. En revanche si on a retrouvé le candidat par
+    // NOM/PRÉNOM (pas d'email), on NE touche PAS à son nom/prénom existant : sinon
+    // une inversion ou faute de frappe du commercial écraserait la fiche de référence.
+    var matchedByEmail = !!(entry.email && (entry.email||'').trim());
+    if (matchedByEmail && entry.consultant) {
+      var _np = _splitFullName(entry.consultant);
+      // On ne met à jour que si non vide (évite d'effacer un nom existant)
+      if (_np.prenom) cands[idx].prenom = _np.prenom;
+      if (_np.nom)    cands[idx].nom = _np.nom;
+    }
     cands[idx].email = entry.email || cands[idx].email;
     // Mettre à jour les infos supplémentaires uniquement si vides localement
     if (!cands[idx].tel && entry.tel) cands[idx].tel = entry.tel;
@@ -11827,8 +11901,30 @@ function renderCandidats() {
   };
   var html = '';
   cands.forEach(function(cand) {
-    var lastSim = (cand.simulations||[])[0];
-    var nbSims = (cand.simulations||[]).length;
+    // FIX cohérence : la dernière simu et le nombre viennent de l'Historique global
+    // (source de vérité). Matching combiné : email si présent, sinon nom/prénom.
+    var _cEmail = (cand.email||'').trim().toLowerCase();
+    var _candSims;
+    if (typeof getHistory === 'function') {
+      var _h = getHistory();
+      if (_cEmail) {
+        _candSims = _h.filter(function(s){ return (s.email||'').trim().toLowerCase() === _cEmail; });
+      } else if (typeof _personKey === 'function') {
+        var _ck = _personKey(cand.prenom, cand.nom);
+        _candSims = _ck ? _h.filter(function(s){
+          if ((s.email||'').trim()) return false;
+          var np = _splitFullName(s.consultant);
+          return _personKey(np.prenom, np.nom) === _ck;
+        }) : (cand.simulations||[]).slice();
+      } else {
+        _candSims = (cand.simulations||[]).slice();
+      }
+      _candSims.sort(function(a,b){ return (b.timestamp||0)-(a.timestamp||0); });
+    } else {
+      _candSims = (cand.simulations||[]).slice();
+    }
+    var lastSim = _candSims[0];
+    var nbSims = _candSims.length;
     var initials = ((cand.prenom||'').charAt(0)+(cand.nom||'').charAt(0)).toUpperCase();
     var statut = computeCandStatutAuto(cand);
     var scfg = statutCfg[statut] || statutCfg['Prospect'];
@@ -22946,7 +23042,7 @@ function buildCandFicheHTML(cand) {
     // Colonne gauche : onglets
     + '<div style="flex:1;min-width:0;border-right:2px solid #F0EDF9;">'
     + '<div style="display:flex;align-items:center;border-bottom:2px solid #E4E0FA;padding:0 20px;background:#fff;overflow-x:auto;white-space:nowrap;">'
-    + '<button data-tab="simulations" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-simulations" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#7343EE;border-bottom:2px solid #7343EE;margin-bottom:-2px;cursor:pointer;">&#128200; Simulations (' + (cand.simulations||[]).length + ')</button>'
+    + '<button data-tab="simulations" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-simulations" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#7343EE;border-bottom:2px solid #7343EE;margin-bottom:-2px;cursor:pointer;">&#128200; Simulations (' + (function(){ var e=(cand.email||'').trim().toLowerCase(); var h=(typeof getHistory==='function'?getHistory():[]); if(e){ return h.filter(function(s){return (s.email||'').trim().toLowerCase()===e;}).length; } if(typeof _personKey==='function'){ var ck=_personKey(cand.prenom,cand.nom); if(ck) return h.filter(function(s){ if((s.email||'').trim())return false; var np=_splitFullName(s.consultant); return _personKey(np.prenom,np.nom)===ck; }).length; } return (cand.simulations||[]).length; })() + ')</button>'
     + '<button data-tab="placements" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-placements" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128203; Placements (' + (function(){ var e=(cand.email||'').toLowerCase(); var fn=((cand.prenom||'')+' '+(cand.nom||'')).trim().toLowerCase(); return (typeof getDeals==='function' ? getDeals() : []).filter(function(d){ return (d.email||'').toLowerCase()===e || ((d.prenom||'')+' '+(d.nom||'')).trim().toLowerCase()===fn; }).length; })() + ')</button>'
     + '<button data-tab="avances" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-avances" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128182; Avances (' + (typeof getAvances==='function' ? getAvances().filter(function(a){ return a.candidat_id === cand.id; }).length : 0) + ')</button>'
     + '<button data-tab="documents" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-documents" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128196; Documents</button>'
@@ -23369,10 +23465,35 @@ function switchCandTab(id, tab) {
 }
 
 function buildCandSimsHTML(cand) {
-  var sims = cand.simulations || [];
+  // SOURCE DE VÉRITÉ : on lit l'Historique global, PAS le tableau figé cand.simulations.
+  // Matching COMBINÉ, cohérent avec saveCandidatFromEntry :
+  //   - si le candidat a un email → on matche les simus par email
+  //   - sinon → on matche par nom/prénom normalisés (accents/casse/ordre indifférents)
+  var email = (cand.email || '').trim().toLowerCase();
+  var hist = (typeof getHistory === 'function') ? getHistory() : [];
+  var sims;
+  if (email) {
+    sims = hist.filter(function(s){ return (s.email || '').trim().toLowerCase() === email; });
+  } else if (typeof _personKey === 'function') {
+    var candKey = _personKey(cand.prenom, cand.nom);
+    if (candKey) {
+      sims = hist.filter(function(s){
+        // ne matcher que les simus SANS email (celles avec email appartiennent à
+        // un candidat identifié par email, pas à un homonyme sans email)
+        if ((s.email||'').trim()) return false;
+        var np = _splitFullName(s.consultant);
+        return _personKey(np.prenom, np.nom) === candKey;
+      });
+    } else {
+      sims = (cand.simulations || []).slice();
+    }
+  } else {
+    sims = (cand.simulations || []).slice();
+  }
+  // Tri : plus récente en premier
+  sims.sort(function(a,b){ return (b.timestamp||0) - (a.timestamp||0); });
   if (!sims.length) return '<div style="color:#C0B8E0;font-size:12px;padding:20px 0;">Aucune simulation.</div>';
   // Récupère les deals liés au candidat par email pour savoir lesquelles sont placées/annulées
-  var email = (cand.email || '').trim().toLowerCase();
   var allDeals = (typeof getDeals === 'function') ? getDeals() : [];
   var dealsOfCand = allDeals.filter(function(d){ return (d.email || '').trim().toLowerCase() === email; });
 
