@@ -11219,18 +11219,18 @@ function _splitFullName(full) {
 // Renvoie -1 si aucun candidat ne correspond.
 function _findCandidatIdx(cands, entry) {
   var email = (entry.email || '').trim().toLowerCase();
+  // 1) Si un email est présent ET correspond à un candidat en BDD → match fiable
   if (email) {
     var byEmail = cands.findIndex(function(c){ return (c.email||'').trim().toLowerCase() === email; });
     if (byEmail >= 0) return byEmail;
-    // email fourni mais pas trouvé → on NE retombe PAS sur le nom :
-    // un email distinct = personne distincte (évite de fusionner deux homonymes
-    // qui ont chacun leur propre email).
-    return -1;
+    // IMPORTANT : si l'email ne correspond à AUCUN candidat, on NE s'arrête PAS.
+    // L'email d'une simulation peut être celui du CLIENT (destinataire), pas du
+    // candidat. On retombe donc sur le matching par nom/prénom ci-dessous.
   }
-  // Pas d'email sur l'entrée → match par identité nom/prénom
+  // 2) Match par identité nom/prénom (accents/casse/inversion tolérés)
   var np = _splitFullName(entry.consultant);
   var entKey = _personKey(np.prenom, np.nom);
-  if (!entKey) return -1; // ni email ni nom exploitable
+  if (!entKey) return -1; // ni email correspondant ni nom exploitable
   return cands.findIndex(function(c){
     return _personKey(c.prenom, c.nom) === entKey;
   });
@@ -11251,19 +11251,27 @@ function saveCandidatFromEntry(entry) {
   var idx = _findCandidatIdx(cands, entry);
   var simRef = { timestamp: entry.timestamp, date: entry.date, tjm: entry.tjm, nb_jours: entry.nb_jours, brut: entry.brut, net_payer: entry.net_payer, entreprise: entry.entreprise, poste: entry.poste, commercial: entry.commercial };
   if (idx >= 0) {
-    // Mettre à jour les infos de base.
-    // IMPORTANT : si l'entrée a un EMAIL (match fiable par email), on peut rafraîchir
-    // le nom/prénom depuis la simu. En revanche si on a retrouvé le candidat par
-    // NOM/PRÉNOM (pas d'email), on NE touche PAS à son nom/prénom existant : sinon
-    // une inversion ou faute de frappe du commercial écraserait la fiche de référence.
-    var matchedByEmail = !!(entry.email && (entry.email||'').trim());
+    // Déterminer COMMENT on a matché : par email candidat réel, ou par nom.
+    // L'email de la simu peut être celui du CLIENT → il ne faut PAS le prendre
+    // pour l'email du candidat dans ce cas.
+    var candEmailExisting = (cands[idx].email || '').trim().toLowerCase();
+    var entryEmail = (entry.email || '').trim().toLowerCase();
+    var matchedByEmail = !!(entryEmail && candEmailExisting && entryEmail === candEmailExisting);
+
+    // Nom/prénom : on ne les rafraîchit QUE si on a matché par email (fiable).
+    // Si on a matché par nom, on garde l'orthographe de référence de la fiche.
     if (matchedByEmail && entry.consultant) {
       var _np = _splitFullName(entry.consultant);
-      // On ne met à jour que si non vide (évite d'effacer un nom existant)
       if (_np.prenom) cands[idx].prenom = _np.prenom;
       if (_np.nom)    cands[idx].nom = _np.nom;
     }
-    cands[idx].email = entry.email || cands[idx].email;
+    // Email : on ne renseigne l'email du candidat QUE s'il est vide ET que la simu
+    // a un email. ATTENTION : comme l'email de la simu PEUT être celui du client,
+    // on ne le met que si le candidat n'a aucun email (mieux que rien), et jamais
+    // on n'écrase un email candidat déjà présent.
+    if (!candEmailExisting && entryEmail) {
+      cands[idx].email = entry.email;
+    }
     // Mettre à jour les infos supplémentaires uniquement si vides localement
     if (!cands[idx].tel && entry.tel) cands[idx].tel = entry.tel;
     if (!cands[idx].civilite && entry.civilite) cands[idx].civilite = entry.civilite;
@@ -11914,7 +11922,7 @@ function renderCandidats() {
         var _se = (s.email||'').trim().toLowerCase();
         var _m = false;
         if (_cEmail && _se && _se === _cEmail) _m = true;
-        if (!_m && _ck && typeof _splitFullName === 'function' && (!_se || (_cEmail && _se === _cEmail))) {
+        if (!_m && _ck && typeof _splitFullName === 'function') {
           var _np = _splitFullName(s.consultant);
           if (_personKey(_np.prenom, _np.nom) === _ck) _m = true;
         }
@@ -23044,7 +23052,7 @@ function buildCandFicheHTML(cand) {
     // Colonne gauche : onglets
     + '<div style="flex:1;min-width:0;border-right:2px solid #F0EDF9;">'
     + '<div style="display:flex;align-items:center;border-bottom:2px solid #E4E0FA;padding:0 20px;background:#fff;overflow-x:auto;white-space:nowrap;">'
-    + '<button data-tab="simulations" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-simulations" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#7343EE;border-bottom:2px solid #7343EE;margin-bottom:-2px;cursor:pointer;">&#128200; Simulations (' + (function(){ var e=(cand.email||'').trim().toLowerCase(); var h=(typeof getHistory==='function'?getHistory():[]); var ck=(typeof _personKey==='function')?_personKey(cand.prenom,cand.nom):''; var seen={}; var n=0; h.forEach(function(s){ if(!s)return; var se=(s.email||'').trim().toLowerCase(); var m=false; if(e&&se&&se===e)m=true; if(!m&&ck&&typeof _splitFullName==='function'&&(!se||(e&&se===e))){ var np=_splitFullName(s.consultant); if(_personKey(np.prenom,np.nom)===ck)m=true; } if(m&&!seen[s.timestamp]){seen[s.timestamp]=1;n++;} }); if(!n&&(cand.simulations||[]).length)n=(cand.simulations||[]).length; return n; })() + ')</button>'
+    + '<button data-tab="simulations" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-simulations" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#7343EE;border-bottom:2px solid #7343EE;margin-bottom:-2px;cursor:pointer;">&#128200; Simulations (' + (function(){ var e=(cand.email||'').trim().toLowerCase(); var h=(typeof getHistory==='function'?getHistory():[]); var ck=(typeof _personKey==='function')?_personKey(cand.prenom,cand.nom):''; var seen={}; var n=0; h.forEach(function(s){ if(!s)return; var se=(s.email||'').trim().toLowerCase(); var m=false; if(e&&se&&se===e)m=true; if(!m&&ck&&typeof _splitFullName==='function'){ var np=_splitFullName(s.consultant); if(_personKey(np.prenom,np.nom)===ck)m=true; } if(m&&!seen[s.timestamp]){seen[s.timestamp]=1;n++;} }); if(!n&&(cand.simulations||[]).length)n=(cand.simulations||[]).length; return n; })() + ')</button>'
     + '<button data-tab="placements" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-placements" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128203; Placements (' + (function(){ var e=(cand.email||'').toLowerCase(); var fn=((cand.prenom||'')+' '+(cand.nom||'')).trim().toLowerCase(); return (typeof getDeals==='function' ? getDeals() : []).filter(function(d){ return (d.email||'').toLowerCase()===e || ((d.prenom||'')+' '+(d.nom||'')).trim().toLowerCase()===fn; }).length; })() + ')</button>'
     + '<button data-tab="avances" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-avances" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128182; Avances (' + (typeof getAvances==='function' ? getAvances().filter(function(a){ return a.candidat_id === cand.id; }).length : 0) + ')</button>'
     + '<button data-tab="documents" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-documents" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128196; Documents</button>'
@@ -23482,16 +23490,15 @@ function buildCandSimsHTML(cand) {
     if (!s) return;
     var sEmail = (s.email || '').trim().toLowerCase();
     var match = false;
-    // 1) match par email
+    // 1) match par email candidat (si l'email de la simu == email du candidat)
     if (email && sEmail && sEmail === email) match = true;
-    // 2) match par nom/prénom (pour les simus sans email, ou si email absent côté candidat)
+    // 2) match par nom/prénom — SANS condition sur l'email de la simu.
+    //    Important : l'email d'une simu peut être celui du CLIENT (destinataire),
+    //    pas du candidat. On rattache donc dès que le nom correspond, quel que soit
+    //    l'email porté par la simu.
     if (!match && candKey && typeof _splitFullName === 'function') {
-      // on ne capte par nom que les simus qui N'ONT PAS un autre email
-      // (une simu avec un email différent appartient à quelqu'un d'autre)
-      if (!sEmail || (email && sEmail === email)) {
-        var np = _splitFullName(s.consultant);
-        if (_personKey(np.prenom, np.nom) === candKey) match = true;
-      }
+      var np = _splitFullName(s.consultant);
+      if (_personKey(np.prenom, np.nom) === candKey) match = true;
     }
     if (match && !seen[s.timestamp]) {
       seen[s.timestamp] = 1;
