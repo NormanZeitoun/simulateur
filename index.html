@@ -1842,7 +1842,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div style="display:flex;align-items:center;gap:8px;"><button class="back-btn" onclick="mainNavTo('mission')">&#8592; Retour</button><div style="font-size:13px;font-weight:700;color:#1A1033;">&#128100; Candidats</div></div>
         <div style="display:flex;align-items:center;gap:10px;">
           <span id="cand-count" style="font-size:11px;color:#6B5E9C;"></span>
-          <button onclick="openNettoyageDoublons()" title="Détecte les fiches candidat créées par erreur avec un email CLIENT et propose de les supprimer (les simulations restent rattachées au client)" style="padding:7px 12px;background:#FFF3CD;color:#8A5F00;border:1.5px solid #F0CE8A;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">🧹 Nettoyer doublons</button>
           <button onclick="openNewCandidatPopup()" style="padding:7px 14px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">+ Nouveau candidat</button>
         </div>
       </div>
@@ -11239,120 +11238,6 @@ function _findCandidatIdx(cands, entry) {
   return cands.findIndex(function(c){
     return _personKey(c.prenom, c.nom) === entKey;
   });
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// NETTOYAGE des fiches candidat créées par erreur avec un EMAIL CLIENT
-// ═══════════════════════════════════════════════════════════════════
-// Contexte : un ancien bug enregistrait l'email du CLIENT comme email du
-// candidat → création de fiches candidat erronées (doublons). Cette fonction
-// les détecte (email candidat = un email client/manager connu) et propose de
-// les SUPPRIMER après validation. Les simulations ne sont pas touchées : elles
-// restent dans l'Historique et rattachées au client ; les vraies simus du bon
-// candidat réapparaissent via le matching par nom.
-function _collectClientEmails() {
-  var set = {};
-  // 1) emails clients des entrées d'historique
-  (typeof getHistory === 'function' ? getHistory() : []).forEach(function(h){
-    var ec = (h && h.email_client || '').trim().toLowerCase();
-    if (ec) set[ec] = true;
-  });
-  // 2) emails des managers dans les fiches clients
-  (typeof getClients === 'function' ? getClients() : []).forEach(function(cl){
-    (cl.managers||[]).forEach(function(m){
-      var me = (m && m.email || '').trim().toLowerCase();
-      if (me) set[me] = true;
-    });
-  });
-  return set;
-}
-
-function _findCandidatsAvecEmailClient() {
-  var clientEmails = _collectClientEmails();
-  var cands = (typeof getCandidats === 'function') ? getCandidats() : [];
-  var suspects = [];
-  cands.forEach(function(c){
-    if (!c || c._deleted) return;
-    var em = (c.email || '').trim().toLowerCase();
-    if (em && clientEmails[em]) {
-      // Cette fiche candidat porte un email qui est en réalité un email client
-      suspects.push(c);
-    }
-  });
-  return suspects;
-}
-
-function openNettoyageDoublons() {
-  var suspects = _findCandidatsAvecEmailClient();
-  var existing = document.getElementById('nettoyage-doublons-modal');
-  if (existing) existing.remove();
-
-  var modal = document.createElement('div');
-  modal.id = 'nettoyage-doublons-modal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(20,10,60,0.55);backdrop-filter:blur(4px);z-index:10000;display:flex;align-items:center;justify-content:center;padding:30px 16px;overflow-y:auto;';
-
-  var inner = '<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(20,10,60,0.4);width:96%;max-width:640px;max-height:calc(100vh - 60px);overflow-y:auto;">'
-    + '<div style="background:linear-gradient(135deg,#C98A00,#8A5F00);color:#fff;padding:16px 22px;border-radius:14px 14px 0 0;display:flex;align-items:center;justify-content:space-between;">'
-    +   '<div><div style="font-size:16px;font-weight:800;">🧹 Nettoyage des doublons</div>'
-    +   '<div style="font-size:12px;opacity:0.92;margin-top:2px;">Fiches candidat créées par erreur avec un email CLIENT</div></div>'
-    +   '<button onclick="document.getElementById(\'nettoyage-doublons-modal\').remove()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;font-size:20px;cursor:pointer;width:32px;height:32px;border-radius:50%;">×</button>'
-    + '</div>'
-    + '<div style="padding:20px 22px;">';
-
-  if (!suspects.length) {
-    inner += '<div style="text-align:center;color:#1D9E75;font-size:14px;padding:24px 0;">✓ Aucune fiche candidat suspecte détectée.<br><span style="font-size:12px;color:#9E94C4;">Aucune fiche ne porte un email qui serait en réalité un email client.</span></div>'
-      + '<div style="text-align:right;"><button onclick="document.getElementById(\'nettoyage-doublons-modal\').remove()" style="padding:9px 18px;background:#F0EDF9;color:#6B5E9C;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;">Fermer</button></div>';
-  } else {
-    inner += '<div style="background:#FFF8E1;border:1px solid #F0CE8A;border-radius:8px;padding:11px 14px;margin-bottom:16px;font-size:12px;color:#8A5F00;line-height:1.55;">'
-      + '<strong>' + suspects.length + ' fiche(s) suspecte(s)</strong> dont l\'email est en réalité un email client.<br>'
-      + 'Cochez celles à <strong>supprimer</strong>. Les simulations ne sont PAS supprimées : elles restent dans l\'Historique et rattachées au client. Les vraies simulations du bon candidat réapparaissent automatiquement par le nom.</div>';
-    suspects.forEach(function(c){
-      var nom = ((c.prenom||'') + ' ' + (c.nom||'')).trim() || '(sans nom)';
-      var nbSims = (c.simulations||[]).length;
-      inner += '<label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid #E4E0FA;border-radius:8px;margin-bottom:8px;cursor:pointer;background:#FAFAFF;">'
-        + '<input type="checkbox" class="nett-doublon-chk" data-cid="' + c.id + '" checked style="width:16px;height:16px;margin-top:2px;cursor:pointer;">'
-        + '<div style="flex:1;font-size:12.5px;">'
-        +   '<div style="font-weight:700;color:#1A1033;">' + nom.replace(/</g,'&lt;') + ' <span style="font-weight:500;color:#9E94C4;">· ' + nbSims + ' simu(s)</span></div>'
-        +   '<div style="color:#A8322A;font-size:11.5px;margin-top:2px;">📧 ' + (c.email||'').replace(/</g,'&lt;') + ' <span style="color:#9E94C4;">(email client détecté)</span></div>'
-        +   '<div style="color:#6B5E9C;font-size:11px;margin-top:1px;">Statut : ' + (c.statut_portage||'—') + ' · Commercial : ' + (c.commercial||'—') + '</div>'
-        + '</div></label>';
-    });
-    inner += '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">'
-      + '<button onclick="document.getElementById(\'nettoyage-doublons-modal\').remove()" style="padding:9px 18px;background:#F0EDF9;color:#6B5E9C;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;">Annuler</button>'
-      + '<button onclick="confirmNettoyageDoublons()" style="padding:9px 22px;background:linear-gradient(135deg,#C98A00,#8A5F00);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;">🗑 Supprimer les fiches cochées</button>'
-      + '</div>';
-  }
-  inner += '</div></div>';
-  modal.innerHTML = inner;
-  document.body.appendChild(modal);
-}
-
-function confirmNettoyageDoublons() {
-  var checks = document.querySelectorAll('.nett-doublon-chk:checked');
-  if (!checks.length) { alert('Aucune fiche cochée.'); return; }
-  var ids = {};
-  checks.forEach(function(chk){ ids[String(chk.dataset.cid)] = true; });
-
-  if (!confirm('Supprimer ' + checks.length + ' fiche(s) candidat ?\n\nLes simulations ne seront pas supprimées (elles restent dans l\'Historique et rattachées au client).')) return;
-
-  var cands = (typeof getCandidats === 'function') ? getCandidats() : [];
-  var nbSuppr = 0;
-  var kept = cands.filter(function(c){
-    if (c && ids[String(c.id)]) {
-      nbSuppr++;
-      if (typeof addTombstone === 'function') { try { addTombstone('candidats', c.id); } catch(e){} }
-      return false; // on retire cette fiche
-    }
-    return true;
-  });
-  if (typeof saveCandidatsArr === 'function') saveCandidatsArr(kept);
-
-  var modal = document.getElementById('nettoyage-doublons-modal');
-  if (modal) modal.remove();
-  if (typeof renderCandidats === 'function') { try { renderCandidats(); } catch(e){} }
-  if (typeof odAutoSync === 'function') { try { odAutoSync(); } catch(e){} }
-  if (typeof showNotifToast === 'function') showNotifToast('✓ ' + nbSuppr + ' fiche(s) supprimée(s)');
-  else alert(nbSuppr + ' fiche(s) supprimée(s).');
 }
 
 function saveCandidatFromEntry(entry) {
