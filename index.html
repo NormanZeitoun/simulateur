@@ -24542,9 +24542,13 @@ function mergeCandidats(remote) {
       var remoteUpdated = rc.updated_at || _parseFRDate(rc.updated) || 0;
       if (remoteUpdated > localUpdated) {
         // Champs à propager si remote est plus récent (sans toucher aux simulations/documents déjà gérés)
-        var simpleFields = ['prenom', 'nom', 'tel', 'poste', 'profil', 'techno', 'ville',
+        // FIX SYNC : email, statut_portage et commentaire ont longtemps été oubliés
+        // de cette liste — résultat : leurs modifs ne se propageaient pas entre commerciaux
+        // (la fiche locale gardait son ancien email même quand un collègue le corrigeait).
+        var simpleFields = ['prenom', 'nom', 'email', 'tel', 'poste', 'profil', 'techno', 'ville',
                             'linkedin', 'tjm_actuel', 'entreprise', 'commercial', 'secteur',
-                            'civilite', 'disponibilite', 'anniversaire', 'statut', 'updated', 'updated_at'];
+                            'civilite', 'disponibilite', 'anniversaire', 'statut', 'statut_portage',
+                            'commentaire', 'updated', 'updated_at'];
         simpleFields.forEach(function(f){
           if (rc[f] !== undefined && rc[f] !== null && rc[f] !== '') {
             localMatch[f] = rc[f];
