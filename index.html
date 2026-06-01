@@ -12306,6 +12306,21 @@ function renderCandidats() {
     el.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:#9E9E9E;font-size:13px;">Aucun candidat trouvé.</div>';
     return;
   }
+  // ── Tri par défaut : ordre alphabétique sur le NOM (puis prénom en départage).
+  // localeCompare avec sensitivity 'base' : insensible à la casse ET aux accents
+  // (Élise et Elise au même niveau, Côté avant Coutu, etc.).
+  cands.sort(function(a, b) {
+    var nA = (a.nom || '').trim().toLowerCase();
+    var nB = (b.nom || '').trim().toLowerCase();
+    // Fiches sans nom : envoyées en fin de liste
+    if (!nA && nB) return 1;
+    if (nA && !nB) return -1;
+    var c = nA.localeCompare(nB, 'fr', { sensitivity: 'base' });
+    if (c !== 0) return c;
+    var pA = (a.prenom || '').trim().toLowerCase();
+    var pB = (b.prenom || '').trim().toLowerCase();
+    return pA.localeCompare(pB, 'fr', { sensitivity: 'base' });
+  });
   var statutCfg = {
     'Non Attribué':       { color:'#4A4068', bg:'#EEEBF7' },
     'Prospect':           { color:'#9AA0A6', bg:'#F5F5F5' },
