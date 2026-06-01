@@ -4961,6 +4961,7 @@ function buildSimCard(sim, q) {
   html += '<button class="hist-btn new-ver" onclick="newVersionSim(' + ts + ')">+ Version</button>';
   html += '<button style="padding:4px 10px;border:none;border-radius:6px;background:#1D9E75;color:#fff;font-size:11px;font-weight:600;cursor:pointer;" onclick="openPlacementPopup(' + ts + ')">&#128203; Placement</button>';
   html += '<button style="padding:4px 10px;border:none;border-radius:6px;background:#E24B4A;color:#fff;font-size:11px;font-weight:600;cursor:pointer;" onclick="openSortiePopup(' + ts + ')">&#128683; Sortie</button>';
+  html += '<button style="padding:4px 10px;border:none;border-radius:6px;background:#7343EE;color:#fff;font-size:11px;font-weight:600;cursor:pointer;" onclick="openMoveSimPopup(' + ts + ')" title="D\u00e9placer cette simulation vers un autre candidat ou client">&#8644; D\u00e9placer</button>';
   html += '<button class="hist-btn del" onclick="deleteSim(' + ts + ')">&#128465;</button>';
   html += '</div></div>';
   return html;
@@ -5899,6 +5900,413 @@ function deleteSim(ts) {
 
   // 4. Sync OneDrive pour propager la suppression à toute l'équipe
   if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+// ═══════════════════════════════════════════════════════════
+// DÉPLACER UNE SIMULATION vers un autre candidat / client
+// ═══════════════════════════════════════════════════════════
+// Ouvre une popup permettant de réattribuer une simulation existante :
+//   - soit vers un autre candidat (met à jour consultant, email candidat,
+//     civilité, tel, et déplace la simRef du candidat source au candidat
+//     cible) ;
+//   - soit vers un client (met à jour le champ entreprise de l'entry).
+// Dans tous les cas un updated_at (timestamp ms) est posé sur l'entry
+// pour que la sync OneDrive last-writer-wins propage la modification.
+// ═══════════════════════════════════════════════════════════
+function openMoveSimPopup(ts) {
+  var hist = getHistory();
+  var entry = hist.find(function(h){ return h.timestamp === ts; });
+  if (!entry) { alert('Simulation introuvable.'); return; }
+
+  // Supprimer une éventuelle popup existante
+  var existing = document.getElementById('modal-move-sim');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'modal-move-sim';
+  modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3300;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;';
+
+  var LBL = 'font-size:10.5px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em;';
+  var INP = 'width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;font-family:inherit;';
+
+  // Récap de la simu
+  var dateStr = (entry.date || '') + ' ' + (entry.heure || '');
+  var recapHtml = ''
+    + '<div style="background:#F5F3FF;border:1px solid #E4E0FA;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;">'
+    +   '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#7343EE;margin-bottom:5px;">Simulation \u00e0 d\u00e9placer</div>'
+    +   '<div><strong>Candidat actuel :</strong> ' + (entry.consultant || '\u2014') + (entry.email_candidat_reel ? ' (' + entry.email_candidat_reel + ')' : '') + '</div>'
+    +   '<div><strong>Entreprise actuelle :</strong> ' + (entry.entreprise || '\u2014') + '</div>'
+    +   '<div><strong>Date :</strong> ' + dateStr + '  &middot;  <strong>TJM :</strong> ' + (entry.tjm || '\u2014') + ' \u20ac/j</div>'
+    + '</div>';
+
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:560px;width:100%;margin:auto;">'
+    +   '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 22px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border-radius:12px 12px 0 0;">'
+    +     '<div>'
+    +       '<div style="font-size:17px;font-weight:800;">\u2194 D\u00e9placer la simulation</div>'
+    +       '<div style="font-size:11.5px;opacity:0.88;margin-top:3px;">R\u00e9attribuer cette simulation \u00e0 un autre candidat ou client</div>'
+    +     '</div>'
+    +     '<button onclick="document.getElementById(\'modal-move-sim\').remove()" style="background:none;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1;opacity:0.85;">\u00d7</button>'
+    +   '</div>'
+    +   '<div style="padding:20px 24px;">'
+    +     recapHtml
+    +     '<div style="display:flex;gap:8px;margin-bottom:14px;">'
+    +       '<button id="ms-tab-cand" onclick="msSwitchTab(\'cand\')" style="flex:1;padding:10px;border:1.5px solid #7343EE;border-radius:8px;background:#7343EE;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;">\ud83d\udc64 Vers un candidat</button>'
+    +       '<button id="ms-tab-cli"  onclick="msSwitchTab(\'cli\')"  style="flex:1;padding:10px;border:1.5px solid #E4E0FA;border-radius:8px;background:#fff;color:#6B5E9C;font-size:12.5px;font-weight:700;cursor:pointer;">\ud83c\udfe2 Vers un client</button>'
+    +     '</div>'
+    +     '<div id="ms-pane-cand">'
+    +       '<label style="' + LBL + '">Rechercher un candidat (nom, pr\u00e9nom ou email)</label>'
+    +       '<input id="ms-search-cand" type="text" style="' + INP + '" placeholder="Tapez 2 caract\u00e8res minimum..." oninput="msFilterCands(this.value)" autocomplete="off">'
+    +       '<div id="ms-list-cand" style="max-height:240px;overflow-y:auto;margin-top:8px;border:1px solid #E4E0FA;border-radius:7px;background:#FAFAFC;"></div>'
+    +       '<input type="hidden" id="ms-selected-cand-id" value="">'
+    +       '<div id="ms-selected-cand-info" style="margin-top:10px;padding:10px;background:#E8FFF4;border:1px solid #1D9E75;border-radius:7px;font-size:12px;display:none;"></div>'
+    +     '</div>'
+    +     '<div id="ms-pane-cli" style="display:none;">'
+    +       '<label style="' + LBL + '">Rechercher un client (nom de l\'entreprise)</label>'
+    +       '<input id="ms-search-cli" type="text" style="' + INP + '" placeholder="Tapez 2 caract\u00e8res minimum..." oninput="msFilterClients(this.value)" autocomplete="off">'
+    +       '<div id="ms-list-cli" style="max-height:240px;overflow-y:auto;margin-top:8px;border:1px solid #E4E0FA;border-radius:7px;background:#FAFAFC;"></div>'
+    +       '<input type="hidden" id="ms-selected-cli-id" value="">'
+    +       '<div id="ms-selected-cli-info" style="margin-top:10px;padding:10px;background:#E8FFF4;border:1px solid #1D9E75;border-radius:7px;font-size:12px;display:none;"></div>'
+    +     '</div>'
+    +     '<div style="display:flex;gap:10px;margin-top:18px;justify-content:flex-end;">'
+    +       '<button onclick="document.getElementById(\'modal-move-sim\').remove()" style="padding:10px 16px;border:1.5px solid #E4E0FA;border-radius:7px;background:#fff;color:#6B5E9C;font-size:12.5px;font-weight:700;cursor:pointer;">Annuler</button>'
+    +       '<button id="ms-validate-btn" onclick="msValidate(' + ts + ')" style="padding:10px 20px;border:none;border-radius:7px;background:#7343EE;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;opacity:0.5;" disabled>Valider le d\u00e9placement</button>'
+    +     '</div>'
+    +   '</div>'
+    + '</div>';
+
+  document.body.appendChild(modal);
+  // État initial : onglet candidat actif, liste avec les 30 premiers
+  window._msMode = 'cand';
+  msFilterCands('');
+}
+
+function msSwitchTab(mode) {
+  window._msMode = mode;
+  var btnC = document.getElementById('ms-tab-cand');
+  var btnL = document.getElementById('ms-tab-cli');
+  var paneC = document.getElementById('ms-pane-cand');
+  var paneL = document.getElementById('ms-pane-cli');
+  if (mode === 'cand') {
+    btnC.style.background = '#7343EE'; btnC.style.color = '#fff'; btnC.style.borderColor = '#7343EE';
+    btnL.style.background = '#fff';    btnL.style.color = '#6B5E9C'; btnL.style.borderColor = '#E4E0FA';
+    paneC.style.display = 'block';
+    paneL.style.display = 'none';
+  } else {
+    btnL.style.background = '#7343EE'; btnL.style.color = '#fff'; btnL.style.borderColor = '#7343EE';
+    btnC.style.background = '#fff';    btnC.style.color = '#6B5E9C'; btnC.style.borderColor = '#E4E0FA';
+    paneL.style.display = 'block';
+    paneC.style.display = 'none';
+    // Charger la liste clients si pas encore fait
+    var listCli = document.getElementById('ms-list-cli');
+    if (listCli && !listCli.innerHTML) msFilterClients('');
+  }
+  msUpdateValidateBtn();
+}
+
+function msFilterCands(query) {
+  var listEl = document.getElementById('ms-list-cand');
+  if (!listEl) return;
+  var q = (query || '').trim().toLowerCase();
+  var cands = (typeof getCandidats === 'function') ? getCandidats() : [];
+  cands = cands.filter(function(c){ return c && !c._deleted; });
+  var filtered;
+  if (q.length < 2) {
+    filtered = cands.slice(0, 30);
+  } else {
+    filtered = cands.filter(function(c){
+      var fields = [(c.prenom||''), (c.nom||''), (c.email||''), (c.entreprise||''), (c.tel||'')].map(function(v){ return String(v).toLowerCase(); });
+      return fields.some(function(f){ return f.indexOf(q) >= 0; });
+    }).slice(0, 50);
+  }
+  if (!filtered.length) {
+    listEl.innerHTML = '<div style="padding:14px;text-align:center;color:#9E9E9E;font-size:12px;">Aucun candidat trouv\u00e9.</div>';
+    return;
+  }
+  var html = '';
+  filtered.forEach(function(c){
+    var nom = ((c.prenom||'') + ' ' + (c.nom||'')).trim() || '(sans nom)';
+    var email = c.email || '';
+    var entreprise = c.entreprise || '';
+    html += '<div onclick="msSelectCand(' + c.id + ')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #EEE;font-size:12px;" onmouseover="this.style.background=\'#F0EDFF\'" onmouseout="this.style.background=\'transparent\'">'
+      + '<div style="font-weight:600;color:#1A1033;">' + nom + '</div>'
+      + '<div style="font-size:11px;color:#6B5E9C;margin-top:2px;">' + (email || '\u2014') + (entreprise ? ' &middot; ' + entreprise : '') + '</div>'
+      + '</div>';
+  });
+  listEl.innerHTML = html;
+}
+
+function msSelectCand(candId) {
+  document.getElementById('ms-selected-cand-id').value = String(candId);
+  var cand = (typeof getCandidats === 'function' ? getCandidats() : []).find(function(c){ return c && c.id === candId; });
+  var info = document.getElementById('ms-selected-cand-info');
+  if (cand && info) {
+    var nom = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim() || '(sans nom)';
+    info.style.display = 'block';
+    info.innerHTML = '<strong>\u2705 Candidat s\u00e9lectionn\u00e9 :</strong> ' + nom
+      + (cand.email ? '<br><strong>Email :</strong> ' + cand.email : '')
+      + (cand.tel ? '<br><strong>T\u00e9l :</strong> ' + cand.tel : '')
+      + (cand.civilite ? '<br><strong>Civilit\u00e9 :</strong> ' + cand.civilite : '');
+  }
+  msUpdateValidateBtn();
+}
+
+function msFilterClients(query) {
+  var listEl = document.getElementById('ms-list-cli');
+  if (!listEl) return;
+  var q = (query || '').trim().toLowerCase();
+  var clients = (typeof getClients === 'function') ? getClients() : [];
+  var filtered;
+  if (q.length < 2) {
+    filtered = clients.slice(0, 30);
+  } else {
+    filtered = clients.filter(function(c){
+      var fields = [(c.name||''), (c.secteur||''), (c.siret||'')].map(function(v){ return String(v).toLowerCase(); });
+      return fields.some(function(f){ return f.indexOf(q) >= 0; });
+    }).slice(0, 50);
+  }
+  if (!filtered.length) {
+    listEl.innerHTML = '<div style="padding:14px;text-align:center;color:#9E9E9E;font-size:12px;">Aucun client trouv\u00e9.</div>';
+    return;
+  }
+  var html = '';
+  filtered.forEach(function(c){
+    var name = c.name || '(sans nom)';
+    var nbMgr = (c.managers && c.managers.length) || 0;
+    html += '<div onclick="msSelectClient(' + c.id + ')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #EEE;font-size:12px;" onmouseover="this.style.background=\'#F0EDFF\'" onmouseout="this.style.background=\'transparent\'">'
+      + '<div style="font-weight:600;color:#1A1033;">' + name + '</div>'
+      + '<div style="font-size:11px;color:#6B5E9C;margin-top:2px;">' + (c.secteur || '\u2014') + ' &middot; ' + nbMgr + ' manager(s)</div>'
+      + '</div>';
+  });
+  listEl.innerHTML = html;
+}
+
+function msSelectClient(cliId) {
+  document.getElementById('ms-selected-cli-id').value = String(cliId);
+  var cli = (typeof getClients === 'function' ? getClients() : []).find(function(c){ return c && c.id === cliId; });
+  var info = document.getElementById('ms-selected-cli-info');
+  if (cli && info) {
+    info.style.display = 'block';
+    info.innerHTML = '<strong>\u2705 Client s\u00e9lectionn\u00e9 :</strong> ' + (cli.name || '(sans nom)')
+      + (cli.secteur ? '<br><strong>Secteur :</strong> ' + cli.secteur : '')
+      + (cli.managers && cli.managers.length ? '<br><strong>Managers :</strong> ' + cli.managers.length : '');
+  }
+  msUpdateValidateBtn();
+}
+
+function msUpdateValidateBtn() {
+  var btn = document.getElementById('ms-validate-btn');
+  if (!btn) return;
+  var mode = window._msMode || 'cand';
+  var selected = mode === 'cand'
+    ? document.getElementById('ms-selected-cand-id').value
+    : document.getElementById('ms-selected-cli-id').value;
+  if (selected) {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+  } else {
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+  }
+}
+
+function msValidate(ts) {
+  var mode = window._msMode || 'cand';
+  if (mode === 'cand') {
+    var cid = parseInt(document.getElementById('ms-selected-cand-id').value, 10);
+    if (!cid) { alert('S\u00e9lectionnez un candidat.'); return; }
+    moveSimToCandidat(ts, cid);
+  } else {
+    var clid = parseInt(document.getElementById('ms-selected-cli-id').value, 10);
+    if (!clid) { alert('S\u00e9lectionnez un client.'); return; }
+    moveSimToClient(ts, clid);
+  }
+}
+
+// Helper : retrouver le candidat actuellement rattaché à une simu.
+function _findSourceCandidatForSim(entry) {
+  var cands = (typeof getCandidats === 'function') ? getCandidats() : [];
+  var emailCand = (entry.email_candidat_reel || '').trim().toLowerCase();
+  if (emailCand) {
+    var byEmail = cands.find(function(c){ return c && !c._deleted && (c.email || '').trim().toLowerCase() === emailCand; });
+    if (byEmail) return byEmail;
+  }
+  var fullName = (entry.consultant || '').trim().toLowerCase();
+  if (fullName) {
+    var byName = cands.find(function(c){
+      if (!c || c._deleted) return false;
+      var n = ((c.prenom||'') + ' ' + (c.nom||'')).trim().toLowerCase();
+      return n === fullName;
+    });
+    if (byName) return byName;
+  }
+  var bySim = cands.find(function(c){
+    return c && !c._deleted && Array.isArray(c.simulations)
+      && c.simulations.some(function(s){ return s && s.timestamp === entry.timestamp; });
+  });
+  return bySim || null;
+}
+
+function moveSimToCandidat(ts, targetCandId) {
+  var hist = getHistory();
+  var idx = hist.findIndex(function(h){ return h.timestamp === ts; });
+  if (idx < 0) { alert('Simulation introuvable.'); return; }
+  var entry = hist[idx];
+
+  var cands = (typeof getCandidats === 'function') ? getCandidats() : [];
+  var targetIdx = cands.findIndex(function(c){ return c && c.id === targetCandId; });
+  if (targetIdx < 0) { alert('Candidat cible introuvable.'); return; }
+  var target = cands[targetIdx];
+
+  var source = _findSourceCandidatForSim(entry);
+
+  if (source && source.id === target.id) {
+    alert('Cette simulation est d\u00e9j\u00e0 rattach\u00e9e \u00e0 ce candidat.');
+    return;
+  }
+
+  var targetName = ((target.prenom||'') + ' ' + (target.nom||'')).trim() || '(sans nom)';
+  var sourceName = source ? (((source.prenom||'') + ' ' + (source.nom||'')).trim() || '(sans nom)') : '(aucun)';
+  if (!confirm('D\u00e9placer cette simulation de "' + sourceName + '" vers "' + targetName + '" ?\n\nLes infos candidat de la simu (nom, pr\u00e9nom, email, t\u00e9l, civilit\u00e9) seront mises \u00e0 jour.')) return;
+
+  var now = Date.now();
+
+  // 1. Mettre à jour l'entry avec les infos du candidat cible
+  entry.consultant = targetName;
+  entry.email_candidat_reel = target.email || '';
+  if (entry.dest === 'candidat' || entry.dest === 'les_deux') {
+    entry.email = target.email || entry.email;
+  }
+  if (target.civilite) entry.civilite = target.civilite;
+  if (target.tel) entry.tel = target.tel;
+  if (target.poste) entry.poste = target.poste;
+  entry.updated_at = now;
+
+  // 2. Recalculer la version (numéro de simu dans le dossier du nouveau candidat)
+  var sameConsultantSims = hist.filter(function(h, i){ return i !== idx && (h.consultant || '').trim() === targetName; });
+  entry.version = sameConsultantSims.length + 1;
+
+  hist[idx] = entry;
+  saveHistoryArr(hist);
+
+  // 3. Retirer la simRef du candidat source
+  var changed = false;
+  if (source) {
+    var sIdx = cands.findIndex(function(c){ return c && c.id === source.id; });
+    if (sIdx >= 0 && Array.isArray(cands[sIdx].simulations)) {
+      var beforeLen = cands[sIdx].simulations.length;
+      cands[sIdx].simulations = cands[sIdx].simulations.filter(function(s){ return s && s.timestamp !== ts; });
+      if (cands[sIdx].simulations.length !== beforeLen) {
+        cands[sIdx].updated = new Date().toLocaleDateString('fr-FR');
+        cands[sIdx].updated_at = now;
+        changed = true;
+      }
+    }
+  }
+
+  // 4. Ajouter la simRef au candidat cible (si pas déjà présente)
+  if (!Array.isArray(cands[targetIdx].simulations)) cands[targetIdx].simulations = [];
+  var alreadyHas = cands[targetIdx].simulations.some(function(s){ return s && s.timestamp === ts; });
+  if (!alreadyHas) {
+    var simRef = {
+      timestamp: entry.timestamp,
+      date: entry.date,
+      tjm: entry.tjm,
+      nb_jours: entry.nb_jours,
+      brut: entry.brut,
+      net_payer: entry.net_payer,
+      entreprise: entry.entreprise,
+      poste: entry.poste,
+      commercial: entry.commercial
+    };
+    cands[targetIdx].simulations.unshift(simRef);
+    cands[targetIdx].updated = new Date().toLocaleDateString('fr-FR');
+    cands[targetIdx].updated_at = now;
+    changed = true;
+  }
+
+  if (changed && typeof saveCandidatsArr === 'function') {
+    saveCandidatsArr(cands);
+  }
+
+  // 5. Fermer popup, rafraîchir vues
+  var modal = document.getElementById('modal-move-sim');
+  if (modal) modal.remove();
+  renderHistorique();
+  if (typeof renderCandidats === 'function') renderCandidats();
+
+  // 6. Sync OneDrive pour propager
+  if (typeof odAutoSync === 'function') odAutoSync();
+
+  if (typeof showNotifToast === 'function') {
+    showNotifToast('\u2705 Simulation d\u00e9plac\u00e9e vers ' + targetName);
+  }
+}
+
+function moveSimToClient(ts, targetClientId) {
+  var hist = getHistory();
+  var idx = hist.findIndex(function(h){ return h.timestamp === ts; });
+  if (idx < 0) { alert('Simulation introuvable.'); return; }
+  var entry = hist[idx];
+
+  var clients = (typeof getClients === 'function') ? getClients() : [];
+  var targetIdx = clients.findIndex(function(c){ return c && c.id === targetClientId; });
+  if (targetIdx < 0) { alert('Client cible introuvable.'); return; }
+  var target = clients[targetIdx];
+
+  var oldEntreprise = (entry.entreprise || '').trim();
+  var newEntreprise = (target.name || '').trim();
+  if (oldEntreprise.toLowerCase() === newEntreprise.toLowerCase()) {
+    alert('Cette simulation est d\u00e9j\u00e0 rattach\u00e9e \u00e0 ce client.');
+    return;
+  }
+
+  if (!confirm('Changer le client de cette simulation de "' + (oldEntreprise || '(aucun)') + '" vers "' + newEntreprise + '" ?')) return;
+
+  var now = Date.now();
+
+  // 1. Mettre à jour l'entry
+  entry.entreprise = newEntreprise;
+  entry.updated_at = now;
+
+  hist[idx] = entry;
+  saveHistoryArr(hist);
+
+  // 2. Mettre à jour la simRef chez le candidat rattaché
+  var source = _findSourceCandidatForSim(entry);
+  if (source && Array.isArray(source.simulations)) {
+    var allCands = getCandidats();
+    var srcIdx = allCands.findIndex(function(c){ return c && c.id === source.id; });
+    if (srcIdx >= 0) {
+      var sRefIdx = allCands[srcIdx].simulations.findIndex(function(s){ return s && s.timestamp === ts; });
+      if (sRefIdx >= 0) {
+        allCands[srcIdx].simulations[sRefIdx].entreprise = newEntreprise;
+        allCands[srcIdx].updated = new Date().toLocaleDateString('fr-FR');
+        allCands[srcIdx].updated_at = now;
+        if (typeof saveCandidatsArr === 'function') saveCandidatsArr(allCands);
+      }
+    }
+  }
+
+  // 3. Marquer le client comme mis à jour
+  target.updated = new Date().toLocaleDateString('fr-FR');
+  target.updated_at = now;
+  clients[targetIdx] = target;
+  if (typeof saveClientsArr === 'function') saveClientsArr(clients);
+
+  // 4. Fermer popup, rafraîchir
+  var modal = document.getElementById('modal-move-sim');
+  if (modal) modal.remove();
+  renderHistorique();
+  if (typeof renderCandidats === 'function') renderCandidats();
+  if (typeof renderClients === 'function') renderClients();
+
+  // 5. Sync OneDrive
+  if (typeof odAutoSync === 'function') odAutoSync();
+
+  if (typeof showNotifToast === 'function') {
+    showNotifToast('\u2705 Simulation r\u00e9attribu\u00e9e au client ' + newEntreprise);
+  }
 }
 
 // ── EXPORT / IMPORT / BACKUP ──────────────────────────────
@@ -23882,7 +24290,19 @@ function mergeHistorique(remote) {
   // Filtrer les tombstones : ne pas réimporter les simus supprimées
   remote.forEach(function(s) {
     if (typeof isTombstoned === 'function' && isTombstoned('simulations', s.timestamp)) return;
-    if (!tsMap[s.timestamp]) tsMap[s.timestamp] = s;
+    var existing = tsMap[s.timestamp];
+    if (!existing) {
+      tsMap[s.timestamp] = s;
+      return;
+    }
+    // Last-writer-wins basé sur updated_at (timestamp ms posé lors d'une
+    // modification, ex : déplacement vers un autre candidat/client).
+    // Si la version distante a un updated_at plus récent, elle écrase la locale.
+    var rUp = s.updated_at || 0;
+    var lUp = existing.updated_at || 0;
+    if (rUp > lUp) {
+      tsMap[s.timestamp] = s;
+    }
   });
   var merged = Object.values(tsMap).sort(function(a,b){ return (b.timestamp||0)-(a.timestamp||0); });
   saveHistoryArr(merged);
