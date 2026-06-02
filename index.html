@@ -1487,9 +1487,9 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       <div class="params-acc-header" onclick="toggleAcc('acc-frais')">Frais professionnels<span class="params-acc-arrow" id="acc-frais-arrow">&#9658;</span></div>
       <div class="params-acc-body" id="acc-frais">
       <div class="params-row"><label>Valeur TR Swile (€/jour)</label><input type="number" id="p_swile" value="14" step="0.5" onchange="calc()"></div>
-      <div class="params-row"><label>Forfait repas (€/jour)</label><input type="number" id="p_forfait_repas" value="21.10" step="0.10" onchange="calc()"></div>
-      <div class="params-row"><label>Grand déplacement IDF (€/jour)</label><input type="number" id="p_gd_idf" value="98.46" step="0.01" onchange="onContextChange()"></div>
-      <div class="params-row"><label>Grand déplacement autre départ. (€/jour)</label><input type="number" id="p_gd_autre" value="82.86" step="0.01" onchange="onContextChange()"></div>
+      <div class="params-row"><label>Forfait repas (€/jour)</label><input type="number" id="p_forfait_repas" value="21.40" step="0.10" onchange="calc()"></div>
+      <div class="params-row"><label>Grand déplacement IDF (€/jour)</label><input type="number" id="p_gd_idf" value="101.5" step="0.01" onchange="onContextChange()"></div>
+      <div class="params-row"><label>Grand déplacement autre départ. (€/jour)</label><input type="number" id="p_gd_autre" value="84.70" step="0.01" onchange="onContextChange()"></div>
       </div>
       </div>
       <div class="params-acc-header" onclick="toggleAcc('acc-ik')">Barèmes kilométriques (€/km)<span class="params-acc-arrow" id="acc-ik-arrow">&#9658;</span></div>
@@ -10931,7 +10931,7 @@ function getCellValue(d, key){
       // Mutuellement exclusif avec Swile/TR — uniquement si d.repas === 'Forfait'
       if (d.repas !== 'Forfait' && d.repas !== 'forfait') return '\u2014';
       var forfaitEl = document.getElementById('p_forfait_repas');
-      var forfaitVal = forfaitEl ? (parseFloat(forfaitEl.value) || 21.10) : 21.10;
+      var forfaitVal = forfaitEl ? (parseFloat(forfaitEl.value) || 21.40) : 21.40;
       return forfaitVal.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
     case 'km_aller':
       // Affiche l'indemnité km en €/j calculée depuis km_aller + puissance fiscale
@@ -11042,8 +11042,8 @@ function getCellValue(d, key){
       if (d.repas !== 'GD' && d.repas !== 'gd') return '\u2014';
       var gdIdfEl = document.getElementById('p_gd_idf');
       var gdAutreEl = document.getElementById('p_gd_autre');
-      var _tauxIdf   = gdIdfEl   ? (parseFloat(gdIdfEl.value)   || 98.46) : 98.46;
-      var _tauxAutre = gdAutreEl ? (parseFloat(gdAutreEl.value) || 82.86) : 82.86;
+      var _tauxIdf   = gdIdfEl   ? (parseFloat(gdIdfEl.value)   || 101.5) : 101.5;
+      var _tauxAutre = gdAutreEl ? (parseFloat(gdAutreEl.value) || 84.70) : 84.70;
       var _lieu = (d.gd_lieu || 'IDF').toString();
       var _taux;
       // FIX FRAIS : 4 modes possibles (IDF / autre / perso_idf / perso_autre)
@@ -11282,6 +11282,105 @@ window.addEventListener('mouseup', function(e) {
 // MODULE CANDIDATS
 // ═══════════════════════════════════════════════════════════
 var CAND_KEY = 'sp_candidats_v1';
+
+// FIX UI — Détermine si le candidat connaît son TJM, selon DEUX règles dans cet ordre :
+//   1. (PRIORITAIRE) la simulation LIÉE AU PLACEMENT ACTIF du candidat
+//      (deal non-Annulé et non-Sorti-des-effectifs, le plus récent par date_deal puis id).
+//      On lit en priorité deal.connait_tjm (figé au moment du placement et potentiellement
+//      modifié par le commercial), sinon on remonte via deal.sim_ts au snapshot de la simu source.
+//   2. (FALLBACK) la DERNIÈRE simulation envoyée (plus haut timestamp), même non liée à un deal.
+//      On lit la checkbox "sim-connait-tjm" dans snapshot._checkboxes.
+//
+// Retourne un objet : { value: 'Oui' | 'Non' | '', source: 'placement' | 'sim' | '' }
+//   - value '' = aucune info (pas de placement, pas de simu, ou simu sans checkbox enregistrée)
+//   - source = sert au tooltip pour afficher d'où vient la valeur affichée.
+//
+// Note sync/stockage : les valeurs viennent UNIQUEMENT de deal.connait_tjm (stocké dans
+// sp_deals_v1, mergé via mergeDeals avec updated_at) OU de sim.snapshot (stocké dans
+// sp_historique_v3, mergé via mergeHistorique). Aucun nouveau champ stocké côté candidat
+// (sp_candidats_v1) — donc rien à ajouter aux merges ni aux fonctions de save.
+function _candConnaitTjm(cand) {
+  var EMPTY = { value: '', source: '' };
+  if (!cand) return EMPTY;
+
+  // ── RÈGLE 1 : placement actif ────────────────────────────────
+  if (typeof getDeals === 'function') {
+    var deals = getDeals();
+    var cEmail = (cand.email || '').trim().toLowerCase();
+    var cFullName = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim().toLowerCase();
+    var candDeals = deals.filter(function(d){
+      if (!d) return false;
+      if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return false;
+      var dEmail = (d.email || '').toLowerCase();
+      var dFullName = ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase();
+      if (cEmail && dEmail && dEmail === cEmail) return true;
+      if (cFullName && dFullName === cFullName) return true;
+      return false;
+    });
+    // Tri : date_deal desc, fallback id desc (le plus récent en premier)
+    candDeals.sort(function(a, b){
+      var dA = a.date_deal ? new Date(a.date_deal).getTime() : 0;
+      var dB = b.date_deal ? new Date(b.date_deal).getTime() : 0;
+      if (dA !== dB) return dB - dA;
+      return (b.id||0) - (a.id||0);
+    });
+    if (candDeals.length > 0) {
+      var topDeal = candDeals[0];
+      // Cas a : le deal a explicitement la valeur (champ pl-connait-tjm renseigné)
+      if (topDeal.connait_tjm === 'Oui' || topDeal.connait_tjm === 'Non') {
+        return { value: topDeal.connait_tjm, source: 'placement' };
+      }
+      // Cas b : le deal n'a pas la valeur, mais on peut remonter à la simu source
+      if (topDeal.sim_ts && typeof getHistory === 'function') {
+        var histForDeal = getHistory();
+        var simSource = null;
+        for (var i = 0; i < histForDeal.length; i++) {
+          if (histForDeal[i] && histForDeal[i].timestamp === topDeal.sim_ts) { simSource = histForDeal[i]; break; }
+        }
+        if (simSource && simSource.snapshot && simSource.snapshot._checkboxes
+            && typeof simSource.snapshot._checkboxes['sim-connait-tjm'] !== 'undefined') {
+          return {
+            value: simSource.snapshot._checkboxes['sim-connait-tjm'] ? 'Oui' : 'Non',
+            source: 'placement'  // origine logique = placement (puisque c'est la simu de CE placement)
+          };
+        }
+      }
+      // Cas c : il y a un placement mais l'info est introuvable → on NE bascule PAS
+      // sur la "dernière simulation envoyée", car cela contredirait la règle "placement domine".
+      // On retourne vide pour ne pas afficher d'info trompeuse.
+      return EMPTY;
+    }
+  }
+
+  // ── RÈGLE 2 (fallback) : dernière simulation envoyée ─────────
+  var hist = (typeof getHistory === 'function') ? getHistory() : [];
+  if (!hist.length) return EMPTY;
+  var cEmail2 = (cand.email || '').trim().toLowerCase();
+  var ck = (typeof _personKey === 'function') ? _personKey(cand.prenom, cand.nom) : '';
+  var lastSim = null;
+  hist.forEach(function(s){
+    if (!s) return;
+    var se = (s.email || '').trim().toLowerCase();
+    var match = false;
+    if (cEmail2 && se && se === cEmail2) match = true;
+    if (!match && ck && typeof _splitFullName === 'function') {
+      var np = _splitFullName(s.consultant);
+      if (_personKey(np.prenom, np.nom) === ck) match = true;
+    }
+    if (match) {
+      if (!lastSim || (s.timestamp||0) > (lastSim.timestamp||0)) lastSim = s;
+    }
+  });
+  if (!lastSim) return EMPTY;
+  var snap = lastSim.snapshot;
+  if (snap && snap._checkboxes && typeof snap._checkboxes['sim-connait-tjm'] !== 'undefined') {
+    return {
+      value: snap._checkboxes['sim-connait-tjm'] ? 'Oui' : 'Non',
+      source: 'sim'
+    };
+  }
+  return EMPTY;
+}
 
 function candCard(id) {
   return '<div data-candid="' + id + '" onclick="openCandidatFiche(parseInt(this.dataset.candid))" class="cand-card">';
@@ -12506,7 +12605,22 @@ function renderCandidats() {
     var iRow = function(lbl,val){ return '<div><div style="font-size:10px;color:#9E9E9E;font-weight:600;">' + lbl + '</div><div style="font-size:12px;color:#1A1033;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + val + '</div></div>'; };
     html += iRow('Téléphone', cand.tel || '—');
     html += iRow('Commercial', commercial || '—');
-    html += iRow('TJM', tjm ? tjm + ' €/j' : '—');
+    // FIX UI — TJM avec sous-badge "Connaît"/"Demande" selon la règle :
+    // 1) simu liée au placement actif (prioritaire), 2) sinon dernière simu envoyée.
+    var _ctRes = (typeof _candConnaitTjm === 'function') ? _candConnaitTjm(cand) : { value: '', source: '' };
+    var _tjmVal = tjm ? (tjm + ' €/j') : '—';
+    if (_ctRes.value) {
+      var _badgeColor = _ctRes.value === 'Oui' ? '#1D9E75' : '#B8860B';
+      var _badgeBg    = _ctRes.value === 'Oui' ? '#E8FFF4' : '#FFF8E6';
+      var _badgeText  = _ctRes.value === 'Oui' ? '✓ Connaît' : '? Demande';
+      var _sourceLbl  = _ctRes.source === 'placement' ? 'placement actif' : 'dernière simulation';
+      var _tip = (_ctRes.value === 'Oui'
+        ? 'Le candidat connaît son TJM'
+        : 'Le candidat ne connaît pas son TJM (à demander)')
+        + ' — source : ' + _sourceLbl;
+      _tjmVal += '<span title="' + _tip + '" style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;color:' + _badgeColor + ';background:' + _badgeBg + ';vertical-align:middle;">' + _badgeText + '</span>';
+    }
+    html += iRow('TJM', _tjmVal);
     html += iRow('Brut mensuel', brutMensuel || '—');
     html += '</div>';
     html += '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #F0EDF9;display:flex;justify-content:space-between;align-items:center;">';
@@ -12632,7 +12746,10 @@ function mergeAppSettings(remote) {
 
 function getAnalyseurPaieUrl() {
   var s = getAppSettings();
-  return (s && s.analyseur_paie_url) || '';
+  // Si une URL personnalisée est configurée (non vide), elle a la priorité.
+  // Sinon, valeur par défaut : l'instance Netlify Seven Portage.
+  var configured = (s && s.analyseur_paie_url) || '';
+  return configured || 'https://seven-portage-paie.netlify.app/';
 }
 function saveAnalyseurPaieUrl(url) {
   var s = getAppSettings();
@@ -17269,11 +17386,11 @@ function _avExtractFraisFromSim(sim) {
   var gdLieu = _resolve('gd_lieu') || '';
   var gdPersoMontant = _resolve('gd_perso_montant');  // FIX FRAIS : pour comparaison fine avenants
   var brutMens = parseFloat(String(sim.brut||'').replace(/[^0-9.,]/g,'').replace(',','.')) || 0;
-  // Forfait repas par jour (param paie globale, fallback 21.10€/jour si non disponible)
-  var forfaitJournalier = 21.10;
+  // Forfait repas par jour (param paie globale, fallback 21.40€/jour si non disponible)
+  var forfaitJournalier = 21.40;
   try {
     var pfr = document.getElementById('p_forfait_repas');
-    if (pfr && pfr.value) forfaitJournalier = parseFloat(pfr.value) || 21.10;
+    if (pfr && pfr.value) forfaitJournalier = parseFloat(pfr.value) || 21.40;
   } catch(e) {}
 
   // Libellés Swile/TR
@@ -23566,6 +23683,25 @@ function buildCandFicheHTML(cand) {
     + fld('Poste', cand.poste, 'poste')
     + sel('Profil', cand.profil||'', 'profil', ['','Consultant','Manager','Expert','Architecte','Chef de projet','Autre'])
     + fld('TJM actuel (€/j)', cand.tjm_actuel, 'tjm_actuel')
+    // FIX UI — Champ "Connaît son TJM" en lecture seule, calculé selon 2 règles :
+    // 1) (PRIORITAIRE) la simu liée au placement actif du candidat
+    // 2) (FALLBACK) la dernière simulation envoyée
+    // Pas éditable directement ici (source de vérité : la coche dans le formulaire de simu
+    // OU le select "Connait son TJM" dans la popup de placement).
+    + (function(){
+        var _r = (typeof _candConnaitTjm === 'function') ? _candConnaitTjm(cand) : { value: '', source: '' };
+        var _v = _r.value;
+        var _src = _r.source;
+        var _display, _color, _bg, _tip;
+        var _srcLbl = _src === 'placement' ? ' (source : placement actif)' : (_src === 'sim' ? ' (source : dernière simulation)' : '');
+        if (_v === 'Oui')      { _display = '✓ Oui';    _color = '#1D9E75'; _bg = '#E8FFF4'; _tip = 'Le candidat connaît son TJM' + _srcLbl; }
+        else if (_v === 'Non') { _display = '? Non';    _color = '#B8860B'; _bg = '#FFF8E6'; _tip = 'TJM à demander au candidat' + _srcLbl; }
+        else                   { _display = '—';        _color = '#9E9E9E'; _bg = '#F5F5F5'; _tip = 'Aucune simulation ni placement renseigné pour ce candidat.'; }
+        return '<div title="' + _tip.replace(/"/g,'&quot;') + '">'
+          +    '<label class="cf-lbl">Connaît son TJM ?</label>'
+          +    '<div class="cf-inp" style="background:' + _bg + ';color:' + _color + ';font-weight:700;display:flex;align-items:center;cursor:help;">' + _display + '</div>'
+          +  '</div>';
+      })()
     + fld('Disponibilité', cand.disponibilite, 'disponibilite', 'date')
     + fld('Anniversaire', cand.anniversaire, 'anniversaire', 'date')
     + sel('Statut', cand.statut||'', 'statut', ['','Freelance','Salarié','En poste','Disponible','En recherche'])
