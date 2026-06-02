@@ -1973,6 +1973,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="Annulé">Annulé</option>
           <option value="Sorti des effectifs">Sorti des effectifs</option>
         </select>
+        <label id="deal-hide-annules-label" title="Quand cochée, les placements annulés sont masqués du tableau. Sélectionner 'État: Annulé' ci-contre annule temporairement ce filtre." style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;color:#1A1033;background:#fff;cursor:pointer;user-select:none;">
+          <input type="checkbox" id="deal-hide-annules" checked onchange="dealHideAnnules=this.checked;renderDeals();" style="width:14px;height:14px;cursor:pointer;accent-color:#7343EE;margin:0;">
+          <span>Masquer annulés</span>
+        </label>
         <select id="deal-filter-comm" onchange="dealFilterComm=this.value;renderDeals();" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;color:#1A1033;background:#fff;cursor:pointer;">
           <option value="__all__">Tous commerciaux</option>
         </select>
@@ -7873,6 +7877,10 @@ var dealFilterEtat = '__all__';
 var dealFilterComm = '__all__';  // Vue par défaut : tous les commerciaux
 var dealFilterEtranger = '__all__';
 var dealFilterADV = '__all__';
+// FIX UI — Filtre "Masquer annulés" : ON par défaut (les annulés polluent la vue quotidienne).
+// Ne s'applique PAS quand l'utilisateur a explicitement choisi "État: Annulé" dans le dropdown
+// d'à côté (priorité au filtre explicite : si on demande à voir les annulés, on les voit).
+var dealHideAnnules = true;
 
 function getDeals() {
   try { return JSON.parse(localStorage.getItem(DEALS_KEY) || '[]'); } catch(e) { return []; }
@@ -10002,6 +10010,11 @@ function _getADVByLetter(letter) {
 function renderDeals() {
   var deals = getDeals();
   // Filtres
+  // FIX UI — "Masquer annulés" est appliqué AVANT le filtre État, MAIS ignoré si l'user
+  // a explicitement sélectionné "État: Annulé" dans le dropdown (priorité au filtre explicite).
+  if (dealHideAnnules && dealFilterEtat !== 'Annulé') {
+    deals = deals.filter(function(d) { return d.etat !== 'Annulé'; });
+  }
   if (dealFilterEtat !== '__all__') deals = deals.filter(function(d) { return d.etat === dealFilterEtat; });
   if (dealFilterComm === '__mine__') {
     var myName = (typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
@@ -10680,6 +10693,7 @@ function renderDealViewSelect(){
 
 function resetDealFilters(){
   dealFilterEtat='__all__'; dealFilterComm='__all__'; dealFilterEtranger='__all__'; dealFilterADV='__all__';
+  dealHideAnnules = true;  // FIX UI : remettre le filtre annulés à son état par défaut
   dealVisibleCols=DEAL_DEFAULT_COLS.slice();
   localStorage.setItem('sp_deal_cols',JSON.stringify(dealVisibleCols));
   var se=document.getElementById('deal-filter-etat'); if(se) se.value='__all__';
@@ -10687,6 +10701,7 @@ function resetDealFilters(){
   var se3=document.getElementById('deal-filter-etranger'); if(se3) se3.value='__all__';
   var sa=document.getElementById('deal-filter-adv'); if(sa) sa.value='__all__';
   var sv=document.getElementById('deal-view-select'); if(sv) sv.value='__all__';
+  var sha=document.getElementById('deal-hide-annules'); if(sha) sha.checked = true;
   // Reset recherche consultant
   window._dealConsultantFilter = '';
   var sci=document.getElementById('deal-search-consultant'); if(sci) sci.value='';
