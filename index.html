@@ -1310,6 +1310,13 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div class="toggle-group">
           <button class="toggle-btn active" id="btn-gd-idf" onclick="setGDLieu('IDF')">IDF</button>
           <button class="toggle-btn" id="btn-gd-autre" onclick="setGDLieu('autre')">Autre départ.</button>
+          <button class="toggle-btn" id="btn-gd-perso-idf" onclick="setGDLieu('perso_idf')">Personnalisé IDF</button>
+          <button class="toggle-btn" id="btn-gd-perso-autre" onclick="setGDLieu('perso_autre')">Personnalisé Autre</button>
+        </div>
+        <div id="zone-gd-perso" style="display:none;margin-top:8px;">
+          <label style="font-size:11px;color:var(--muted);">Montant personnalisé (€/jour) &mdash; ne peut excéder le barème : <span id="gd-perso-max" style="font-weight:600;color:#372EB6;">&mdash;</span> €</label>
+          <input type="number" id="gd_perso_montant" value="0" step="0.01" min="0" oninput="onGDPersoChange()">
+          <div id="gd-perso-warn" style="display:none;color:#E24B4A;font-size:11px;margin-top:4px;font-weight:600;">&#9888; Montant supérieur au barème : la valeur sera plafonnée au max ci-dessus dans les calculs.</div>
         </div>
       </div>
     </div>
@@ -2179,6 +2186,7 @@ let state = {
   repas: 'Non',
   swile_val: 0,
   gd_lieu: 'IDF',
+  gd_perso_montant: 0,  // FIX FRAIS : montant personnalisé GD (utilisé si gd_lieu == 'perso_idf' ou 'perso_autre')
   tt: false,
   ik_1ere: false,
 };
@@ -2307,9 +2315,79 @@ function setRepas(v) {
 }
 function setGDLieu(v) {
   state.gd_lieu = v;
-  document.getElementById('btn-gd-idf').classList.toggle('active', v==='IDF');
-  document.getElementById('btn-gd-autre').classList.toggle('active', v!=='IDF');
+  // Mise à jour des 4 boutons (un seul actif)
+  ['idf', 'autre', 'perso-idf', 'perso-autre'].forEach(function(suffix){
+    var btn = document.getElementById('btn-gd-' + suffix);
+    if (!btn) return;
+    var matches =
+         (suffix === 'idf'         && v === 'IDF')
+      || (suffix === 'autre'       && v === 'autre')
+      || (suffix === 'perso-idf'   && v === 'perso_idf')
+      || (suffix === 'perso-autre' && v === 'perso_autre');
+    btn.classList.toggle('active', !!matches);
+  });
+  // Show/hide du bloc "montant personnalisé"
+  var zonePerso = document.getElementById('zone-gd-perso');
+  var isPerso = (v === 'perso_idf' || v === 'perso_autre');
+  if (zonePerso) zonePerso.style.display = isPerso ? 'block' : 'none';
+  if (isPerso) {
+    var max = (v === 'perso_idf') ? f('p_gd_idf') : f('p_gd_autre');
+    var maxEl = document.getElementById('gd-perso-max');
+    if (maxEl) maxEl.textContent = max.toFixed(2).replace('.', ',');
+    // Pré-remplir le champ avec le barème si à 0 (pour ne pas calculer avec 0 par défaut)
+    var inp = document.getElementById('gd_perso_montant');
+    if (inp && (parseFloat(inp.value) || 0) === 0) inp.value = max;
+    // Synchroniser le warning d'emblée
+    onGDPersoChange();
+  }
   if (lastEdited === 'tjm') solveBrutFromTJM(); else solveTJMFromBrut();
+}
+
+// FIX FRAIS — Validation du montant personnalisé GD + déclenchement recalcul.
+// On ne CLAMP PAS la valeur dans l'input lui-même (sinon perte de saisie),
+// on affiche juste un warning et le calcul (_getTauxGD) utilise Math.min côté solveur.
+function onGDPersoChange() {
+  var v = state.gd_lieu;
+  if (v !== 'perso_idf' && v !== 'perso_autre') return;
+  var max = (v === 'perso_idf') ? f('p_gd_idf') : f('p_gd_autre');
+  var val = f('gd_perso_montant');
+  var warnEl = document.getElementById('gd-perso-warn');
+  if (warnEl) warnEl.style.display = (val > max) ? 'block' : 'none';
+  if (lastEdited === 'tjm') solveBrutFromTJM(); else solveTJMFromBrut();
+}
+
+// FIX FRAIS — Taux journalier GD selon le mode (barème ou personnalisé clampé).
+// Utilisé partout dans les calculs et l'affichage pour ne JAMAIS dépasser le barème
+// même si l'utilisateur a saisi une valeur supérieure dans le champ perso.
+function _getTauxGD() {
+  var v = state.gd_lieu;
+  if (v === 'IDF')   return f('p_gd_idf');
+  if (v === 'autre') return f('p_gd_autre');
+  if (v === 'perso_idf') {
+    var max1 = f('p_gd_idf');
+    return Math.min(f('gd_perso_montant'), max1);
+  }
+  if (v === 'perso_autre') {
+    var max2 = f('p_gd_autre');
+    return Math.min(f('gd_perso_montant'), max2);
+  }
+  return f('p_gd_idf'); // fallback sûr
+}
+
+// FIX FRAIS — Helper pour afficher un libellé lisible du mode GD partout (suivi RH,
+// fiche placement, avenants…). Prend en argument la valeur de gd_lieu et, si mode perso,
+// le montant ; renvoie une string user-friendly.
+// IMPORTANT : pour le mode perso, on utilise le montant fourni TEL QUEL si renseigné.
+// Le clamp côté affichage ne sert pas — le clamp se fait dans _getTauxGD au moment du calcul.
+function _formatGDLieuLabel(gd_lieu, gd_perso_montant) {
+  if (!gd_lieu) return '';
+  if (gd_lieu === 'IDF')   return 'IDF';
+  if (gd_lieu === 'autre') return 'Autre départ.';
+  var montant = parseFloat(gd_perso_montant) || 0;
+  var montantStr = montant > 0 ? ' (' + montant.toFixed(2).replace('.', ',') + ' €/j)' : '';
+  if (gd_lieu === 'perso_idf')   return 'Personnalisé IDF'   + montantStr;
+  if (gd_lieu === 'perso_autre') return 'Personnalisé Autre' + montantStr;
+  return gd_lieu; // fallback : on affiche tel quel pour ne rien perdre
 }
 function setTT(v) {
   state.tt = v;
@@ -2657,7 +2735,7 @@ function calcFraisMensuels(nb_jours) {
     // Le montant journalier reste constant quel que soit le nb_jours
     frais_repas = f('p_forfait_repas') * nb_jours;
   } else if (state.repas === 'GD') {
-    const taux_gd = state.gd_lieu === 'IDF' ? f('p_gd_idf') : f('p_gd_autre');
+    const taux_gd = _getTauxGD();  // FIX FRAIS : gère les 4 modes (IDF / Autre / Perso IDF / Perso Autre clampé au barème)
     // Le grand déplacement s'applique sur tous les jours travaillés (comme Swile),
     // sans prorata des jours présentiels. Cohérent avec une mission ponctuelle :
     // si le consultant fait 7 jours dans le mois, c'est 7 jours de GD plein.
@@ -3198,7 +3276,7 @@ function calc() {
     // Linéaire en NB_JOURS, comme Swile
     frais_repas = f('p_forfait_repas') * NB_JOURS;
   } else if (state.repas === 'GD') {
-    const taux_gd = state.gd_lieu === 'IDF' ? f('p_gd_idf') : f('p_gd_autre');
+    const taux_gd = _getTauxGD();  // FIX FRAIS : gère les 4 modes (IDF / Autre / Perso IDF / Perso Autre clampé au barème)
     // Le grand déplacement s'applique sur tous les jours travaillés (comme Swile),
     // sans prorata des jours présentiels. Cohérent avec une mission ponctuelle.
     frais_repas = taux_gd * NB_JOURS;
@@ -3967,6 +4045,7 @@ function getSimData() {
     repas:         window.state ? window.state.repas : '',
     tt:            window.state ? window.state.tt : false,
     gd_lieu:       window.state ? window.state.gd_lieu : '',
+    gd_perso_montant: (function(){ var el=document.getElementById('gd_perso_montant'); return el ? (parseFloat(el.value)||0) : 0; })(),
     ik_1ere:       window.state ? window.state.ik_1ere : false,
     poste:         s('poste'),
     civilite:      s('civilite'),
@@ -5698,6 +5777,7 @@ function saveHistorique(data, dest, email, consultantName) {
     repas: data.repas || '',
     tt: data.tt || false,
     gd_lieu: data.gd_lieu || '',
+    gd_perso_montant: parseFloat(data.gd_perso_montant) || 0,  // FIX FRAIS : montant perso GD pour persistance dans l'historique
     ik_1ere: data.ik_1ere || false,
     km_aller: data.km_aller || '',
     puissance: data.puissance || '',
@@ -5760,6 +5840,7 @@ function captureSnapshotForHistory() {
     'tjm','nb_jours','marge','brut','brut_annuel','taux_impot',
     'km_aller','puissance_fiscale','jours_presentiels',
     'swile_val','abo_transport','abo_tel','abo_internet','abo_telnet',
+    'gd_perso_montant',  // FIX FRAIS : capturer le montant perso GD pour le restaurer à la réouverture
     'jours_tt','tt_loyer','tt_elec','tt_chauffage',
     'tt_taxe','tt_assurance','tt_internet','tt_mobile',
     'frais_formation','frais_materiel',
@@ -8151,7 +8232,12 @@ function openPlacementPopup(ts) {
   var plGd = document.getElementById('pl-gd');
   if (plGd) {
     if ((_repas || '').toString().toUpperCase() === 'GD') {
-      plGd.value = 'Oui' + (_gdLieu ? ' (' + _gdLieu + ')' : '');
+      // FIX FRAIS : utiliser _formatGDLieuLabel pour afficher proprement les 4 modes
+      var _gdPerso = _resolve('gd_perso_montant');
+      var _gdLbl = (typeof _formatGDLieuLabel === 'function')
+        ? _formatGDLieuLabel(_gdLieu, _gdPerso)
+        : (_gdLieu || '');
+      plGd.value = 'Oui' + (_gdLbl ? ' (' + _gdLbl + ')' : '');
     } else {
       plGd.value = '—';
     }
@@ -9150,6 +9236,7 @@ function savePlacement() {
     repas: sim ? (sim.repas || '') : '',
     tt: sim ? (sim.tt ? 'Oui' : 'Non') : '',
     gd_lieu: sim ? (sim.gd_lieu || '') : '',
+    gd_perso_montant: sim ? (parseFloat(sim.gd_perso_montant) || 0) : 0,  // FIX FRAIS : montant perso GD
     ik_1ere: sim ? (sim.ik_1ere ? 'Oui' : 'Non') : '',
     km_aller: sim ? (sim.km_aller || '') : '',
     puissance_fiscale: sim ? (sim.puissance || '') : '',
@@ -10958,7 +11045,22 @@ function getCellValue(d, key){
       var _tauxIdf   = gdIdfEl   ? (parseFloat(gdIdfEl.value)   || 98.46) : 98.46;
       var _tauxAutre = gdAutreEl ? (parseFloat(gdAutreEl.value) || 82.86) : 82.86;
       var _lieu = (d.gd_lieu || 'IDF').toString();
-      var _taux = _lieu === 'IDF' ? _tauxIdf : _tauxAutre;
+      var _taux;
+      // FIX FRAIS : 4 modes possibles (IDF / autre / perso_idf / perso_autre)
+      // Le mode "perso_*" utilise gd_perso_montant CLAMPÉ au barème correspondant.
+      if (_lieu === 'IDF') {
+        _taux = _tauxIdf;
+      } else if (_lieu === 'autre') {
+        _taux = _tauxAutre;
+      } else if (_lieu === 'perso_idf') {
+        var _perso1 = parseFloat(d.gd_perso_montant) || 0;
+        _taux = Math.min(_perso1, _tauxIdf);  // clamp pour ne jamais dépasser le barème
+      } else if (_lieu === 'perso_autre') {
+        var _perso2 = parseFloat(d.gd_perso_montant) || 0;
+        _taux = Math.min(_perso2, _tauxAutre);
+      } else {
+        _taux = _tauxIdf; // fallback historique
+      }
       if (_taux <= 0) return '\u2014';
       return _taux.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
     case 'frais_formation': 
@@ -17165,6 +17267,7 @@ function _avExtractFraisFromSim(sim) {
   var tel = parseFloat(String(sim.abo_tel||'').replace(',','.')) || 0;
   var net = parseFloat(String(sim.abo_internet||'').replace(',','.')) || 0;
   var gdLieu = _resolve('gd_lieu') || '';
+  var gdPersoMontant = _resolve('gd_perso_montant');  // FIX FRAIS : pour comparaison fine avenants
   var brutMens = parseFloat(String(sim.brut||'').replace(/[^0-9.,]/g,'').replace(',','.')) || 0;
   // Forfait repas par jour (param paie globale, fallback 21.10€/jour si non disponible)
   var forfaitJournalier = 21.10;
@@ -17205,8 +17308,11 @@ function _avExtractFraisFromSim(sim) {
     telnetLbl = 'Non';
   }
 
-  // Grand déplacement
-  var gdLbl = (repasUp === 'GD') ? ('Oui' + (gdLieu ? ' (' + gdLieu + ')' : '')) : 'Non';
+  // Grand déplacement — FIX FRAIS : on utilise _formatGDLieuLabel pour gérer les 4 modes
+  var _gdReadable = (typeof _formatGDLieuLabel === 'function')
+    ? _formatGDLieuLabel(gdLieu, gdPersoMontant)
+    : (gdLieu || '');
+  var gdLbl = (repasUp === 'GD') ? ('Oui' + (_gdReadable ? ' (' + _gdReadable + ')' : '')) : 'Non';
 
   return {
     tjm: sim.tjm ? String(sim.tjm) : '',
@@ -17231,7 +17337,8 @@ function _avExtractFraisFromSim(sim) {
       tel: tel,
       net: net,
       gd_actif: (repasUp === 'GD'),
-      gd_lieu: gdLieu
+      gd_lieu: gdLieu,
+      gd_perso_montant: gdPersoMontant  // FIX FRAIS : pour diff fin entre simu d'origine et nouvelle simu
     }
   };
 }
@@ -23769,6 +23876,7 @@ function handleStatutPortageChange(select) {
     // Écrire le statut tout de suite
     cands[idx].statut_portage = 'Perdu';
     cands[idx].updated = new Date().toLocaleDateString('fr-FR');
+    cands[idx].updated_at = Date.now();  // FIX SYNC : stamper explicitement
     saveCandidatsArr(cands);
     // Si raison pas encore renseignée → popup
     if (!cands[idx].raison_perdu) {
@@ -23788,6 +23896,7 @@ function handleStatutPortageChange(select) {
   }
   cands[idx].statut_portage = newVal;
   cands[idx].updated = new Date().toLocaleDateString('fr-FR');
+  cands[idx].updated_at = Date.now();  // FIX SYNC : stamper explicitement
   saveCandidatsArr(cands);
   renderCandidats();
   openCandidatFiche(candId);
@@ -23847,6 +23956,11 @@ function savePerduReason(candId) {
   cands[idx].raison_perdu = raison;
   cands[idx].statut_portage = 'Perdu';
   cands[idx].updated = new Date().toLocaleDateString('fr-FR');
+  // FIX SYNC : on force explicitement updated_at = maintenant pour garantir que le
+  // merge inter-commerciaux propage cette modif. Sinon, si saveCandidatsArr considère
+  // qu'il n'y a "pas de changement détecté" (cas pathologique : même statut déjà
+  // présent quelque part dans l'historique), updated_at peut ne pas être rafraîchi.
+  cands[idx].updated_at = Date.now();
   saveCandidatsArr(cands);
   document.getElementById('modal-perdu-reason').remove();
   renderCandidats();
@@ -24555,15 +24669,22 @@ function mergeCandidats(remote) {
       // Comparaison prioritaire sur updated_at (timestamp millis), fallback sur "updated" (DD/MM/YYYY).
       var localUpdated = localMatch.updated_at || _parseFRDate(localMatch.updated) || 0;
       var remoteUpdated = rc.updated_at || _parseFRDate(rc.updated) || 0;
-      if (remoteUpdated > localUpdated) {
+      // FIX SYNC : on utilise >= (pas > strict) pour gérer le cas où deux commerciaux
+      // se retrouvent avec des updated_at identiques après une restauration ou un import
+      // groupé. Sans cette tolérance, des modifs faites avant l'alignement (ex : un statut
+      // "Perdu" + raison) ne se propagent jamais, même quand un sync les présente.
+      // En >= : si rc a des valeurs non vides, elles écrasent local. Si rc a des champs
+      // vides, le filtre `rc[f] !== ''` ci-dessous les ignore — donc pas de perte.
+      if (remoteUpdated >= localUpdated) {
         // Champs à propager si remote est plus récent (sans toucher aux simulations/documents déjà gérés)
-        // FIX SYNC : email, statut_portage et commentaire ont longtemps été oubliés
-        // de cette liste — résultat : leurs modifs ne se propageaient pas entre commerciaux
-        // (la fiche locale gardait son ancien email même quand un collègue le corrigeait).
+        // FIX SYNC : email, statut_portage, raison_perdu et commentaire ont longtemps été
+        // oubliés de cette liste — résultat : leurs modifs ne se propageaient pas entre
+        // commerciaux (la fiche locale gardait son ancien email/statut même quand un
+        // collègue le corrigeait, et la raison du "Perdu" ne voyageait pas).
         var simpleFields = ['prenom', 'nom', 'email', 'tel', 'poste', 'profil', 'techno', 'ville',
                             'linkedin', 'tjm_actuel', 'entreprise', 'commercial', 'secteur',
                             'civilite', 'disponibilite', 'anniversaire', 'statut', 'statut_portage',
-                            'commentaire', 'updated', 'updated_at'];
+                            'raison_perdu', 'commentaire', 'updated', 'updated_at'];
         simpleFields.forEach(function(f){
           if (rc[f] !== undefined && rc[f] !== null && rc[f] !== '') {
             localMatch[f] = rc[f];
@@ -26945,7 +27066,8 @@ function sendPlacementCommercialEmail(deal) {
         ik_1ere: deal.ik_1ere === 'Oui',
         puissance: deal.puissance_fiscale || 0,
         taux_impot: deal.taux_impot || 0,
-        gd_lieu: deal.gd_lieu || ''
+        gd_lieu: deal.gd_lieu || '',
+        gd_perso_montant: parseFloat(deal.gd_perso_montant) || 0  // FIX FRAIS : pour génération bulletin PDF
       };
 
       var attachments = [
