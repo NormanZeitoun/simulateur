@@ -12627,7 +12627,7 @@ function renderCandidats() {
     if (_ctRes.value) {
       var _badgeColor = _ctRes.value === 'Oui' ? '#1D9E75' : '#B8860B';
       var _badgeBg    = _ctRes.value === 'Oui' ? '#E8FFF4' : '#FFF8E6';
-      var _badgeText  = _ctRes.value === 'Oui' ? '✓ Connaît' : '? Demande';
+      var _badgeText  = _ctRes.value === 'Oui' ? '✓ Connaît' : 'Caché';
       var _sourceLbl  = _ctRes.source === 'placement' ? 'placement actif' : 'dernière simulation';
       var _tip = (_ctRes.value === 'Oui'
         ? 'Le candidat connaît son TJM'
@@ -23710,7 +23710,7 @@ function buildCandFicheHTML(cand) {
         var _display, _color, _bg, _tip;
         var _srcLbl = _src === 'placement' ? ' (source : placement actif)' : (_src === 'sim' ? ' (source : dernière simulation)' : '');
         if (_v === 'Oui')      { _display = '✓ Oui';    _color = '#1D9E75'; _bg = '#E8FFF4'; _tip = 'Le candidat connaît son TJM' + _srcLbl; }
-        else if (_v === 'Non') { _display = '? Non';    _color = '#B8860B'; _bg = '#FFF8E6'; _tip = 'TJM à demander au candidat' + _srcLbl; }
+        else if (_v === 'Non') { _display = 'Non';      _color = '#B8860B'; _bg = '#FFF8E6'; _tip = 'TJM à demander au candidat' + _srcLbl; }
         else                   { _display = '—';        _color = '#9E9E9E'; _bg = '#F5F5F5'; _tip = 'Aucune simulation ni placement renseigné pour ce candidat.'; }
         return '<div title="' + _tip.replace(/"/g,'&quot;') + '">'
           +    '<label class="cf-lbl">Connaît son TJM ?</label>'
