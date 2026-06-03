@@ -7715,6 +7715,7 @@ function _odEmergencyPush() {
   if (!odToken) return;
   if (!_odHasPending()) return; // rien à sauvegarder
   if (window._initialSyncDone === false) return; // sync initiale pas faite → ne pas écraser
+  if (window._odSyncInFlight) return; // une sync écrit déjà ces fichiers → éviter le 409 concurrent
   try {
     if (typeof _initSyncEntities === 'function') _initSyncEntities();
     var entities = (typeof SYNC_ENTITIES !== 'undefined') ? SYNC_ENTITIES : [];
@@ -7800,6 +7801,13 @@ function odAutoSync() {
 
 function odSilentFullSync() {
   if (!odToken) return;
+  // VERROU ANTI-409 : signale qu'une sync écrit en ce moment. Empêche _odEmergencyPush
+  // (déclenché sur visibilitychange/pagehide) de PUT les mêmes fichiers en parallèle,
+  // ce qui provoquait des 409 (Conflict) auto-infligés. Filet de sécurité : on relâche
+  // le verrou au bout de 60 s quoi qu'il arrive, pour ne jamais rester bloqué.
+  window._odSyncInFlight = true;
+  if (window._odSyncInFlightTimer) clearTimeout(window._odSyncInFlightTimer);
+  window._odSyncInFlightTimer = setTimeout(function(){ window._odSyncInFlight = false; }, 60000);
   _initSyncEntities();
   odWithToken(function(token) {
     var entities = SYNC_ENTITIES;
@@ -7883,7 +7891,7 @@ function odSilentFullSync() {
           headers: {
             'Authorization': 'Bearer ' + token,
             'Content-Type': 'application/json',
-              // écraser quel que soit l'etag distant (évite les 412/409 sur conflit)
+            'If-Match': '*'   // écraser quel que soit l'etag distant (évite les 412/409 sur conflit)
           },
           body: body
         }).then(function(r) {
@@ -7909,6 +7917,9 @@ function odSilentFullSync() {
       var pushPromises = [pushChain];
 
       Promise.all(pushPromises).then(function() {
+        // Relâcher le verrou anti-409 : la sync a fini d'écrire.
+        window._odSyncInFlight = false;
+        if (window._odSyncInFlightTimer) { clearTimeout(window._odSyncInFlightTimer); window._odSyncInFlightTimer = null; }
         if (errors.length) {
           console.warn('[AutoSync] Terminé avec avertissements:', errors);
           odSetStatus('⚠ Sync partielle (' + errors.length + ')', true);
