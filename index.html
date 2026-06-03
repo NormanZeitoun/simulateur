@@ -6624,7 +6624,7 @@ function odInit() {
       odToken = res.accessToken;
       odAccount = res.account;
       odSetConnected(res.account.name || res.account.username);
-      odLoad();
+      odRunInitialSync();
     } else {
       var accounts = msalApp.getAllAccounts();
       if (accounts.length > 0) {
@@ -6635,11 +6635,34 @@ function odInit() {
         }).then(function(r) {
           odToken = r.accessToken;
           odSetConnected(odAccount.name || odAccount.username);
-          odLoad();
+          odRunInitialSync();
         }).catch(function() {});
       }
     }
   }).catch(function(e) { console.warn('MSAL:', e); });
+}
+
+// ── SYNC INITIALE DE SESSION (fix bug #3 : tombstones/modifs qui ne voyagent pas) ──
+// Au démarrage, _initialSyncDone est à false (cf. DOMContentLoaded) et odAutoSync
+// se met en pause tant qu'il vaut false. Le SEUL endroit qui le fait passer à true,
+// c'est odSilentFullSync (après son load de phase 1). Avant ce fix, le boot appelait
+// odLoad() — qui ne charge QUE les simulations et ne touche jamais le flag — donc
+// _initialSyncDone restait à false toute la session si l'utilisateur n'ouvrait pas
+// l'onglet Tâches / ne cliquait pas le badge. odAutoSync sortait alors systématiquement
+// (« reporté : sync initiale pas encore faite ») sans jamais armer le push, et aucune
+// modif ni tombstone ne se propageait entre commerciaux.
+//
+// On déclenche donc la VRAIE sync initiale après l'auth : odSilentFullSync charge
+// TOUTES les entités (pull des tombstones inclus), met _initialSyncDone à true
+// (ce qui débloque odAutoSync pour le reste de la session), puis re-pousse l'état
+// mergé (push des modifs locales en attente). mergeHistorique re-rend l'historique,
+// donc on ne perd aucun rendu par rapport à odLoad().
+function odRunInitialSync() {
+  // Déjà débloqué dans cette session : ne pas relancer (une reconnexion manuelle
+  // ultérieure n'a pas besoin de refaire la sync initiale). Si la 1re tentative a
+  // échoué (réseau), le flag est resté à false → une reconnexion la relancera.
+  if (window._initialSyncDone) return;
+  if (typeof odSilentFullSync === 'function') odSilentFullSync();
 }
 
 function odConnect() {
@@ -6672,7 +6695,7 @@ function odConnect() {
     odToken = res.accessToken;
     odAccount = res.account;
     odSetConnected(res.account.name || res.account.username);
-    odLoad();
+    odRunInitialSync();
   }).catch(function(e) {
     odSetStatus('Connexion annulée : ' + (e.message || e), true);
   });
