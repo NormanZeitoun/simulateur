@@ -6662,6 +6662,8 @@ function odRunInitialSync() {
   // ultérieure n'a pas besoin de refaire la sync initiale). Si la 1re tentative a
   // échoué (réseau), le flag est resté à false → une reconnexion la relancera.
   if (window._initialSyncDone) return;
+  console.log('[odInit] authentifié → lancement de la sync initiale (odSilentFullSync)');
+  window._initialSyncTriggered = true; // évite que odAutoSync la relance en parallèle
   if (typeof odSilentFullSync === 'function') odSilentFullSync();
 }
 
@@ -7756,10 +7758,30 @@ function odAutoSync() {
     console.warn('[odAutoSync] bloqué : reset en cours');
     return;
   }
-  // SÉCURITÉ : ne rien pousser tant que le premier load OneDrive n'a pas eu lieu
-  // (sinon on risque d'écraser des données valides avec un état local vide après reload)
+  // SÉCURITÉ + AUTO-RÉPARATION : tant que le premier load OneDrive n'a pas eu lieu,
+  // on ne POUSSE pas via le debounce (sinon risque d'écraser des données valides avec
+  // un état local vide après reload). MAIS au lieu de seulement reporter — ce qui créait
+  // l'interblocage du bug #3 si aucune autre voie ne lançait odSilentFullSync — on
+  // DÉCLENCHE nous-mêmes la sync initiale (une seule fois), puisqu'on est authentifié
+  // (odToken présent, cf. garde plus haut). odSilentFullSync charge toutes les entités,
+  // fait passer _initialSyncDone à true, puis pousse l'état mergé. Les modifs faites
+  // pendant ce load sont marquées pending et incluses dans le push (getData lit l'état
+  // localStorage live au moment du PUT).
   if (window._initialSyncDone === false) {
-    console.warn('[odAutoSync] reporté : sync initiale pas encore faite');
+    _odMarkPending(); // ne rien perdre pendant la fenêtre de sync initiale
+    if (!window._initialSyncTriggered) {
+      window._initialSyncTriggered = true;
+      console.log('[odAutoSync] sync initiale absente → déclenchement de odSilentFullSync');
+      if (typeof odSilentFullSync === 'function') odSilentFullSync();
+      // Watchdog : si la sync initiale n'a pas abouti (token expiré, réseau coupé...),
+      // on relâche le verrou après 30 s pour qu'un prochain odAutoSync puisse réessayer.
+      setTimeout(function(){
+        if (window._initialSyncDone === false) {
+          window._initialSyncTriggered = false;
+          console.warn('[odAutoSync] sync initiale non aboutie après 30 s — réessai au prochain changement');
+        }
+      }, 30000);
+    }
     return;
   }
   // FIX ANTI-PERTE : on marque qu'il y a des modifs en attente de sync.
@@ -7826,7 +7848,13 @@ function odSilentFullSync() {
 
       // Le premier load OneDrive est terminé : on peut maintenant autoriser les pushs auto
       // (sinon on risquait d'écraser des données valides avec un état local vide)
+      var _wasFirstSync = (window._initialSyncDone === false);
       window._initialSyncDone = true;
+      if (_wasFirstSync) {
+        console.log('[odSilentFullSync] ✓ sync initiale terminée — _initialSyncDone = true' +
+                    (errors.length ? ' (' + errors.length + ' entité(s) en erreur de load : ' + errors.join(', ') + ')' : '') +
+                    ' — odAutoSync est maintenant débloqué pour la session.');
+      }
 
       // RÉPARATION AUTOMATIQUE (une seule fois) : rattacher les avenants "détachés"
       // de leur fiche candidat suite à l'ancien bug de merge sync.
