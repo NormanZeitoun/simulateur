@@ -3714,6 +3714,9 @@ window.addEventListener('DOMContentLoaded', () => {
   // chez lui, la table tombstones est arrivée chez nous mais notre fiche locale est encore vivante)
   try {
     if (typeof _applyCandTombstonesLocally === 'function') _applyCandTombstonesLocally();
+    // FIX SYNC : pareil pour les deals (sans ça, un deal supprimé par un commercial
+    // "ressuscite" chez les autres au prochain push)
+    if (typeof _applyDealTombstonesLocally === 'function') _applyDealTombstonesLocally();
   } catch(e) {}
 
   // Restore params from localStorage
@@ -24667,6 +24670,45 @@ function _applyCandTombstonesLocally() {
     saveCandidatsArr(local);
     if (typeof renderCandidats === 'function') renderCandidats();
     console.log('[_applyCandTombstonesLocally] Fiches tombstonées localement.');
+  }
+  return changed;
+}
+
+// FIX SYNC — Équivalent pour les DEALS. Sans cette fonction, quand un commercial
+// supprime un deal :
+//   1. Une tombstone est créée chez lui (table `deals` dans sp_tombstones_v1)
+//   2. La table tombstones est syncée vers OneDrive, puis chez les autres
+//   3. MAIS leur DEAL LOCAL n'est jamais marqué supprimé
+//   4. Au prochain push d'un autre commercial, le deal "ressuscite" partout
+// Cette fonction parcourt les deals locaux et marque _deleted=true ceux dont
+// l'id est dans la table tombstones (avec un updated_at antérieur à la tombstone,
+// pour permettre les "résurrections volontaires" via modification).
+function _applyDealTombstonesLocally() {
+  var local = (typeof getDeals === 'function') ? getDeals() : [];
+  if (!local || !local.length) return false;
+  var allTombs = (typeof getTombstones === 'function') ? (getTombstones().deals || {}) : {};
+  if (!Object.keys(allTombs).length) return false;
+
+  var changed = false;
+  local.forEach(function(d) {
+    if (!d || d._deleted) return;
+    var dTs = d.updated_at || _parseFRDate(d.updated) || 0;
+    var tombTs = allTombs[String(d.id)];
+    // Comparaison <= : si la tombstone a été posée APRÈS la dernière modif du deal,
+    // le deal est considéré comme supprimé. Si le deal a été modifié APRÈS la tombstone
+    // (ex : "résurrection volontaire" par re-création), on respecte l'utilisateur.
+    if (tombTs && dTs <= tombTs) {
+      d._deleted = true;
+      d.deleted_at = d.deleted_at || Date.now();
+      d.updated_at = Date.now();
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    if (typeof saveDeals === 'function') saveDeals(local);
+    if (typeof renderDeals === 'function') renderDeals();
+    console.log('[_applyDealTombstonesLocally] Deals tombstonés localement.');
   }
   return changed;
 }
