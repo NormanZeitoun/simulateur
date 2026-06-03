@@ -10034,6 +10034,11 @@ function _getADVByLetter(letter) {
 
 function renderDeals() {
   var deals = getDeals();
+  // FIX SYNC : filtrer les deals marqués _deleted (par _applyDealTombstonesLocally
+  // au pull, par delete via UI, etc.). Sans ce filtre, un deal supprimé par un autre
+  // commercial restait visible dans le tableau même après que sa tombstone soit
+  // appliquée au localStorage. Cohérent avec ce qui se fait pour les candidats.
+  deals = deals.filter(function(d) { return d && !d._deleted; });
   // Filtres
   // FIX UI — "Masquer annulés" est appliqué AVANT le filtre État, MAIS ignoré si l'user
   // a explicitement sélectionné "État: Annulé" dans le dropdown (priorité au filtre explicite).
