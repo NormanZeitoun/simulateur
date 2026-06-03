@@ -3186,6 +3186,23 @@ function hideSimManagerDrop() {
   if (d) d.style.display = 'none';
 }
 
+// FIX ARRONDI — Helper centralisé pour calculer le "Salaire annuel brut sur contrat"
+// (carte du simulateur + colonne du tableau Suivi RH + fiche placement).
+// La règle métier est : ramener le brut mensuel à une base 21 jours, puis ×12.
+// Pour minimiser les écarts d'arrondi entre simulations à nb_jours différents
+// (ex : delta de 12€ observé entre une simu 20j et une simu 21j à TJM identique),
+// on fait UN SEUL arrondi final, sur le total annuel.
+// Utilisable aussi pour RECALCULER à l'affichage les anciens deals dont le champ
+// `salaire_annuel` a été figé avant ce correctif — il suffit de leur passer
+// (deal.brut, deal.nb_jours).
+function _computeSalaireAnnuelContrat(brutMens, nbJours) {
+  var bm = parseFloat(brutMens) || 0;
+  var nj = parseInt(nbJours, 10) || 0;
+  if (bm <= 0) return 0;
+  if (nj <= 0 || nj === 21) return Math.round(bm * 12);
+  return Math.round(bm * 21 / nj * 12);
+}
+
 function calc() {
   // INPUTS
   const PMSS = f('p_pmss');
@@ -3378,14 +3395,10 @@ function calc() {
   var rowContrat = document.getElementById('card-brut-contrat-row');
   var valContrat  = document.getElementById('r-brut-contrat');
   // Calcul systématique du brut base 21j pour stockage
-  // FIX ARRONDI — On calcule directement le brut ANNUEL contrat sans passer par un
-  // arrondi mensuel intermédiaire. L'ancienne formule arrondissait à l'euro sur le
-  // "brut mensuel base 21j" (avant ×12), ce qui pouvait gonfler l'annuel jusqu'à
-  // ~12€ par effet de levier (0.5€/mois × 12 + arrondi).
-  // Désormais : un seul arrondi, sur le total annuel.
-  var brutContratAnnuelSys = (NB_JOURS > 0 && NB_JOURS !== 21)
-    ? Math.round(BRUT * 21 / NB_JOURS * 12)
-    : BRUT * 12;
+  // FIX ARRONDI — voir _computeSalaireAnnuelContrat() ci-dessous (helper centralisé).
+  // L'ancienne formule arrondissait à l'euro sur le "brut mensuel base 21j" (avant ×12),
+  // ce qui pouvait gonfler l'annuel jusqu'à ~12€ par effet de levier.
+  var brutContratAnnuelSys = _computeSalaireAnnuelContrat(BRUT, NB_JOURS);
   // brutBase21Sys conservé en local pour rétrocompatibilité (utilisé nulle part ailleurs
   // sur ce fichier, mais on garde la variable au cas où un placement le récupère)
   var brutBase21Sys = (NB_JOURS > 0 && NB_JOURS !== 21) ? Math.round(BRUT * 21 / NB_JOURS) : BRUT;
@@ -9171,14 +9184,14 @@ function savePlacement() {
   var brutMens = sim ? (parseFloat((sim.brut||'').replace(/[^0-9.,]/g,'').replace(',','.')) || 0) : 0;
   // Salaire annuel sur contrat = valeur brut_contrat_annuel stockée par calc()
   // Fallback : recalcul base 21j si SIMU ancienne sans ce champ
+  // FIX ARRONDI : on utilise le helper centralisé (un seul arrondi sur l'annuel).
   var salaireAnnuelContrat = '';
   if (sim) {
     if (sim.brut_contrat_annuel && parseInt(sim.brut_contrat_annuel) > 0) {
       salaireAnnuelContrat = String(parseInt(sim.brut_contrat_annuel));
     } else if (brutMens > 0) {
       var nbJ = parseInt(sim.nb_jours) || 21;
-      var brutBase21 = nbJ > 0 && nbJ !== 21 ? Math.round(brutMens * 21 / nbJ) : brutMens;
-      salaireAnnuelContrat = String(brutBase21 * 12);
+      salaireAnnuelContrat = String(_computeSalaireAnnuelContrat(brutMens, nbJ));
     }
   }
 
@@ -10864,7 +10877,18 @@ function getCellValue(d, key){
     case 'entreprise': return fmt(d.entreprise);
     case 'tjm': return d.tjm ? '<span style="font-weight:600;color:#7343EE;">'+d.tjm+' €</span>' : '—';
     case 'nb_jours': return fmt(d.nb_jours);
-    case 'salaire_annuel': return d.salaire_annuel ? parseInt(d.salaire_annuel).toLocaleString('fr-FR')+' €' : '—';
+    case 'salaire_annuel':
+      // FIX ARRONDI — On RECALCULE à partir du brut mensuel et nb_jours stockés dans
+      // le deal, pour appliquer la nouvelle formule (un seul arrondi sur l'annuel).
+      // Les anciens deals dont le champ `salaire_annuel` a été figé AVANT le correctif
+      // affichent ainsi la valeur corrigée sans qu'il faille les rouvrir/re-sauver.
+      // Fallback sur la valeur stockée si le brut mensuel est introuvable.
+      var _brutM = parseFloat((d.brut || '').toString().replace(/[^0-9.,]/g,'').replace(',','.')) || 0;
+      var _nbJ = parseInt(d.nb_jours, 10) || 0;
+      if (_brutM > 0 && _nbJ > 0) {
+        return _computeSalaireAnnuelContrat(_brutM, _nbJ).toLocaleString('fr-FR') + ' €';
+      }
+      return d.salaire_annuel ? parseInt(d.salaire_annuel).toLocaleString('fr-FR')+' €' : '—';
     case 'commercial': return fmt(d.commercial);
     case 'date_deal': return _fmtDateJMA(d.date_deal);
     case 'origine': return fmt(d.origine);
@@ -27089,7 +27113,15 @@ function sendPlacementNotificationEmail(deal) {
     + (deal.entreprise ? ' (' + deal.entreprise + ')' : '')
     + (deal.commercial ? ' · ' + deal.commercial : '');
 
-  var salaireAn = deal.salaire_annuel ? parseInt(deal.salaire_annuel).toLocaleString('fr-FR') + ' €' : '—';
+  // FIX ARRONDI : recalcul à la volée depuis brut + nb_jours (helper centralisé)
+  var _brutMSal = parseFloat((deal.brut || '').toString().replace(/[^0-9.,]/g,'').replace(',','.')) || 0;
+  var _nbJSal = parseInt(deal.nb_jours, 10) || 0;
+  var salaireAn;
+  if (_brutMSal > 0 && _nbJSal > 0) {
+    salaireAn = _computeSalaireAnnuelContrat(_brutMSal, _nbJSal).toLocaleString('fr-FR') + ' €';
+  } else {
+    salaireAn = deal.salaire_annuel ? parseInt(deal.salaire_annuel).toLocaleString('fr-FR') + ' €' : '—';
+  }
   var lienDeals = 'https://normanzeitoun.github.io/simulateur/#deals';
 
   var htmlBody = ''
@@ -27168,7 +27200,15 @@ function sendPlacementCommercialEmail(deal) {
   var candidat = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
   var subject = 'Ton nouveau placement - ' + candidat + (deal.entreprise ? ' · ' + deal.entreprise : '');
 
-  var salaireAn = deal.salaire_annuel ? parseInt(deal.salaire_annuel).toLocaleString('fr-FR') + ' €' : '—';
+  // FIX ARRONDI : recalcul à la volée depuis brut + nb_jours (helper centralisé)
+  var _brutMSal = parseFloat((deal.brut || '').toString().replace(/[^0-9.,]/g,'').replace(',','.')) || 0;
+  var _nbJSal = parseInt(deal.nb_jours, 10) || 0;
+  var salaireAn;
+  if (_brutMSal > 0 && _nbJSal > 0) {
+    salaireAn = _computeSalaireAnnuelContrat(_brutMSal, _nbJSal).toLocaleString('fr-FR') + ' €';
+  } else {
+    salaireAn = deal.salaire_annuel ? parseInt(deal.salaire_annuel).toLocaleString('fr-FR') + ' €' : '—';
+  }
   var tjm = deal.tjm ? deal.tjm + ' €/j' : '—';
 
   var htmlBody = ''
