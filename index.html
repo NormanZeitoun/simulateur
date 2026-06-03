@@ -24968,7 +24968,12 @@ function mergeDeals(remote) {
     var mergedAvenants = _mergeTraces(existing.avenants_mission, d.avenants_mission, 'avenant_id');
     var mergedHist     = _mergeTraces(existing.historique_prolongations, d.historique_prolongations, 'id');
 
-    var winner = (rTs > lTs) ? d : existing;
+    // FIX SYNC : on utilise >= (pas > strict) pour gérer le cas où deux commerciaux
+    // se retrouvent avec des updated_at identiques après un import/restauration.
+    // Sans cette tolérance, une modif faite par un commercial (ex : passage "En cours"
+    // → "Signé") ne se propage jamais aux autres si leurs updated_at locaux sont
+    // identiques au sien. Cohérent avec le fix appliqué à mergeCandidats.
+    var winner = (rTs >= lTs) ? d : existing;
     // On applique les traces fusionnées sur le gagnant
     if (mergedAvenants.length) winner.avenants_mission = mergedAvenants;
     if (mergedHist.length)     winner.historique_prolongations = mergedHist;
