@@ -3378,8 +3378,17 @@ function calc() {
   var rowContrat = document.getElementById('card-brut-contrat-row');
   var valContrat  = document.getElementById('r-brut-contrat');
   // Calcul systématique du brut base 21j pour stockage
-  var brutBase21Sys = NB_JOURS > 0 && NB_JOURS !== 21 ? Math.round(BRUT * 21 / NB_JOURS) : BRUT;
-  var brutContratAnnuelSys = brutBase21Sys * 12;
+  // FIX ARRONDI — On calcule directement le brut ANNUEL contrat sans passer par un
+  // arrondi mensuel intermédiaire. L'ancienne formule arrondissait à l'euro sur le
+  // "brut mensuel base 21j" (avant ×12), ce qui pouvait gonfler l'annuel jusqu'à
+  // ~12€ par effet de levier (0.5€/mois × 12 + arrondi).
+  // Désormais : un seul arrondi, sur le total annuel.
+  var brutContratAnnuelSys = (NB_JOURS > 0 && NB_JOURS !== 21)
+    ? Math.round(BRUT * 21 / NB_JOURS * 12)
+    : BRUT * 12;
+  // brutBase21Sys conservé en local pour rétrocompatibilité (utilisé nulle part ailleurs
+  // sur ce fichier, mais on garde la variable au cas où un placement le récupère)
+  var brutBase21Sys = (NB_JOURS > 0 && NB_JOURS !== 21) ? Math.round(BRUT * 21 / NB_JOURS) : BRUT;
   // Stocker la valeur sur le body via dataset pour récupération facile
   document.body.dataset.brutContratAnnuel = brutContratAnnuelSys;
   if (cardContrat) {
