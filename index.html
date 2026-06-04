@@ -1455,7 +1455,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:18px;">&#9729;&#65039;</span>
           <div>
-            <div style="font-size:12px;font-weight:700;color:#1A1033;">Sync OneDrive</div>
+            <div style="font-size:12px;font-weight:700;color:#1A1033;">Sync OneDrive <span id="app-version-badge" style="font-weight:600;color:#9E94C4;font-size:10px;"></span></div>
             <div id="od-status" style="font-size:11px;color:#6B5E9C;">Non connecté</div>
           </div>
           <span id="od-pending-badge" style="display:none;margin-left:4px;padding:3px 9px;background:#FFF3E0;color:#B5651D;border:1px solid #F0C088;border-radius:10px;font-size:10px;font-weight:700;cursor:pointer;" onclick="odForceSyncNow()" title="Cliquez pour synchroniser maintenant">⚠ Modifs non synchronisées</span>
@@ -1850,6 +1850,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div style="display:flex;align-items:center;gap:10px;">
           <span id="cand-count" style="font-size:11px;color:#6B5E9C;"></span>
           <button onclick="openNewCandidatPopup()" style="padding:7px 14px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">+ Nouveau candidat</button>
+          <button onclick="triggerImportPaiements()" title="Importer le fichier Excel des virements de paie (correspondance par matricule)" style="padding:7px 14px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">&#128176; Importer virements</button>
         </div>
       </div>
       <!-- Barre recherche + filtres -->
@@ -3663,6 +3664,16 @@ function getCommercialData() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  // ═══ VERSION DE L'APP ═══
+  // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
+  // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
+  window.APP_VERSION = 'v2026.06.03c';
+  console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
+  try {
+    var _verEl = document.getElementById('app-version-badge');
+    if (_verEl) _verEl.textContent = window.APP_VERSION;
+  } catch(e) {}
+
   // ═══ PURGE CLÉS TIERCES POLLUANTES ═══
   // L'Analyseur de Paie et d'autres outils sur le même domaine GitHub Pages
   // partagent le localStorage avec le simulateur. Leurs données (parfois >8 Mo)
@@ -7043,7 +7054,8 @@ var SYNC_ENTITIES = [
   { path: '/General/Seven Portage Simlateur/SP_Jours_Prestes_Global.json',     key: 'jours_prestes',     label: 'Jours prestés',     merge: null, getData: null },
   { path: '/General/Seven Portage Simlateur/SP_App_Settings_Global.json',      key: 'app_settings',      label: 'Paramètres app',    merge: null, getData: null },
   { path: '/General/Seven Portage Simlateur/SP_Impayes_Global.json',           key: 'impayes',           label: 'Impayés',           merge: null, getData: null },
-  { path: '/General/Seven Portage Simlateur/SP_Avenants_Global.json',          key: 'avenants',          label: 'Avenants',          merge: null, getData: null }
+  { path: '/General/Seven Portage Simlateur/SP_Avenants_Global.json',          key: 'avenants',          label: 'Avenants',          merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Paiements_Global.json',         key: 'paiements',         label: 'Paiements',         merge: null, getData: null }
 ];
 // Les merge/getData sont attachés au moment du 1er usage (après chargement complet du script,
 // car mergeHistorique etc. peuvent être définis plus loin dans le fichier)
@@ -7074,7 +7086,8 @@ function _initSyncEntities() {
       return payload;
     } },
     impayes: { merge: mergeImpayes, getData: function(){ return {version:1,updated:new Date().toISOString(),impayes:getImpayes()}; } },
-    avenants: { merge: mergeAvenants, getData: function(){ return {version:1,updated:new Date().toISOString(),avenants:getAvenants()}; } }
+    avenants: { merge: mergeAvenants, getData: function(){ return {version:1,updated:new Date().toISOString(),avenants:getAvenants()}; } },
+    paiements: { merge: mergePaiements, getData: function(){ return {version:1,updated:new Date().toISOString(),paiements:getPaiements()}; } }
   };
   SYNC_ENTITIES.forEach(function(ent) {
     if (!ent.merge && mapping[ent.key]) {
@@ -16795,6 +16808,17 @@ function confirmAvenantMission(dealId) {
   }
 
   var avenantId = 'AVM-' + Date.now() + '-' + Math.floor(Math.random()*1000);
+  // ── Alignement avec les avenants de prolongation ──
+  // On réutilise les mêmes helpers (extraction frais depuis la simu + comparaison
+  // avec la simu d'origine du deal) pour remplir les colonnes du tableau Avenants
+  // qui restaient vides côté bouton « Avenant » (frais, ancien salaire, changement).
+  var newFraisAvm = (sim && typeof _avExtractFraisFromSim === 'function') ? _avExtractFraisFromSim(sim) : null;
+  var cmpAvm = (newFraisAvm && typeof _avCompareWithPlacement === 'function') ? _avCompareWithPlacement(newFraisAvm, deal) : null;
+  var fraisChangeAvm = '';
+  if (cmpAvm) {
+    var _chAvm = cmpAvm.changed || {};
+    fraisChangeAvm = (_chAvm.swile_tr || _chAvm.forfait_repas || _chAvm.ind_km || _chAvm.transport_commun || _chAvm.teletravail || _chAvm.tel_internet || _chAvm.grand_deplacement) ? 'Oui' : 'Non';
+  }
   var avenant = {
     id: avenantId,
     deal_id: deal.id,
@@ -16812,8 +16836,25 @@ function confirmAvenantMission(dealId) {
     poste: deal.poste || '',
     // Valeurs de référence (figées — le deal n'est PAS modifié)
     tjm_actuel: deal.tjm || '',
-    tjm: sim ? (sim.tjm || '') : '',  // TJM de la nouvelle simu si attachée
-    new_salaire_annuel: sim ? (sim.brut || '') : '',
+    tjm: newFraisAvm ? (newFraisAvm.tjm || '') : (sim ? (sim.tjm || '') : ''),  // TJM de la nouvelle simu si attachée
+    new_salaire_annuel: newFraisAvm ? (newFraisAvm.new_salaire_annuel || '') : (sim ? (sim.brut || '') : ''),
+    // ── Champs alignés sur les avenants de prolongation (pour l'auto-complétion du tableau) ──
+    motif: 'Avenant mission',
+    cdps_seven_client: '',
+    date_debut: dateAvenant,                                        // l'avenant prend effet à sa date
+    date_fin: deal.date_fin || deal.dateFinPrevisionnelle || '',    // fin de mission inchangée
+    type_contrat: deal.type_contrat || '',
+    ancien_salaire: cmpAvm ? (cmpAvm.oldFrais.new_salaire_annuel || '') : '',
+    changement_frais: fraisChangeAvm,
+    swile_tr: newFraisAvm ? newFraisAvm.swile_tr : '',
+    forfait_repas: newFraisAvm ? newFraisAvm.forfait_repas : '',
+    ind_km: newFraisAvm ? newFraisAvm.ind_km : '',
+    transport_commun: newFraisAvm ? newFraisAvm.transport_commun : '',
+    teletravail: newFraisAvm ? newFraisAvm.teletravail : '',
+    tel_internet: newFraisAvm ? newFraisAvm.tel_internet : '',
+    grand_deplacement: newFraisAvm ? newFraisAvm.grand_deplacement : '',
+    _changed: cmpAvm ? cmpAvm.changed : {},
+    _old: cmpAvm ? cmpAvm.old : {},
     // Suivi (vide à la création, modifiable dans le tableau Avenants)
     etat_avenant_cdt: '',
     etat_av_cdps: '',
@@ -22607,6 +22648,207 @@ function getAvances() {
   try { return JSON.parse(localStorage.getItem(AVANCES_KEY) || '[]'); }
   catch(e) { return []; }
 }
+
+// ═══════════════════════════════════════════════════════════
+// PAIEMENTS — virements de paie importés depuis l'état mensuel
+// Source : export Excel « Virements du mois de … » (Matricule, Nom,
+// Virements déjà effectués = montant viré, Date de paiement).
+// Correspondance par MATRICULE (champ du candidat). Unicité : matricule + période.
+// ═══════════════════════════════════════════════════════════
+var PAIEMENTS_KEY = 'sp_paiements_v1';
+function getPaiements() {
+  try { return JSON.parse(localStorage.getItem(PAIEMENTS_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+function savePaiements(arr) {
+  try { localStorage.setItem(PAIEMENTS_KEY, JSON.stringify(arr || [])); } catch(e) {}
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+function _paiementKey(matricule, periode) {
+  return String(matricule || '').trim() + '|' + String(periode || '').trim();
+}
+// Fusion sync : union par (matricule + période), le plus récemment importé gagne.
+function mergePaiements(remote) {
+  if (!Array.isArray(remote)) return;
+  var byKey = {};
+  getPaiements().forEach(function(p){ if (p) byKey[_paiementKey(p.matricule, p.periode)] = p; });
+  remote.forEach(function(r){
+    if (!r) return;
+    var k = _paiementKey(r.matricule, r.periode);
+    var cur = byKey[k];
+    if (!cur || (r.imported_at || 0) >= (cur.imported_at || 0)) byKey[k] = r;
+  });
+  try { localStorage.setItem(PAIEMENTS_KEY, JSON.stringify(Object.values(byKey))); } catch(e) {}
+}
+function getPaiementsForCandidat(cand) {
+  var mat = (cand && cand.matricule ? String(cand.matricule).trim() : '');
+  if (!mat) return [];
+  return getPaiements()
+    .filter(function(p){ return String(p.matricule || '').trim() === mat; })
+    .sort(function(a,b){ return String(b.periode || '').localeCompare(String(a.periode || '')); });
+}
+function _fmtPaieEur(v) {
+  var n = parseFloat(v);
+  if (isNaN(n)) return '—';
+  return n.toLocaleString('fr-FR', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' €';
+}
+function _fmtPaieDate(v) {
+  if (!v) return '—';
+  var s = String(v).slice(0,10);
+  var p = s.split('-');
+  return (p.length === 3) ? (p[2] + '/' + p[1] + '/' + p[0]) : s;
+}
+
+// Onglet Paiement de la fiche candidat
+function buildCandPaiementsHTML(cand) {
+  var mat = (cand && cand.matricule ? String(cand.matricule).trim() : '');
+  if (!mat) {
+    return '<div style="padding:18px;background:#FFF8E6;border:1.5px solid #F0E0A0;border-radius:10px;color:#8A6D00;font-size:13px;">'
+      + '⚠️ Aucun <strong>matricule</strong> renseigné pour ce candidat. Renseigne-le dans le bloc d\'identité ci-dessus pour rattacher automatiquement ses virements de paie.'
+      + '</div>';
+  }
+  var list = getPaiementsForCandidat(cand);
+  if (!list.length) {
+    return '<div style="padding:18px;color:#6B5E9C;font-size:13px;">Aucun paiement importé pour le matricule <strong>' + mat + '</strong>.<br><span style="font-size:11.5px;color:#9E94C4;">Les paiements arrivent via l\'import du fichier de virements (onglet Candidats → « Importer virements »).</span></div>';
+  }
+  var total = list.reduce(function(s,p){ var n=parseFloat(p.montant); return s + (isNaN(n)?0:n); }, 0);
+  var rows = list.map(function(p){
+    return '<tr style="border-bottom:1px solid #F0EDF9;">'
+      + '<td style="padding:9px 10px;font-size:12px;color:#1A1033;">' + (p.periode || '—') + '</td>'
+      + '<td style="padding:9px 10px;font-size:12px;color:#1A1033;">' + _fmtPaieDate(p.date_paiement) + '</td>'
+      + '<td style="padding:9px 10px;font-size:12px;font-weight:700;color:#1A1033;text-align:right;">' + _fmtPaieEur(p.montant) + '</td>'
+      + '<td style="padding:9px 10px;font-size:11px;color:#9E94C4;">' + (p.source_file || '') + '</td>'
+      + '</tr>';
+  }).join('');
+  return '<div style="overflow-x:auto;">'
+    + '<table style="width:100%;border-collapse:collapse;">'
+    + '<thead><tr style="background:#F5F3FF;">'
+    + '<th style="padding:9px 10px;text-align:left;font-size:11px;color:#6B5E9C;">Période</th>'
+    + '<th style="padding:9px 10px;text-align:left;font-size:11px;color:#6B5E9C;">Date de paiement</th>'
+    + '<th style="padding:9px 10px;text-align:right;font-size:11px;color:#6B5E9C;">Montant viré</th>'
+    + '<th style="padding:9px 10px;text-align:left;font-size:11px;color:#6B5E9C;">Fichier</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>'
+    + '<div style="margin-top:10px;text-align:right;font-size:13px;color:#1A1033;">Total importé : <strong>' + _fmtPaieEur(total) + '</strong> sur ' + list.length + ' paiement(s)</div>'
+    + '</div>';
+}
+
+// ── Import du fichier Excel des virements ──
+function _normPeriodeFromTitle(title) {
+  if (!title) return '';
+  var m = String(title).match(/mois de\s+(.+)$/i);
+  return (m ? m[1] : String(title)).trim();
+}
+function _excelDateToISO(v) {
+  if (v == null || v === '') return '';
+  if (v instanceof Date) {
+    return v.getFullYear() + '-' + String(v.getMonth()+1).padStart(2,'0') + '-' + String(v.getDate()).padStart(2,'0');
+  }
+  if (typeof v === 'number') {
+    if (typeof XLSX !== 'undefined' && XLSX.SSF && XLSX.SSF.parse_date_code) {
+      try { var d = XLSX.SSF.parse_date_code(v); if (d && d.y) return d.y + '-' + String(d.m).padStart(2,'0') + '-' + String(d.d).padStart(2,'0'); } catch(e) {}
+    }
+    return String(v);
+  }
+  var s = String(v).trim();
+  var iso = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
+  var fr = s.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (fr) return fr[3] + '-' + fr[2] + '-' + fr[1];
+  return s;
+}
+function importPaiementsFromFile(file) {
+  if (!file) return;
+  if (typeof XLSX === 'undefined') { alert('Lecteur Excel indisponible.'); return; }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+      var ws = wb.Sheets[wb.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+      if (!rows || !rows.length) { alert('Fichier vide ou illisible.'); return; }
+      // Période depuis la ligne de titre « … mois de mai 2026 »
+      var periode = '';
+      for (var i=0; i<Math.min(rows.length,6); i++){
+        var c0 = (rows[i] && rows[i][0] != null) ? String(rows[i][0]) : '';
+        if (/mois de/i.test(c0)) { periode = _normPeriodeFromTitle(c0); break; }
+      }
+      // Ligne d'en-tête = celle qui contient « Matricule »
+      var headerIdx = -1, cols = {};
+      for (var h=0; h<Math.min(rows.length,15); h++){
+        var rowArr = rows[h] || [];
+        var txt = rowArr.map(function(x){ return String(x == null ? '' : x).replace(/\s+/g,' ').trim().toLowerCase(); });
+        var mi = txt.findIndex(function(t){ return t.indexOf('matricule') >= 0; });
+        if (mi >= 0){
+          headerIdx = h;
+          txt.forEach(function(t, idx){
+            if (t.indexOf('matricule') >= 0) cols.matricule = idx;
+            else if (t.indexOf('virements') >= 0 && t.indexOf('effectu') >= 0) cols.montant = idx;
+            else if (t.indexOf('net') >= 0 && t.indexOf('payer') >= 0 && cols.net == null) cols.net = idx;
+            else if (t.indexOf('date') >= 0 && t.indexOf('paiement') >= 0) cols.date = idx;
+            else if (t.indexOf('nom') >= 0 && cols.nom == null) cols.nom = idx;
+          });
+          break;
+        }
+      }
+      if (headerIdx < 0 || cols.matricule == null) { alert('Colonne « Matricule » introuvable — vérifie le fichier.'); return; }
+      if (cols.montant == null) cols.montant = cols.net; // repli sur Net à payer si pas de colonne « Virements effectués »
+
+      var matIndex = {};
+      getCandidats().forEach(function(c){ if (c.matricule) matIndex[String(c.matricule).trim()] = c; });
+      var byKey = {};
+      getPaiements().forEach(function(p){ byKey[_paiementKey(p.matricule, p.periode)] = p; });
+
+      var added=0, updated=0, unmatched=[], now=Date.now(), fname=(file.name||'');
+      for (var r=headerIdx+1; r<rows.length; r++){
+        var row = rows[r]; if (!row) continue;
+        var mat = String(row[cols.matricule] == null ? '' : row[cols.matricule]).trim();
+        if (!mat || !/\d/.test(mat)) continue; // ignore lignes vides / totaux
+        var rawMontant = (cols.montant != null) ? row[cols.montant] : '';
+        var montant = parseFloat(String(rawMontant).replace(/\s/g,'').replace(',','.'));
+        if (isNaN(montant)) montant = '';
+        var rec = {
+          matricule: mat,
+          nom: cols.nom != null ? String(row[cols.nom]||'').trim() : '',
+          montant: montant,
+          date_paiement: _excelDateToISO(cols.date != null ? row[cols.date] : ''),
+          periode: periode,
+          source_file: fname,
+          imported_at: now,
+          candidat_id: matIndex[mat] ? matIndex[mat].id : null
+        };
+        if (!matIndex[mat]) unmatched.push(rec);
+        var k = _paiementKey(mat, periode);
+        if (byKey[k]) updated++; else added++;
+        byKey[k] = rec;
+      }
+      savePaiements(Object.values(byKey));
+
+      var msg = '✓ Import terminé — période « ' + (periode || '?') + ' »\n\n'
+        + added + ' nouveau(x) paiement(s)\n'
+        + updated + ' mis à jour\n'
+        + unmatched.length + ' matricule(s) non rattaché(s) à un candidat';
+      if (unmatched.length){
+        msg += '\n\n── À rapprocher ──\n'
+          + unmatched.slice(0,25).map(function(u){ return '• ' + u.matricule + '  ' + (u.nom || ''); }).join('\n');
+        if (unmatched.length > 25) msg += '\n… +' + (unmatched.length - 25) + ' autres';
+        msg += '\n\nRenseigne ces matricules dans les fiches candidat puis réimporte : ils se rattacheront tout seuls.';
+      }
+      alert(msg);
+      if (typeof renderCandidats === 'function') renderCandidats();
+    } catch(err){
+      console.error('[Paiements] import:', err);
+      alert('Erreur de lecture du fichier : ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function triggerImportPaiements() {
+  var inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.xlsx,.xls,.csv';
+  inp.onchange = function(){ if (inp.files && inp.files[0]) importPaiementsFromFile(inp.files[0]); };
+  inp.click();
+}
 function saveAvances(arr) {
   localStorage.setItem(AVANCES_KEY, JSON.stringify(arr));
   if (typeof odAutoSync === 'function') odAutoSync();
@@ -23800,6 +24042,7 @@ function buildCandFicheHTML(cand) {
     + fld('Nom', cand.nom, 'nom')
     + fld('Email', cand.email, 'email', 'email')
     + fld('Téléphone', cand.tel, 'tel', 'tel')
+    + fld('Matricule paie', cand.matricule, 'matricule')
     + fld('Poste', cand.poste, 'poste')
     + sel('Profil', cand.profil||'', 'profil', ['','Consultant','Manager','Expert','Architecte','Chef de projet','Autre'])
     + fld('TJM actuel (€/j)', cand.tjm_actuel, 'tjm_actuel')
@@ -23844,6 +24087,7 @@ function buildCandFicheHTML(cand) {
     + '<button data-tab="documents" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-documents" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128196; Documents</button>'
     + '<button data-tab="compte_act" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-compte_act" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128202; Compte d\'activité</button>'
     + '<button data-tab="rappels" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-rappels" class="ct-btn-rappels" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128276; Rappels</button>'
+    + '<button data-tab="paiement" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-paiement" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128176; Paiement (' + (typeof getPaiementsForCandidat === 'function' ? getPaiementsForCandidat(cand).length : 0) + ')</button>'
     + '</div>'
     + '<div id="ct-content-' + cand.id + '" style="padding:16px 20px;min-height:280px;max-height:42vh;overflow-y:auto;"></div>'
     + '</div>'
@@ -24230,7 +24474,7 @@ function switchCandTab(id, tab) {
   var cand = cands.find(function(c) { return c.id === id; });
   if (!cand) return;
   // Mettre à jour les boutons
-  ['simulations','placements','avances','documents','compte_act','rappels'].forEach(function(t) {
+  ['simulations','placements','avances','documents','compte_act','rappels','paiement'].forEach(function(t) {
     var btn = document.getElementById('ct-btn-' + t);
     if (!btn) return;
     var active = t === tab;
@@ -24264,6 +24508,7 @@ function switchCandTab(id, tab) {
     }
   }
   else if (tab === 'rappels') cont.innerHTML = buildCandRappelsHTML(cand);
+  else if (tab === 'paiement') cont.innerHTML = buildCandPaiementsHTML(cand);
   else if (tab === 'commentaires') cont.innerHTML = buildCandCommsHTML(cand);
 }
 
@@ -24638,15 +24883,30 @@ function runFullSync(btn) {
         errors.push('serialize ' + step.label);
         return Promise.resolve();
       }
-      return fetch('https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + _odEncPath(step.path) + ':/content', {
-        method: 'PUT',
-        headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
-        body: body
-      }).then(function(r){
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        pushCount++;
-        setSyncProgress('↑ ' + pushCount + '/' + total + ' envoyées (' + step.label + ')');
-      }).catch(function(err){
+      var putUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + _odEncPath(step.path) + ':/content';
+      // Réessai sur conflit/throttle (même logique que pushOne de la sync auto) :
+      // 409 = écriture concurrente, 412 = etag, 429 = throttle, 503/504 = indispo.
+      // Sans ce retry, un simple chevauchement entre sync manuelle et auto faisait
+      // « Echec push <entité> HTTP 409 ».
+      function pushStep(attempt) {
+        attempt = attempt || 1;
+        return fetch(putUrl, {
+          method: 'PUT',
+          headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' },
+          body: body
+        }).then(function(r){
+          if (r.ok) {
+            pushCount++;
+            setSyncProgress('↑ ' + pushCount + '/' + total + ' envoyées (' + step.label + ')');
+            return;
+          }
+          if ((r.status === 409 || r.status === 412 || r.status === 429 || r.status === 503 || r.status === 504) && attempt < 3) {
+            return new Promise(function(resolve){ setTimeout(resolve, attempt * 800); }).then(function(){ return pushStep(attempt + 1); });
+          }
+          throw new Error('HTTP ' + r.status);
+        });
+      }
+      return pushStep(1).catch(function(err){
         console.warn('[Sync] Echec push ' + step.label, err);
         errors.push('push ' + step.label + ': ' + err.message);
         pushCount++;
