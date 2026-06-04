@@ -3668,7 +3668,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.03e';
+  window.APP_VERSION = 'v2026.06.03f';
   console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
   try {
     var _verEl = document.getElementById('app-version-badge');
@@ -22690,6 +22690,10 @@ function mergePaiements(remote) {
   try { localStorage.setItem(PAIEMENTS_KEY, JSON.stringify(Object.values(byKey))); } catch(e) {}
 }
 // Suppression manuelle d'un virement, propagée à toute l'équipe via tombstone.
+function deletePaiementBtn(btn) {
+  if (!btn) return;
+  deletePaiement(btn.getAttribute('data-mat') || '', btn.getAttribute('data-per') || '', parseInt(btn.getAttribute('data-cid')));
+}
 function deletePaiement(matricule, periode, candId) {
   var key = _paiementKey(matricule, periode);
   if (!confirm('Supprimer ce virement (' + matricule + ' — ' + periode + ') ?\nLa suppression sera propagée à toute l\'équipe et un réimport du même fichier ne le recréera pas.')) return;
@@ -22743,7 +22747,7 @@ function buildCandPaiementsHTML(cand) {
       + '<td style="padding:9px 10px;font-size:12px;color:#1A1033;">' + _fmtPaieDate(p.date_paiement) + '</td>'
       + '<td style="padding:9px 10px;font-size:12px;font-weight:700;color:#1A1033;text-align:right;">' + _fmtPaieEur(p.montant) + '</td>'
       + '<td style="padding:9px 10px;font-size:11px;color:#9E94C4;">' + (p.source_file || '') + '</td>'
-      + '<td style="padding:9px 10px;text-align:center;"><button onclick="deletePaiement(' + JSON.stringify(String(p.matricule||'')) + ',' + JSON.stringify(String(p.periode||'')) + ',' + cand.id + ')" title="Supprimer ce virement (propagé à toute l\'équipe)" style="background:none;border:none;color:#D14343;cursor:pointer;font-size:14px;line-height:1;">&#128465;</button></td>'
+      + '<td style="padding:9px 10px;text-align:center;"><button data-mat="' + String(p.matricule||'').replace(/"/g,'&quot;') + '" data-per="' + String(p.periode||'').replace(/"/g,'&quot;') + '" data-cid="' + cand.id + '" onclick="deletePaiementBtn(this)" title="Supprimer ce virement (propagé à toute l\'équipe)" style="background:none;border:none;color:#D14343;cursor:pointer;font-size:14px;line-height:1;">&#128465;</button></td>'
       + '</tr>';
   }).join('');
   return '<div style="overflow-x:auto;">'
