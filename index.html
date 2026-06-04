@@ -3668,7 +3668,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.03f';
+  window.APP_VERSION = 'v2026.06.03g';
   console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
   try {
     var _verEl = document.getElementById('app-version-badge');
@@ -22709,11 +22709,14 @@ function deletePaiement(matricule, periode, candId) {
     if (btn) btn.innerHTML = '\uD83D\uDCB0 Paiement (' + getPaiementsForCandidat(cand).length + ')';
   }
 }
+// Normalise un matricule pour la correspondance : enlève espaces et zéros initiaux,
+// pour matcher « 01190 » (texte de la fiche) avec 1190 (nombre dans certains exports).
+function _normMat(m) { return String(m == null ? '' : m).trim().replace(/\s+/g,'').replace(/^0+/, ''); }
 function getPaiementsForCandidat(cand) {
-  var mat = (cand && cand.matricule ? String(cand.matricule).trim() : '');
+  var mat = _normMat(cand && cand.matricule);
   if (!mat) return [];
   return getPaiements()
-    .filter(function(p){ return String(p.matricule || '').trim() === mat; })
+    .filter(function(p){ return _normMat(p.matricule) === mat; })
     .sort(function(a,b){ return String(b.periode || '').localeCompare(String(a.periode || '')); });
 }
 function _fmtPaieEur(v) {
@@ -22823,7 +22826,7 @@ function _applyPaiementsWorkbook(bytes, fileName) {
   if (headerIdx < 0 || cols.matricule == null) return { ok:false, error:'Colonne \u00ab Matricule \u00bb introuvable.' };
   if (cols.montant == null) cols.montant = cols.net;
   var matIndex = {};
-  getCandidats().forEach(function(c){ if (c.matricule) matIndex[String(c.matricule).trim()] = c; });
+  getCandidats().forEach(function(c){ if (c.matricule) matIndex[_normMat(c.matricule)] = c; });
   var byKey = {};
   getPaiements().forEach(function(p){ byKey[_paiementKey(p.matricule, p.periode)] = p; });
   var added=0, updated=0, unmatched=[], now=Date.now(), fname=(fileName||'');
@@ -22842,9 +22845,9 @@ function _applyPaiementsWorkbook(bytes, fileName) {
       montant: montant,
       date_paiement: _excelDateToISO(cols.date != null ? row[cols.date] : ''),
       periode: periode, source_file: fname, imported_at: now,
-      candidat_id: matIndex[mat] ? matIndex[mat].id : null
+      candidat_id: matIndex[_normMat(mat)] ? matIndex[_normMat(mat)].id : null
     };
-    if (!matIndex[mat]) unmatched.push(rec);
+    if (!matIndex[_normMat(mat)]) unmatched.push(rec);
     if (byKey[k]) updated++; else added++;
     byKey[k] = rec;
   }
