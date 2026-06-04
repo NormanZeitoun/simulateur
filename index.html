@@ -3668,7 +3668,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.04e';
+  window.APP_VERSION = 'v2026.06.04f';
   console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
   try {
     var _verEl = document.getElementById('app-version-badge');
@@ -7064,7 +7064,8 @@ var SYNC_ENTITIES = [
   { path: '/General/Seven Portage Simlateur/SP_App_Settings_Global.json',      key: 'app_settings',      label: 'Paramètres app',    merge: null, getData: null },
   { path: '/General/Seven Portage Simlateur/SP_Impayes_Global.json',           key: 'impayes',           label: 'Impayés',           merge: null, getData: null },
   { path: '/General/Seven Portage Simlateur/SP_Avenants_Global.json',          key: 'avenants',          label: 'Avenants',          merge: null, getData: null },
-  { path: '/General/Seven Portage Simlateur/SP_Paiements_Global.json',         key: 'paiements',         label: 'Paiements',         merge: null, getData: null }
+  { path: '/General/Seven Portage Simlateur/SP_Paiements_Global.json',         key: 'paiements',         label: 'Paiements',         merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_VisitesMedicales_Global.json',  key: 'visites_medicales', label: 'Visites médicales', merge: null, getData: null }
 ];
 // Les merge/getData sont attachés au moment du 1er usage (après chargement complet du script,
 // car mergeHistorique etc. peuvent être définis plus loin dans le fichier)
@@ -7096,7 +7097,8 @@ function _initSyncEntities() {
     } },
     impayes: { merge: mergeImpayes, getData: function(){ return {version:1,updated:new Date().toISOString(),impayes:getImpayes()}; } },
     avenants: { merge: mergeAvenants, getData: function(){ return {version:1,updated:new Date().toISOString(),avenants:getAvenants()}; } },
-    paiements: { merge: mergePaiements, getData: function(){ return {version:1,updated:new Date().toISOString(),paiements:getPaiements()}; } }
+    paiements: { merge: mergePaiements, getData: function(){ return {version:1,updated:new Date().toISOString(),paiements:getPaiements()}; } },
+    visites_medicales: { merge: mergeVisitesMedicales, getData: function(){ return {version:1,updated:new Date().toISOString(),visites_medicales:getVisitesMedicales()}; } }
   };
   SYNC_ENTITIES.forEach(function(ent) {
     if (!ent.merge && mapping[ent.key]) {
@@ -12990,7 +12992,8 @@ var RH_SUBTABS = [
   { key: 'frais',        label: 'Frais',             icon: '\u{1F4C4}', ready: true  },
   { key: 'comptes_act',  label: 'Comptes d\'activité', icon: '\u{1F4CA}', ready: true  },
   { key: 'impayes',      label: 'Impayés',           icon: '\u{1F4B3}', ready: true  },
-  { key: 'cooptation',   label: 'Cooptation',        icon: '\u{1F91D}', ready: true  }
+  { key: 'cooptation',   label: 'Cooptation',        icon: '\u{1F91D}', ready: true  },
+  { key: 'visite_medicale', label: 'Visite médicale', icon: '\u{1F3E5}', ready: true }
 ];
 
 function showRHSection(subtab) {
@@ -13017,10 +13020,242 @@ function showRHSection(subtab) {
     showImpayesView();
   } else if (subtab === 'avenants') {
     showAvenantsView();
+  } else if (subtab === 'visite_medicale') {
+    showVisiteMedicaleView();
   } else {
     // Placeholder pour les sous-sections non encore implémentées
     showRHPlaceholder(subtab);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// VISITE MÉDICALE — suivi inscriptions / avis d'aptitude (Suivi RH)
+// Source initiale : import Excel. Auto-alimenté aux nouveaux placements (étape 2).
+// ═══════════════════════════════════════════════════════════════════
+var VM_KEY = 'sp_visites_medicales_v1';
+var VM_FILTER = { ville: 'all', annee: 'all', search: '' };
+var _VM_IDF_DEPTS = ['75','77','78','91','92','93','94','95'];
+function getVisitesMedicales() {
+  try { return JSON.parse(localStorage.getItem(VM_KEY) || '[]'); } catch(e) { return []; }
+}
+function saveVisitesMedicales(arr) {
+  try { localStorage.setItem(VM_KEY, JSON.stringify(arr || [])); } catch(e) {}
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+function _vmNorm(s){ return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g,' '); }
+function _vmKey(nom, prenom){ return _vmNorm(nom) + '|' + _vmNorm(prenom); }
+function mergeVisitesMedicales(remote) {
+  if (!Array.isArray(remote)) return;
+  var byKey = {};
+  getVisitesMedicales().forEach(function(v){ if (v) byKey[_vmKey(v.nom, v.prenom)] = v; });
+  remote.forEach(function(r){
+    if (!r) return;
+    var k = _vmKey(r.nom, r.prenom);
+    if (typeof isTombstoned === 'function' && isTombstoned('visites_medicales', k)) { delete byKey[k]; return; }
+    var cur = byKey[k];
+    if (!cur || (r.updated_at || 0) >= (cur.updated_at || 0)) byKey[k] = r;
+  });
+  if (typeof isTombstoned === 'function') { Object.keys(byKey).forEach(function(k){ if (isTombstoned('visites_medicales', k)) delete byKey[k]; }); }
+  try { localStorage.setItem(VM_KEY, JSON.stringify(Object.values(byKey))); } catch(e) {}
+}
+function _vmVilleFromAddress(addr) {
+  var m = String(addr || '').match(/\b(\d{5})\b/);
+  if (!m) return '';
+  return _VM_IDF_DEPTS.indexOf(m[1].slice(0,2)) >= 0 ? 'IDF' : 'Région';
+}
+function _vmInscriptionDate(dateEntreeISO) {
+  if (!dateEntreeISO) return '';
+  var p = String(dateEntreeISO).slice(0,10).split('-');
+  if (p.length < 2) return '';
+  var y = parseInt(p[0],10), m = parseInt(p[1],10);
+  if (isNaN(y) || isNaN(m)) return '';
+  m += 4; while (m > 12) { m -= 12; y += 1; }
+  return y + '-' + String(m).padStart(2,'0') + '-01';
+}
+function _vmExcelToISO(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'number') {
+    var d = new Date(Math.round((v - 25569) * 86400 * 1000));
+    if (!isNaN(d.getTime())) return d.getUTCFullYear() + '-' + String(d.getUTCMonth()+1).padStart(2,'0') + '-' + String(d.getUTCDate()).padStart(2,'0');
+    return '';
+  }
+  var s = String(v).trim();
+  var iso = s.match(/(\d{4})-(\d{2})-(\d{2})/); if (iso) return iso[1]+'-'+iso[2]+'-'+iso[3];
+  var fr = s.match(/(\d{2})\/(\d{2})\/(\d{4})/); if (fr) return fr[3]+'-'+fr[2]+'-'+fr[1];
+  return s;
+}
+function _vmFmtDate(v){ if(!v) return '—'; var p=String(v).slice(0,10).split('-'); return p.length===3 ? (p[2]+'/'+p[1]+'/'+p[0]) : String(v); }
+function _applyVMWorkbook(bytes, fileName) {
+  if (typeof XLSX === 'undefined') return { ok:false, error:'Lecteur Excel indisponible.' };
+  var wb = XLSX.read(bytes, { type:'array' });
+  var ws = wb.Sheets[wb.SheetNames[0]];
+  var rows = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:'' });
+  if (!rows || !rows.length) return { ok:false, error:'Fichier vide.' };
+  var hi = -1, c = {};
+  for (var h=0; h<Math.min(rows.length,8); h++){
+    var txt = (rows[h]||[]).map(function(x){ return String(x==null?'':x).replace(/\s+/g,' ').trim().toLowerCase(); });
+    if (txt.indexOf('nom') >= 0) {
+      hi = h;
+      txt.forEach(function(t, i){
+        if (t === 'nom') c.nom = i;
+        else if (t.indexOf('prénom') >= 0 || t.indexOf('prenom') >= 0) c.prenom = i;
+        else if (t.indexOf('adresse') >= 0) c.adresse = i;
+        else if (t.indexOf('entrée') >= 0 || t.indexOf('entree') >= 0) c.entree = i;
+        else if (t.indexOf('inscription') >= 0 && t.indexOf('date') >= 0) c.date_insc = i;
+        else if (t === 'inscription') c.inscription = i;
+        else if (t.indexOf('date') >= 0 && t.indexOf('vm') >= 0 && t.indexOf('prochaine') < 0) c.date_vm = i;
+        else if (t.indexOf('aptitude') >= 0) c.avis = i;
+        else if (t.indexOf('prochaine') >= 0) c.date_prochaine = i;
+      });
+      break;
+    }
+  }
+  if (hi < 0 || c.nom == null) return { ok:false, error:'Colonne « Nom » introuvable.' };
+  var byKey = {};
+  getVisitesMedicales().forEach(function(v){ byKey[_vmKey(v.nom, v.prenom)] = v; });
+  var added=0, updated=0, now=Date.now();
+  for (var r=hi+1; r<rows.length; r++){
+    var row = rows[r]; if (!row) continue;
+    var nom = String(row[c.nom]==null?'':row[c.nom]).trim();
+    if (!nom) continue;
+    var prenom = c.prenom!=null ? String(row[c.prenom]||'').trim() : '';
+    var k = _vmKey(nom, prenom);
+    if (typeof isTombstoned === 'function' && isTombstoned('visites_medicales', k)) continue;
+    var adresse = c.adresse!=null ? String(row[c.adresse]||'').trim() : '';
+    var dateEntree = c.entree!=null ? _vmExcelToISO(row[c.entree]) : '';
+    var dateInsc = c.date_insc!=null ? _vmExcelToISO(row[c.date_insc]) : '';
+    if (!dateInsc) dateInsc = _vmInscriptionDate(dateEntree);
+    var existing = byKey[k];
+    var rec = {
+      id: existing ? existing.id : ('vm_' + now + '_' + r),
+      nom: nom, prenom: prenom, adresse: adresse,
+      ville: _vmVilleFromAddress(adresse),
+      date_entree: dateEntree,
+      date_inscription: dateInsc,
+      inscription: c.inscription!=null ? (String(row[c.inscription]||'').trim() || 'Non') : (existing ? existing.inscription : 'Non'),
+      date_vm: c.date_vm!=null ? _vmExcelToISO(row[c.date_vm]) : (existing ? existing.date_vm : ''),
+      avis_aptitude: c.avis!=null ? (String(row[c.avis]||'').trim() || 'Non') : (existing ? existing.avis_aptitude : 'Non'),
+      date_prochaine_vm: c.date_prochaine!=null ? _vmExcelToISO(row[c.date_prochaine]) : (existing ? existing.date_prochaine_vm : ''),
+      source: existing ? existing.source : 'import',
+      updated_at: now
+    };
+    if (existing) updated++; else added++;
+    byKey[k] = rec;
+  }
+  saveVisitesMedicales(Object.values(byKey));
+  return { ok:true, added:added, updated:updated };
+}
+function importVMFromFile(file) {
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var res;
+    try { res = _applyVMWorkbook(new Uint8Array(e.target.result), file.name||''); }
+    catch(err){ console.error('[VM] import', err); alert('Erreur de lecture : ' + err.message); return; }
+    if (!res.ok) { alert(res.error || 'Import impossible.'); return; }
+    alert('\u2713 Import terminé : ' + res.added + ' nouvelle(s) ligne(s), ' + res.updated + ' mise(s) à jour.');
+    if (currentRHSubTab === 'visite_medicale') renderVisiteMedicale();
+  };
+  reader.readAsArrayBuffer(file);
+}
+function triggerImportVM() {
+  var inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.xlsx,.xls,.csv';
+  inp.onchange = function(){ if (inp.files && inp.files[0]) importVMFromFile(inp.files[0]); };
+  inp.click();
+}
+function updateVMField(id, field, value) {
+  var arr = getVisitesMedicales();
+  var v = arr.find(function(x){ return x.id === id; });
+  if (!v) return;
+  v[field] = value; v.updated_at = Date.now();
+  saveVisitesMedicales(arr);
+}
+function showVisiteMedicaleView() {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-deals'); if (!tab) return;
+  tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+  if (typeof setDealsOriginalVisible === 'function') setDealsOriginalVisible(false);
+  injectRHSubNav();
+  var container = document.getElementById('rh-content-container');
+  if (!container) { container = document.createElement('div'); container.id = 'rh-content-container'; tab.appendChild(container); }
+  container.style.display = 'block';
+  renderVisiteMedicale();
+}
+function renderVisiteMedicale() {
+  var container = document.getElementById('rh-content-container');
+  if (!container) return;
+  var all = getVisitesMedicales();
+  var annees = {};
+  all.forEach(function(v){ var y = (v.date_inscription||'').slice(0,4); if (y) annees[y] = 1; });
+  var anneesList = Object.keys(annees).sort();
+  var q = _vmNorm(VM_FILTER.search);
+  var list = all.filter(function(v){
+    if (VM_FILTER.ville !== 'all' && v.ville !== VM_FILTER.ville) return false;
+    if (VM_FILTER.annee !== 'all' && (v.date_inscription||'').slice(0,4) !== VM_FILTER.annee) return false;
+    if (q && (_vmNorm(v.nom).indexOf(q) < 0 && _vmNorm(v.prenom).indexOf(q) < 0)) return false;
+    return true;
+  }).sort(function(a,b){ return String(b.date_inscription||'').localeCompare(String(a.date_inscription||'')); });
+  var nbIDF = all.filter(function(v){ return v.ville==='IDF'; }).length;
+  var nbReg = all.filter(function(v){ return v.ville==='Région'; }).length;
+  var h = '<div style="max-width:1400px;margin:0 auto;padding:4px 2px 40px;">';
+  h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">';
+  h += '<h2 style="margin:0;font-size:18px;color:#1A1033;">\u{1F3E5} Visite médicale</h2>';
+  h += '<span style="font-size:12px;color:#9E94C4;">' + all.length + ' personne(s) \u00b7 ' + nbIDF + ' IDF \u00b7 ' + nbReg + ' Région</span>';
+  h += '<button onclick="triggerImportVM()" style="margin-left:auto;padding:8px 14px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">\u2B06 Importer l\'Excel</button>';
+  h += '</div>';
+  h += '<div style="background:#fff;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">';
+  h += '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Zone</label><div style="display:flex;gap:6px;">'
+    + ['all|Toutes','IDF|IDF','Région|Région'].map(function(o){ var p=o.split('|'); var on=VM_FILTER.ville===p[0]; return '<button onclick="VM_FILTER.ville=\''+p[0]+'\';renderVisiteMedicale();" style="padding:7px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid '+(on?'#7343EE':'#E4E0FA')+';background:'+(on?'#7343EE':'#fff')+';color:'+(on?'#fff':'#6B5E9C')+';">'+p[1]+'</button>'; }).join('')
+    + '</div></div>';
+  h += '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Année d\'inscription</label>'
+    + '<select onchange="VM_FILTER.annee=this.value;renderVisiteMedicale();" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;">'
+    + '<option value="all"' + (VM_FILTER.annee==='all'?' selected':'') + '>Toutes</option>'
+    + anneesList.map(function(y){ return '<option value="'+y+'"'+(VM_FILTER.annee===y?' selected':'')+'>'+y+'</option>'; }).join('')
+    + '</select></div>';
+  h += '<div style="flex:1;min-width:200px;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Recherche par personne</label>'
+    + '<input id="vm-search" type="text" value="' + String(VM_FILTER.search||'').replace(/"/g,'&quot;') + '" placeholder="Nom ou prénom…" oninput="VM_FILTER.search=this.value;renderVisiteMedicale();setTimeout(function(){var e=document.getElementById(\'vm-search\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0);" style="width:100%;padding:7px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;"></div>';
+  h += '</div>';
+  if (!list.length) {
+    h += '<div style="padding:30px;text-align:center;color:#9E94C4;font-size:13px;">' + (all.length ? 'Aucune ligne ne correspond aux filtres.' : 'Aucune donnée. Clique sur \u00ab Importer l\'Excel \u00bb pour charger le fichier des visites médicales.') + '</div></div>';
+    container.innerHTML = h; return;
+  }
+  h += '<div style="overflow-x:auto;background:#fff;border:1px solid #E4E0FA;border-radius:10px;">';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+  h += '<thead><tr style="background:#F5F3FF;color:#6B5E9C;">'
+    + ['Nom','Prénom','Ville','Date entrée','Date inscription','Inscription','Date VM','Avis aptitude','Prochaine VM'].map(function(col){ return '<th style="padding:9px 10px;text-align:left;font-size:11px;white-space:nowrap;">'+col+'</th>'; }).join('')
+    + '</tr></thead><tbody>';
+  var ouiNon = function(id, field, val){
+    return '<select onchange="updateVMField(\''+id+'\',\''+field+'\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11.5px;font-weight:700;color:'+(val==='Oui'?'#0F5132':'#8A5F00')+';background:'+(val==='Oui'?'#F0FAF4':'#FFF8E8')+';">'
+      + '<option value="Non"'+(val!=='Oui'?' selected':'')+'>Non</option>'
+      + '<option value="Oui"'+(val==='Oui'?' selected':'')+'>Oui</option></select>';
+  };
+  var dateInput = function(id, field, val){
+    return '<input type="date" value="'+(String(val||'').slice(0,10))+'" onchange="updateVMField(\''+id+'\',\''+field+'\',this.value)" style="padding:3px 5px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;">';
+  };
+  list.forEach(function(v){
+    h += '<tr style="border-bottom:1px solid #F0EDF9;">'
+      + '<td style="padding:8px 10px;font-weight:600;color:#1A1033;">' + (v.nom||'') + '</td>'
+      + '<td style="padding:8px 10px;">' + (v.prenom||'') + '</td>'
+      + '<td style="padding:8px 10px;"><span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:'+(v.ville==='IDF'?'#EEF4FF':'#FFF4EC')+';color:'+(v.ville==='IDF'?'#1A4F96':'#9A5B00')+';">'+(v.ville||'—')+'</span></td>'
+      + '<td style="padding:8px 10px;white-space:nowrap;">' + _vmFmtDate(v.date_entree) + '</td>'
+      + '<td style="padding:8px 10px;white-space:nowrap;">' + _vmFmtDate(v.date_inscription) + '</td>'
+      + '<td style="padding:8px 10px;">' + ouiNon(v.id,'inscription',v.inscription) + '</td>'
+      + '<td style="padding:8px 10px;">' + dateInput(v.id,'date_vm',v.date_vm) + '</td>'
+      + '<td style="padding:8px 10px;">' + ouiNon(v.id,'avis_aptitude',v.avis_aptitude) + '</td>'
+      + '<td style="padding:8px 10px;">' + dateInput(v.id,'date_prochaine_vm',v.date_prochaine_vm) + '</td>'
+      + '</tr>';
+  });
+  h += '</tbody></table></div>';
+  h += '<div style="margin-top:8px;font-size:11px;color:#9E94C4;">' + list.length + ' ligne(s) affichée(s).</div>';
+  h += '</div>';
+  container.innerHTML = h;
 }
 
 // Vue Sortants : utilise le conteneur tab-deals pour cohérence d'emplacement
