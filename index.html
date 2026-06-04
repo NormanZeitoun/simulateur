@@ -3668,11 +3668,19 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.03g';
+  window.APP_VERSION = 'v2026.06.04a';
   console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
   try {
     var _verEl = document.getElementById('app-version-badge');
     if (_verEl) _verEl.textContent = window.APP_VERSION;
+  } catch(e) {}
+  // Badge de version fixe (toujours visible, en bas à droite, quel que soit l'onglet)
+  try {
+    var _vb = document.createElement('div');
+    _vb.id = 'app-version-badge-fixed';
+    _vb.textContent = window.APP_VERSION;
+    _vb.style.cssText = 'position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9E94C4;background:rgba(255,255,255,0.9);padding:2px 7px;border-radius:6px;border:1px solid #E4E0FA;pointer-events:none;font-family:sans-serif;';
+    document.body.appendChild(_vb);
   } catch(e) {}
 
   // ═══ PURGE CLÉS TIERCES POLLUANTES ═══
