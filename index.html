@@ -3668,7 +3668,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.04c';
+  window.APP_VERSION = 'v2026.06.04e';
   console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
   try {
     var _verEl = document.getElementById('app-version-badge');
@@ -16762,6 +16762,10 @@ function openAvenantMissionPopup(dealId) {
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
   var deal = deals.find(function(d){ return String(d.id) === String(dealId); });
   if (!deal) { alert('⚠ Placement introuvable.'); return; }
+  window._avmDeal = deal; // mémorisé pour l'autocomplete des salaires au choix d'une simu
+  // Liste « Types de contrat » depuis les paramètres (Listes personnalisables)
+  var _tcList = (typeof getCustomLists === 'function' && getCustomLists().types_contrat && getCustomLists().types_contrat.length) ? getCustomLists().types_contrat : ['CDI','CDD'];
+  var tcOpts = '<option value="">—</option>' + _tcList.map(function(t){ return '<option' + (deal.type_contrat === t ? ' selected' : '') + '>' + String(t).replace(/</g,'&lt;') + '</option>'; }).join('');
 
   // Récupérer les simulations du candidat (matching par email)
   var sims = [];
@@ -16826,7 +16830,7 @@ function openAvenantMissionPopup(dealId) {
     +       '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Motif</label>'
     +         '<select id="avm-motif" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;background:#fff;">'
     +           '<option value="">— Sélectionner —</option>'
-    +           '<option>Hausse TJM</option><option>New CDPS</option><option>New Frais</option><option>Frais URSSAF</option><option>Avenant mission</option><option>Autre</option>'
+    +           '<option>CDT</option><option>CDPS</option><option>CDT + CDPS</option><option>New CDPS</option><option>CDT + New CDPS</option>'
     +         '</select></div>'
     +       '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">CDPS Seven ou client</label>'
     +         '<select id="avm-cdps-seven-client" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;background:#fff;">'
@@ -16840,9 +16844,7 @@ function openAvenantMissionPopup(dealId) {
     +         '<input type="date" id="avm-date-fin" value="' + (deal.date_fin||deal.dateFinPrevisionnelle||'') + '" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
     +       '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Type contrat</label>'
     +         '<select id="avm-type-contrat" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;background:#fff;">'
-    +           '<option value="">—</option>'
-    +           '<option' + (deal.type_contrat==='CDI'?' selected':'') + '>CDI</option>'
-    +           '<option' + (deal.type_contrat==='CDD'?' selected':'') + '>CDD</option>'
+    +           tcOpts
     +         '</select></div>'
     +     '</div>'
     +     '<div style="border:1.5px dashed #E4E0FA;border-radius:8px;padding:10px 12px;margin-bottom:16px;background:#FBFAFF;">'
@@ -16898,6 +16900,24 @@ function _avmOnSimChange() {
       info.innerHTML = '✓ Simu attachée — TJM <strong>' + (s.tjm||'?') + ' €/j</strong>, brut <strong>' + (s.brut||'?') + ' €</strong>'
         + (s.entreprise ? ', client ' + s.entreprise.replace(/</g,'&lt;') : '');
       info.style.color = '#1D9E75';
+      // Autocomplete des salaires : nouveau = salaire annuel de la simu choisie,
+      // ancien = salaire annuel actuel du contrat (deal). On prend bien le salaire ANNUEL pour les deux.
+      try {
+        var deal = window._avmDeal || null;
+        var nf = (typeof _avExtractFraisFromSim === 'function') ? _avExtractFraisFromSim(s) : null;
+        var nouveauSal = nf ? nf.new_salaire_annuel : (s.brut || '');
+        var ancienSal = '';
+        if (deal && nf && typeof _avCompareWithPlacement === 'function') {
+          var cmp = _avCompareWithPlacement(nf, deal);
+          ancienSal = (cmp && cmp.oldFrais) ? cmp.oldFrais.new_salaire_annuel : '';
+        }
+        var elTjm = document.getElementById('avm-tjm');
+        var elAnc = document.getElementById('avm-ancien-sal');
+        var elNouv = document.getElementById('avm-nouveau-sal');
+        if (elTjm && (nf ? nf.tjm : s.tjm)) elTjm.value = (nf ? nf.tjm : s.tjm);
+        if (elNouv && nouveauSal !== '' && nouveauSal != null) elNouv.value = nouveauSal;
+        if (elAnc && ancienSal !== '' && ancienSal != null) elAnc.value = ancienSal;
+      } catch(e2) {}
     }
   } catch(e) {}
 }
@@ -16964,7 +16984,7 @@ function confirmAvenantMission(dealId) {
     commercial: deal.commercial || '',
     prenom_porte: deal.prenom || '',
     nom_porte: deal.nom || '',
-    type_avenant: types.join(' + '),
+    type_avenant: fMotif || '',          // popup « Motif » (CDT/CDPS…) → colonne Type
     types_coches: types,
     client: deal.entreprise || '',
     manager: deal.manager || '',
@@ -16974,7 +16994,7 @@ function confirmAvenantMission(dealId) {
     tjm: newFraisAvm ? (newFraisAvm.tjm || '') : (sim ? (sim.tjm || '') : (fTjmManu || '')),  // simu si attachée, sinon saisie manuelle
     new_salaire_annuel: newFraisAvm ? (newFraisAvm.new_salaire_annuel || '') : (sim ? (sim.brut || '') : (fNouveauSal || '')),
     // ── Champs alignés sur les avenants de prolongation (saisis dans le formulaire ou déduits) ──
-    motif: fMotif || 'Avenant mission',
+    motif: types.join(' + '),            // popup « Type d'avenant » (cases cochées) → colonne Motif
     cdps_seven_client: fCdps || '',
     date_debut: fDateDebut || dateAvenant,
     date_fin: fDateFin || deal.date_fin || deal.dateFinPrevisionnelle || '',
