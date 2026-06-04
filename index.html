@@ -3668,7 +3668,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.04f';
+  window.APP_VERSION = 'v2026.06.04g';
   console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
   try {
     var _verEl = document.getElementById('app-version-badge');
@@ -13229,7 +13229,7 @@ function renderVisiteMedicale() {
   h += '<div style="overflow-x:auto;background:#fff;border:1px solid #E4E0FA;border-radius:10px;">';
   h += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
   h += '<thead><tr style="background:#F5F3FF;color:#6B5E9C;">'
-    + ['Nom','Prénom','Ville','Date entrée','Date inscription','Inscription','Date VM','Avis aptitude','Prochaine VM'].map(function(col){ return '<th style="padding:9px 10px;text-align:left;font-size:11px;white-space:nowrap;">'+col+'</th>'; }).join('')
+    + ['Nom','Prénom','Ville','Adresse','Date entrée','Date inscription','Inscription','Date VM','Avis aptitude','Prochaine VM'].map(function(col){ return '<th style="padding:9px 10px;text-align:left;font-size:11px;white-space:nowrap;">'+col+'</th>'; }).join('')
     + '</tr></thead><tbody>';
   var ouiNon = function(id, field, val){
     return '<select onchange="updateVMField(\''+id+'\',\''+field+'\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11.5px;font-weight:700;color:'+(val==='Oui'?'#0F5132':'#8A5F00')+';background:'+(val==='Oui'?'#F0FAF4':'#FFF8E8')+';">'
@@ -13244,6 +13244,7 @@ function renderVisiteMedicale() {
       + '<td style="padding:8px 10px;font-weight:600;color:#1A1033;">' + (v.nom||'') + '</td>'
       + '<td style="padding:8px 10px;">' + (v.prenom||'') + '</td>'
       + '<td style="padding:8px 10px;"><span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:'+(v.ville==='IDF'?'#EEF4FF':'#FFF4EC')+';color:'+(v.ville==='IDF'?'#1A4F96':'#9A5B00')+';">'+(v.ville||'—')+'</span></td>'
+      + '<td style="padding:8px 10px;color:#6B5E9C;min-width:220px;">' + String(v.adresse||'—').replace(/</g,'&lt;') + '</td>'
       + '<td style="padding:8px 10px;white-space:nowrap;">' + _vmFmtDate(v.date_entree) + '</td>'
       + '<td style="padding:8px 10px;white-space:nowrap;">' + _vmFmtDate(v.date_inscription) + '</td>'
       + '<td style="padding:8px 10px;">' + ouiNon(v.id,'inscription',v.inscription) + '</td>'
