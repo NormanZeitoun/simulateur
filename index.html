@@ -3668,7 +3668,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.04g';
+  window.APP_VERSION = 'v2026.06.04j';
   console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
   try {
     var _verEl = document.getElementById('app-version-badge');
@@ -9392,6 +9392,8 @@ function savePlacement() {
   var _ancienNomEntreprise = (idx >= 0 && deals[idx]) ? (deals[idx].entreprise || '') : '';
   if (idx >= 0) deals[idx] = deal; else deals.unshift(deal);
   saveDeals(deals);
+  // Visite médicale : créer (si nouveau placement) ou mettre à jour la ligne liée
+  try { if (typeof _vmSyncFromDeal === 'function') _vmSyncFromDeal(deal, isNewDeal); } catch(e) { console.warn('[VM] sync placement:', e); }
 
   // Envoi automatique de notification interne uniquement pour nouveau placement
   if (isNewDeal) {
@@ -10355,6 +10357,7 @@ function deleteDeal(id) {
   var deals = getDeals().filter(function(d) { return String(d.id) !== String(id); });
   saveDeals(deals);
   if (typeof addTombstone === 'function') addTombstone('deals', id);
+  try { if (typeof _vmRemoveForDeal === 'function') _vmRemoveForDeal(id); } catch(e) {}
   renderDeals();
 }
 
@@ -10371,6 +10374,8 @@ function cancelDeal(id) {
   d.etat = 'Annulé';
   d._cancelled_at = new Date().toISOString();
   saveDeals(deals);
+  // Visite médicale : retirer la ligne auto-créée pour ce placement annulé (Excel non touché)
+  try { if (typeof _vmSyncFromDeal === 'function') _vmSyncFromDeal(d, false); } catch(e) {}
   if (typeof renderDeals === 'function') renderDeals();
   // Si la fiche candidat est ouverte, rafraîchir son onglet simulations pour afficher le badge
   refreshCandFicheSimsIfOpen(d);
@@ -10533,6 +10538,10 @@ var DEAL_ALL_COLS = [
   {key:'my_silae',                 label:'My SILAE'},
   {key:'mutuelle_envoi_lien',      label:'Mutuelle (lien)'},
   {key:'envoi_carte_swile',        label:'Envoi carte Swile'},
+  // ── Visite médicale (autocomplete + manuel) ──
+  {key:'vm_inscription',           label:'Inscription VM'},
+  {key:'vm_avis',                  label:'Avis VM'},
+  {key:'fiches_r',                 label:'Fiches R'},
   // ── Frais simulation (montants) ──
   {key:'frais_formation',          label:'Formation'},
   {key:'frais_materiel',           label:'Matériel pro'},
@@ -10568,7 +10577,7 @@ var DEAL_ONBOARDING_OPTIONS = {
   demande_autorisation:     ['','Non','Carte Temporaire','Carte Annuelle','Carte Resident','Récépissé','Autorisation provisoire','Autres'],
   decision_favorable:       ['','Non','Carte Temporaire','Carte Annuelle','Carte Resident','Récépissé','Autorisation provisoire','Autres']
 };
-var DEAL_DEFAULT_COLS = ['etat','candidat','poste','tjm','nb_jours','commercial','date_deal','date_entree','actions'];
+var DEAL_DEFAULT_COLS = ['etat','candidat','poste','tjm','nb_jours','commercial','date_deal','date_entree','vm_inscription','vm_avis','fiches_r','actions'];
 var dealVisibleCols = (function(){ try { var s=JSON.parse(localStorage.getItem('sp_deal_cols')||'null'); return s||DEAL_DEFAULT_COLS.slice(); } catch(e){ return DEAL_DEFAULT_COLS.slice(); } })();
 var DEAL_VIEWS_KEY = 'sp_deal_views_v1';
 
@@ -11262,6 +11271,9 @@ function getCellValue(d, key){
       return renderOnboardingSelect(d, key);
     case 'salarie_etranger':
       return '<input type="checkbox" ' + (d.salarie_etranger ? 'checked' : '') + ' onchange="updateDealField(' + d.id + ',\'salarie_etranger\',this.checked);event.stopPropagation();" onclick="event.stopPropagation();" style="accent-color:#F0A500;cursor:pointer;">';
+    case 'vm_inscription': return _dealVMSelect(d, 'inscription');
+    case 'vm_avis':        return _dealVMSelect(d, 'avis_aptitude');
+    case 'fiches_r':       return _dealFichesRSelect(d);
     case 'actions':
       var isCancelled = (d.etat === 'Annulé');
       var annulerBtn = isCancelled
@@ -11293,6 +11305,78 @@ function renderOnboardingSelect(d, key) {
     return '<option value="' + o + '"' + (o===current?' selected':'') + '>' + (o || '—') + '</option>';
   }).join('');
   return '<select onchange="updateDealField(' + d.id + ',\'' + key + '\',this.value);event.stopPropagation();" onclick="event.stopPropagation();" style="padding:2px 6px;border-radius:5px;border:1px solid #E4E0FA;font-size:10px;font-weight:700;background:' + bgStyle + ';color:' + fg + ';cursor:pointer;">' + opts + '</select>';
+}
+
+// ── Colonnes Visite médicale dans le tableau deals (autocomplete VM + manuel) ──
+function _dealVMRow(d) {
+  if (typeof getVisitesMedicales !== 'function' || typeof _vmKey !== 'function') return null;
+  var key = _vmKey(d.nom, d.prenom);
+  return getVisitesMedicales().find(function(v){ return _vmKey(v.nom, v.prenom) === key; }) || null;
+}
+function _dealCandidat(d) {
+  if (typeof getCandidats !== 'function') return null;
+  var cands = getCandidats();
+  var email = (d.email||'').trim().toLowerCase();
+  var c = email ? cands.find(function(x){ return (x.email||'').trim().toLowerCase() === email; }) : null;
+  if (!c && typeof _vmKey === 'function') c = cands.find(function(x){ return _vmKey(x.nom, x.prenom) === _vmKey(d.nom, d.prenom); });
+  return c || null;
+}
+function _candHasDoc(cand, docKey) {
+  if (!cand || !cand.documents) return false;
+  var doc = cand.documents[docKey];
+  return !!(doc && !doc._deleted && (doc.od_id || doc.od_url || doc.name || doc.recu));
+}
+function _vmCellSelect(current, onchangeJs, title) {
+  var bg = current==='Oui' ? '#1D9E75' : (current==='Non' ? '#E24B4A' : '#9E9E9E');
+  var fg = current ? '#fff' : '#6B5E9C';
+  var bgStyle = current ? bg : '#F5F3FF';
+  var opts = ['','Oui','Non'].map(function(o){ return '<option value="'+o+'"'+(o===current?' selected':'')+'>'+(o||'—')+'</option>'; }).join('');
+  return '<select onchange="'+onchangeJs+';event.stopPropagation();" onclick="event.stopPropagation();" title="'+(title||'')+'" style="padding:2px 6px;border-radius:5px;border:1px solid #E4E0FA;font-size:10px;font-weight:700;background:'+bgStyle+';color:'+fg+';cursor:pointer;">'+opts+'</select>';
+}
+function _dealVMSelect(d, vmField) {
+  var row = _dealVMRow(d);
+  var current = row ? (row[vmField] || 'Non') : '';
+  return _vmCellSelect(current, "updateVMFromDeal("+d.id+",'"+vmField+"',this.value)", row ? 'Synchronisé avec le tableau Visite médicale' : 'Aucune ligne VM — sera créée à la saisie');
+}
+function _dealFichesRSelect(d) {
+  var manual = (d.fiches_r !== undefined && d.fiches_r !== null && d.fiches_r !== '') ? d.fiches_r : null;
+  var auto = _candHasDoc(_dealCandidat(d), 'fiche_renseignement') ? 'Oui' : 'Non';
+  var current = manual != null ? manual : auto;
+  var bg = current==='Oui' ? '#1D9E75' : '#E24B4A';
+  var opts = ['Oui','Non'].map(function(o){ return '<option value="'+o+'"'+(o===current?' selected':'')+'>'+o+'</option>'; }).join('');
+  return '<select onchange="updateDealField('+d.id+',\'fiches_r\',this.value);event.stopPropagation();" onclick="event.stopPropagation();" title="'+(manual!=null?'Valeur manuelle':'Auto : Fiche de renseignement '+(auto==='Oui'?'chargée':'absente'))+'" style="padding:2px 6px;border-radius:5px;border:1px solid #E4E0FA;font-size:10px;font-weight:700;background:'+bg+';color:#fff;cursor:pointer;">'+opts+'</select>';
+}
+// Écrit dans la ligne VM (Inscription / Avis) depuis le tableau deals ; crée la ligne si absente.
+function updateVMFromDeal(dealId, vmField, value) {
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var d = deals.find(function(x){ return String(x.id) === String(dealId); });
+  if (!d) return;
+  var arr = getVisitesMedicales();
+  var key = _vmKey(d.nom, d.prenom);
+  var v = arr.find(function(x){ return _vmKey(x.nom, x.prenom) === key; });
+  if (!v) {
+    var ville = (typeof _vmCandVille === 'function') ? _vmCandVille(d) : '';
+    v = { id:'vm_'+Date.now()+'_'+Math.floor(Math.random()*1000), nom:d.nom||'', prenom:d.prenom||'', adresse:ville, ville:_vmVilleFromAddress(ville), date_entree:d.date_entree||'', date_inscription:_vmInscriptionDate(d.date_entree||''), inscription:'Non', date_vm:'', avis_aptitude:'Non', date_prochaine_vm:'', source:'placement', deal_id:d.id, updated_at:Date.now() };
+    arr.push(v);
+  }
+  v[vmField] = value; v.updated_at = Date.now();
+  saveVisitesMedicales(arr);
+  if (typeof renderDeals === 'function') { try { renderDeals(); } catch(e){} }
+  if (currentRHSubTab === 'visite_medicale' && typeof renderVisiteMedicale === 'function') { try { renderVisiteMedicale(); } catch(e){} }
+}
+// Liaison « Avis d'aptitude » présent → Inscription + Avis = Oui dans le tableau VM.
+function _vmApplyAvisAptitude(cand) {
+  if (!cand) return;
+  var arr = getVisitesMedicales();
+  var key = _vmKey(cand.nom, cand.prenom);
+  var v = arr.find(function(x){ return _vmKey(x.nom, x.prenom) === key; });
+  if (!v) {
+    v = { id:'vm_'+Date.now()+'_'+Math.floor(Math.random()*1000), nom:cand.nom||'', prenom:cand.prenom||'', adresse:cand.ville||'', ville:_vmVilleFromAddress(cand.ville||''), date_entree:'', date_inscription:'', inscription:'Oui', date_vm:'', avis_aptitude:'Oui', date_prochaine_vm:'', source:'doc', updated_at:Date.now() };
+    arr.push(v);
+  } else {
+    v.inscription = 'Oui'; v.avis_aptitude = 'Oui'; v.updated_at = Date.now();
+  }
+  saveVisitesMedicales(arr);
 }
 
 function updateDealField(dealId, key, value) {
@@ -13033,7 +13117,7 @@ function showRHSection(subtab) {
 // Source initiale : import Excel. Auto-alimenté aux nouveaux placements (étape 2).
 // ═══════════════════════════════════════════════════════════════════
 var VM_KEY = 'sp_visites_medicales_v1';
-var VM_FILTER = { ville: 'all', annee: 'all', search: '' };
+var VM_FILTER = { ville: 'all', annee: 'all', search: '', mois_entree: '' };
 var _VM_IDF_DEPTS = ['75','77','78','91','92','93','94','95'];
 function getVisitesMedicales() {
   try { return JSON.parse(localStorage.getItem(VM_KEY) || '[]'); } catch(e) { return []; }
@@ -13085,6 +13169,14 @@ function _vmExcelToISO(v) {
   return s;
 }
 function _vmFmtDate(v){ if(!v) return '—'; var p=String(v).slice(0,10).split('-'); return p.length===3 ? (p[2]+'/'+p[1]+'/'+p[0]) : String(v); }
+// "New" pendant 1 mois : date d'entrée dans les 31 derniers jours.
+function _vmIsNew(dateEntreeISO){
+  if (!dateEntreeISO) return false;
+  var d = new Date(String(dateEntreeISO).slice(0,10) + 'T00:00:00');
+  if (isNaN(d.getTime())) return false;
+  var diff = Date.now() - d.getTime();
+  return diff >= 0 && diff <= 31 * 86400 * 1000;
+}
 function _applyVMWorkbook(bytes, fileName) {
   if (typeof XLSX === 'undefined') return { ok:false, error:'Lecteur Excel indisponible.' };
   var wb = XLSX.read(bytes, { type:'array' });
@@ -13171,6 +13263,75 @@ function updateVMField(id, field, value) {
   v[field] = value; v.updated_at = Date.now();
   saveVisitesMedicales(arr);
 }
+// Récupère le champ Ville de la fiche du porté (par email, sinon nom+prénom)
+function _vmCandVille(deal) {
+  try {
+    var cands = (typeof getCandidats === 'function') ? getCandidats() : [];
+    var email = (deal.email||'').trim().toLowerCase();
+    var c = email ? cands.find(function(x){ return (x.email||'').trim().toLowerCase() === email; }) : null;
+    if (!c) c = cands.find(function(x){ return _vmKey(x.nom, x.prenom) === _vmKey(deal.nom, deal.prenom); });
+    return c ? (c.ville || '') : '';
+  } catch(e) { return ''; }
+}
+// Création/MAJ d'une ligne VM depuis un placement. createIfMissing = nouveau placement.
+function _vmSyncFromDeal(deal, createIfMissing) {
+  if (!deal || (!deal.nom && !deal.prenom)) return;
+  var key = _vmKey(deal.nom, deal.prenom);
+  var arr = getVisitesMedicales();
+  var idx = arr.findIndex(function(v){ return _vmKey(v.nom, v.prenom) === key; });
+  // Placement annulé → on retire la ligne AUTO-créée (pas celles venant de l'Excel)
+  if (deal.etat === 'Annulé') {
+    if (idx >= 0 && arr[idx].source === 'placement') {
+      if (typeof addTombstone === 'function') addTombstone('visites_medicales', key);
+      arr.splice(idx, 1); saveVisitesMedicales(arr);
+    }
+    return;
+  }
+  var ville = _vmCandVille(deal);              // adresse VM = champ Ville de la fiche du porté
+  var dateEntree = deal.date_entree || '';
+  if (idx >= 0) {
+    var v = arr[idx];
+    if (deal.id != null) v.deal_id = deal.id;
+    if (ville) { v.adresse = ville; var det = _vmVilleFromAddress(ville); if (det) v.ville = det; }
+    if (dateEntree) { v.date_entree = dateEntree; v.date_inscription = _vmInscriptionDate(dateEntree); }
+    v.updated_at = Date.now();
+    saveVisitesMedicales(arr);
+  } else if (createIfMissing) {
+    arr.push({
+      id: 'vm_' + Date.now() + '_' + Math.floor(Math.random()*1000),
+      nom: deal.nom || '', prenom: deal.prenom || '',
+      adresse: ville, ville: _vmVilleFromAddress(ville),
+      date_entree: dateEntree, date_inscription: _vmInscriptionDate(dateEntree),
+      inscription: 'Non', date_vm: '', avis_aptitude: 'Non', date_prochaine_vm: '',
+      source: 'placement', deal_id: (deal.id != null ? deal.id : null), updated_at: Date.now()
+    });
+    saveVisitesMedicales(arr);
+  }
+}
+// Suppression d'un deal → retire la ligne VM auto-créée pour ce deal
+function _vmRemoveForDeal(dealId) {
+  var arr = getVisitesMedicales(), changed = false;
+  arr = arr.filter(function(v){
+    if (v.deal_id == dealId && v.source === 'placement') {
+      if (typeof addTombstone === 'function') addTombstone('visites_medicales', _vmKey(v.nom, v.prenom));
+      changed = true; return false;
+    }
+    return true;
+  });
+  if (changed) saveVisitesMedicales(arr);
+}
+// MAJ de l'adresse VM quand le champ Ville de la fiche change
+function _vmUpdateAddressForCandidat(cand) {
+  if (!cand) return;
+  var key = _vmKey(cand.nom, cand.prenom);
+  var arr = getVisitesMedicales();
+  var v = arr.find(function(x){ return _vmKey(x.nom, x.prenom) === key; });
+  if (!v) return;
+  v.adresse = cand.ville || v.adresse;
+  var det = _vmVilleFromAddress(cand.ville || ''); if (det) v.ville = det;
+  v.updated_at = Date.now();
+  saveVisitesMedicales(arr);
+}
 function showVisiteMedicaleView() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
   ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
@@ -13199,15 +13360,17 @@ function renderVisiteMedicale() {
   var list = all.filter(function(v){
     if (VM_FILTER.ville !== 'all' && v.ville !== VM_FILTER.ville) return false;
     if (VM_FILTER.annee !== 'all' && (v.date_inscription||'').slice(0,4) !== VM_FILTER.annee) return false;
+    if (VM_FILTER.mois_entree && (v.date_entree||'').slice(0,7) !== VM_FILTER.mois_entree) return false;
     if (q && (_vmNorm(v.nom).indexOf(q) < 0 && _vmNorm(v.prenom).indexOf(q) < 0)) return false;
     return true;
   }).sort(function(a,b){ return String(b.date_inscription||'').localeCompare(String(a.date_inscription||'')); });
   var nbIDF = all.filter(function(v){ return v.ville==='IDF'; }).length;
   var nbReg = all.filter(function(v){ return v.ville==='Région'; }).length;
+  var nbNew = all.filter(function(v){ return _vmIsNew(v.date_entree); }).length;
   var h = '<div style="max-width:1400px;margin:0 auto;padding:4px 2px 40px;">';
   h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">';
   h += '<h2 style="margin:0;font-size:18px;color:#1A1033;">\u{1F3E5} Visite médicale</h2>';
-  h += '<span style="font-size:12px;color:#9E94C4;">' + all.length + ' personne(s) \u00b7 ' + nbIDF + ' IDF \u00b7 ' + nbReg + ' Région</span>';
+  h += '<span style="font-size:12px;color:#9E94C4;">' + all.length + ' personne(s) \u00b7 ' + nbIDF + ' IDF \u00b7 ' + nbReg + ' Région' + (nbNew ? ' \u00b7 <span style="color:#1D9E75;font-weight:700;">' + nbNew + ' new</span>' : '') + '</span>';
   h += '<button onclick="triggerImportVM()" style="margin-left:auto;padding:8px 14px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">\u2B06 Importer l\'Excel</button>';
   h += '</div>';
   h += '<div style="background:#fff;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">';
@@ -13219,6 +13382,10 @@ function renderVisiteMedicale() {
     + '<option value="all"' + (VM_FILTER.annee==='all'?' selected':'') + '>Toutes</option>'
     + anneesList.map(function(y){ return '<option value="'+y+'"'+(VM_FILTER.annee===y?' selected':'')+'>'+y+'</option>'; }).join('')
     + '</select></div>';
+  h += '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Mois d\'entrée</label>'
+    + '<input type="month" value="' + (VM_FILTER.mois_entree||'') + '" onchange="VM_FILTER.mois_entree=this.value;renderVisiteMedicale();" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;">'
+    + (VM_FILTER.mois_entree ? '<button onclick="VM_FILTER.mois_entree=\'\';renderVisiteMedicale();" title="Effacer" style="margin-left:5px;padding:6px 9px;border:1.5px solid #E4E0FA;border-radius:7px;background:#fff;color:#9E94C4;cursor:pointer;font-size:12px;">✕</button>' : '')
+    + '</div>';
   h += '<div style="flex:1;min-width:200px;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Recherche par personne</label>'
     + '<input id="vm-search" type="text" value="' + String(VM_FILTER.search||'').replace(/"/g,'&quot;') + '" placeholder="Nom ou prénom…" oninput="VM_FILTER.search=this.value;renderVisiteMedicale();setTimeout(function(){var e=document.getElementById(\'vm-search\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0);" style="width:100%;padding:7px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;"></div>';
   h += '</div>';
@@ -13241,9 +13408,9 @@ function renderVisiteMedicale() {
   };
   list.forEach(function(v){
     h += '<tr style="border-bottom:1px solid #F0EDF9;">'
-      + '<td style="padding:8px 10px;font-weight:600;color:#1A1033;">' + (v.nom||'') + '</td>'
+      + '<td style="padding:8px 10px;font-weight:600;color:#1A1033;">' + (v.nom||'') + (_vmIsNew(v.date_entree) ? ' <span style="background:#1D9E75;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">NEW</span>' : '') + '</td>'
       + '<td style="padding:8px 10px;">' + (v.prenom||'') + '</td>'
-      + '<td style="padding:8px 10px;"><span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:'+(v.ville==='IDF'?'#EEF4FF':'#FFF4EC')+';color:'+(v.ville==='IDF'?'#1A4F96':'#9A5B00')+';">'+(v.ville||'—')+'</span></td>'
+      + '<td style="padding:8px 10px;"><select onchange="updateVMField(\''+v.id+'\',\'ville\',this.value)" style="padding:3px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;font-weight:700;background:'+(v.ville==='IDF'?'#EEF4FF':(v.ville==='Région'?'#FFF4EC':'#fff'))+';color:'+(v.ville==='IDF'?'#1A4F96':(v.ville==='Région'?'#9A5B00':'#9E94C4'))+';"><option value=""'+(!v.ville?' selected':'')+'>—</option><option value="IDF"'+(v.ville==='IDF'?' selected':'')+'>IDF</option><option value="Région"'+(v.ville==='Région'?' selected':'')+'>Région</option></select></td>'
       + '<td style="padding:8px 10px;color:#6B5E9C;min-width:220px;">' + String(v.adresse||'—').replace(/</g,'&lt;') + '</td>'
       + '<td style="padding:8px 10px;white-space:nowrap;">' + _vmFmtDate(v.date_entree) + '</td>'
       + '<td style="padding:8px 10px;white-space:nowrap;">' + _vmFmtDate(v.date_inscription) + '</td>'
@@ -24606,6 +24773,8 @@ function updateCandField(input) {
   cands[idx][field] = input.value;
   cands[idx].updated = new Date().toLocaleDateString('fr-FR');
   saveCandidatsArr(cands);
+  // Visite médicale : si la Ville change, MAJ l'adresse/zone de la ligne VM liée
+  if (field === 'ville') { try { if (typeof _vmUpdateAddressForCandidat === 'function') _vmUpdateAddressForCandidat(cands[idx]); } catch(e) {} }
 
   // ═══ FIX : propagation aux deals liés au candidat ═══
   // Quand certains champs candidat sont modifiés, ils doivent se refléter
@@ -25094,7 +25263,9 @@ function buildCandDocsHTML(cand) {
     {key:'carte_vitale', label:'Carte Vitale'},
     {key:'rib', label:'RIB'},
     {key:'justif_domicile', label:'Justificatif domicile'},
-    {key:'bulletin', label:'Dernier bulletin de salaire'}
+    {key:'bulletin', label:'Dernier bulletin de salaire'},
+    {key:'avis_aptitude', label:'Avis d\'aptitude'},
+    {key:'fiche_renseignement', label:'Fiche de renseignement'}
   ];
   var customDocTypes = (function(){
     try { return JSON.parse(localStorage.getItem('sp_custom_doc_types_v1') || '[]'); }
@@ -29239,6 +29410,8 @@ function uploadCandDoc(input) {
           };
           cands[idx].updated = new Date().toLocaleDateString('fr-FR');
           saveCandidatsArr(cands);
+          // Liaison Visite médicale : un Avis d'aptitude chargé → Inscription + Avis = Oui
+          if (docKey === 'avis_aptitude') { try { if (typeof _vmApplyAvisAptitude === 'function') _vmApplyAvisAptitude(cands[idx]); } catch(e) {} }
           // Rafraîchir l'onglet docs
           if (cont) cont.innerHTML = buildCandDocsHTML(cands[idx]);
           // CRITIQUE : ré-attacher les listeners drag-drop sur le nouveau DOM
