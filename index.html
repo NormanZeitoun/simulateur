@@ -13117,7 +13117,7 @@ function showRHSection(subtab) {
 // Source initiale : import Excel. Auto-alimenté aux nouveaux placements (étape 2).
 // ═══════════════════════════════════════════════════════════════════
 var VM_KEY = 'sp_visites_medicales_v1';
-var VM_FILTER = { ville: 'all', annee: 'all', search: '', mois_entree: '' };
+var VM_FILTER = { ville: 'all', annee: 'all', search: '', mois_entree: '', mois_inscription: '' };
 var _VM_IDF_DEPTS = ['75','77','78','91','92','93','94','95'];
 function getVisitesMedicales() {
   try { return JSON.parse(localStorage.getItem(VM_KEY) || '[]'); } catch(e) { return []; }
@@ -13361,6 +13361,7 @@ function renderVisiteMedicale() {
     if (VM_FILTER.ville !== 'all' && v.ville !== VM_FILTER.ville) return false;
     if (VM_FILTER.annee !== 'all' && (v.date_inscription||'').slice(0,4) !== VM_FILTER.annee) return false;
     if (VM_FILTER.mois_entree && (v.date_entree||'').slice(0,7) !== VM_FILTER.mois_entree) return false;
+    if (VM_FILTER.mois_inscription && (v.date_inscription||'').slice(0,7) !== VM_FILTER.mois_inscription) return false;
     if (q && (_vmNorm(v.nom).indexOf(q) < 0 && _vmNorm(v.prenom).indexOf(q) < 0)) return false;
     return true;
   }).sort(function(a,b){ return String(b.date_inscription||'').localeCompare(String(a.date_inscription||'')); });
@@ -13385,6 +13386,10 @@ function renderVisiteMedicale() {
   h += '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Mois d\'entrée</label>'
     + '<input type="month" value="' + (VM_FILTER.mois_entree||'') + '" onchange="VM_FILTER.mois_entree=this.value;renderVisiteMedicale();" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;">'
     + (VM_FILTER.mois_entree ? '<button onclick="VM_FILTER.mois_entree=\'\';renderVisiteMedicale();" title="Effacer" style="margin-left:5px;padding:6px 9px;border:1.5px solid #E4E0FA;border-radius:7px;background:#fff;color:#9E94C4;cursor:pointer;font-size:12px;">✕</button>' : '')
+    + '</div>';
+  h += '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Mois d\'inscription</label>'
+    + '<input type="month" value="' + (VM_FILTER.mois_inscription||'') + '" onchange="VM_FILTER.mois_inscription=this.value;renderVisiteMedicale();" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;">'
+    + (VM_FILTER.mois_inscription ? '<button onclick="VM_FILTER.mois_inscription=\'\';renderVisiteMedicale();" title="Effacer" style="margin-left:5px;padding:6px 9px;border:1.5px solid #E4E0FA;border-radius:7px;background:#fff;color:#9E94C4;cursor:pointer;font-size:12px;">✕</button>' : '')
     + '</div>';
   h += '<div style="flex:1;min-width:200px;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Recherche par personne</label>'
     + '<input id="vm-search" type="text" value="' + String(VM_FILTER.search||'').replace(/"/g,'&quot;') + '" placeholder="Nom ou prénom…" oninput="VM_FILTER.search=this.value;renderVisiteMedicale();setTimeout(function(){var e=document.getElementById(\'vm-search\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0);" style="width:100%;padding:7px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;"></div>';
@@ -16491,6 +16496,7 @@ function _avInlineSelect(avenantId, field, currentValue, options) {
   else if (currentValue === 'Envoyé') { bg = '#EEF4FF'; color = '#1A4F96'; borderColor = '#B8D0F5'; }
   else if (currentValue === 'Reçu') { bg = '#E8F5EE'; color = '#0F5132'; borderColor = '#9FE1CB'; }
   else if (currentValue === 'En attente') { bg = '#FFF4D6'; color = '#8A5F00'; borderColor = '#F0D98A'; }
+  else if (currentValue === 'À faire') { bg = '#FFEDE0'; color = '#9A4F00'; borderColor = '#F3C39A'; }
   var html = '<select onchange="updateAvenantField(\'' + avenantId + '\',\'' + field + '\',this.value)" style="padding:3px 6px;border:1.5px solid ' + borderColor + ';border-radius:5px;font-size:10.5px;font-weight:700;background:' + bg + ';color:' + color + ';cursor:pointer;font-family:inherit;min-width:80px;">';
   html += '<option value=""' + (!currentValue?' selected':'') + '>—</option>';
   options.forEach(function(opt){
@@ -16774,7 +16780,7 @@ function buildAvenantsContent() {
       + '<td>' + _avInlineSelect(a.id, 'etat_av_cdps', a.etat_av_cdps, ['Envoyé','Reçu','En attente']) + '</td>'
       + '<td>' + _avInlineSelect(a.id, 'avenant_cdt_signe', a.avenant_cdt_signe, ['Oui','Non']) + '</td>'
       + '<td>' + _avInlineSelect(a.id, 'avenant_cdps_signe', a.avenant_cdps_signe, ['Oui','Non']) + '</td>'
-      + '<td>' + _avInlineSelect(a.id, 'modif_laya', a.modif_laya, ['Oui','Non']) + '</td>'
+      + '<td>' + _avInlineSelect(a.id, 'modif_laya', a.modif_laya, ['Oui','Non','À faire']) + '</td>'
       + '<td style="max-width:220px;"><input type="text" value="' + (a.commentaires||'').replace(/"/g,'&quot;') + '" placeholder="—" oninput="updateAvenantField(\'' + a.id + '\',\'commentaires\',this.value);" style="width:100%;padding:4px 7px;border:1px solid #E4E0FA;border-radius:5px;font-size:10.5px;font-family:inherit;background:transparent;"></td>'
       + '<td><button class="av-edit-btn" onclick="openEditAvenantPopup(\'' + a.id + '\')" title="Édition complète + suppression">✎</button></td>'
       + '</tr>';
@@ -16847,6 +16853,7 @@ function openEditAvenantPopup(avenantId) {
     +         '<option value=""' + (!a.modif_laya?' selected':'') + '>—</option>'
     +         '<option value="Oui"' + (a.modif_laya==='Oui'?' selected':'') + '>Oui</option>'
     +         '<option value="Non"' + (a.modif_laya==='Non'?' selected':'') + '>Non</option>'
+    +         '<option value="À faire"' + (a.modif_laya==='À faire'?' selected':'') + '>À faire</option>'
     +       '</select></div>'
     +   '</div>'
 
