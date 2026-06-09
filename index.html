@@ -32,10 +32,13 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .header h1 { color: #fff; font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
 .header .subtitle { color: rgba(255,255,255,0.75); font-size: 12px; margin-top: 2px; }
 .badge-commercial { background: rgba(255,255,255,0.2); color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+@keyframes sp-badge-blink { 0%,100%{opacity:1;} 50%{opacity:0.2;} }
+.badge-commercial.od-offline { color:#FF4040 !important; background:rgba(255,64,64,0.18); animation: sp-badge-blink 1s ease-in-out infinite; }
 
 /* LAYOUT */
 .app { display: grid; grid-template-columns: 1.2fr 1.8fr; gap: 0; min-height: calc(100vh - 64px); }
 .panel-left { background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; padding: 20px; }
+.panel-left.sim-locked input:not([type="button"]):not([type="submit"]), .panel-left.sim-locked select, .panel-left.sim-locked textarea, .panel-left.sim-locked .toggle-btn { pointer-events:none !important; opacity:0.5; cursor:not-allowed; }
 .panel-right { padding: 20px; overflow-y: auto; }
 
 /* SECTION */
@@ -2596,6 +2599,8 @@ function syncTelnetField() {
 // INIT
 // ============================================
 function resetSimulateur() {
+  // Déverrouiller le simulateur (on quitte toute simulation rattachée)
+  try { window._currentReopenedSimTs = null; if (typeof _applySimLock === 'function') _applySimLock(null); } catch(e) {}
   // Remet tous les champs du simulateur aux valeurs initiales définies dans le HTML
   // sans recharger la page (pas de synchro déclenchée).
   // ── Valeurs par défaut des champs numériques / texte ──
@@ -3661,7 +3666,13 @@ function updateBadgeCommercial() {
     } catch(e) {}
   }
   badge.textContent = nom || 'Commercial';
+  // Indicateur connexion OneDrive : blanc si connecté, rouge clignotant sinon
+  var _odOk = (typeof odToken !== 'undefined') && !!odToken;
+  badge.classList.toggle('od-offline', !_odOk);
+  badge.title = _odOk ? 'OneDrive connecté' : 'OneDrive NON connecté — cliquez sur Sync pour vous reconnecter';
 }
+// Rafraîchit l'indicateur de connexion OneDrive en continu (capte aussi l'expiration du token)
+try { setInterval(function(){ try { if (typeof updateBadgeCommercial === 'function') updateBadgeCommercial(); } catch(e){} }, 2000); } catch(e){}
 
 function getCommercialData() {
   var saved = {};
@@ -4016,6 +4027,14 @@ function setDest(v) {
 }
 
 function openEnvoiModal() {
+  // Verrou : une simulation rattachée à un placement/avenant ne peut plus être renvoyée
+  try {
+    var _lk = (window._currentReopenedSimTs && typeof _isSimLocked==='function') ? _isSimLocked(window._currentReopenedSimTs) : null;
+    if (_lk) {
+      alert('🔒 Cette simulation est rattachée à ' + (_lk.type==='avenant'?'un avenant':'un placement') + (_lk.nom?' de ' + _lk.nom:'') + '.\n\nElle ne peut plus être modifiée ni renvoyée.\n\nPour un nouveau calcul : Remise à zéro, puis créez une nouvelle simulation.');
+      return;
+    }
+  } catch(e) {}
   // ── Sécurité sauvegarde ──
   // Si OneDrive est connecté, la sync fait office de sauvegarde (pas besoin d'export JSON)
   // Sinon, on vérifie que la dernière sauvegarde manuelle date de moins de 7 jours
@@ -5987,6 +6006,72 @@ function restoreSnapshot(snap) {
   }, 150);
 }
 
+// === VERROU SIMULATION ===============================================
+// Une simulation devient verrouillée dès qu'elle est rattachée à un placement
+// (deal.sim_ts) OU à un avenant/prolongation (avenant.sim_ts). Couvre donc
+// nativement les avenants et les 3 prolongations (ils pointent vers leur simu).
+function _isSimLocked(ts) {
+  if (!ts) return null;
+  // Déverrouillage admin (mot de passe) valable pour la session en cours
+  if (window._simUnlocked && window._simUnlocked[ts]) return null;
+  try {
+    var deals = (typeof getDeals==='function') ? getDeals() : [];
+    var d = deals.find(function(x){ return x && x.sim_ts === ts && !x._deleted; });
+    if (d) return { type:'placement', etat:d.etat||'', nom:((d.prenom||'')+' '+(d.nom||'')).trim(), entreprise:d.entreprise||'' };
+  } catch(e) {}
+  try {
+    var avs = (typeof getAvenants==='function') ? getAvenants() : [];
+    var a = avs.find(function(x){ return x && x.sim_ts === ts && !x._deleted; });
+    if (a) {
+      var nm = ((a.prenom||'')+' '+(a.nom||'')).trim();
+      if (!nm && a.deal_id && typeof getDeals==='function') {
+        var dd = getDeals().find(function(x){ return x && x.id == a.deal_id; });
+        if (dd) nm = ((dd.prenom||'')+' '+(dd.nom||'')).trim();
+      }
+      return { type:'avenant', etat:'', nom:nm, entreprise:a.entreprise||'' };
+    }
+  } catch(e) {}
+  return null;
+}
+// Applique (ou retire) le verrou visuel sur le panneau simulateur.
+function _applySimLock(info) {
+  var panel = document.querySelector('.panel-left');
+  if (!panel) return;
+  var banner = document.getElementById('sim-lock-banner');
+  if (info) {
+    panel.classList.add('sim-locked');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'sim-lock-banner';
+      banner.style.cssText = 'margin:0 0 14px;padding:10px 14px;background:#FFF4D6;border:1.5px solid #F0C040;border-radius:9px;color:#7A5800;font-size:12.5px;font-weight:600;line-height:1.4;';
+      panel.insertBefore(banner, panel.firstChild);
+    }
+    var who = info.nom || '';
+    var ent = info.entreprise ? (who ? ' — ' + info.entreprise : info.entreprise) : '';
+    var label = (info.type === 'avenant') ? 'un avenant' : ('un placement' + (info.etat ? ' (' + info.etat + ')' : ''));
+    banner.innerHTML = '🔒 Cette simulation est rattachée à ' + label + (who ? ' de <strong>' + who + ent + '</strong>' : (ent ? ' <strong>' + ent + '</strong>' : '')) + '. Elle est en <strong>lecture seule</strong> et ne peut plus être modifiée ni renvoyée.<div style="margin-top:9px;"><button onclick="_unlockSimWithPassword()" style="padding:6px 12px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;">🔓 Déverrouiller (admin)</button></div>';
+    banner.style.display = 'block';
+  } else {
+    panel.classList.remove('sim-locked');
+    if (banner) banner.style.display = 'none';
+  }
+}
+// Déverrouille (mot de passe admin) la simulation rattachée en cours, pour la session.
+function _unlockSimWithPassword() {
+  var ts = window._currentReopenedSimTs;
+  if (!ts) return;
+  if (typeof promptGenericAdminPassword !== 'function') { alert('Fonction de mot de passe indisponible.'); return; }
+  promptGenericAdminPassword({
+    title: 'Déverrouiller la simulation',
+    subtitle: 'Cette simulation est rattachée à un placement. Saisissez le mot de passe administrateur pour autoriser sa modification (valable pour la session en cours).'
+  }, function() {
+    window._simUnlocked = window._simUnlocked || {};
+    window._simUnlocked[ts] = true;
+    if (typeof _applySimLock === 'function') _applySimLock(null);
+    try { if (typeof showToast === 'function') showToast('🔓 Simulation déverrouillée pour cette session'); } catch(e) {}
+  });
+}
+
 function reopenSim(ts) {
   var hist = getHistory();
   var entry = null;
@@ -5996,12 +6081,15 @@ function reopenSim(ts) {
     return;
   }
   // Naviguer vers le simulateur D'ABORD
+  window._currentReopenedSimTs = ts;
   mainNavTo('mission');
   // Puis restaurer le snapshot après que la navigation soit effective
   setTimeout(function() {
     restoreSnapshot(entry.snapshot);
     // Recalculer pour afficher les résultats
     try { if (typeof calc === 'function') calc(); } catch(e) { console.warn('calc error', e); }
+    // Verrou : si la simu est rattachée à un placement/avenant → lecture seule
+    try { if (typeof _applySimLock === 'function') _applySimLock(_isSimLocked(ts)); } catch(e) {}
   }, 100);
 }
 
@@ -7136,6 +7224,8 @@ var _SHARED_CONFIG_KEYS = [
   { ls: 'sp_commission_params_v1',   field: 'commission_params' },
   { ls: 'sp_commission_exclusions_v1', field: 'commission_exclusions' },
   { ls: 'sp_commission_goals_v1',    field: 'commission_goals' },
+  { ls: 'sp_commission_fg_overrides_v1', field: 'commission_fg_overrides' },
+  { ls: 'sp_commission_manual_includes_v1', field: 'commission_manual_includes' },
   { ls: 'sp_matching_jours_v1',      field: 'matching_jours' },
   { ls: 'sp_custom_doc_types_v1',    field: 'custom_doc_types' },
   { ls: 'sp_custom_client_doc_types_v1', field: 'custom_client_doc_types' },
@@ -11104,7 +11194,7 @@ function getCellValue(d, key){
       // Affiche l'indemnité km en €/j calculée depuis km_aller + puissance fiscale
       // Fallback : si km_aller manquant dans le deal, chercher dans la SIMU liée
       var kmA = parseFloat(d.km_aller) || 0;
-      var puissForCalc = parseInt(d.puissance) || 0;
+      var puissForCalc = parseInt(d.puissance_fiscale) || parseInt(d.puissance) || 0; // FIX : le deal stocke 'puissance_fiscale'
       var nbJForCalc = parseInt(d.nb_jours) || 0;
       var jPresForCalc = parseInt(d.jours_presentiels) || 0;
       var ik1ereForCalc = (d.ik_1ere !== undefined) ? d.ik_1ere : null;
@@ -11113,7 +11203,7 @@ function getCellValue(d, key){
         var simIK = _findSimForDeal(d);
         if (simIK) {
           if (kmA <= 0) kmA = parseFloat(simIK.km_aller) || 0;
-          if (puissForCalc <= 0) puissForCalc = parseInt(simIK.puissance_fiscale) || 5;
+          if (puissForCalc <= 0) puissForCalc = parseInt(simIK.puissance) || parseInt(simIK.puissance_fiscale) || 8; // FIX : la simu stocke 'puissance'
           if (nbJForCalc <= 0) nbJForCalc = parseInt(simIK.nb_jours) || 21;
           if (jPresForCalc <= 0) jPresForCalc = parseInt(simIK.jours_presentiels) || (nbJForCalc - (parseInt(simIK.jours_tt)||0));
           if (ik1ereForCalc === null) ik1ereForCalc = simIK.ik_1ere !== false;
@@ -11121,7 +11211,7 @@ function getCellValue(d, key){
       }
       if (kmA <= 0) return '\u2014';
       try {
-        if (puissForCalc <= 0) puissForCalc = 5;
+        if (puissForCalc <= 0) puissForCalc = 8; // défaut cohérent avec le simulateur (menu = 8 CV)
         if (nbJForCalc <= 0) nbJForCalc = 21;
         if (jPresForCalc <= 0) jPresForCalc = nbJForCalc - (parseInt(d.jours_tt)||0);
         if (jPresForCalc <= 0) jPresForCalc = nbJForCalc;
@@ -32002,6 +32092,78 @@ function saveCommExclusions(obj) {
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 
+// ===== COMMISSION : override frais de gestion + ajout manuel de portés (côté commission only) =====
+var COMM_FG_OVERRIDES_KEY = 'sp_commission_fg_overrides_v1';
+var COMM_MANUAL_INCLUDES_KEY = 'sp_commission_manual_includes_v1';
+function getCommFgOverrides() { try { return JSON.parse(localStorage.getItem(COMM_FG_OVERRIDES_KEY) || '{}'); } catch(e){ return {}; } }
+function saveCommFgOverrides(obj) { localStorage.setItem(COMM_FG_OVERRIDES_KEY, JSON.stringify(obj)); if (typeof _touchAppSettings==='function') _touchAppSettings(); if (typeof odAutoSync==='function') odAutoSync(); }
+function getCommManualIncludes() { try { return JSON.parse(localStorage.getItem(COMM_MANUAL_INCLUDES_KEY) || '{}'); } catch(e){ return {}; } }
+function saveCommManualIncludes(obj) { localStorage.setItem(COMM_MANUAL_INCLUDES_KEY, JSON.stringify(obj)); if (typeof _touchAppSettings==='function') _touchAppSettings(); if (typeof odAutoSync==='function') odAutoSync(); }
+function _commPeriodKey(commercial, year, month) { return (commercial||'').trim().toLowerCase() + '|' + year + '|' + month; }
+function setCommFgOverride(dealId, val) {
+  var o = getCommFgOverrides();
+  var v = parseFloat(String(val).replace(',', '.'));
+  if (val === '' || val === null || isNaN(v)) { delete o[dealId]; } else { o[dealId] = v; }
+  saveCommFgOverrides(o);
+  if (typeof showCommissionsSection === 'function') showCommissionsSection('current');
+}
+function addCommManualInclude(dealId) {
+  var key = _commPeriodKey(currentCommCommercial, currentCommYear, currentCommMonth);
+  var m = getCommManualIncludes();
+  if (!m[key]) m[key] = [];
+  if (m[key].map(String).indexOf(String(dealId)) < 0) m[key].push(dealId);
+  saveCommManualIncludes(m);
+  closeCommAddPorteModal();
+  if (typeof showCommissionsSection === 'function') showCommissionsSection('current');
+}
+function removeCommManualInclude(dealId) {
+  var key = _commPeriodKey(currentCommCommercial, currentCommYear, currentCommMonth);
+  var m = getCommManualIncludes();
+  if (m[key]) { m[key] = m[key].filter(function(x){ return String(x) !== String(dealId); }); if (!m[key].length) delete m[key]; }
+  saveCommManualIncludes(m);
+  if (typeof showCommissionsSection === 'function') showCommissionsSection('current');
+}
+function closeCommAddPorteModal() { var m = document.getElementById('modal-comm-add-porte'); if (m) m.remove(); }
+function openCommAddPorteModal() {
+  closeCommAddPorteModal();
+  var modal = document.createElement('div');
+  modal.id = 'modal-comm-add-porte';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.6);z-index:3600;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+  modal.innerHTML = '<div style="background:#fff;border-radius:16px;padding:24px 26px;width:94%;max-width:640px;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(26,16,51,0.4);">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;"><div style="font-size:16px;font-weight:800;color:#1A1033;">➕ Ajouter un porté à la commission</div>'
+    + '<button onclick="closeCommAddPorteModal()" style="background:none;border:none;font-size:22px;color:#9E94C4;cursor:pointer;line-height:1;">×</button></div>'
+    + '<div style="font-size:12px;color:#6B5E9C;margin-bottom:12px;">Cherchez un deal existant (nom ou entreprise) et ajoutez-le à la commission de <strong>' + (currentCommCommercial||'—') + '</strong> pour la période affichée. Il comptera comme +1 deal.</div>'
+    + '<input id="comm-add-porte-search" type="text" placeholder="Nom du candidat ou entreprise…" oninput="_renderCommAddPorteList(this.value)" style="width:100%;padding:10px 12px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:13px;font-family:inherit;box-sizing:border-box;margin-bottom:12px;">'
+    + '<div id="comm-add-porte-list" style="overflow-y:auto;flex:1;border-top:1px solid #F0EDF9;"></div>'
+    + '</div>';
+  document.body.appendChild(modal);
+  _renderCommAddPorteList('');
+  setTimeout(function(){ var i = document.getElementById('comm-add-porte-search'); if (i) i.focus(); }, 80);
+}
+function _renderCommAddPorteList(q) {
+  var box = document.getElementById('comm-add-porte-list'); if (!box) return;
+  function norm(s){ return ((s||'')+'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+  var nq = norm(q);
+  var key = _commPeriodKey(currentCommCommercial, currentCommYear, currentCommMonth);
+  var already = (getCommManualIncludes()[key] || []).map(String);
+  var deals = ((typeof getDeals==='function') ? getDeals() : []).filter(function(d){
+    if (!d || d.etat === 'Annulé' || d._deleted) return false;
+    if (already.indexOf(String(d.id)) >= 0) return false;
+    if (!nq) return true;
+    return norm((d.prenom||'')+' '+(d.nom||'')+' '+(d.entreprise||'')).indexOf(nq) >= 0;
+  }).slice(0, 60);
+  if (!deals.length) { box.innerHTML = '<div style="padding:18px;text-align:center;color:#9E94C4;font-size:12.5px;">Aucun deal trouvé.</div>'; return; }
+  box.innerHTML = deals.map(function(d){
+    var ref = (typeof getDealReferenceDate==='function') ? getDealReferenceDate(d) : null;
+    var refStr = ref ? ref.toLocaleDateString('fr-FR') : '—';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid #F5F3FF;">'
+      + '<div style="flex:1;min-width:0;"><div style="font-size:12.5px;font-weight:600;color:#1A1033;">' + ((d.prenom||'')+' '+(d.nom||'')).trim().replace(/</g,'&lt;') + '</div>'
+      + '<div style="font-size:11px;color:#9E94C4;">' + (d.entreprise||'—').replace(/</g,'&lt;') + ' · ' + (d.commercial||'?') + ' · ' + (d.etat||'') + ' · FG ' + (d.frais_gestion||'?') + '% · réf ' + refStr + '</div></div>'
+      + '<button onclick="addCommManualInclude(' + d.id + ')" style="padding:6px 12px;background:#1D7F4F;color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0;">Ajouter</button>'
+      + '</div>';
+  }).join('');
+}
+
 // Détermine la date de référence d'un deal (1er document uploadé sur le candidat, sinon fallback)
 function getDealReferenceDate(deal) {
   // Chercher le candidat lié par email
@@ -32049,25 +32211,45 @@ function getCommDealsForPeriod(commercial, year, month /* 0-11, null = toute l'a
   var seuilFG = params.seuil_frais_gestion_min;
   var all = (typeof getDeals === 'function') ? getDeals() : [];
 
-  return all.filter(function(d) {
-    // Commercial match (insensible à la casse + espaces)
+  var fgOv = (typeof getCommFgOverrides === 'function') ? getCommFgOverrides() : {};
+  // Inclusions manuelles (par commercial+période ; pour l'année on agrège tous les mois)
+  var manual = (typeof getCommManualIncludes === 'function') ? getCommManualIncludes() : {};
+  var manualIds = [];
+  if (month !== null && month !== undefined) {
+    manualIds = (manual[_commPeriodKey(commercial, year, month)] || []).map(String);
+  } else {
+    var pref = (commercial||'').trim().toLowerCase() + '|' + year + '|';
+    Object.keys(manual).forEach(function(k){ if (k.indexOf(pref) === 0) manualIds = manualIds.concat((manual[k]||[]).map(String)); });
+  }
+  var list = all.filter(function(d) {
+    if (!d) return false;
+    if (manualIds.indexOf(String(d.id)) >= 0) return false; // ajouté ci-dessous (évite doublon)
     var dealComm = (d.commercial || '').trim().toLowerCase();
     var wanted = (commercial || '').trim().toLowerCase();
     if (wanted && dealComm !== wanted) return false;
-    // État annulé exclu
     if (d.etat === 'Annulé') return false;
-    // Frais de gestion ≥ seuil
-    var fg = parseFloat(d.frais_gestion) || 0;
+    // Frais de gestion ≥ seuil (override commission prioritaire)
+    var fg = (fgOv[d.id] !== undefined) ? fgOv[d.id] : (parseFloat(d.frais_gestion) || 0);
     if (fg < seuilFG) return false;
-    // Date de référence
     var ref = getDealReferenceDate(d);
     if (!ref) return false;
     if (ref.getFullYear() !== year) return false;
     if (month !== null && month !== undefined && ref.getMonth() !== month) return false;
-    // Attacher la date pour tri
     d._commRefDate = ref;
+    d._commManual = false;
     return true;
-  }).sort(function(a,b){ return a._commRefDate - b._commRefDate; });
+  });
+  // Deals ajoutés manuellement : bypass seuil / commercial / date de référence
+  manualIds.forEach(function(mid){
+    var d = all.find(function(x){ return x && String(x.id) === mid && x.etat !== 'Annulé'; });
+    if (d) {
+      var ref = getDealReferenceDate(d);
+      d._commRefDate = ref || new Date(year, (month!=null?month:0), 1);
+      d._commManual = true;
+      list.push(d);
+    }
+  });
+  return list.sort(function(a,b){ return a._commRefDate - b._commRefDate; });
 }
 
 // Calcule la commission mensuelle d'un commercial pour un mois donné
@@ -32242,11 +32424,13 @@ function renderCommCurrentView() {
     + '<div class="comm-card-title"><span class="comm-card-title-dot"></span><span>Détail des deals du mois</span>'
     + '<span style="margin-left:auto;font-size:10px;color:#6B5E9C;text-transform:none;letter-spacing:0;font-weight:500;">Seuil frais gestion : ≥ ' + getCommParams().seuil_frais_gestion_min + '% · Annulés exclus</span>'
     + '</div>';
+  html += '<div style="padding:10px 0 6px;"><button onclick="openCommAddPorteModal()" style="padding:7px 14px;background:#7343EE;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">➕ Ajouter un porté manuellement</button> <span style="font-size:10.5px;color:#9E94C4;margin-left:6px;">deal existant non détecté ou frais &lt; seuil</span></div>';
 
   if (result.deals.length === 0) {
     html += '<div class="comm-empty">Aucun deal éligible pour cette période.<div style="font-size:11px;color:#B8AEDB;margin-top:4px;">Un deal compte dès que son 1<sup>er</sup> document est uploadé sur le candidat et que les frais de gestion sont ≥ ' + getCommParams().seuil_frais_gestion_min + '%.</div></div>';
   } else {
     var exclusions = getCommExclusions();
+    var fgOverrides = (typeof getCommFgOverrides==='function') ? getCommFgOverrides() : {};
     html += '<div style="overflow-x:auto;"><table class="comm-deals-table">'
       + '<thead><tr>'
       +   '<th style="width:32px;"></th>'
@@ -32263,6 +32447,9 @@ function renderCommCurrentView() {
     result.deals.forEach(function(d){
       var ex = exclusions[d.id] || {};
       var excluded = !!ex.excluded;
+      var isManual = !!d._commManual;
+      var _fgOv = (fgOverrides[d.id] !== undefined);
+      var _fgEff = _fgOv ? fgOverrides[d.id] : (parseFloat(d.frais_gestion)||0);
       var tarifApplied = '';
       if (!excluded) {
         countedIdx++;
@@ -32271,13 +32458,13 @@ function renderCommCurrentView() {
       var dateStr = d._commRefDate ? d._commRefDate.toLocaleDateString('fr-FR') : '—';
       var rowCls = excluded ? ' class="row-excluded"' : '';
       html += '<tr' + rowCls + '>'
-        + '<td><input type="checkbox" class="deal-excl-chk" ' + (excluded?'checked':'') + ' onchange="toggleCommExclusion(' + d.id + ', this.checked)" title="Exclure ce deal du calcul"></td>'
+        + '<td>' + (isManual ? '<button onclick="removeCommManualInclude(' + d.id + ')" title="Retirer ce porté ajouté manuellement" style="background:none;border:none;color:#E24B4A;cursor:pointer;font-size:14px;line-height:1;">✕</button>' : '<input type="checkbox" class="deal-excl-chk" ' + (excluded?'checked':'') + ' onchange="toggleCommExclusion(' + d.id + ', this.checked)" title="Exclure ce deal du calcul">') + '</td>'
         + '<td>' + (excluded ? '—' : countedIdx) + '</td>'
         + '<td>' + dateStr + '</td>'
-        + '<td style="font-weight:600;">' + ((d.prenom||'') + ' ' + (d.nom||'')).trim() + '</td>'
+        + '<td style="font-weight:600;">' + ((d.prenom||'') + ' ' + (d.nom||'')).trim() + (isManual ? ' <span style="background:#EDE7FF;color:#4B36EC;padding:1px 6px;border-radius:8px;font-size:9.5px;font-weight:700;vertical-align:middle;">MANUEL</span>' : '') + '</td>'
         + '<td>' + (d.entreprise || '—') + '</td>'
         + '<td>' + (d.tjm ? d.tjm + ' €/j' : '—') + '</td>'
-        + '<td>' + (d.frais_gestion ? d.frais_gestion + '%' : '—') + '</td>'
+        + '<td><input type="number" step="0.1" min="0" value="' + _fgEff + '" onchange="setCommFgOverride(' + d.id + ', this.value)" title="Frais de gestion pour la commission (modifiable sans impacter le deal/simulateur)" style="width:56px;padding:4px 6px;border:1px solid ' + (_fgOv?'#7343EE':'#E4E0FA') + ';border-radius:6px;font-size:11.5px;text-align:right;' + (_fgOv?'background:#F5F3FF;color:#4B36EC;font-weight:700;':'') + '"> %' + (_fgOv?' <span title="Valeur ajustée pour la commission" style="color:#7343EE;font-size:10px;">✎</span>':'') + '</td>'
         + '<td>' + (excluded ? '<span style="color:#9E94C4;">exclu</span>' : '<span class="comm-badge-montant">' + tarifApplied + '</span>') + '</td>'
         + '<td class="col-commentaire">'
         +   '<input type="text" value="' + (ex.comment||'').replace(/"/g,'&quot;') + '" placeholder="' + (excluded?'Raison (obligatoire)':'—') + '"'
