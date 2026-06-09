@@ -2447,6 +2447,9 @@ function getBareme(puissance, haut) {
 
 function calcIK(km_aller, puissance, jours_presentiels, nb_jours, ik_1ere) {
   if (km_aller <= 0) return { journaliere: 0, mensuelle: 0 };
+  // FIX delta IK : ik_1ere peut arriver en chaîne ('Oui'/'Non') depuis un deal.
+  // Une chaîne non vide ('Non') était "truthy" → barème 1ère année à tort. On normalise en booléen.
+  ik_1ere = (ik_1ere === true || ik_1ere === 'Oui' || ik_1ere === 'oui' || ik_1ere === 'true');
   const moisRestants = 12 - new Date().getMonth(); // 1-indexed
   const distAnnuelle = km_aller * nb_jours * moisRestants;
   const threshold = ik_1ere ? 100000 : 0;
@@ -11122,7 +11125,7 @@ function getCellValue(d, key){
         if (nbJForCalc <= 0) nbJForCalc = 21;
         if (jPresForCalc <= 0) jPresForCalc = nbJForCalc - (parseInt(d.jours_tt)||0);
         if (jPresForCalc <= 0) jPresForCalc = nbJForCalc;
-        if (ik1ereForCalc === null) ik1ereForCalc = true;
+        if (ik1ereForCalc === null) ik1ereForCalc = false; // défaut cohérent avec le simulateur (ik_1ere=false)
         if (typeof calcIK === 'function') {
           var ikRes = calcIK(kmA, puissForCalc, jPresForCalc, nbJForCalc, ik1ereForCalc);
           if (ikRes && ikRes.journaliere > 0) {
