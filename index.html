@@ -38,7 +38,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 /* LAYOUT */
 .app { display: grid; grid-template-columns: 1.2fr 1.8fr; gap: 0; min-height: calc(100vh - 64px); }
 .panel-left { background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; padding: 20px; }
-.panel-left.sim-locked input:not([type="button"]):not([type="submit"]), .panel-left.sim-locked select, .panel-left.sim-locked textarea, .panel-left.sim-locked .toggle-btn { pointer-events:none !important; opacity:0.5; cursor:not-allowed; }
+.panel-left.sim-locked #tab-mission input:not([type="button"]):not([type="submit"]), .panel-left.sim-locked #tab-mission select, .panel-left.sim-locked #tab-mission textarea, .panel-left.sim-locked #tab-mission .toggle-btn, .panel-left.sim-locked #tab-frais input:not([type="button"]):not([type="submit"]), .panel-left.sim-locked #tab-frais select, .panel-left.sim-locked #tab-frais textarea, .panel-left.sim-locked #tab-frais .toggle-btn, .panel-left.sim-locked #tab-cotisations input:not([type="button"]):not([type="submit"]), .panel-left.sim-locked #tab-cotisations select, .panel-left.sim-locked #tab-cotisations textarea, .panel-left.sim-locked #tab-cotisations .toggle-btn, .panel-left.sim-locked #tab-params input:not([type="button"]):not([type="submit"]), .panel-left.sim-locked #tab-params select, .panel-left.sim-locked #tab-params textarea, .panel-left.sim-locked #tab-params .toggle-btn { pointer-events:none !important; opacity:0.5; cursor:not-allowed; }
 .panel-right { padding: 20px; overflow-y: auto; }
 
 /* SECTION */
@@ -6060,7 +6060,7 @@ function _applySimLock(info) {
     var who = info.nom || '';
     var ent = info.entreprise ? (who ? ' — ' + info.entreprise : info.entreprise) : '';
     var label = (info.type === 'avenant') ? 'un avenant' : ('un placement' + (info.etat ? ' (' + info.etat + ')' : ''));
-    banner.innerHTML = '🔒 Cette simulation est rattachée à ' + label + (who ? ' de <strong>' + who + ent + '</strong>' : (ent ? ' <strong>' + ent + '</strong>' : '')) + '. Elle est en <strong>lecture seule</strong> et ne peut plus être modifiée ni renvoyée.<div style="margin-top:9px;"><button onclick="_unlockSimWithPassword()" style="padding:6px 12px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;">🔓 Déverrouiller (admin)</button></div>';
+    banner.innerHTML = '🔒 Cette simulation est rattachée à ' + label + (who ? ' de <strong>' + who + ent + '</strong>' : (ent ? ' <strong>' + ent + '</strong>' : '')) + '. Elle est en <strong>lecture seule</strong> et ne peut plus être modifiée ni renvoyée.<div style="margin-top:9px;"><button onclick="_unlockSimWithPassword()" style="padding:6px 12px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;">🔓 Déverrouiller (admin)</button> <button onclick="_dismissSimLock()" style="padding:6px 12px;background:#fff;color:#7A5800;border:1.5px solid #F0C040;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;">✕ Fermer</button></div>';
     banner.style.display = 'block';
   } else {
     panel.classList.remove('sim-locked');
@@ -6068,6 +6068,11 @@ function _applySimLock(info) {
   }
 }
 // Déverrouille (mot de passe admin) la simulation rattachée en cours, pour la session.
+// Ferme le bandeau de verrou et oublie la simu rattachée en cours (sans Remise à zéro).
+function _dismissSimLock() {
+  window._currentReopenedSimTs = null;
+  if (typeof _applySimLock === 'function') _applySimLock(null);
+}
 function _unlockSimWithPassword() {
   var ts = window._currentReopenedSimTs;
   if (!ts) return;
@@ -13176,6 +13181,17 @@ function mainNavTo(section) {
   } else if (section === 'entrees') {
     showRHSection('entrees');
   }
+  // Verrou simulation : actif uniquement sur le simulateur ; retiré partout ailleurs
+  try {
+    if (typeof _applySimLock === 'function') {
+      if (section === 'mission' && window._currentReopenedSimTs && typeof _isSimLocked === 'function') {
+        _applySimLock(_isSimLocked(window._currentReopenedSimTs));
+      } else {
+        window._currentReopenedSimTs = null;
+        _applySimLock(null);
+      }
+    }
+  } catch(e) {}
 }
 
 // ── Suivi RH : hub avec sous-onglets (Tableau deals, Avenants, Sortants, Avances, Cooptation) ──
