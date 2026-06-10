@@ -2244,6 +2244,17 @@ function showTab(id) {
   var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = '';
   var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '';
   var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = '';
+  // Verrou simulation : visible UNIQUEMENT sur les onglets du simulateur (évite la fuite du bandeau sur les autres écrans)
+  try {
+    var _simTabs = ['tab-mission','tab-frais','tab-cotisations','tab-params'];
+    if (typeof _applySimLock === 'function') {
+      if (_simTabs.indexOf(id) >= 0 && window._currentReopenedSimTs && typeof _isSimLocked === 'function') {
+        _applySimLock(_isSimLocked(window._currentReopenedSimTs));
+      } else {
+        _applySimLock(null);
+      }
+    }
+  } catch(e) {}
 }
 
 // ============================================
@@ -7226,6 +7237,7 @@ var _SHARED_CONFIG_KEYS = [
   { ls: 'sp_commission_goals_v1',    field: 'commission_goals' },
   { ls: 'sp_commission_fg_overrides_v1', field: 'commission_fg_overrides' },
   { ls: 'sp_commission_manual_includes_v1', field: 'commission_manual_includes' },
+  { ls: 'sp_commission_removed_v1', field: 'commission_removed' },
   { ls: 'sp_matching_jours_v1',      field: 'matching_jours' },
   { ls: 'sp_custom_doc_types_v1',    field: 'custom_doc_types' },
   { ls: 'sp_custom_client_doc_types_v1', field: 'custom_client_doc_types' },
@@ -32107,12 +32119,48 @@ function setCommFgOverride(dealId, val) {
   saveCommFgOverrides(o);
   if (typeof showCommissionsSection === 'function') showCommissionsSection('current');
 }
+// Édition du taux de frais de gestion (commission) — protégée par mot de passe admin
+function editCommFgOverride(dealId) {
+  if (typeof promptGenericAdminPassword !== 'function') { alert('Fonction de mot de passe indisponible.'); return; }
+  promptGenericAdminPassword({
+    title: 'Modifier les frais de gestion (commission)',
+    subtitle: 'Mot de passe administrateur requis pour ajuster le taux de frais de gestion utilisé pour la commission de ce deal.'
+  }, function() {
+    var ov = getCommFgOverrides();
+    var cur = (ov[dealId] !== undefined) ? ov[dealId] : '';
+    var val = prompt('Frais de gestion (%) pour la commission de ce deal :\n(laisser vide pour rétablir la valeur d\'origine du deal)', cur);
+    if (val === null) return;
+    setCommFgOverride(dealId, String(val).trim());
+  });
+}
+// Retrait d'un deal de la commission (liste 'removed' par commercial+période)
+var COMM_REMOVED_KEY = 'sp_commission_removed_v1';
+function getCommRemoved() { try { return JSON.parse(localStorage.getItem(COMM_REMOVED_KEY) || '{}'); } catch(e){ return {}; } }
+function saveCommRemoved(obj) { localStorage.setItem(COMM_REMOVED_KEY, JSON.stringify(obj)); if (typeof _touchAppSettings==='function') _touchAppSettings(); if (typeof odAutoSync==='function') odAutoSync(); }
+function _commRemovedIds(commercial, year, month) {
+  var r = getCommRemoved();
+  if (month !== null && month !== undefined) return (r[_commPeriodKey(commercial, year, month)] || []).map(String);
+  var pref = (commercial||'').trim().toLowerCase() + '|' + year + '|';
+  var out = []; Object.keys(r).forEach(function(k){ if (k.indexOf(pref)===0) out = out.concat((r[k]||[]).map(String)); });
+  return out;
+}
+function removeCommFromTable(dealId) {
+  if (!confirm('Retirer ce deal de la commission de ' + (currentCommCommercial||'ce commercial') + ' pour cette période ?\n\n(Réintégrable ensuite via « Ajouter un porté ».)')) return;
+  var key = _commPeriodKey(currentCommCommercial, currentCommYear, currentCommMonth);
+  var r = getCommRemoved();
+  if (!r[key]) r[key] = [];
+  if (r[key].map(String).indexOf(String(dealId)) < 0) r[key].push(dealId);
+  saveCommRemoved(r);
+  if (typeof showCommissionsSection === 'function') showCommissionsSection('current');
+}
 function addCommManualInclude(dealId) {
   var key = _commPeriodKey(currentCommCommercial, currentCommYear, currentCommMonth);
   var m = getCommManualIncludes();
   if (!m[key]) m[key] = [];
   if (m[key].map(String).indexOf(String(dealId)) < 0) m[key].push(dealId);
   saveCommManualIncludes(m);
+  // S'il avait été retiré, on le réintègre
+  try { var rem = getCommRemoved(); if (rem[key]) { rem[key] = rem[key].filter(function(x){ return String(x)!==String(dealId); }); if(!rem[key].length) delete rem[key]; saveCommRemoved(rem); } } catch(e){}
   closeCommAddPorteModal();
   if (typeof showCommissionsSection === 'function') showCommissionsSection('current');
 }
@@ -32221,9 +32269,11 @@ function getCommDealsForPeriod(commercial, year, month /* 0-11, null = toute l'a
     var pref = (commercial||'').trim().toLowerCase() + '|' + year + '|';
     Object.keys(manual).forEach(function(k){ if (k.indexOf(pref) === 0) manualIds = manualIds.concat((manual[k]||[]).map(String)); });
   }
+  var removedIds = (typeof _commRemovedIds === 'function') ? _commRemovedIds(commercial, year, month) : [];
   var list = all.filter(function(d) {
     if (!d) return false;
     if (manualIds.indexOf(String(d.id)) >= 0) return false; // ajouté ci-dessous (évite doublon)
+    if (removedIds.indexOf(String(d.id)) >= 0) return false; // retiré manuellement de la commission
     var dealComm = (d.commercial || '').trim().toLowerCase();
     var wanted = (commercial || '').trim().toLowerCase();
     if (wanted && dealComm !== wanted) return false;
@@ -32458,13 +32508,13 @@ function renderCommCurrentView() {
       var dateStr = d._commRefDate ? d._commRefDate.toLocaleDateString('fr-FR') : '—';
       var rowCls = excluded ? ' class="row-excluded"' : '';
       html += '<tr' + rowCls + '>'
-        + '<td>' + (isManual ? '<button onclick="removeCommManualInclude(' + d.id + ')" title="Retirer ce porté ajouté manuellement" style="background:none;border:none;color:#E24B4A;cursor:pointer;font-size:14px;line-height:1;">✕</button>' : '<input type="checkbox" class="deal-excl-chk" ' + (excluded?'checked':'') + ' onchange="toggleCommExclusion(' + d.id + ', this.checked)" title="Exclure ce deal du calcul">') + '</td>'
+        + '<td style="white-space:nowrap;">' + (isManual ? '<button onclick="removeCommManualInclude(' + d.id + ')" title="Retirer ce porté ajouté manuellement" style="background:none;border:none;color:#E24B4A;cursor:pointer;font-size:14px;line-height:1;">✕</button>' : '<input type="checkbox" class="deal-excl-chk" ' + (excluded?'checked':'') + ' onchange="toggleCommExclusion(' + d.id + ', this.checked)" title="Exclure du calcul (reste affiché)"> <button onclick="removeCommFromTable(' + d.id + ')" title="Retirer ce deal de la commission" style="background:none;border:none;color:#E24B4A;cursor:pointer;font-size:13px;">🗑️</button>') + '</td>'
         + '<td>' + (excluded ? '—' : countedIdx) + '</td>'
         + '<td>' + dateStr + '</td>'
         + '<td style="font-weight:600;">' + ((d.prenom||'') + ' ' + (d.nom||'')).trim() + (isManual ? ' <span style="background:#EDE7FF;color:#4B36EC;padding:1px 6px;border-radius:8px;font-size:9.5px;font-weight:700;vertical-align:middle;">MANUEL</span>' : '') + '</td>'
         + '<td>' + (d.entreprise || '—') + '</td>'
         + '<td>' + (d.tjm ? d.tjm + ' €/j' : '—') + '</td>'
-        + '<td><input type="number" step="0.1" min="0" value="' + _fgEff + '" onchange="setCommFgOverride(' + d.id + ', this.value)" title="Frais de gestion pour la commission (modifiable sans impacter le deal/simulateur)" style="width:56px;padding:4px 6px;border:1px solid ' + (_fgOv?'#7343EE':'#E4E0FA') + ';border-radius:6px;font-size:11.5px;text-align:right;' + (_fgOv?'background:#F5F3FF;color:#4B36EC;font-weight:700;':'') + '"> %' + (_fgOv?' <span title="Valeur ajustée pour la commission" style="color:#7343EE;font-size:10px;">✎</span>':'') + '</td>'
+        + '<td><span style="' + (_fgOv?'color:#4B36EC;font-weight:700;':'') + '">' + _fgEff + ' %</span>' + (_fgOv?' <span title="Ajusté pour la commission" style="color:#7343EE;font-size:10px;">✎</span>':'') + ' <button onclick="editCommFgOverride(' + d.id + ')" title="Modifier les frais de gestion (mot de passe admin requis)" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;color:#9E94C4;vertical-align:middle;">✏️</button></td>'
         + '<td>' + (excluded ? '<span style="color:#9E94C4;">exclu</span>' : '<span class="comm-badge-montant">' + tarifApplied + '</span>') + '</td>'
         + '<td class="col-commentaire">'
         +   '<input type="text" value="' + (ex.comment||'').replace(/"/g,'&quot;') + '" placeholder="' + (excluded?'Raison (obligatoire)':'—') + '"'
