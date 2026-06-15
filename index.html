@@ -3703,7 +3703,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.15a';
+  window.APP_VERSION = 'v2026.06.15b';
   console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
   try {
     var _verEl = document.getElementById('app-version-badge');
@@ -12292,7 +12292,22 @@ function _findCandidatIdx(cands, entry) {
   if (email) {
     var byEmail = cands.findIndex(function(c){ return (c.email||'').trim().toLowerCase() === email; });
     if (byEmail >= 0) return byEmail;
-    // Email candidat fourni mais pas trouvé → on retombe sur le nom (faute de frappe possible)
+    // Email candidat fourni mais pas trouvé → on retombe sur le tél puis le nom (faute de frappe possible)
+  }
+  // 1bis) Match par TÉLÉPHONE (>=8 chiffres) + contrôle nom. Évite les doublons quand l'email
+  //       candidat diffère, est vide, ou a été pollué par un email CLIENT (cas Mohamed/Fineisel).
+  var _telN = (entry.tel || '').toString().replace(/[\s.\-+()]/g, '');
+  if (_telN.length >= 8) {
+    var _np0 = _splitFullName(entry.consultant);
+    var byTel = cands.findIndex(function(c){
+      var ctel = (c.tel || '').toString().replace(/[\s.\-+()]/g, '');
+      if (ctel !== _telN) return false;
+      var cp=(c.prenom||'').toLowerCase().trim(), cn=(c.nom||'').toLowerCase().trim();
+      var ep=(_np0.prenom||'').toLowerCase().trim(), en=(_np0.nom||'').toLowerCase().trim();
+      if (!ep && !en) return true; // pas de nom exploitable → on fait confiance au tél
+      return (cp && cp===ep) || (cn && cn===en) || _samePerson(c.prenom,c.nom,_np0.prenom,_np0.nom);
+    });
+    if (byTel >= 0) return byTel;
   }
   // 2) Match par identité nom/prénom (accents/casse/inversion tolérés)
   var np = _splitFullName(entry.consultant);
@@ -12320,6 +12335,15 @@ function saveCandidatFromEntry(entry) {
   var idx = _findCandidatIdx(cands, entry);
   var simRef = { timestamp: entry.timestamp, date: entry.date, tjm: entry.tjm, nb_jours: entry.nb_jours, brut: entry.brut, net_payer: entry.net_payer, entreprise: entry.entreprise, poste: entry.poste, commercial: entry.commercial };
   if (idx >= 0) {
+    // FIX RÉSURRECTION : si la fiche matchée était supprimée mais qu'une NOUVELLE simu
+    // candidat arrive, c'est de l'activité fraîche → on la réveille (et on stampe pour
+    // qu'elle gagne le prochain merge face à une vieille suppression distante).
+    if (cands[idx]._deleted) {
+      cands[idx]._deleted = false;
+      delete cands[idx].deleted_at;
+      cands[idx].updated_at = Date.now();
+      cands[idx].updated_ts = Date.now();
+    }
     var candEmailExisting = (cands[idx].email || '').trim().toLowerCase();
     // On a matché par email candidat réel ?
     var matchedByEmail = !!(emailCand && candEmailExisting && emailCand === candEmailExisting);
@@ -26050,10 +26074,20 @@ function mergeCandidats(remote) {
       else if (telKey && telKey.length >= 8 && telMap[telKey]) lmDel = telMap[telKey];
       else lmDel = local.find(function(c){ return c.id === rc.id; });
       if (lmDel) {
-        lmDel._deleted = true;
-        lmDel.deleted_at = rc.deleted_at || Date.now();
-        lmDel.updated_at = rc.updated_at || Date.now();
-        lmDel.updated_ts = rc.updated_ts || Date.now();
+        // FIX RÉSURRECTION : ne propager la suppression QUE si elle est plus récente que
+        // la dernière modif locale. Si la fiche locale est VIVANTE et a été modifiée APRÈS
+        // la suppression distante (nouvelle simu, résurrection manuelle…), on la garde —
+        // sinon une vieille suppression qui traîne sur OneDrive re-tue la fiche à chaque sync.
+        var rcDelTs = rc.deleted_at || rc.updated_at || rc.updated_ts || 0;
+        var lmAliveTs = (!lmDel._deleted) ? (lmDel.updated_at || lmDel.updated_ts || _parseFRDate(lmDel.updated) || 0) : 0;
+        if (!lmDel._deleted && lmAliveTs > rcDelTs) {
+          // local vivant et plus récent → on IGNORE la suppression distante (la fiche survit)
+        } else {
+          lmDel._deleted = true;
+          lmDel.deleted_at = rc.deleted_at || Date.now();
+          lmDel.updated_at = rc.updated_at || Date.now();
+          lmDel.updated_ts = rc.updated_ts || Date.now();
+        }
       } else {
         // Aucun local match : on conserve le tombstone tel quel pour qu'il survive aux merges futurs
         emailMap['tomb:' + rc.id] = rc;
