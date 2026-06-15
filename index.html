@@ -3703,7 +3703,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.15e';
+  window.APP_VERSION = 'v2026.06.15f';
   console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
   try {
     var _verEl = document.getElementById('app-version-badge');
@@ -12800,11 +12800,22 @@ function computeCandStatutAuto(cand) {
   // Récupérer les deals liés au candidat (par email, case-insensitive)
   // Les deals annulés sont totalement ignorés : comme s'ils n'existaient pas.
   var email = ((cand.email || '') + '').trim().toLowerCase();
-  if (!email) return manualStatut;
+  // FIX : on rattache un deal au candidat par EMAIL, sinon par IDENTITÉ (nom/prénom),
+  // sinon par TÉLÉPHONE. Indispensable car certains deals ont le champ email rempli
+  // par erreur avec l'email CLIENT (ex : Diakho → kevin.thiebaut@omc.com) : sans ce
+  // fallback, le deal n'est jamais relié et le candidat reste "Prospect" à tort.
+  var candKey = (typeof _personKey === 'function') ? _personKey(cand.prenom, cand.nom) : '';
+  var candTel = (cand.tel || '').toString().replace(/[\s.\-+()]/g, '');
+  if (!email && !candKey && candTel.length < 8) return manualStatut;
   var allDeals = (typeof getDeals === 'function') ? getDeals() : [];
   var dealsOfCand = allDeals.filter(function(d){
-    return (d.email || '').trim().toLowerCase() === email
-        && d.etat !== 'Annulé';
+    if (d.etat === 'Annulé') return false;
+    var de = (d.email || '').trim().toLowerCase();
+    if (email && de && de === email) return true;
+    if (candKey && (typeof _personKey === 'function') && _personKey(d.prenom, d.nom) === candKey) return true;
+    var dtel = (d.tel || '').toString().replace(/[\s.\-+()]/g, '');
+    if (candTel.length >= 8 && dtel === candTel) return true;
+    return false;
   });
   // Aucun deal → on garde le statut manuel (Non Attribué, Prospect ou Prospect chaud)
   if (dealsOfCand.length === 0) {
