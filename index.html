@@ -1045,6 +1045,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   <button class="main-nav-btn" id="mainnav-taches" onclick="mainNavTo('taches')">&#128197; Tâches</button>
   <button class="main-nav-btn" id="mainnav-commissions" onclick="mainNavTo('commissions')">&#128176; Commissions</button>
   <button class="main-nav-btn" id="mainnav-analyseur" onclick="openAnalyseurPaie()" title="Ouvre l'analyseur de paie dans un nouvel onglet">&#128202; Analyseur de Paie</button>
+  <button class="main-nav-btn" id="mainnav-analyseur-contrat" onclick="openAnalyseurContrat()" title="Ouvre l'analyseur de contrats dans un nouvel onglet">&#128196; Analyseur de Contrats</button>
 </div>
 
 <div class="app">
@@ -3702,7 +3703,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.04j';
+  window.APP_VERSION = 'v2026.06.15a';
   console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
   try {
     var _verEl = document.getElementById('app-version-badge');
@@ -3738,6 +3739,25 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     });
   } catch(e) { console.warn('[Purge tierces]', e); }
+
+  // ═══ BACKFILL statut_portage_at (FIX SYNC field-level) ═══
+  // Pour les fiches créées avant ce fix : on matérialise le timestamp dédié du
+  // statut (= updated_at, fallback date "updated") afin que le merge field-level
+  // ne les traite pas comme "jamais horodatées". Idempotent, sans déclencher de sync.
+  try {
+    var _bfRaw = localStorage.getItem(CAND_KEY);
+    if (_bfRaw) {
+      var _bfArr = JSON.parse(_bfRaw);
+      var _bfChanged = false;
+      _bfArr.forEach(function(_c){
+        if (_c && !_c.statut_portage_at) {
+          var _ts = _c.updated_at || _parseFRDate(_c.updated) || 0;
+          if (_ts) { _c.statut_portage_at = _ts; _bfChanged = true; }
+        }
+      });
+      if (_bfChanged) localStorage.setItem(CAND_KEY, JSON.stringify(_bfArr));
+    }
+  } catch(e) { console.warn('[Backfill statut_portage_at]', e); }
 
   // ═══ GARDE-FOU QUOTA LOCALSTORAGE ═══
   // Si on dépasse 80% du quota, prévenir l'utilisateur dans la console.
@@ -5831,6 +5851,71 @@ function clearHistSearch() {
 }
 
 
+// === Modification d'une simulation DÉJÀ PLACÉE (déverrouillée) ============
+// Détecte si une simu est rattachée à un placement (deal) ou un avenant, SANS le bypass de déverrouillage.
+function _isSimPlaced(ts) {
+  if (!ts) return false;
+  try { if (typeof getDeals==='function' && getDeals().some(function(d){ return d && d.sim_ts === ts && !d._deleted; })) return true; } catch(e){}
+  try { if (typeof getAvenants==='function' && getAvenants().some(function(a){ return a && a.sim_ts === ts && !a._deleted; })) return true; } catch(e){}
+  return false;
+}
+// Répercute les nouveaux éléments financiers de la simu modifiée sur le(s) deal(s) lié(s).
+function _updateDealFromEditedSim(ts, oldE, newE) {
+  if (typeof getDeals !== 'function' || typeof saveDeals !== 'function') return;
+  var deals = getDeals();
+  var brutMens = parseFloat(String(newE.brut||'').replace(/[^0-9.,]/g,'').replace(',','.')) || 0;
+  var salaireAnnuel = '';
+  if (newE.brut_contrat_annuel && parseInt(newE.brut_contrat_annuel) > 0) salaireAnnuel = String(parseInt(newE.brut_contrat_annuel));
+  else if (brutMens > 0 && typeof _computeSalaireAnnuelContrat === 'function') salaireAnnuel = String(_computeSalaireAnnuelContrat(brutMens, parseInt(newE.nb_jours)||21));
+  var changed = false;
+  deals.forEach(function(d){
+    if (!d || d.sim_ts !== ts) return;
+    d.tjm = newE.tjm; d.nb_jours = newE.nb_jours;
+    if (salaireAnnuel) d.salaire_annuel = salaireAnnuel;
+    d.brut = newE.brut; d.net_payer = newE.net_payer; d.net_avant = newE.net_avant || '';
+    d.cout_global = newE.cout_global || ''; d.total_pat = newE.total_pat || ''; d.total_sal = newE.total_sal || '';
+    d.taux_restitution = newE.taux_restitution || ''; d.frais_gestion = newE.marge || '';
+    d.mutuelle = newE.mutuelle || ''; d.cp = newE.cp || ''; d.rtt = newE.rtt || 0; d.repas = newE.repas || '';
+    d.tt = newE.tt ? 'Oui' : 'Non'; d.gd_lieu = newE.gd_lieu || ''; d.gd_perso_montant = parseFloat(newE.gd_perso_montant) || 0;
+    d.ik_1ere = newE.ik_1ere ? 'Oui' : 'Non'; d.km_aller = newE.km_aller || ''; d.puissance_fiscale = newE.puissance || '';
+    d.abo_transport = newE.abo_transport || ''; d.abo_tel = newE.abo_tel || ''; d.abo_internet = newE.abo_internet || '';
+    d.frais_formation = newE.frais_formation || ''; d.frais_materiel = newE.frais_materiel || ''; d.taux_impot = newE.taux_impot || '';
+    d.updated_at = Date.now();
+    changed = true;
+  });
+  if (changed) { saveDeals(deals); if (typeof renderDeals === 'function') renderDeals(); }
+}
+// Email à l'ADV responsable (Clémence A-H / Marie I-Z) avec le détail des modifications.
+function _notifyADVSimModification(oldE, newE) {
+  if (typeof sendMailViaGraph !== 'function') return;
+  var emails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+  var nom = (newE.consultant || oldE.consultant || '').trim();
+  var L = nom.charAt(0).toUpperCase();
+  var adv = (typeof _getADVByLetter === 'function') ? _getADVByLetter(L) : ((L>='A'&&L<='H')?'clemence':'marie');
+  var to = [];
+  var advEmail = (adv === 'clemence') ? (emails.clemence||'') : (emails.marie||'');
+  if (advEmail) to.push(advEmail);
+  if (!to.length) { console.warn('[notifyADV] aucun email ADV configuré (Param. > Emails internes)'); return; }
+  var fields = [['tjm','TJM'],['nb_jours','Nb jours'],['marge','Frais de gestion (%)'],['brut','Brut mensuel'],['net_payer','Net à payer'],['net_avant','Net avant impôt'],['facturation','Facturation'],['mutuelle','Mutuelle'],['repas','Repas'],['km_aller','Km aller'],['puissance','Puissance fiscale'],['gd_lieu','Grand déplacement']];
+  var rows = '';
+  fields.forEach(function(f){
+    var ov = (oldE[f[0]]===undefined||oldE[f[0]]===null)?'':String(oldE[f[0]]);
+    var nv = (newE[f[0]]===undefined||newE[f[0]]===null)?'':String(newE[f[0]]);
+    if (ov !== nv) rows += '<tr><td style="padding:4px 10px;border:1px solid #ddd;">'+f[1]+'</td><td style="padding:4px 10px;border:1px solid #ddd;color:#999;text-decoration:line-through;">'+(ov||'—')+'</td><td style="padding:4px 10px;border:1px solid #ddd;color:#1D7F4F;font-weight:700;">'+(nv||'—')+'</td></tr>';
+  });
+  if (!rows) rows = '<tr><td colspan="3" style="padding:6px 10px;border:1px solid #ddd;">La simulation a été ré-enregistrée (aucun champ financier suivi n\'a changé).</td></tr>';
+  var who = (typeof getCommercialData === 'function') ? (getCommercialData().nom || '') : '';
+  var html = '<div style="font-family:Arial,sans-serif;font-size:13px;color:#222;">'
+    + '<p>Bonjour,</p>'
+    + '<p>La simulation <strong>déjà rattachée à un placement</strong> du consultant <strong>'+nom+'</strong>'+(newE.entreprise?(' ('+newE.entreprise+')'):'')+' vient d\'être <strong>modifiée</strong>'+(who?(' par '+who):'')+'.</p>'
+    + '<table style="border-collapse:collapse;font-size:12.5px;"><thead><tr style="background:#F0EDFB;"><th style="padding:4px 10px;border:1px solid #ddd;text-align:left;">Élément</th><th style="padding:4px 10px;border:1px solid #ddd;">Avant</th><th style="padding:4px 10px;border:1px solid #ddd;">Après</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    + '<p style="color:#666;font-size:12px;">Le placement et les tableaux (Suivi RH / Commissions) ont été mis à jour automatiquement avec ces nouvelles valeurs.</p>'
+    + '</div>';
+  sendMailViaGraph({ to: to, subject: '⚠ Simulation placée modifiée — ' + nom + (newE.entreprise?(' / '+newE.entreprise):''), htmlBody: html },
+    function(){ if (typeof showNotifToast==='function') showNotifToast('✉ ADV prévenu(e) de la modification'); },
+    function(err){ console.error('[notifyADV] envoi échoué', err); });
+}
+
 function saveHistorique(data, dest, email, consultantName) {
   var hist = getHistory();
   var name = (consultantName || data.consultant || 'Inconnu').trim();
@@ -5907,7 +5992,22 @@ function saveHistorique(data, dest, email, consultantName) {
     version: version,
     snapshot: captureSnapshotForHistory()
   };
-  hist.unshift(entry);
+  // Cas spécial : modification d'une simu DÉJÀ PLACÉE et déverrouillée → mise à jour EN PLACE (pas de nouvelle simu)
+  var _editTs = window._currentReopenedSimTs;
+  var _placedEditOld = null;
+  if (_editTs && typeof _isSimPlaced === 'function' && _isSimPlaced(_editTs) && window._simUnlocked && window._simUnlocked[_editTs]) {
+    var _eidx = hist.findIndex(function(h){ return h.timestamp === _editTs; });
+    if (_eidx >= 0) {
+      _placedEditOld = hist[_eidx];
+      entry.id = _placedEditOld.id;
+      entry.timestamp = _placedEditOld.timestamp;   // même timestamp → le placement reste rattaché
+      entry.version = _placedEditOld.version;
+      entry.modified_at = Date.now();
+      hist[_eidx] = entry;                           // remplace en place, pas de nouvelle entrée
+    } else { hist.unshift(entry); }
+  } else {
+    hist.unshift(entry);
+  }
   saveHistoryArr(hist);
   // Enregistrer / mettre à jour le candidat
   saveCandidatFromEntry(entry);
@@ -5921,6 +6021,11 @@ function saveHistorique(data, dest, email, consultantName) {
       if (typeof showNotifToast === 'function') showNotifToast('✓ ' + msg.join(' · '));
     }
   } catch(e) { console.error('[saveHistorique] saveClientManagerFromEntry:', e); }
+  // Modification d'une simu placée : répercuter sur le deal + prévenir l'ADV
+  if (_placedEditOld) {
+    try { _updateDealFromEditedSim(entry.timestamp, _placedEditOld, entry); } catch(e) { console.error('[saveHistorique] update deal:', e); }
+    try { _notifyADVSimModification(_placedEditOld, entry); } catch(e) { console.error('[saveHistorique] notify ADV:', e); }
+  }
   // Sync automatique OneDrive si connecté
   odAutoSync();
 }
@@ -12240,6 +12345,7 @@ function saveCandidatFromEntry(entry) {
     // Candidat "Non Attribué" → bascule en "Prospect" dès qu'une simu est envoyée
     if ((cands[idx].statut_portage || '') === 'Non Attribué') {
       cands[idx].statut_portage = 'Prospect';
+      cands[idx].statut_portage_at = Date.now();  // FIX SYNC field-level
     }
     cands[idx].updated = new Date().toLocaleDateString('fr-FR');
     // Ajouter la simulation si pas déjà présente
@@ -12478,6 +12584,7 @@ function saveNewCandidat() {
     ville: (document.getElementById('nc-ville').value || '').trim(),
     disponibilite: (document.getElementById('nc-dispo').value || '').trim(),
     statut_portage: document.getElementById('nc-statut-portage').value || 'Non Attribué',
+    statut_portage_at: Date.now(),
     entreprise: (document.getElementById('nc-entreprise').value || '').trim(),
     commercial: document.getElementById('nc-commercial').value || '',
     techno: (document.getElementById('nc-techno').value || '').trim(),
@@ -13149,6 +13256,20 @@ function openAnalyseurPaie() {
   }
   // Ouvrir dans un nouvel onglet
   window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ANALYSEUR DE CONTRATS — simple lien externe, SANS mot de passe.
+// IMPORTANT (pour ne PAS refaire l'erreur de l'analyseur de paie) :
+// l'outil est sur un AUTRE domaine (seven-analyseur-contrats.netlify.app).
+// Le navigateur cloisonne donc TOTALEMENT son localStorage (same-origin policy) :
+// il ne peut PAS toucher la mémoire / le stockage du CRM, et ne peut pas saturer
+// notre quota. On ouvre juste un nouvel onglet — aucune donnée partagée.
+// (noopener => le nouvel onglet n'a même pas accès à window.opener du CRM.)
+// ═══════════════════════════════════════════════════════════════════
+var ANALYSEUR_CONTRAT_URL = 'https://seven-analyseur-contrats.netlify.app/';
+function openAnalyseurContrat() {
+  window.open(ANALYSEUR_CONTRAT_URL, '_blank', 'noopener,noreferrer');
 }
 
 function mainNavTo(section) {
@@ -25170,6 +25291,7 @@ function handleStatutPortageChange(select) {
     cands[idx].statut_portage = 'Perdu';
     cands[idx].updated = new Date().toLocaleDateString('fr-FR');
     cands[idx].updated_at = Date.now();  // FIX SYNC : stamper explicitement
+    cands[idx].statut_portage_at = Date.now();  // FIX SYNC field-level statut
     saveCandidatsArr(cands);
     // Si raison pas encore renseignée → popup
     if (!cands[idx].raison_perdu) {
@@ -25190,6 +25312,7 @@ function handleStatutPortageChange(select) {
   cands[idx].statut_portage = newVal;
   cands[idx].updated = new Date().toLocaleDateString('fr-FR');
   cands[idx].updated_at = Date.now();  // FIX SYNC : stamper explicitement
+  cands[idx].statut_portage_at = Date.now();  // FIX SYNC field-level statut
   saveCandidatsArr(cands);
   renderCandidats();
   openCandidatFiche(candId);
@@ -25248,6 +25371,7 @@ function savePerduReason(candId) {
   if (idx < 0) return;
   cands[idx].raison_perdu = raison;
   cands[idx].statut_portage = 'Perdu';
+  cands[idx].statut_portage_at = Date.now();  // FIX SYNC field-level statut
   cands[idx].updated = new Date().toLocaleDateString('fr-FR');
   // FIX SYNC : on force explicitement updated_at = maintenant pour garantir que le
   // merge inter-commerciaux propage cette modif. Sinon, si saveCandidatsArr considère
@@ -26033,13 +26157,27 @@ function mergeCandidats(remote) {
         // collègue le corrigeait, et la raison du "Perdu" ne voyageait pas).
         var simpleFields = ['prenom', 'nom', 'email', 'tel', 'poste', 'profil', 'techno', 'ville',
                             'linkedin', 'tjm_actuel', 'entreprise', 'commercial', 'secteur',
-                            'civilite', 'disponibilite', 'anniversaire', 'statut', 'statut_portage',
-                            'raison_perdu', 'commentaire', 'updated', 'updated_at'];
+                            'civilite', 'disponibilite', 'anniversaire', 'statut',
+                            'commentaire', 'updated', 'updated_at'];
         simpleFields.forEach(function(f){
           if (rc[f] !== undefined && rc[f] !== null && rc[f] !== '') {
             localMatch[f] = rc[f];
           }
         });
+      }
+      // ── FIX SYNC field-level : statut_portage protégé par son propre timestamp ──
+      // Le statut ne suit PLUS le sort des autres champs. Un changement de tél /
+      // commentaire chez un commercial ne doit plus écraser un "Prospect chaud" posé
+      // par un autre. On arbitre via statut_portage_at dédié (fallback updated_at pour
+      // les fiches antérieures au fix). raison_perdu suit le statut (n'a de sens qu'avec "Perdu").
+      var localStatutTs  = localMatch.statut_portage_at || localMatch.updated_at || _parseFRDate(localMatch.updated) || 0;
+      var remoteStatutTs = rc.statut_portage_at || rc.updated_at || _parseFRDate(rc.updated) || 0;
+      if (remoteStatutTs >= localStatutTs && rc.statut_portage !== undefined && rc.statut_portage !== null && rc.statut_portage !== '') {
+        localMatch.statut_portage = rc.statut_portage;
+        localMatch.statut_portage_at = remoteStatutTs;
+        if (rc.raison_perdu !== undefined && rc.raison_perdu !== null) localMatch.raison_perdu = rc.raison_perdu;
+      } else if (!localMatch.statut_portage_at && localStatutTs) {
+        localMatch.statut_portage_at = localStatutTs;  // matérialise pour les merges suivants
       }
     }
   });
