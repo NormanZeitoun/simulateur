@@ -3703,7 +3703,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.15c';
+  window.APP_VERSION = 'v2026.06.15e';
   console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
   try {
     var _verEl = document.getElementById('app-version-badge');
@@ -32563,6 +32563,7 @@ function showCommissionsSection(subtab) {
 // client et manager.
 // ═══════════════════════════════════════════════════════════════════
 var _dgFilterClient = '';
+var _dgFilterStatut = '';
 var _dgFilterMonth = '';
 
 function _dgParseDate(s) {
@@ -32594,7 +32595,12 @@ function renderCommDealsGlobalView() {
   var MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
   var MS = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Aoû','Sep','Oct','Nov','Déc'];
 
-  var all = getDeals().filter(function(d){ return d && !d._deleted; });
+  // Scope : uniquement les deals du commercial connecté (fallback = tout si non configuré)
+  var _dgMe = ((typeof getCommercialData === 'function' && getCommercialData().nom) || '').trim();
+  var _dgMeLC = _dgMe.toLowerCase();
+  var all = getDeals().filter(function(d){
+    return d && !d._deleted && (!_dgMeLC || (d.commercial||'').trim().toLowerCase() === _dgMeLC);
+  });
 
   var clientSet = {}; all.forEach(function(d){ var e=(d.entreprise||'').trim(); if(e) clientSet[e]=1; });
   var clientList = Object.keys(clientSet).sort(function(a,b){ return a.localeCompare(b); });
@@ -32602,6 +32608,8 @@ function renderCommDealsGlobalView() {
   var deals = all.filter(function(d){
     if (_dgFilterClient && (d.entreprise||'').trim() !== _dgFilterClient) return false;
     if (_dgFilterMonth !== '') { var dd=_dgDealDate(d); if (!dd || (dd.getMonth()+1) !== parseInt(_dgFilterMonth)) return false; }
+    if (_dgFilterStatut === 'actif' && !_dgIsActif(d)) return false;
+    if (_dgFilterStatut === 'inactif' && _dgIsActif(d)) return false;
     return true;
   });
 
@@ -32609,6 +32617,7 @@ function renderCommDealsGlobalView() {
   var actifs = deals.filter(_dgIsActif);
   var porteSet = {}; actifs.forEach(function(d){ var k=((d.email||'').trim().toLowerCase())||_personKey(d.prenom,d.nom); if(k) porteSet[k]=1; });
   var nbPorteActif = Object.keys(porteSet).length;
+  var nbPlacements = deals.filter(function(d){ return d.etat !== 'Annulé'; }).length;
   var tjmVals = actifs.map(function(d){ return parseFloat(d.tjm)||0; }).filter(function(v){ return v>0; });
   var tjmMoy = tjmVals.length ? Math.round(tjmVals.reduce(function(a,b){return a+b;},0)/tjmVals.length) : 0;
   var fgVals = actifs.map(function(d){ return parseFloat(d.frais_gestion)||0; }).filter(function(v){ return v>0; });
@@ -32624,7 +32633,9 @@ function renderCommDealsGlobalView() {
   var html = '<div style="padding:4px 0 24px;max-width:1320px;">';
   html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">'
     + '<button class="back-btn" onclick="mainNavTo(\'mission\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#fff;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;">← Retour</button>'
-    + '<div style="font-size:13px;font-weight:700;color:#1A1033;">💰 Commissions</div></div>';
+    + '<div style="font-size:13px;font-weight:700;color:#1A1033;">💰 Commissions</div>'
+    + (_dgMe ? '<div style="margin-left:6px;display:inline-flex;align-items:center;gap:5px;padding:4px 11px;background:#EEE9FE;color:#4B36EC;border-radius:20px;font-size:11.5px;font-weight:700;">👤 ' + _dgMe.replace(/</g,'&lt;') + '</div>' : '<div style="margin-left:6px;font-size:11.5px;color:#C0392B;font-weight:600;">⚠ Commercial non configuré (tous les deals affichés)</div>')
+    + '</div>';
   html += buildCommSubNav();
 
   function card(icon,val,label,sub) {
@@ -32635,6 +32646,7 @@ function renderCommDealsGlobalView() {
   }
   html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">'
     + card('🟢', nbPorteActif, 'Portés actifs', 'sur le périmètre filtré')
+    + card('🤝', nbPlacements, 'Placements', 'deals hors annulés')
     + card('📈', (fgMoy ? fgMoy.toFixed(1).replace(/\.0$/,'')+' %' : '—'), 'Marge moy.', 'frais de gestion (actifs)')
     + card('💶', (tjmMoy ? tjmMoy+' €/j' : '—'), 'TJM moyen', 'deals actifs')
     + card('🏆', (topActif.n||'—'), 'Top client actif', topActif.c+' porté(s) actif(s)')
@@ -32649,7 +32661,13 @@ function renderCommDealsGlobalView() {
     +   '<select class="comm-param-input" onchange="_dgFilterClient=this.value;renderCommDealsGlobalView();" style="cursor:pointer;">' + clientOpts + '</select></div>'
     + '<div style="min-width:170px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Mois du deal</label>'
     +   '<select class="comm-param-input" onchange="_dgFilterMonth=this.value;renderCommDealsGlobalView();" style="cursor:pointer;">' + monthOpts + '</select></div>'
-    + ((_dgFilterClient || _dgFilterMonth !== '') ? '<div><button onclick="_dgFilterClient=\'\';_dgFilterMonth=\'\';renderCommDealsGlobalView();" style="padding:9px 14px;background:#fff;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">✕ Réinitialiser</button></div>' : '')
+    + '<div style="min-width:150px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Statut</label>'
+    +   '<select class="comm-param-input" onchange="_dgFilterStatut=this.value;renderCommDealsGlobalView();" style="cursor:pointer;">'
+    +     '<option value=""' + (_dgFilterStatut===''?' selected':'') + '>Tous statuts</option>'
+    +     '<option value="actif"' + (_dgFilterStatut==='actif'?' selected':'') + '>Actif</option>'
+    +     '<option value="inactif"' + (_dgFilterStatut==='inactif'?' selected':'') + '>Inactif</option>'
+    +   '</select></div>'
+    + ((_dgFilterClient || _dgFilterMonth !== '' || _dgFilterStatut) ? '<div><button onclick="_dgFilterClient=\'\';_dgFilterMonth=\'\';_dgFilterStatut=\'\';renderCommDealsGlobalView();" style="padding:9px 14px;background:#fff;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">✕ Réinitialiser</button></div>' : '')
     + '<div style="margin-left:auto;font-size:12px;color:#6B5E9C;font-weight:600;align-self:center;">' + deals.length + ' deal(s)</div>'
     + '</div>';
 
