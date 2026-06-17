@@ -8149,6 +8149,7 @@ function odSilentFullSync() {
 
       // Salaires Bloqués : recalcul + transitions sur l'état fraîchement mergé (avant le push)
       try { if (typeof runSalaireBloqueEngine === 'function') runSalaireBloqueEngine({ fromSync: true }); } catch(_sbE) { console.warn('[SB engine sync]', _sbE); }
+      try { if (typeof _sbRunMatching === 'function') _sbRunMatching(); } catch(_sbM) { console.warn('[SB matching sync]', _sbM); }
 
       // ═══ PHASE 2 : PUSH parallèle (toutes les entités après merge) ═══
       var t1 = Date.now();
@@ -19552,6 +19553,183 @@ function _sbRemoveExclusion(type, idx) {
   if (typeof renderSalairesBloques === 'function') renderSalairesBloques();
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// SALAIRES BLOQUÉS — matching fiche candidat (Build 4b-1)
+// Rattachement par EMAIL (le nom LAYA est souvent approximatif). Une fois lié :
+// candidat_id renseigné, nom propre repris, Manager (C/D/E) résolu depuis le placement.
+// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// SALAIRES BLOQUÉS — actions depuis la fiche candidat (Build 4b-2)
+// ═══════════════════════════════════════════════════════════════════
+// Entrée Salaires Bloqués correspondant à un candidat (par candidat_id, sinon par email)
+function _sbCandEntry(cand) {
+  if (!cand) return null;
+  var arr = getSalairesBloques();
+  var hit = arr.filter(function(e){ return e.candidat_id === cand.id; });
+  if (!hit.length) {
+    var em = _sbNormEmail(cand.email);
+    if (em) hit = arr.filter(function(e){ return _sbNormEmail(e.consultant_email) === em; });
+  }
+  if (!hit.length) return null;
+  return hit.sort(function(a,b){ return (b.statut_ts||0) - (a.statut_ts||0); })[0];
+}
+function _sbIsCandBlocked(cand) {
+  var e = _sbCandEntry(cand);
+  return !!(e && e.statut === 'bloque');
+}
+
+// Ajoute un commentaire sur la fiche candidat (horodaté + auteur)
+function _sbAddFicheComment(candId, text) {
+  if (typeof getCandidats !== 'function' || typeof saveCandidatsArr !== 'function') return;
+  var cands = getCandidats();
+  var cand = cands.find(function(c){ return c.id === candId; });
+  if (!cand) return;
+  var who = (typeof getCurrentUserCommercial === 'function' && getCurrentUserCommercial()) || 'Système';
+  var n = new Date();
+  cand.commentaires = cand.commentaires || [];
+  cand.commentaires.unshift({ date: n.toLocaleDateString('fr-FR') + ' ' + n.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}), text: text, author: who });
+  saveCandidatsArr(cands);
+}
+
+// Rafraîchit la fiche candidat ouverte (rebuild du modal)
+function _sbRefreshFiche(candId) {
+  if (typeof openCandidatFiche === 'function' && document.getElementById('modal-cand-fiche')) {
+    openCandidatFiche(candId);
+  }
+}
+
+// Blocage manuel depuis la fiche (origine = manuel, ne sera jamais auto-débloqué)
+function _sbBlockFromFiche(candId) {
+  var cand = getCandidats().find(function(c){ return c.id === candId; });
+  if (!cand) return;
+  var nom = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim();
+  var email = _sbNormEmail(cand.email);
+  // Placement actif le plus pertinent
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var mine = deals.filter(function(d){ return d && !d._deleted && d.etat !== 'Annulé' && email && _sbNormEmail(d.email) === email; });
+  var deal = mine[0] || null;
+  var client = deal ? (deal.entreprise || '') : '';
+  if (!client) {
+    client = prompt('Aucun placement actif trouvé. Client concerné par le blocage :', '');
+    if (client === null) return;
+    client = client.trim();
+    if (!client) return;
+  }
+  if (!confirm('Bloquer manuellement le salaire de ' + nom + ' (' + client + ') ?')) return;
+  var banque = '';
+  if (typeof getClients === 'function') {
+    var cl = getClients().find(function(x){ return x && _sbNormClient(x.name) === _sbNormClient(client); });
+    if (cl) banque = cl.banque || '';
+  }
+  var who = (typeof getCurrentUserCommercial === 'function' && getCurrentUserCommercial()) || 'Utilisateur';
+  var now = Date.now(), n = new Date();
+  var cm = { date: n.toLocaleDateString('fr-FR') + ' ' + n.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}), text: 'Salaire bloqué manuellement (depuis la fiche)', author: who };
+  var id = _sbKey(email, nom, client);
+  var arr = getSalairesBloques();
+  var e = arr.find(function(x){ return x.id === id; });
+  if (e) {
+    e.statut = 'bloque'; e.statut_ts = now; e.date_blocage = new Date(now).toISOString(); e.date_deblocage = '';
+    e.origine = 'manuel'; e.manual_override = true; e.candidat_id = candId; e.consultant = nom; e.consultant_email = email;
+    e.alerte_blocage_envoyee = true; e.alerte_deblocage_envoyee = false;
+    e.commentaires = e.commentaires || []; e.commentaires.unshift(cm); e.updated_at = now;
+  } else {
+    arr.push({
+      id: id, key: id, consultant: nom, consultant_email: email, candidat_id: candId, client: client,
+      banque: banque, commercial: deal ? (deal.commercial || '') : '', email_relance: '',
+      manager: '', manager_tel: '', manager_email: '', _override: {}, nb_factures: 0,
+      statut: 'bloque', origine: 'manuel', manual_override: true, statut_ts: now,
+      date_blocage: new Date(now).toISOString(), date_deblocage: '',
+      alerte_blocage_envoyee: true, alerte_deblocage_envoyee: false,
+      commentaires: [cm], updated_at: now
+    });
+    e = arr[arr.length - 1];
+  }
+  saveSalairesBloques(arr);
+  try { if (typeof _sbSendAlert === 'function') _sbSendAlert(e, 'block'); } catch(err){ console.error('[SB] alerte blocage fiche', err); }
+  _sbAddFicheComment(candId, 'Salaire bloqué manuellement par ' + who + ' (' + client + ')');
+  _sbRefreshFiche(candId);
+  if (typeof renderSalairesBloques === 'function' && document.getElementById('rh-content-container')) { try { renderSalairesBloques(); } catch(e2){} }
+}
+
+// Déblocage manuel depuis la fiche — débloque TOUS les blocages actifs de ce consultant
+function _sbUnblockFromFiche(candId) {
+  var cand = getCandidats().find(function(c){ return c.id === candId; });
+  if (!cand) return;
+  var nom = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim();
+  if (!confirm('Débloquer le salaire de ' + nom + ' ?')) return;
+  var em = _sbNormEmail(cand.email);
+  var who = (typeof getCurrentUserCommercial === 'function' && getCurrentUserCommercial()) || 'Utilisateur';
+  var now = Date.now(), n = new Date();
+  var arr = getSalairesBloques();
+  var touched = [];
+  arr.forEach(function(e){
+    var match = (e.candidat_id === candId) || (em && _sbNormEmail(e.consultant_email) === em);
+    if (match && e.statut === 'bloque') {
+      e.statut = 'debloque'; e.statut_ts = now; e.date_deblocage = new Date(now).toISOString();
+      e.manual_override = true; e.alerte_deblocage_envoyee = true;
+      e.commentaires = e.commentaires || [];
+      e.commentaires.unshift({ date: n.toLocaleDateString('fr-FR') + ' ' + n.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}), text: 'Salaire débloqué manuellement (depuis la fiche)', author: who });
+      e.updated_at = now; touched.push(e);
+    }
+  });
+  if (!touched.length) { alert('Aucun blocage actif pour ce consultant.'); return; }
+  saveSalairesBloques(arr);
+  touched.forEach(function(e){ try { if (typeof _sbSendAlert === 'function') _sbSendAlert(e, 'unblock'); } catch(err){} });
+  _sbAddFicheComment(candId, 'Salaire débloqué manuellement par ' + who);
+  _sbRefreshFiche(candId);
+  if (typeof renderSalairesBloques === 'function' && document.getElementById('rh-content-container')) { try { renderSalairesBloques(); } catch(e2){} }
+}
+
+function _sbRunMatching() {
+  if (typeof getCandidats !== 'function') return 0;
+  var arr = getSalairesBloques();
+  if (!arr.length) return 0;
+  var byEmail = {};
+  getCandidats().forEach(function(cd){ var e = _sbNormEmail(cd.email); if (e) byEmail[e] = cd; });
+  var changed = 0;
+  arr.forEach(function(en){
+    if (en.candidat_id != null) return;          // déjà lié → on ne retouche pas (pas de churn)
+    var em = _sbNormEmail(en.consultant_email);
+    var cd = em ? byEmail[em] : null;
+    if (!cd) return;
+    en.candidat_id = cd.id;
+    var propre = ((cd.prenom || '') + ' ' + (cd.nom || '')).trim();
+    if (propre) en.consultant = propre;          // nom propre de la fiche (au lieu du nom LAYA)
+    en.updated_at = Date.now();
+    changed++;
+  });
+  if (changed) localStorage.setItem(SALAIRES_BLOQUES_KEY, JSON.stringify(arr));
+  return changed;
+}
+
+// Résout le manager (nom/tel/email + lien fiche) depuis le placement du consultant chez ce client.
+// Calculé à l'affichage (toujours à jour), non figé dans l'entrée.
+function _sbResolveManager(entry) {
+  var res = { name: '', email: '', tel: '', clientId: null, mgrIdx: -1 };
+  if (!entry) return res;
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  var email = _sbNormEmail(entry.consultant_email);
+  var nclient = _sbNormClient(entry.client);
+  var deal = null;
+  deals.forEach(function(d){
+    if (!d || d.etat === 'Annulé' || d._deleted) return;
+    if (_sbNormClient(d.entreprise) !== nclient) return;
+    var de = _sbNormEmail(d.email);
+    var ok = email ? (de === email) : (_sbNormName((d.prenom||'') + ' ' + (d.nom||'')) === _sbNormName(entry.consultant));
+    if (ok) deal = d;
+  });
+  if (!deal || !deal.manager) return res;
+  res.name = deal.manager;
+  var clients = (typeof getClients === 'function') ? getClients() : [];
+  var cl = clients.find(function(x){ return x && _sbNormClient(x.name) === nclient; });
+  if (cl) {
+    res.clientId = cl.id;
+    var mi = (cl.managers || []).findIndex(function(m){ return _sbNormName(m.name) === _sbNormName(deal.manager); });
+    if (mi >= 0) { res.mgrIdx = mi; var m = cl.managers[mi]; res.email = m.email || ''; res.tel = m.tel || ''; }
+  }
+  return res;
+}
+
 var SB_FILTER = { statut: 'bloque', client: 'all', banque: 'all', commercial: 'all', search: '' };
 
 function _sbFmtDate(iso) {
@@ -19586,6 +19764,7 @@ function showSalairesBloquesView() {
   container.style.display = 'block';
   // Recalcul à l'ouverture (sécurité — l'état reflète les derniers impayés)
   try { if (typeof runSalaireBloqueEngine === 'function') runSalaireBloqueEngine(); } catch(e){}
+  try { if (typeof _sbRunMatching === 'function') _sbRunMatching(); } catch(e){}
   renderSalairesBloques();
 }
 
@@ -19676,7 +19855,19 @@ function renderSalairesBloques() {
       var clientHtml = _sbEsc(e.client || '—');
       if (clId != null) clientHtml = '<a class="sb-lnk" onclick="mainNavTo(\'clients\');setTimeout(function(){openClientPage(' + clId + ');},150);">' + clientHtml + '</a>';
       // Manager (C/D/E) — vide tant que placement non lié (Build 4)
-      var mgr = e.manager ? _sbEsc(e.manager) : '<span style="color:#C9C2E0;">—</span>';
+      var _mgr = _sbResolveManager(e);
+      var mgr;
+      if (_mgr.name) {
+        var _mgrName = (_mgr.clientId != null && _mgr.mgrIdx >= 0)
+          ? '<a class="sb-lnk" onclick="openManagerFiche(' + _mgr.clientId + ',' + _mgr.mgrIdx + ')">' + _sbEsc(_mgr.name) + '</a>'
+          : _sbEsc(_mgr.name);
+        var _sub = [];
+        if (_mgr.tel) _sub.push(_sbEsc(_mgr.tel));
+        if (_mgr.email) _sub.push(_sbEsc(_mgr.email));
+        mgr = _mgrName + (_sub.length ? '<div style="font-size:10.5px;color:#9E94C4;">' + _sub.join(' \u00b7 ') + '</div>' : '');
+      } else {
+        mgr = '<span style="color:#C9C2E0;">—</span>';
+      }
       var statBadge = (e.statut === 'bloque')
         ? '<span class="sb-badge bloq">\u{1F534} Bloqué</span>'
         : '<span class="sb-badge deb">\u{1F7E2} Débloqué</span>';
@@ -25616,6 +25807,7 @@ function openCandidatFiche(id) {
 
 function buildCandFicheHTML(cand) {
   var initials = ((cand.prenom||'').charAt(0) + (cand.nom||'').charAt(0)).toUpperCase();
+  var _sbBlocked = (typeof _sbIsCandBlocked === 'function') ? _sbIsCandBlocked(cand) : false;
   var lastSim = cand.simulations && cand.simulations[0];
   var commercial = lastSim ? (lastSim.commercial||'') : '';
 
@@ -25748,6 +25940,7 @@ function buildCandFicheHTML(cand) {
     +     statutAuto
     +     (statutIsAuto ? '<span title="Statut calculé automatiquement à partir des placements" style="font-size:9px;opacity:0.85;">● auto</span>' : '')
     +   '</span>'
+    +   (_sbBlocked ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:#C0392B;color:#fff;border-radius:14px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">🔒 Salaire bloqué</span>' : '')
     + '</div>'
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:3px;">'
     + (cand.email ? '<span style="font-size:11px;color:rgba(255,255,255,0.85);">&#9993; ' + cand.email + '</span>' : '')
@@ -25758,6 +25951,9 @@ function buildCandFicheHTML(cand) {
     + '</div>'
     + '<div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">'
     +   buildFicheEditBarHTML('candidat', cand.id)
+    +   (_sbBlocked
+        ? '<button onclick="_sbUnblockFromFiche(' + cand.id + ')" title="Débloquer le salaire" style="background:#E5F5EE;border:1.5px solid #1D9E75;color:#0F5132;font-size:11px;font-weight:700;padding:6px 11px;border-radius:7px;cursor:pointer;">🔓 Débloquer salaire</button>'
+        : '<button onclick="_sbBlockFromFiche(' + cand.id + ')" title="Bloquer le salaire" style="background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.3);color:#fff;font-size:11px;font-weight:700;padding:6px 11px;border-radius:7px;cursor:pointer;">🔒 Bloquer salaire</button>')
     +   '<button onclick="openMergeCandidatPopup(' + cand.id + ')" title="Fusionner cette fiche avec un doublon (ex: même candidat saisi 2 fois)" style="background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.3);color:#fff;font-size:11px;font-weight:600;padding:6px 11px;border-radius:7px;cursor:pointer;">🔀 Fusionner</button>'
     +   '<button onclick="closeCandFiche()" style="background:none;border:none;font-size:22px;cursor:pointer;color:rgba(255,255,255,0.8);line-height:1;">&#215;</button>'
     + '</div>'
