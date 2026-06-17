@@ -13386,6 +13386,7 @@ var RH_SUBTABS = [
   { key: 'frais',        label: 'Frais',             icon: '\u{1F4C4}', ready: true  },
   { key: 'comptes_act',  label: 'Comptes d\'activité', icon: '\u{1F4CA}', ready: true  },
   { key: 'impayes',      label: 'Impayés',           icon: '\u{1F4B3}', ready: true  },
+  { key: 'salaires_bloques', label: 'Salaires bloqu\u00e9s', icon: '\u{1F512}', ready: true  },
   { key: 'cooptation',   label: 'Cooptation',        icon: '\u{1F91D}', ready: true  },
   { key: 'visite_medicale', label: 'Visite médicale', icon: '\u{1F3E5}', ready: true }
 ];
@@ -13412,6 +13413,8 @@ function showRHSection(subtab) {
     showEntreesView();
   } else if (subtab === 'impayes') {
     showImpayesView();
+  } else if (subtab === 'salaires_bloques') {
+    showSalairesBloquesView();
   } else if (subtab === 'avenants') {
     showAvenantsView();
   } else if (subtab === 'visite_medicale') {
@@ -19333,7 +19336,7 @@ function runSalaireBloqueEngine(opts) {
     if (!ov.commercial && im.commercial && e.commercial !== im.commercial) { e.commercial = im.commercial; changed = true; }
     if (!ov.email_relance && im.compta_email && e.email_relance !== im.compta_email) { e.email_relance = im.compta_email; changed = true; }
 
-    if (e.origine === 'manuel') return;  // blocage manuel : jamais d'auto-déblocage
+    if (e.origine === 'manuel' || e.manual_override) return;  // blocage/déblocage manuel : jamais touché par l'auto
 
     // Machine à états AUTO
     if (e.statut === 'debloque' && g.count >= SB_THRESHOLD_BLOCK) {
@@ -19413,6 +19416,209 @@ function _sbResetStore() {
   }
   console.warn('[SB reset] Pas de token OneDrive — local réinitialisé (' + n + ' entrées), le push se fera au prochain sync.');
   return Promise.resolve(n);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SALAIRES BLOQUÉS — onglet Suivi RH (Build 3 : vue + filtres + déblocage manuel)
+// ═══════════════════════════════════════════════════════════════════
+var SB_FILTER = { statut: 'bloque', client: 'all', banque: 'all', commercial: 'all', search: '' };
+
+function _sbFmtDate(iso) {
+  if (!iso) return '—';
+  try { var d = new Date(iso); if (isNaN(d.getTime())) return '—';
+    return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
+  } catch(e) { return '—'; }
+}
+
+// Résout l'id de fiche client à partir du nom (pour le lien)
+function _sbClientId(name) {
+  if (!name || typeof getClients !== 'function') return null;
+  var n = _sbNormClient(name);
+  var cl = getClients().find(function(c){ return c && _sbNormClient(c.name) === n; });
+  return cl ? cl.id : null;
+}
+
+function showSalairesBloquesView() {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-deals'); if (!tab) return;
+  tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+  if (typeof setDealsOriginalVisible === 'function') setDealsOriginalVisible(false);
+  injectRHSubNav();
+  var container = document.getElementById('rh-content-container');
+  if (!container) { container = document.createElement('div'); container.id = 'rh-content-container'; tab.appendChild(container); }
+  container.style.display = 'block';
+  // Recalcul à l'ouverture (sécurité — l'état reflète les derniers impayés)
+  try { if (typeof runSalaireBloqueEngine === 'function') runSalaireBloqueEngine(); } catch(e){}
+  renderSalairesBloques();
+}
+
+function renderSalairesBloques() {
+  var container = document.getElementById('rh-content-container');
+  if (!container) return;
+  var all = getSalairesBloques();
+  var nbBloq = all.filter(function(e){ return e.statut === 'bloque'; }).length;
+  var nbDeb  = all.filter(function(e){ return e.statut === 'debloque'; }).length;
+
+  // Listes distinctes pour les filtres
+  function uniq(arr){ return arr.filter(function(v,i,a){ return v && a.indexOf(v) === i; }).sort(); }
+  var clients = uniq(all.map(function(e){ return e.client; }));
+  var banques = uniq(all.map(function(e){ return e.banque; }));
+  var commerciaux = uniq(all.map(function(e){ return e.commercial; }));
+
+  var q = _sbNormName(SB_FILTER.search);
+  var list = all.filter(function(e){
+    if (SB_FILTER.statut !== 'all' && e.statut !== SB_FILTER.statut) return false;
+    if (SB_FILTER.client !== 'all' && e.client !== SB_FILTER.client) return false;
+    if (SB_FILTER.banque !== 'all' && e.banque !== SB_FILTER.banque) return false;
+    if (SB_FILTER.commercial !== 'all' && e.commercial !== SB_FILTER.commercial) return false;
+    if (q && _sbNormName(e.consultant).indexOf(q) < 0) return false;
+    return true;
+  }).sort(function(a,b){ return (b.statut_ts||0) - (a.statut_ts||0); });
+
+  function sel(label, key, opts){
+    var o = '<option value="all">Tous</option>' + opts.map(function(v){
+      return '<option value="' + _sbEsc(v).replace(/"/g,'&quot;') + '"' + (SB_FILTER[key]===v?' selected':'') + '>' + _sbEsc(v) + '</option>';
+    }).join('');
+    return '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">' + label + '</label>'
+      + '<select onchange="SB_FILTER.' + key + '=this.value;renderSalairesBloques();" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;max-width:200px;">' + o + '</select></div>';
+  }
+
+  var h = '<style>'
+    + '.sb-wrap{max-width:1500px;margin:0 auto;padding:4px 2px 50px;}'
+    + '.sb-table{width:100%;border-collapse:collapse;font-size:12.5px;background:#fff;border:1px solid #E4E0FA;border-radius:10px;overflow:hidden;}'
+    + '.sb-table th{background:#F5F3FF;color:#6B5E9C;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;text-align:left;padding:10px 12px;font-weight:700;border-bottom:1px solid #E4E0FA;white-space:nowrap;}'
+    + '.sb-table td{padding:10px 12px;border-bottom:1px solid #F0EDF9;vertical-align:middle;}'
+    + '.sb-table tr:last-child td{border-bottom:none;}'
+    + '.sb-table tr.deb{background:#FAFAFC;color:#9E94C4;}'
+    + '.sb-badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;}'
+    + '.sb-badge.bloq{background:#FBE9E7;color:#A8322A;}'
+    + '.sb-badge.deb{background:#E5F5EE;color:#0F5132;}'
+    + '.sb-lnk{color:#4B36EC;text-decoration:none;font-weight:600;border-bottom:1px dashed #4B36EC;cursor:pointer;}'
+    + '.sb-btn{border:1.5px solid #E4E0FA;background:#fff;color:#6B5E9C;border-radius:7px;padding:6px 10px;font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;}'
+    + '.sb-btn.unb{border-color:#1D9E75;color:#0F5132;background:#E5F5EE;}'
+    + '</style>';
+
+  h += '<div class="sb-wrap">';
+  h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">';
+  h += '<h2 style="margin:0;font-size:18px;color:#1A1033;">\u{1F512} Salaires bloqués</h2>';
+  h += '<span style="font-size:12px;color:#9E94C4;"><span style="color:#A8322A;font-weight:700;">' + nbBloq + ' bloqué(s)</span> \u00b7 ' + nbDeb + ' débloqué(s)</span>';
+  if (typeof _sbEmailsEnabled === 'function' && !_sbEmailsEnabled())
+    h += '<span style="margin-left:6px;font-size:11px;color:#B58A00;background:#FFF6DD;border:1px solid #F2E2A8;border-radius:20px;padding:3px 10px;font-weight:700;">\u2709 Emails désactivés (test)</span>';
+  h += '</div>';
+
+  // Filtres
+  h += '<div style="background:#fff;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">';
+  h += '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Statut</label><div style="display:flex;gap:6px;">'
+    + [['bloque','Bloqués'],['debloque','Débloqués'],['all','Tous']].map(function(p){
+        var on = SB_FILTER.statut === p[0];
+        return '<button onclick="SB_FILTER.statut=\'' + p[0] + '\';renderSalairesBloques();" style="padding:7px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid ' + (on?'#7343EE':'#E4E0FA') + ';background:' + (on?'#7343EE':'#fff') + ';color:' + (on?'#fff':'#6B5E9C') + ';">' + p[1] + '</button>';
+      }).join('') + '</div></div>';
+  h += sel('Client', 'client', clients);
+  h += sel('Banque', 'banque', banques);
+  h += sel('Commercial', 'commercial', commerciaux);
+  h += '<div style="flex:1;min-width:160px;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Recherche consultant</label>'
+    + '<input type="text" value="' + _sbEsc(SB_FILTER.search).replace(/"/g,'&quot;') + '" oninput="SB_FILTER.search=this.value;renderSalairesBloques();" placeholder="Nom du consultant\u2026" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;"></div>';
+  h += '</div>';
+
+  // Table
+  if (!list.length) {
+    h += '<div style="text-align:center;padding:50px 20px;color:#9E94C4;font-size:14px;">Aucune entrée pour ce filtre.</div>';
+  } else {
+    h += '<div style="overflow-x:auto;"><table class="sb-table"><thead><tr>'
+      + '<th>Consultant</th><th>Client</th><th>Manager</th><th>Commercial</th><th>Banque</th><th>Email relance</th>'
+      + '<th>Fact. échues</th><th>Statut</th><th>Blocage</th><th>Déblocage</th><th>Hist.</th><th></th>'
+      + '</tr></thead><tbody>';
+    list.forEach(function(e){
+      var rowCls = (e.statut === 'debloque') ? ' class="deb"' : '';
+      // Consultant — lien si fiche liée
+      var consHtml = _sbEsc(e.consultant || '—');
+      if (e.candidat_id) consHtml = '<a class="sb-lnk" onclick="openCandidatFiche(' + JSON.stringify(e.candidat_id) + ')">' + consHtml + '</a>';
+      // Client — lien fiche
+      var clId = _sbClientId(e.client);
+      var clientHtml = _sbEsc(e.client || '—');
+      if (clId != null) clientHtml = '<a class="sb-lnk" onclick="mainNavTo(\'clients\');setTimeout(function(){openClientPage(' + clId + ');},150);">' + clientHtml + '</a>';
+      // Manager (C/D/E) — vide tant que placement non lié (Build 4)
+      var mgr = e.manager ? _sbEsc(e.manager) : '<span style="color:#C9C2E0;">—</span>';
+      var statBadge = (e.statut === 'bloque')
+        ? '<span class="sb-badge bloq">\u{1F534} Bloqué</span>'
+        : '<span class="sb-badge deb">\u{1F7E2} Débloqué</span>';
+      var nbComments = (e.commentaires || []).length;
+      var histBtn = '<button class="sb-btn" onclick="_sbShowComments(' + JSON.stringify(e.id) + ')">\u{1F4AC} ' + nbComments + '</button>';
+      var action = (e.statut === 'bloque')
+        ? '<button class="sb-btn unb" onclick="_sbManualUnblock(' + JSON.stringify(e.id) + ')">\u{1F513} Débloquer</button>'
+        : '';
+      h += '<tr' + rowCls + '>'
+        + '<td style="font-weight:700;color:#1A1033;">' + consHtml + (e.origine==='manuel'?' <span title="Blocage manuel" style="font-size:10px;color:#B58A00;">\u270B</span>':'') + '</td>'
+        + '<td>' + clientHtml + '</td>'
+        + '<td>' + mgr + '</td>'
+        + '<td>' + _sbEsc(e.commercial || '—') + '</td>'
+        + '<td>' + _sbEsc(e.banque || '—') + '</td>'
+        + '<td style="font-size:11.5px;">' + _sbEsc(e.email_relance || '—') + '</td>'
+        + '<td style="text-align:center;font-weight:700;color:#A8322A;">' + (e.nb_factures != null ? e.nb_factures : '—') + '</td>'
+        + '<td>' + statBadge + '</td>'
+        + '<td style="white-space:nowrap;">' + _sbFmtDate(e.date_blocage) + '</td>'
+        + '<td style="white-space:nowrap;">' + _sbFmtDate(e.date_deblocage) + '</td>'
+        + '<td>' + histBtn + '</td>'
+        + '<td>' + action + '</td>'
+        + '</tr>';
+    });
+    h += '</tbody></table></div>';
+    h += '<div style="margin-top:10px;font-size:11px;color:#9E94C4;">' + list.length + ' ligne(s) affichée(s) \u00b7 colonnes Manager/Tél/Mail et lien fiche consultant : alimentées au Build 4 (matching placement).</div>';
+  }
+  h += '</div>';
+  container.innerHTML = h;
+}
+
+// Déblocage manuel depuis l'onglet (verrou : ne sera plus re-bloqué auto)
+function _sbManualUnblock(id) {
+  var arr = getSalairesBloques();
+  var e = arr.find(function(x){ return x.id === id; });
+  if (!e) return;
+  if (!confirm('Débloquer manuellement le salaire de ' + e.consultant + ' (' + e.client + ') ?\n\nLe salaire ne sera plus re-bloqué automatiquement par les impayés.')) return;
+  var who = (typeof getCurrentUserCommercial === 'function' && getCurrentUserCommercial()) || 'Utilisateur';
+  var now = Date.now(), n = new Date();
+  e.statut = 'debloque';
+  e.statut_ts = now;
+  e.date_deblocage = new Date(now).toISOString();
+  e.manual_override = true;
+  e.alerte_deblocage_envoyee = true; // optimiste (remis à false si l'envoi échoue)
+  e.commentaires.unshift({
+    date: n.toLocaleDateString('fr-FR') + ' ' + n.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}),
+    text: 'Salaire débloqué manuellement',
+    author: who
+  });
+  e.updated_at = now;
+  saveSalairesBloques(arr);
+  try { if (typeof _sbSendAlert === 'function') _sbSendAlert(e, 'unblock'); } catch(err){ console.error('[SB] alerte déblocage manuel', err); }
+  renderSalairesBloques();
+}
+
+// Bulle d'historique des commentaires
+function _sbShowComments(id) {
+  var e = getSalairesBloques().find(function(x){ return x.id === id; });
+  if (!e) return;
+  var old = document.getElementById('sb-comments-overlay'); if (old) old.remove();
+  var ov = document.createElement('div');
+  ov.id = 'sb-comments-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.45);z-index:99999;display:flex;align-items:center;justify-content:center;';
+  ov.onclick = function(ev){ if (ev.target === ov) ov.remove(); };
+  var items = (e.commentaires || []).map(function(cm){
+    return '<div style="padding:10px 12px;border-left:3px solid #7343EE;background:#F5F3FF;border-radius:6px;margin-bottom:8px;">'
+      + '<div style="font-size:13px;color:#1A1033;">' + _sbEsc(cm.text) + '</div>'
+      + '<div style="font-size:11px;color:#9E94C4;margin-top:4px;">' + _sbEsc(cm.author || '') + ' \u00b7 ' + _sbEsc(cm.date || '') + '</div></div>';
+  }).join('') || '<div style="color:#9E94C4;font-size:13px;">Aucun commentaire.</div>';
+  ov.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:540px;width:90%;max-height:75vh;overflow:auto;padding:20px;box-shadow:0 12px 40px rgba(26,16,51,0.25);" onclick="event.stopPropagation();">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;">'
+    +   '<div style="font-weight:700;font-size:15px;color:#1A1033;">\u{1F4AC} Historique \u2014 ' + _sbEsc(e.consultant) + ' / ' + _sbEsc(e.client) + '</div>'
+    +   '<button onclick="document.getElementById(\'sb-comments-overlay\').remove()" style="border:none;background:#F5F3FF;color:#7343EE;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:700;">\u2715</button>'
+    + '</div>' + items + '</div>';
+  document.body.appendChild(ov);
 }
 
 // ── Helpers dates ──
