@@ -19561,6 +19561,18 @@ function _sbRemoveExclusion(type, idx) {
 // ═══════════════════════════════════════════════════════════════════
 // SALAIRES BLOQUÉS — actions depuis la fiche candidat (Build 4b-2)
 // ═══════════════════════════════════════════════════════════════════
+// Mise à jour d'un champ éditable (override : le moteur ne réécrase pas ce champ)
+function _sbUpdateField(id, field, value) {
+  var arr = getSalairesBloques();
+  var e = arr.find(function(x){ return x.id === id; });
+  if (!e) return;
+  e[field] = value;
+  e._override = e._override || {};
+  e._override[field] = true;
+  e.updated_at = Date.now();
+  saveSalairesBloques(arr);
+}
+
 // Entrée Salaires Bloqués correspondant à un candidat (par candidat_id, sinon par email)
 function _sbCandEntry(cand) {
   if (!cand) return null;
@@ -19616,10 +19628,12 @@ function _sbBlockFromFiche(candId) {
     if (!client) return;
   }
   if (!confirm('Bloquer manuellement le salaire de ' + nom + ' (' + client + ') ?')) return;
-  var banque = '';
-  if (typeof getClients === 'function') {
-    var cl = getClients().find(function(x){ return x && _sbNormClient(x.name) === _sbNormClient(client); });
-    if (cl) banque = cl.banque || '';
+  var banque = '', emailRelance = (deal && deal.email_compta) || '';
+  var cl = (typeof getClients === 'function') ? getClients().find(function(x){ return x && _sbNormClient(x.name) === _sbNormClient(client); }) : null;
+  if (cl) { banque = cl.banque || ''; if (!emailRelance) emailRelance = cl.email_compta || ''; }
+  if (!emailRelance && typeof getImpayes === 'function') {
+    var _imR = getImpayes().find(function(i){ return _sbNormEmail(i.email_candidat) === email && i.compta_email; });
+    if (_imR) emailRelance = _imR.compta_email;
   }
   var who = (typeof getCurrentUserCommercial === 'function' && getCurrentUserCommercial()) || 'Utilisateur';
   var now = Date.now(), n = new Date();
@@ -19631,11 +19645,12 @@ function _sbBlockFromFiche(candId) {
     e.statut = 'bloque'; e.statut_ts = now; e.date_blocage = new Date(now).toISOString(); e.date_deblocage = '';
     e.origine = 'manuel'; e.manual_override = true; e.candidat_id = candId; e.consultant = nom; e.consultant_email = email;
     e.alerte_blocage_envoyee = true; e.alerte_deblocage_envoyee = false;
+    if (emailRelance && !e.email_relance) e.email_relance = emailRelance;
     e.commentaires = e.commentaires || []; e.commentaires.unshift(cm); e.updated_at = now;
   } else {
     arr.push({
       id: id, key: id, consultant: nom, consultant_email: email, candidat_id: candId, client: client,
-      banque: banque, commercial: deal ? (deal.commercial || '') : '', email_relance: '',
+      banque: banque, commercial: deal ? (deal.commercial || '') : '', email_relance: emailRelance,
       manager: '', manager_tel: '', manager_email: '', _override: {}, nb_factures: 0,
       statut: 'bloque', origine: 'manuel', manual_override: true, statut_ts: now,
       date_blocage: new Date(now).toISOString(), date_deblocage: '',
@@ -19879,7 +19894,7 @@ function renderSalairesBloques() {
         var _short = _t.length > 30 ? _t.slice(0,30) + '\u2026' : _t;
         _prev = '<div title="' + _sbEsc(_t).replace(/"/g,'&quot;') + '" style="font-size:11px;color:#6B5E9C;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;cursor:help;">' + _sbEsc(_short) + '</div>';
       }
-      var histBtn = _prev + '<button class="sb-btn" onclick="_sbShowComments(\'' + e.id + '\')">\u{1F4AC} ' + nbComments + '</button>';
+      var histBtn = '<button class="sb-btn" title="' + (_lastC ? _sbEsc(_lastC.text).replace(/"/g,'&quot;') : '') + '" onclick="_sbShowComments(\'' + e.id + '\')">\u{1F4AC} ' + nbComments + '</button>';
       var action = (e.statut === 'bloque')
         ? '<button class="sb-btn unb" onclick="_sbManualUnblock(\'' + e.id + '\')">\u{1F513} Débloquer</button>'
         : '';
@@ -19889,7 +19904,7 @@ function renderSalairesBloques() {
         + '<td>' + mgr + '</td>'
         + '<td>' + _sbEsc(e.commercial || '—') + '</td>'
         + '<td>' + _sbEsc(e.banque || '—') + '</td>'
-        + '<td style="font-size:11.5px;">' + _sbEsc(e.email_relance || '—') + '</td>'
+        + '<td><input type="text" value="' + _sbEsc(e.email_relance||'').replace(/"/g,'&quot;') + '" onchange="_sbUpdateField(\'' + e.id + '\',\'email_relance\',this.value)" placeholder="—" style="width:170px;padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;font-family:inherit;box-sizing:border-box;"></td>'
         + '<td style="text-align:center;font-weight:700;color:#A8322A;">' + (e.nb_factures != null ? e.nb_factures : '—') + '</td>'
         + '<td>' + statBadge + '</td>'
         + '<td style="white-space:nowrap;">' + _sbFmtDate(e.date_blocage) + '</td>'
