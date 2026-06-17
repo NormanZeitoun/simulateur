@@ -8145,6 +8145,9 @@ function odSilentFullSync() {
         }
       } catch(e) { console.warn('[boot] réparation avenants:', e); }
 
+      // Salaires Bloqués : recalcul + transitions sur l'état fraîchement mergé (avant le push)
+      try { if (typeof runSalaireBloqueEngine === 'function') runSalaireBloqueEngine({ fromSync: true }); } catch(_sbE) { console.warn('[SB engine sync]', _sbE); }
+
       // ═══ PHASE 2 : PUSH parallèle (toutes les entités après merge) ═══
       var t1 = Date.now();
       // PUT séquentiel (100ms entre chaque) avec retry sur 409/412/429/503/504, SANS If-Match
@@ -19127,6 +19130,267 @@ function mergeSalairesBloques(remote) {
   localStorage.setItem(SALAIRES_BLOQUES_KEY, JSON.stringify(Object.values(byId)));
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// SALAIRES BLOQUÉS — moteur d'auto-blocage (Build 2)
+// Règle : blocage AUTO dès qu'un consultant atteint ≥ 2 factures impayées
+// chez UN MÊME client ; déblocage AUTO quand ça retombe à ≤ 1 chez ce client.
+// Emails uniquement SUR TRANSITION (jamais à chaque recalcul). Seed initial
+// silencieux (1ère exécution sur la machine). Blocage manuel jamais auto-débloqué.
+// ═══════════════════════════════════════════════════════════════════
+var SB_SEEDED_KEY = 'sp_sb_seeded_v1';
+var SB_EMAILS_ENABLED_KEY = 'sp_sb_emails_enabled';   // '1' = envois réels ; sinon journalisation seule
+var SB_EXCLUSIONS_KEY = 'sp_sb_exclusions_v1';        // { consultants:[], clients:[] } — UI en Build 4
+var SB_THRESHOLD_BLOCK = 2;    // ≥ 2 impayés → bloqué
+var SB_THRESHOLD_UNBLOCK = 1;  // ≤ 1 impayé  → débloqué (Norman : 0 ou 1)
+
+function _sbEmailsEnabled() { return localStorage.getItem(SB_EMAILS_ENABLED_KEY) === '1'; }
+
+function _sbGetExclusions() {
+  try { var x = JSON.parse(localStorage.getItem(SB_EXCLUSIONS_KEY) || 'null'); return x || {consultants:[],clients:[]}; }
+  catch(e) { return {consultants:[],clients:[]}; }
+}
+// Un consultant et/ou une société exclu(e) n'est PAS auto-bloqué(e) (pas d'entrée auto, pas d'email).
+function _sbIsExcluded(name, client, email) {
+  var ex = _sbGetExclusions();
+  var nClient = _sbNormClient(client);
+  if ((ex.clients || []).some(function(cl){ return _sbNormClient(cl) === nClient; })) return true;
+  var nName = _sbNormName(name), nEmail = _sbNormEmail(email);
+  if ((ex.consultants || []).some(function(co){
+    return (nName && _sbNormName(co) === nName) || (nEmail && _sbNormEmail(co) === nEmail);
+  })) return true;
+  return false;
+}
+
+function _sbEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>]/g, function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;'}[ch]; });
+}
+
+// Commentaire auto signé « Système (automatique) »
+function _sbAutoComment(text) {
+  var n = new Date();
+  return {
+    date: n.toLocaleDateString('fr-FR') + ' ' + n.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}),
+    text: text,
+    author: 'Système (automatique)'
+  };
+}
+
+// Destinataires d'une alerte : ADV (selon 1ère lettre du nom) + commercial du porté + Marine + Salomé.
+function _sbRecipients(entry) {
+  var to = [];
+  var firstLetter = ((entry.consultant || '') + '').charAt(0);
+  var adv = (typeof _getADVByLetter === 'function') ? _getADVByLetter(firstLetter) : null;
+  var emails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+  var advEmail = (adv === 'clemence') ? (emails.clemence || '') : (adv === 'marie' ? (emails.marie || '') : '');
+  if (advEmail) to.push(advEmail);
+  var commEmail = (typeof findCommercialEmailByName === 'function') ? findCommercialEmailByName(entry.commercial || '') : '';
+  if (commEmail) to.push(commEmail);
+  to.push('marine@seven-portage.fr');
+  to.push('salome@seven-portage.fr');
+  to = to.filter(function(e, i, a){ return e && a.indexOf(e) === i; });
+  return { to: to, advLabel: (adv === 'clemence' ? 'Clémence' : (adv === 'marie' ? 'Marie' : '?')) };
+}
+
+// HTML de l'email (blocage / déblocage)
+function _sbEmailHtml(entry, type) {
+  var isBlock = (type === 'block');
+  var when = isBlock ? entry.date_blocage : entry.date_deblocage;
+  var dStr = ''; try { dStr = new Date(when).toLocaleDateString('fr-FR'); } catch(e) {}
+  var bandColor = isBlock ? 'linear-gradient(135deg,#C0392B,#7B241C)' : 'linear-gradient(135deg,#1D9E75,#0F5132)';
+  var titre = isBlock ? '🔒 Salaire bloqué' : '🔓 Salaire débloqué';
+  var sousTitre = isBlock
+    ? 'Le versement du salaire de ce consultant est suspendu suite à plusieurs factures impayées.'
+    : 'Le versement du salaire de ce consultant est rétabli.';
+  function row(k, v) {
+    return '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;width:42%;">' + k + '</td>'
+      + '<td style="padding:6px 0;">' + v + '</td></tr>';
+  }
+  return '<div style="font-family:Arial,sans-serif;font-size:13px;color:#1A1033;line-height:1.6;max-width:640px;">'
+    + '<div style="background:' + bandColor + ';color:#fff;padding:14px 20px;border-radius:8px 8px 0 0;">'
+    +   '<div style="font-size:16px;font-weight:700;">' + titre + '</div>'
+    +   '<div style="font-size:12px;opacity:0.92;margin-top:3px;">' + sousTitre + '</div>'
+    + '</div>'
+    + '<div style="background:#fff;padding:18px 22px;border:1px solid #E4E0FA;border-top:none;border-radius:0 0 8px 8px;">'
+    +   '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+    +     row('Consultant', _sbEsc(entry.consultant))
+    +     row('Client', _sbEsc(entry.client))
+    +     row('Commercial', _sbEsc(entry.commercial || '—'))
+    +     row('Banque', _sbEsc(entry.banque || '—'))
+    +     row('Factures impayées', (entry.nb_factures != null ? entry.nb_factures : '—'))
+    +     row(isBlock ? 'Date de blocage' : 'Date de déblocage', dStr || '—')
+    +   '</table>'
+    +   '<div style="margin-top:16px;padding-top:12px;border-top:1px solid #F0EDF9;font-size:11px;color:#9E94C4;">'
+    +     '📌 Alerte automatique du CRM Seven Portage — module Suivi RH / Salaires Bloqués.'
+    +   '</div>'
+    + '</div></div>';
+}
+
+// Envoi d'une alerte (blocage/déblocage). Respecte l'interrupteur _sbEmailsEnabled().
+function _sbSendAlert(entry, type) {
+  var rec = _sbRecipients(entry);
+  if (!rec.to.length) { console.warn('[SB] Aucun destinataire pour', type, entry.id); return; }
+  if (!_sbEmailsEnabled()) {
+    console.log('[SB] (emails OFF) ' + type + ' — ' + entry.consultant + ' / ' + entry.client + ' → ' + rec.to.join(', '));
+    return;
+  }
+  if (typeof sendMailViaGraph !== 'function') { console.warn('[SB] sendMailViaGraph indisponible'); return; }
+  var subject = (type === 'block' ? '🔒 Salaire bloqué — ' : '🔓 Salaire débloqué — ') + entry.consultant + ' / ' + entry.client;
+  sendMailViaGraph(
+    { from: 'social@seven-portage.fr', to: rec.to, subject: subject, htmlBody: _sbEmailHtml(entry, type) },
+    function(){ console.log('[SB] mail ' + type + ' envoyé →', rec.to.join(', ')); },
+    function(err){
+      // Échec : on remet le drapeau à false pour réessayer au prochain passage
+      try {
+        var arr = getSalairesBloques(), x = arr.find(function(a){ return a.id === entry.id; });
+        if (x) {
+          if (type === 'block') x.alerte_blocage_envoyee = false; else x.alerte_deblocage_envoyee = false;
+          localStorage.setItem(SALAIRES_BLOQUES_KEY, JSON.stringify(arr));
+        }
+      } catch(e) {}
+      console.error('[SB] échec mail ' + type, err);
+    }
+  );
+}
+
+// Construit une entrée AUTO neuve à partir d'un groupe (consultant × client)
+function _sbBuildAutoEntry(g, im, now, silent) {
+  var e = {
+    id: g.id, key: g.id,
+    consultant: g.name, consultant_email: g.email,
+    candidat_id: null,
+    client: g.client,
+    banque: (im && im.banque) || '',
+    commercial: (im && im.commercial) || '',
+    email_relance: (im && im.compta_email) || '',
+    manager: '', manager_tel: '', manager_email: '',  // auto-remplis en Build 3 (depuis le placement)
+    _override: {},
+    nb_factures: g.count,
+    statut: 'bloque', origine: 'auto',
+    statut_ts: now,
+    date_blocage: new Date(now).toISOString(), date_deblocage: '',
+    alerte_blocage_envoyee: !!silent,   // seed = considéré « déjà notifié » → pas d'email rétroactif
+    alerte_deblocage_envoyee: false,
+    commentaires: [ _sbAutoComment('Salaire bloqué automatiquement (' + g.count + ' factures impayées)') ],
+    updated_at: now
+  };
+  return e;
+}
+
+// ── MOTEUR ──
+// opts.silent : force le mode silencieux (sinon auto-détecté via le seed)
+// opts.fromSync : appelé depuis la synchro → ne pas relancer odAutoSync (le push en cours s'en charge)
+function runSalaireBloqueEngine(opts) {
+  opts = opts || {};
+  if (typeof getImpayes !== 'function' || typeof getSalairesBloques !== 'function') return null;
+  var seeded = !!localStorage.getItem(SB_SEEDED_KEY);
+  var silent = !!opts.silent || !seeded;   // 1ère exécution sur cette machine = seed silencieux
+  var now = Date.now();
+
+  // 1) Grouper les impayés NON payés par (consultant × client unique)
+  var impayes = getImpayes();
+  var groups = {};
+  impayes.forEach(function(im){
+    if (!im || im.statut === 'paye') return;
+    var client = (im.client || '').trim();
+    if (!client) return;
+    var email = _sbNormEmail(im.email_candidat);
+    var name = (im.consultant || '').trim();
+    if (!email && !name) return;
+    var id = _sbKey(email, name, client);
+    if (!groups[id]) groups[id] = { id:id, count:0, client:client, email:email, name:name, sample:im };
+    groups[id].count++;
+  });
+
+  var entries = getSalairesBloques();
+  var byId = {}; entries.forEach(function(e){ if (e && e.id) byId[e.id] = e; });
+  var changed = false;
+  var pending = [];   // { entry, type }
+
+  // 2) Parcourir les groupes
+  Object.keys(groups).forEach(function(id){
+    var g = groups[id];
+    if (_sbIsExcluded(g.name, g.client, g.email)) return;  // exclu → on ne touche pas
+    var e = byId[id];
+    var im = g.sample || {};
+
+    if (!e) {
+      if (g.count >= SB_THRESHOLD_BLOCK) {
+        e = _sbBuildAutoEntry(g, im, now, silent);
+        byId[id] = e; changed = true;
+        if (!silent) pending.push({ entry: e, type: 'block' });
+      }
+      return;
+    }
+
+    // Entrée existante → rafraîchir le cache nb_factures
+    if (e.nb_factures !== g.count) { e.nb_factures = g.count; changed = true; }
+    // Rafraîchir aussi les champs sourcés impayé NON surchargés manuellement
+    var ov = e._override || {};
+    if (!ov.banque && im.banque && e.banque !== im.banque) { e.banque = im.banque; changed = true; }
+    if (!ov.commercial && im.commercial && e.commercial !== im.commercial) { e.commercial = im.commercial; changed = true; }
+    if (!ov.email_relance && im.compta_email && e.email_relance !== im.compta_email) { e.email_relance = im.compta_email; changed = true; }
+
+    if (e.origine === 'manuel') return;  // blocage manuel : jamais d'auto-déblocage
+
+    // Machine à états AUTO
+    if (e.statut === 'debloque' && g.count >= SB_THRESHOLD_BLOCK) {
+      e.statut = 'bloque'; e.statut_ts = now;
+      e.date_blocage = new Date(now).toISOString(); e.date_deblocage = '';
+      e.alerte_blocage_envoyee = !!silent; e.alerte_deblocage_envoyee = false;
+      e.commentaires.unshift(_sbAutoComment('Salaire re-bloqué automatiquement (' + g.count + ' factures impayées)'));
+      e.updated_at = now; changed = true;
+      if (!silent) pending.push({ entry: e, type: 'block' });
+    } else if (e.statut === 'bloque' && g.count <= SB_THRESHOLD_UNBLOCK) {
+      e.statut = 'debloque'; e.statut_ts = now;
+      e.date_deblocage = new Date(now).toISOString();
+      e.alerte_deblocage_envoyee = !!silent;
+      e.commentaires.unshift(_sbAutoComment('Salaire débloqué automatiquement (' + g.count + ' facture' + (g.count>1?'s':'') + ' impayée' + (g.count>1?'s':'') + ')'));
+      e.updated_at = now; changed = true;
+      if (!silent) pending.push({ entry: e, type: 'unblock' });
+    }
+  });
+
+  // 3) Entrées AUTO dont le consultant×client n'a plus AUCUN impayé non payé (groupe absent = 0)
+  Object.keys(byId).forEach(function(id){
+    var e = byId[id];
+    if (!e || e.origine !== 'auto') return;
+    if (groups[id]) return;
+    if (e.nb_factures !== 0) { e.nb_factures = 0; changed = true; }
+    if (e.statut === 'bloque') {
+      e.statut = 'debloque'; e.statut_ts = now;
+      e.date_deblocage = new Date(now).toISOString();
+      e.alerte_deblocage_envoyee = !!silent;
+      e.commentaires.unshift(_sbAutoComment('Salaire débloqué automatiquement (0 facture impayée)'));
+      e.updated_at = now; changed = true;
+      if (!silent) pending.push({ entry: e, type: 'unblock' });
+    }
+  });
+
+  // 4) Drapeaux d'alerte optimistes (avant persistance/push) pour éviter les doublons inter-machines
+  if (!silent) {
+    pending.forEach(function(p){
+      if (p.type === 'block') p.entry.alerte_blocage_envoyee = true;
+      else p.entry.alerte_deblocage_envoyee = true;
+    });
+  }
+
+  // 5) Persister
+  if (changed) localStorage.setItem(SALAIRES_BLOQUES_KEY, JSON.stringify(Object.values(byId)));
+  if (!seeded) localStorage.setItem(SB_SEEDED_KEY, '1');
+
+  // 6) Envoyer les alertes (hors seed)
+  if (!silent && pending.length) {
+    pending.forEach(function(p){ try { _sbSendAlert(p.entry, p.type); } catch(e){ console.error('[SB] alert', e); } });
+  }
+
+  // 7) Pousser les changements si on n'est pas déjà dans un cycle de synchro
+  if (changed && !opts.fromSync && typeof odAutoSync === 'function') odAutoSync();
+
+  var res = { changed: changed, groups: Object.keys(groups).length, bloques: Object.values(byId).filter(function(e){return e.statut==='bloque';}).length, transitions: pending.length, silent: silent, emails: _sbEmailsEnabled() };
+  if (!opts.fromSync) console.log('[SB engine]', JSON.stringify(res));
+  return res;
+}
+
 // ── Helpers dates ──
 function _parseImpayeDate(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -20139,6 +20403,8 @@ function parseAndImportImpayesFile(file) {
       // Appliquer (newByNf inclut maintenant les factures impayées + les nouvellement payées)
       var finalArr = Object.values(newByNf);
       saveImpayes(finalArr);
+      // Salaires Bloqués : recalcul + transitions après chaque import
+      try { if (typeof runSalaireBloqueEngine === 'function') runSalaireBloqueEngine(); } catch(_sbErr) { console.warn('[SB engine import]', _sbErr); }
 
       if (typeof showNotifToast === 'function') {
         showNotifToast('✓ Import : ' + nbCreated + ' ajoutée(s), ' + nbUpdated + ' mise(s) à jour, ' + nbNewlyPaid + ' payée(s)');
