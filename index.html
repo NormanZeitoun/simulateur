@@ -19291,6 +19291,9 @@ function runSalaireBloqueEngine(opts) {
   var groups = {};
   impayes.forEach(function(im){
     if (!im || im.statut === 'paye') return;
+    // Ne compter QUE les factures ÉCHUES (échéance dépassée) — même logique que le module Impayés (notyet = days<=0).
+    var _ret = (typeof _daysSinceEcheance === 'function') ? _daysSinceEcheance(im.date_echeance) : 1;
+    if (_ret === null || _ret <= 0) return;  // pas encore échue, ou date illisible → on ignore
     var client = (im.client || '').trim();
     if (!client) return;
     var email = _sbNormEmail(im.email_candidat);
@@ -19389,6 +19392,27 @@ function runSalaireBloqueEngine(opts) {
   var res = { changed: changed, groups: Object.keys(groups).length, bloques: Object.values(byId).filter(function(e){return e.statut==='bloque';}).length, transitions: pending.length, silent: silent, emails: _sbEmailsEnabled() };
   if (!opts.fromSync) console.log('[SB engine]', JSON.stringify(res));
   return res;
+}
+
+// Remise à zéro propre du store Salaires Bloqués (local + OneDrive), puis re-seed
+// silencieux avec la logique courante. Utilitaire one-shot, sans email.
+function _sbResetStore() {
+  localStorage.removeItem(SALAIRES_BLOQUES_KEY);
+  localStorage.removeItem(SB_SEEDED_KEY);
+  // re-seed silencieux (pas d'email), sans déclencher de sync auto pour l'instant
+  runSalaireBloqueEngine({ silent: true, fromSync: true });
+  var n = getSalairesBloques().length;
+  // Écraser le fichier OneDrive avec l'état propre (sinon les anciennes entrées reviennent au pull)
+  if (typeof odToken !== 'undefined' && odToken && typeof _odEncPath === 'function') {
+    var path = '/General/Seven Portage Simlateur/SP_Salaires_Bloques_Global.json';
+    var url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + _odEncPath(path) + ':/content';
+    var body = JSON.stringify({ version: 1, updated: new Date().toISOString(), salaires_bloques: getSalairesBloques() });
+    return fetch(url, { method: 'PUT', headers: { 'Authorization': 'Bearer ' + odToken, 'Content-Type': 'application/json' }, body: body })
+      .then(function(r){ console.log('[SB reset] OneDrive écrasé (statut ' + r.status + ') — ' + n + ' entrée(s) bloquée(s) recréée(s).'); return n; })
+      .catch(function(e){ console.error('[SB reset] échec PUT OneDrive', e); return n; });
+  }
+  console.warn('[SB reset] Pas de token OneDrive — local réinitialisé (' + n + ' entrées), le push se fera au prochain sync.');
+  return Promise.resolve(n);
 }
 
 // ── Helpers dates ──
