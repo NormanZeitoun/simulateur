@@ -7306,7 +7306,8 @@ var SYNC_ENTITIES = [
   { path: '/General/Seven Portage Simlateur/SP_Avenants_Global.json',          key: 'avenants',          label: 'Avenants',          merge: null, getData: null },
   { path: '/General/Seven Portage Simlateur/SP_Paiements_Global.json',         key: 'paiements',         label: 'Paiements',         merge: null, getData: null },
   { path: '/General/Seven Portage Simlateur/SP_VisitesMedicales_Global.json',  key: 'visites_medicales', label: 'Visites médicales', merge: null, getData: null },
-  { path: '/General/Seven Portage Simlateur/SP_Salaires_Bloques_Global.json',  key: 'salaires_bloques',  label: 'Salaires bloqués',  merge: null, getData: null }
+  { path: '/General/Seven Portage Simlateur/SP_Salaires_Bloques_Global.json',  key: 'salaires_bloques',  label: 'Salaires bloqués',  merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Salaires_Bloques_Exclusions_Global.json',  key: 'sb_exclusions',  label: 'Exclusions salaires bloqués',  merge: null, getData: null }
 ];
 // Les merge/getData sont attachés au moment du 1er usage (après chargement complet du script,
 // car mergeHistorique etc. peuvent être définis plus loin dans le fichier)
@@ -7340,7 +7341,8 @@ function _initSyncEntities() {
     avenants: { merge: mergeAvenants, getData: function(){ return {version:1,updated:new Date().toISOString(),avenants:getAvenants()}; } },
     paiements: { merge: mergePaiements, getData: function(){ return {version:1,updated:new Date().toISOString(),paiements:getPaiements()}; } },
     visites_medicales: { merge: mergeVisitesMedicales, getData: function(){ return {version:1,updated:new Date().toISOString(),visites_medicales:getVisitesMedicales()}; } },
-    salaires_bloques: { merge: mergeSalairesBloques, getData: function(){ return {version:1,updated:new Date().toISOString(),salaires_bloques:getSalairesBloques()}; } }
+    salaires_bloques: { merge: mergeSalairesBloques, getData: function(){ return {version:1,updated:new Date().toISOString(),salaires_bloques:getSalairesBloques()}; } },
+    sb_exclusions: { merge: mergeSbExclusions, getData: function(){ return {version:1,updated:new Date().toISOString(),sb_exclusions:_sbGetExclusions()}; } }
   };
   SYNC_ENTITIES.forEach(function(ent) {
     if (!ent.merge && mapping[ent.key]) {
@@ -7724,7 +7726,7 @@ function showOneDriveDiagnostic() {
             try {
               var j = JSON.parse(txt);
               // Trouver le tableau principal
-              var arrFields = ['simulations','candidats','deals','clients','commissions','sortants','cooptations','avances','taches','demandes','avantages_sociaux','frais_pro','demarrages','jours_prestes','impayes','salaires_bloques'];
+              var arrFields = ['simulations','candidats','deals','clients','commissions','sortants','cooptations','avances','taches','demandes','avantages_sociaux','frais_pro','demarrages','jours_prestes','impayes','salaires_bloques','sb_exclusions'];
               for (var i = 0; i < arrFields.length; i++) {
                 if (Array.isArray(j[arrFields[i]])) { count = j[arrFields[i]].length; break; }
               }
@@ -19421,6 +19423,135 @@ function _sbResetStore() {
 // ═══════════════════════════════════════════════════════════════════
 // SALAIRES BLOQUÉS — onglet Suivi RH (Build 3 : vue + filtres + déblocage manuel)
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// SALAIRES BLOQUÉS — exclusions (Build 4a) : clients / consultants non auto-bloqués
+// Synchronisé (SP_Salaires_Bloques_Exclusions_Global.json), last-write-wins.
+// ═══════════════════════════════════════════════════════════════════
+function _sbSaveExclusions(obj) {
+  obj = obj || { consultants: [], clients: [] };
+  obj.consultants = obj.consultants || [];
+  obj.clients = obj.clients || [];
+  obj.updated_at = Date.now();
+  localStorage.setItem(SB_EXCLUSIONS_KEY, JSON.stringify(obj));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+function mergeSbExclusions(remote) {
+  if (!remote || typeof remote !== 'object') return;
+  var local = _sbGetExclusions();
+  if ((remote.updated_at || 0) > (local.updated_at || 0)) {
+    localStorage.setItem(SB_EXCLUSIONS_KEY, JSON.stringify({
+      consultants: remote.consultants || [],
+      clients: remote.clients || [],
+      updated_at: remote.updated_at || Date.now()
+    }));
+  }
+}
+
+function _sbPurgeExcluded() {
+  var arr = getSalairesBloques();
+  var kept = [], removed = 0;
+  arr.forEach(function(e){
+    if (_sbIsExcluded(e.consultant, e.client, e.consultant_email)) {
+      if (typeof addTombstone === 'function') addTombstone('salaires_bloques', e.id);
+      removed++;
+    } else kept.push(e);
+  });
+  if (removed) localStorage.setItem(SALAIRES_BLOQUES_KEY, JSON.stringify(kept));
+  return removed;
+}
+
+function _sbOpenExclusions() {
+  var ex = _sbGetExclusions();
+  function uniq(a){ return a.filter(function(v,i,arr){ return v && arr.indexOf(v)===i; }).sort(); }
+  var allClients = uniq(getSalairesBloques().map(function(e){ return e.client; }));
+  var selectable = allClients.filter(function(cl){ return (ex.clients||[]).indexOf(cl) < 0; });
+
+  var old = document.getElementById('sb-excl-overlay'); if (old) old.remove();
+  var ov = document.createElement('div');
+  ov.id = 'sb-excl-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.45);z-index:99999;display:flex;align-items:center;justify-content:center;';
+  ov.onclick = function(ev){ if (ev.target === ov) ov.remove(); };
+
+  function chip(label, type, idx) {
+    return '<span style="display:inline-flex;align-items:center;gap:6px;background:#F5F3FF;border:1px solid #E4E0FA;border-radius:20px;padding:4px 6px 4px 12px;font-size:12.5px;color:#1A1033;margin:0 6px 6px 0;">'
+      + _sbEsc(label)
+      + '<button onclick="_sbRemoveExclusion(\'' + type + '\',' + idx + ')" title="Retirer" style="border:none;background:#EDE9FB;color:#7343EE;border-radius:50%;width:20px;height:20px;cursor:pointer;font-weight:700;line-height:1;">\u00d7</button></span>';
+  }
+  var clientChips = (ex.clients||[]).length
+    ? (ex.clients||[]).map(function(cl,i){ return chip(cl,'clients',i); }).join('')
+    : '<span style="color:#9E94C4;font-size:12.5px;">Aucun client exclu.</span>';
+  var consChips = (ex.consultants||[]).length
+    ? (ex.consultants||[]).map(function(co,i){ return chip(co,'consultants',i); }).join('')
+    : '<span style="color:#9E94C4;font-size:12.5px;">Aucun consultant exclu.</span>';
+  var clientOpts = '<option value="">— choisir un client —</option>'
+    + selectable.map(function(cl){ var v=_sbEsc(cl).replace(/"/g,'&quot;'); return '<option value="'+v+'">'+v+'</option>'; }).join('');
+
+  ov.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:600px;width:92%;max-height:82vh;overflow:auto;padding:22px;box-shadow:0 12px 40px rgba(26,16,51,0.25);" onclick="event.stopPropagation();">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'
+    +   '<div style="font-weight:700;font-size:16px;color:#1A1033;">\u2699 Exclusions \u2014 Salaires bloqués</div>'
+    +   '<button onclick="document.getElementById(\'sb-excl-overlay\').remove()" style="border:none;background:#F5F3FF;color:#7343EE;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:700;">\u2715</button>'
+    + '</div>'
+    + '<div style="font-size:12px;color:#9E94C4;margin-bottom:18px;">Les clients/consultants exclus ne sont plus bloqués automatiquement et ne déclenchent aucune alerte. Les blocages existants pour ces exclus sont retirés.</div>'
+    + '<div style="margin-bottom:20px;">'
+    +   '<div style="font-size:13px;font-weight:700;color:#6B5E9C;margin-bottom:8px;">\u{1F3E2} Clients exclus</div>'
+    +   '<div style="margin-bottom:10px;">' + clientChips + '</div>'
+    +   '<div style="display:flex;gap:8px;">'
+    +     '<select id="sb-excl-client-sel" style="flex:1;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;">' + clientOpts + '</select>'
+    +     '<button onclick="_sbAddExclusionClient()" style="background:#7343EE;color:#fff;border:none;border-radius:7px;padding:8px 16px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;">Exclure</button>'
+    +   '</div>'
+    + '</div>'
+    + '<div>'
+    +   '<div style="font-size:13px;font-weight:700;color:#6B5E9C;margin-bottom:8px;">\u{1F464} Consultants exclus</div>'
+    +   '<div style="margin-bottom:10px;">' + consChips + '</div>'
+    +   '<div style="display:flex;gap:8px;">'
+    +     '<input id="sb-excl-cons" type="text" placeholder="Nom ou email du consultant\u2026" style="flex:1;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;">'
+    +     '<button onclick="_sbAddExclusionCons()" style="background:#7343EE;color:#fff;border:none;border-radius:7px;padding:8px 16px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;">Exclure</button>'
+    +   '</div>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(ov);
+}
+
+function _sbApplyExclusionChange() {
+  var removed = _sbPurgeExcluded();
+  if (typeof runSalaireBloqueEngine === 'function') { try { runSalaireBloqueEngine(); } catch(e){} }
+  _sbOpenExclusions();
+  if (typeof renderSalairesBloques === 'function') renderSalairesBloques();
+  return removed;
+}
+
+function _sbAddExclusionClient() {
+  var sel = document.getElementById('sb-excl-client-sel');
+  var v = sel ? sel.value.trim() : '';
+  if (!v) return;
+  var ex = _sbGetExclusions(); ex.clients = ex.clients || [];
+  if (ex.clients.indexOf(v) < 0) ex.clients.push(v);
+  _sbSaveExclusions(ex);
+  _sbApplyExclusionChange();
+}
+
+function _sbAddExclusionCons() {
+  var inp = document.getElementById('sb-excl-cons');
+  var v = inp ? inp.value.trim() : '';
+  if (!v) return;
+  var ex = _sbGetExclusions(); ex.consultants = ex.consultants || [];
+  if (ex.consultants.indexOf(v) < 0) ex.consultants.push(v);
+  _sbSaveExclusions(ex);
+  _sbApplyExclusionChange();
+}
+
+function _sbRemoveExclusion(type, idx) {
+  var ex = _sbGetExclusions();
+  var list = (type === 'clients') ? (ex.clients||[]) : (ex.consultants||[]);
+  if (idx < 0 || idx >= list.length) return;
+  list.splice(idx, 1);
+  _sbSaveExclusions(ex);
+  if (typeof runSalaireBloqueEngine === 'function') { try { runSalaireBloqueEngine(); } catch(e){} }
+  _sbOpenExclusions();
+  if (typeof renderSalairesBloques === 'function') renderSalairesBloques();
+}
+
 var SB_FILTER = { statut: 'bloque', client: 'all', banque: 'all', commercial: 'all', search: '' };
 
 function _sbFmtDate(iso) {
@@ -19508,6 +19639,7 @@ function renderSalairesBloques() {
   h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">';
   h += '<h2 style="margin:0;font-size:18px;color:#1A1033;">\u{1F512} Salaires bloqués</h2>';
   h += '<span style="font-size:12px;color:#9E94C4;"><span style="color:#A8322A;font-weight:700;">' + nbBloq + ' bloqué(s)</span> \u00b7 ' + nbDeb + ' débloqué(s)</span>';
+  h += '<button onclick="_sbOpenExclusions()" style="margin-left:auto;padding:8px 14px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">\u2699 Exclusions</button>';
   if (typeof _sbEmailsEnabled === 'function' && !_sbEmailsEnabled())
     h += '<span style="margin-left:6px;font-size:11px;color:#B58A00;background:#FFF6DD;border:1px solid #F2E2A8;border-radius:20px;padding:3px 10px;font-weight:700;">\u2709 Emails désactivés (test)</span>';
   h += '</div>';
