@@ -7305,7 +7305,8 @@ var SYNC_ENTITIES = [
   { path: '/General/Seven Portage Simlateur/SP_Impayes_Global.json',           key: 'impayes',           label: 'Impayés',           merge: null, getData: null },
   { path: '/General/Seven Portage Simlateur/SP_Avenants_Global.json',          key: 'avenants',          label: 'Avenants',          merge: null, getData: null },
   { path: '/General/Seven Portage Simlateur/SP_Paiements_Global.json',         key: 'paiements',         label: 'Paiements',         merge: null, getData: null },
-  { path: '/General/Seven Portage Simlateur/SP_VisitesMedicales_Global.json',  key: 'visites_medicales', label: 'Visites médicales', merge: null, getData: null }
+  { path: '/General/Seven Portage Simlateur/SP_VisitesMedicales_Global.json',  key: 'visites_medicales', label: 'Visites médicales', merge: null, getData: null },
+  { path: '/General/Seven Portage Simlateur/SP_Salaires_Bloques_Global.json',  key: 'salaires_bloques',  label: 'Salaires bloqués',  merge: null, getData: null }
 ];
 // Les merge/getData sont attachés au moment du 1er usage (après chargement complet du script,
 // car mergeHistorique etc. peuvent être définis plus loin dans le fichier)
@@ -7338,7 +7339,8 @@ function _initSyncEntities() {
     impayes: { merge: mergeImpayes, getData: function(){ return {version:1,updated:new Date().toISOString(),impayes:getImpayes()}; } },
     avenants: { merge: mergeAvenants, getData: function(){ return {version:1,updated:new Date().toISOString(),avenants:getAvenants()}; } },
     paiements: { merge: mergePaiements, getData: function(){ return {version:1,updated:new Date().toISOString(),paiements:getPaiements()}; } },
-    visites_medicales: { merge: mergeVisitesMedicales, getData: function(){ return {version:1,updated:new Date().toISOString(),visites_medicales:getVisitesMedicales()}; } }
+    visites_medicales: { merge: mergeVisitesMedicales, getData: function(){ return {version:1,updated:new Date().toISOString(),visites_medicales:getVisitesMedicales()}; } },
+    salaires_bloques: { merge: mergeSalairesBloques, getData: function(){ return {version:1,updated:new Date().toISOString(),salaires_bloques:getSalairesBloques()}; } }
   };
   SYNC_ENTITIES.forEach(function(ent) {
     if (!ent.merge && mapping[ent.key]) {
@@ -7722,7 +7724,7 @@ function showOneDriveDiagnostic() {
             try {
               var j = JSON.parse(txt);
               // Trouver le tableau principal
-              var arrFields = ['simulations','candidats','deals','clients','commissions','sortants','cooptations','avances','taches','demandes','avantages_sociaux','frais_pro','demarrages','jours_prestes','impayes'];
+              var arrFields = ['simulations','candidats','deals','clients','commissions','sortants','cooptations','avances','taches','demandes','avantages_sociaux','frais_pro','demarrages','jours_prestes','impayes','salaires_bloques'];
               for (var i = 0; i < arrFields.length; i++) {
                 if (Array.isArray(j[arrFields[i]])) { count = j[arrFields[i]].length; break; }
               }
@@ -19040,6 +19042,91 @@ function mergeImpayes(remote) {
   saveImpayes(Object.values(byKey));
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// SALAIRES BLOQUÉS — store synchronisé (Suivi RH)
+// Source double : (a) AUTO depuis Impayés (seuil ≥ 2 factures par consultant × client unique),
+// (b) MANUEL depuis la fiche candidat. Synchro OneDrive + tombstones.
+// (Build 1 = fondations : store + merge + helpers de matching. Le moteur, l'onglet
+//  et l'intégration fiche arrivent dans les builds suivants.)
+// ═══════════════════════════════════════════════════════════════════
+var SALAIRES_BLOQUES_KEY = 'sp_salaires_bloques_v1';
+
+function getSalairesBloques() {
+  try { return JSON.parse(localStorage.getItem(SALAIRES_BLOQUES_KEY) || '[]') || []; }
+  catch(e) { return []; }
+}
+
+function saveSalairesBloques(arr) {
+  localStorage.setItem(SALAIRES_BLOQUES_KEY, JSON.stringify(arr || []));
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+
+// ── Normalisation pour le matching (email / nom / client) ──
+function _sbNormEmail(e) {
+  return String(e == null ? '' : e).trim().toLowerCase();
+}
+function _sbNormName(n) {
+  return String(n == null ? '' : n)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // retirer les accents
+    .toLowerCase().replace(/\s+/g, ' ').trim();
+}
+function _sbNormClient(cl) { return _sbNormName(cl); }
+
+// Clé composite STABLE : (email porté ⟂ nom) × client unique.
+// Sert d'id déterministe → même couple (consultant × client) = même id sur
+// toutes les machines, donc dédoublonnage naturel à la synchro.
+function _sbKey(email, name, client) {
+  var who = _sbNormEmail(email) || _sbNormName(name);
+  var slug = (who + '__' + _sbNormClient(client))
+    .replace(/[^a-z0-9@._-]+/g, '-').replace(/^-+|-+$/g, '');
+  return 'sb_' + (slug || 'x');
+}
+
+// Merge synchronisation OneDrive — last-write-wins par updated_at (>=),
+// priorité au changement de statut délibéré (statut_ts), respect des tombstones.
+function mergeSalairesBloques(remote) {
+  if (!Array.isArray(remote)) return;
+  var local = getSalairesBloques();
+  var byId = {};
+  local.forEach(function(l){ if (l && l.id) byId[l.id] = l; });
+  remote.forEach(function(r){
+    if (!r || !r.id) return;
+    // Tombstone : on ignore sauf si la fiche distante est plus récente que la suppression
+    if (typeof isActiveTombstone === 'function') {
+      if (isActiveTombstone('salaires_bloques', r.id, r.updated_at || 0)) return;
+      if (r.key && isActiveTombstone('salaires_bloques', r.key, r.updated_at || 0)) return;
+    } else if (typeof isTombstoned === 'function' && isTombstoned('salaires_bloques', r.id)) {
+      return;
+    }
+    var cur = byId[r.id];
+    if (!cur) { byId[r.id] = r; return; }
+    // last-write-wins global (updated_at) ; >= pour que l'égalité ne reverte pas
+    var curTs = cur.updated_at || 0, rTs = r.updated_at || 0;
+    var base = (rTs >= curTs) ? Object.assign({}, cur, r) : Object.assign({}, r, cur);
+    // Le statut suit SON PROPRE timestamp (statut_ts) : le changement le plus récent gagne,
+    // même si l'autre côté a un updated_at plus grand pour d'autres champs (ex. recompte auto).
+    var curStatutTs = cur.statut_ts || 0, rStatutTs = r.statut_ts || 0;
+    var win = (curStatutTs >= rStatutTs) ? cur : r;
+    base.statut = win.statut;
+    base.statut_ts = win.statut_ts;
+    base.date_blocage = win.date_blocage;
+    base.date_deblocage = win.date_deblocage;
+    base.alerte_blocage_envoyee = win.alerte_blocage_envoyee;
+    base.alerte_deblocage_envoyee = win.alerte_deblocage_envoyee;
+    // Fusion des commentaires (dédoublonnage par date+texte+auteur)
+    var merged = [], seen = {};
+    (cur.commentaires || []).concat(r.commentaires || []).forEach(function(cm){
+      if (!cm) return;
+      var k = (cm.date||'') + '|' + (cm.text||'') + '|' + (cm.author||'');
+      if (seen[k]) return; seen[k] = 1; merged.push(cm);
+    });
+    base.commentaires = merged;
+    byId[r.id] = base;
+  });
+  // Persistance directe (ne pas relancer odAutoSync pendant un pull)
+  localStorage.setItem(SALAIRES_BLOQUES_KEY, JSON.stringify(Object.values(byId)));
+}
+
 // ── Helpers dates ──
 function _parseImpayeDate(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -19919,7 +20006,8 @@ function parseAndImportImpayesFile(file) {
         compta_email:     findCol('email | contact comptable du client'),
         consultant_nom:   findCol('nom | porté'),
         consultant_prenom: findCol('prénom | porté'),
-        commercial:       findCol('chargé de clientèle | porté')
+        commercial:       findCol('chargé de clientèle | porté'),
+        email_porte:      findCol('email | porté')
       };
 
       if (col.num_fact < 0) {
@@ -19953,7 +20041,9 @@ function parseAndImportImpayesFile(file) {
           consultant: consultant,
           compta_contact: compta,
           compta_email: col.compta_email >= 0 ? String(row[col.compta_email] || '').trim() : '',
-          commercial: col.commercial >= 0 ? String(row[col.commercial] || '').trim() : ''
+          commercial: col.commercial >= 0 ? String(row[col.commercial] || '').trim() : '',
+          // Email du porté (stocké, non affiché) — sert au matching fiche candidat / Salaires Bloqués
+          email_candidat: col.email_porte >= 0 ? String(row[col.email_porte] || '').trim().toLowerCase() : ''
         };
         // Normaliser la date d'échéance (ISO)
         var d = _parseImpayeDate(item.date_echeance);
@@ -19989,6 +20079,8 @@ function parseAndImportImpayesFile(file) {
             item.type_special_by = old.type_special_by || '';
             nbTypesPreserved++;
           }
+          // Préserver l'email du porté si la nouvelle ligne ne le fournit pas
+          if (!item.email_candidat && old.email_candidat) item.email_candidat = old.email_candidat;
           nbUpdated++;
         } else {
           item.commentaire = '';
