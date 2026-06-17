@@ -19538,7 +19538,7 @@ function renderSalairesBloques() {
       var rowCls = (e.statut === 'debloque') ? ' class="deb"' : '';
       // Consultant — lien si fiche liée
       var consHtml = _sbEsc(e.consultant || '—');
-      if (e.candidat_id) consHtml = '<a class="sb-lnk" onclick="openCandidatFiche(' + JSON.stringify(e.candidat_id) + ')">' + consHtml + '</a>';
+      if (e.candidat_id != null) consHtml = '<a class="sb-lnk" onclick="openCandidatFiche(' + (typeof e.candidat_id === 'number' ? e.candidat_id : "'" + e.candidat_id + "'") + ')">' + consHtml + '</a>';
       // Client — lien fiche
       var clId = _sbClientId(e.client);
       var clientHtml = _sbEsc(e.client || '—');
@@ -19549,9 +19549,16 @@ function renderSalairesBloques() {
         ? '<span class="sb-badge bloq">\u{1F534} Bloqué</span>'
         : '<span class="sb-badge deb">\u{1F7E2} Débloqué</span>';
       var nbComments = (e.commentaires || []).length;
-      var histBtn = '<button class="sb-btn" onclick="_sbShowComments(' + JSON.stringify(e.id) + ')">\u{1F4AC} ' + nbComments + '</button>';
+      var _lastC = (e.commentaires && e.commentaires[0]) ? e.commentaires[0] : null;
+      var _prev = '';
+      if (_lastC) {
+        var _t = _lastC.text || '';
+        var _short = _t.length > 30 ? _t.slice(0,30) + '\u2026' : _t;
+        _prev = '<div title="' + _sbEsc(_t).replace(/"/g,'&quot;') + '" style="font-size:11px;color:#6B5E9C;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;cursor:help;">' + _sbEsc(_short) + '</div>';
+      }
+      var histBtn = _prev + '<button class="sb-btn" onclick="_sbShowComments(\'' + e.id + '\')">\u{1F4AC} ' + nbComments + '</button>';
       var action = (e.statut === 'bloque')
-        ? '<button class="sb-btn unb" onclick="_sbManualUnblock(' + JSON.stringify(e.id) + ')">\u{1F513} Débloquer</button>'
+        ? '<button class="sb-btn unb" onclick="_sbManualUnblock(\'' + e.id + '\')">\u{1F513} Débloquer</button>'
         : '';
       h += '<tr' + rowCls + '>'
         + '<td style="font-weight:700;color:#1A1033;">' + consHtml + (e.origine==='manuel'?' <span title="Blocage manuel" style="font-size:10px;color:#B58A00;">\u270B</span>':'') + '</td>'
@@ -19599,6 +19606,28 @@ function _sbManualUnblock(id) {
   renderSalairesBloques();
 }
 
+// Ajout d'un commentaire manuel (horodaté + auteur courant)
+function _sbAddComment(id) {
+  var ta = document.getElementById('sb-new-comment');
+  var txt = ta ? ta.value.trim() : '';
+  if (!txt) return;
+  var arr = getSalairesBloques();
+  var e = arr.find(function(x){ return x.id === id; });
+  if (!e) return;
+  var who = (typeof getCurrentUserCommercial === 'function' && getCurrentUserCommercial()) || 'Utilisateur';
+  var n = new Date();
+  e.commentaires = e.commentaires || [];
+  e.commentaires.unshift({
+    date: n.toLocaleDateString('fr-FR') + ' ' + n.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}),
+    text: txt,
+    author: who
+  });
+  e.updated_at = Date.now();
+  saveSalairesBloques(arr);
+  _sbShowComments(id);
+  if (typeof renderSalairesBloques === 'function') renderSalairesBloques();
+}
+
 // Bulle d'historique des commentaires
 function _sbShowComments(id) {
   var e = getSalairesBloques().find(function(x){ return x.id === id; });
@@ -19617,7 +19646,15 @@ function _sbShowComments(id) {
     + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;">'
     +   '<div style="font-weight:700;font-size:15px;color:#1A1033;">\u{1F4AC} Historique \u2014 ' + _sbEsc(e.consultant) + ' / ' + _sbEsc(e.client) + '</div>'
     +   '<button onclick="document.getElementById(\'sb-comments-overlay\').remove()" style="border:none;background:#F5F3FF;color:#7343EE;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:700;">\u2715</button>'
-    + '</div>' + items + '</div>';
+    + '</div>'
+    + '<div style="max-height:46vh;overflow:auto;margin-bottom:14px;">' + items + '</div>'
+    + '<div style="border-top:1px solid #F0EDF9;padding-top:12px;">'
+    +   '<label style="font-size:11px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:6px;">Ajouter un commentaire</label>'
+    +   '<textarea id="sb-new-comment" rows="3" placeholder="Votre commentaire\u2026" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;font-family:inherit;resize:vertical;"></textarea>'
+    +   '<div style="text-align:right;margin-top:8px;">'
+    +     '<button onclick="_sbAddComment(\'' + e.id + '\')" style="background:#7343EE;color:#fff;border:none;border-radius:7px;padding:8px 16px;font-size:12.5px;font-weight:700;cursor:pointer;">\u2795 Ajouter</button>'
+    +   '</div>'
+    + '</div>';
   document.body.appendChild(ov);
 }
 
