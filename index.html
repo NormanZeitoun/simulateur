@@ -6234,8 +6234,21 @@ function reopenSim(ts) {
 }
 
 function newVersionSim(ts) {
-  reopenSim(ts);
-  setTimeout(function() { openEnvoiModal(); }, 400);
+  var hist = getHistory();
+  var entry = hist.find(function(h){ return h.timestamp === ts; });
+  if (!entry || !entry.snapshot) { alert('Cette simulation ne peut pas être dupliquée (données manquantes).'); return; }
+  // « + Version » = duplication DÉTACHÉE : on repart des mêmes valeurs mais comme une
+  // simulation neuve (aucun lien au placement, pas de verrou) → l'envoi crée une NOUVELLE
+  // version au lieu de modifier la simu placée.
+  window._currentReopenedSimTs = null;
+  mainNavTo('mission');
+  setTimeout(function() {
+    restoreSnapshot(entry.snapshot);
+    try { if (typeof calc === 'function') calc(); } catch(e) {}
+    window._currentReopenedSimTs = null;
+    try { if (typeof _applySimLock === 'function') _applySimLock(null); } catch(e) {}
+    setTimeout(function() { openEnvoiModal(); }, 150);
+  }, 120);
 }
 
 function deleteSim(ts) {
@@ -19066,6 +19079,7 @@ function getSalairesBloques() {
 }
 
 function saveSalairesBloques(arr) {
+  _sbCapAllComments(arr || []);
   localStorage.setItem(SALAIRES_BLOQUES_KEY, JSON.stringify(arr || []));
   if (typeof odAutoSync === 'function') odAutoSync();
 }
@@ -19133,7 +19147,8 @@ function mergeSalairesBloques(remote) {
     byId[r.id] = base;
   });
   // Persistance directe (ne pas relancer odAutoSync pendant un pull)
-  localStorage.setItem(SALAIRES_BLOQUES_KEY, JSON.stringify(Object.values(byId)));
+  var _mv = Object.values(byId); _sbCapAllComments(_mv);
+  localStorage.setItem(SALAIRES_BLOQUES_KEY, JSON.stringify(_mv));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -19148,6 +19163,23 @@ var SB_EMAILS_ENABLED_KEY = 'sp_sb_emails_enabled';   // '1' = envois réels ; s
 var SB_EXCLUSIONS_KEY = 'sp_sb_exclusions_v1';        // { consultants:[], clients:[] } — UI en Build 4
 var SB_THRESHOLD_BLOCK = 2;    // ≥ 2 impayés → bloqué
 var SB_THRESHOLD_UNBLOCK = 1;  // ≤ 1 impayé  → débloqué (Norman : 0 ou 1)
+var SB_MAX_COMMENTS = 30;                 // plafond de commentaires par entrée (anti-saturation localStorage)
+var SB_FLAP_GUARD_MS = 6 * 3600 * 1000;   // une entrée AUTO ne re-bascule pas dans les 6 h (anti-flapping)
+// Tronque les commentaires de chaque entrée aux plus récents (unshift = récents en tête)
+function _sbCapAllComments(arr) {
+  if (!Array.isArray(arr)) return arr;
+  for (var i = 0; i < arr.length; i++) {
+    var e = arr[i];
+    if (e && Array.isArray(e.commentaires) && e.commentaires.length > SB_MAX_COMMENTS) {
+      e.commentaires = e.commentaires.slice(0, SB_MAX_COMMENTS);
+    }
+  }
+  return arr;
+}
+// Garde anti-flapping : autorise un changement de statut auto seulement si le dernier date d'il y a > 6 h
+function _sbCanFlip(e, now) {
+  return (now - ((e && e.statut_ts) || 0)) >= SB_FLAP_GUARD_MS;
+}
 
 function _sbEmailsEnabled() { return localStorage.getItem(SB_EMAILS_ENABLED_KEY) === '1'; }
 
@@ -19342,14 +19374,14 @@ function runSalaireBloqueEngine(opts) {
     if (e.origine === 'manuel' || e.manual_override) return;  // blocage/déblocage manuel : jamais touché par l'auto
 
     // Machine à états AUTO
-    if (e.statut === 'debloque' && g.count >= SB_THRESHOLD_BLOCK) {
+    if (e.statut === 'debloque' && g.count >= SB_THRESHOLD_BLOCK && _sbCanFlip(e, now)) {
       e.statut = 'bloque'; e.statut_ts = now;
       e.date_blocage = new Date(now).toISOString(); e.date_deblocage = '';
       e.alerte_blocage_envoyee = !!silent; e.alerte_deblocage_envoyee = false;
       e.commentaires.unshift(_sbAutoComment('Salaire re-bloqué automatiquement (' + g.count + ' factures impayées)'));
       e.updated_at = now; changed = true;
       if (!silent) pending.push({ entry: e, type: 'block' });
-    } else if (e.statut === 'bloque' && g.count <= SB_THRESHOLD_UNBLOCK) {
+    } else if (e.statut === 'bloque' && g.count <= SB_THRESHOLD_UNBLOCK && _sbCanFlip(e, now)) {
       e.statut = 'debloque'; e.statut_ts = now;
       e.date_deblocage = new Date(now).toISOString();
       e.alerte_deblocage_envoyee = !!silent;
@@ -19365,7 +19397,7 @@ function runSalaireBloqueEngine(opts) {
     if (!e || e.origine !== 'auto') return;
     if (groups[id]) return;
     if (e.nb_factures !== 0) { e.nb_factures = 0; changed = true; }
-    if (e.statut === 'bloque') {
+    if (e.statut === 'bloque' && _sbCanFlip(e, now)) {
       e.statut = 'debloque'; e.statut_ts = now;
       e.date_deblocage = new Date(now).toISOString();
       e.alerte_deblocage_envoyee = !!silent;
@@ -19384,7 +19416,7 @@ function runSalaireBloqueEngine(opts) {
   }
 
   // 5) Persister
-  if (changed) localStorage.setItem(SALAIRES_BLOQUES_KEY, JSON.stringify(Object.values(byId)));
+  if (changed) { var _ev = Object.values(byId); _sbCapAllComments(_ev); localStorage.setItem(SALAIRES_BLOQUES_KEY, JSON.stringify(_ev)); }
   if (!seeded) localStorage.setItem(SB_SEEDED_KEY, '1');
 
   // 6) Envoyer les alertes (hors seed)
