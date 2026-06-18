@@ -1316,9 +1316,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <button class="toggle-btn" id="btn-gd-autre" onclick="setGDLieu('autre')">Autre départ.</button>
           <button class="toggle-btn" id="btn-gd-perso-idf" onclick="setGDLieu('perso_idf')">Personnalisé IDF</button>
           <button class="toggle-btn" id="btn-gd-perso-autre" onclick="setGDLieu('perso_autre')">Personnalisé Autre</button>
+          <button class="toggle-btn" id="btn-gd-hors-france" onclick="setGDLieu('hors_france')">Hors France</button>
         </div>
         <div id="zone-gd-perso" style="display:none;margin-top:8px;">
-          <label style="font-size:11px;color:var(--muted);">Montant personnalisé (€/jour) &mdash; ne peut excéder le barème : <span id="gd-perso-max" style="font-weight:600;color:#372EB6;">&mdash;</span> €</label>
+          <label id="gd-perso-label" style="font-size:11px;color:var(--muted);">Montant personnalisé (€/jour) &mdash; ne peut excéder le barème : <span id="gd-perso-max" style="font-weight:600;color:#372EB6;">&mdash;</span> €</label>
           <input type="number" id="gd_perso_montant" value="0" step="0.01" min="0" oninput="onGDPersoChange()">
           <div id="gd-perso-warn" style="display:none;color:#E24B4A;font-size:11px;margin-top:4px;font-weight:600;">&#9888; Montant supérieur au barème : la valeur sera plafonnée au max ci-dessus dans les calculs.</div>
         </div>
@@ -1878,6 +1879,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="Ancien porté">Ancien porté</option>
           <option value="Perdu">Perdu</option>
         </select>
+        <select id="cand-filter-sb" onchange="renderCandidats()" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;background:#fff;cursor:pointer;">
+          <option value="">Tous (salaire)</option>
+          <option value="bloque">&#128274; Salaire bloqu&eacute;</option>
+        </select>
         <select id="cand-filter-date" onchange="renderCandidats()" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;background:#fff;cursor:pointer;">
           <option value="">Toutes dates</option>
           <option value="week">Cette semaine</option>
@@ -2337,28 +2342,33 @@ function setRepas(v) {
 function setGDLieu(v) {
   state.gd_lieu = v;
   // Mise à jour des 4 boutons (un seul actif)
-  ['idf', 'autre', 'perso-idf', 'perso-autre'].forEach(function(suffix){
+  ['idf', 'autre', 'perso-idf', 'perso-autre', 'hors-france'].forEach(function(suffix){
     var btn = document.getElementById('btn-gd-' + suffix);
     if (!btn) return;
     var matches =
          (suffix === 'idf'         && v === 'IDF')
       || (suffix === 'autre'       && v === 'autre')
       || (suffix === 'perso-idf'   && v === 'perso_idf')
-      || (suffix === 'perso-autre' && v === 'perso_autre');
+      || (suffix === 'perso-autre' && v === 'perso_autre')
+      || (suffix === 'hors-france' && v === 'hors_france');
     btn.classList.toggle('active', !!matches);
   });
-  // Show/hide du bloc "montant personnalisé"
+  // Show/hide du bloc "montant personnalisé" (perso IDF/Autre clampés + Hors France libre)
   var zonePerso = document.getElementById('zone-gd-perso');
-  var isPerso = (v === 'perso_idf' || v === 'perso_autre');
-  if (zonePerso) zonePerso.style.display = isPerso ? 'block' : 'none';
-  if (isPerso) {
-    var max = (v === 'perso_idf') ? f('p_gd_idf') : f('p_gd_autre');
-    var maxEl = document.getElementById('gd-perso-max');
-    if (maxEl) maxEl.textContent = max.toFixed(2).replace('.', ',');
-    // Pré-remplir le champ avec le barème si à 0 (pour ne pas calculer avec 0 par défaut)
+  var showMontant = (v === 'perso_idf' || v === 'perso_autre' || v === 'hors_france');
+  if (zonePerso) zonePerso.style.display = showMontant ? 'block' : 'none';
+  if (showMontant) {
+    var labelEl = document.getElementById('gd-perso-label');
     var inp = document.getElementById('gd_perso_montant');
-    if (inp && (parseFloat(inp.value) || 0) === 0) inp.value = max;
-    // Synchroniser le warning d'emblée
+    if (v === 'hors_france') {
+      // Hors France : montant libre, AUCUN plafond
+      if (labelEl) labelEl.innerHTML = 'Montant personnalisé (\u20ac/jour) \u2014 Hors France, <strong style="color:#372EB6;">sans limite de montant</strong>';
+    } else {
+      var max = (v === 'perso_idf') ? f('p_gd_idf') : f('p_gd_autre');
+      if (labelEl) labelEl.innerHTML = 'Montant personnalisé (\u20ac/jour) \u2014 ne peut excéder le barème : <span id="gd-perso-max" style="font-weight:600;color:#372EB6;">' + max.toFixed(2).replace('.', ',') + '</span> \u20ac';
+      // Pré-remplir le champ avec le barème si à 0
+      if (inp && (parseFloat(inp.value) || 0) === 0) inp.value = max;
+    }
     onGDPersoChange();
   }
   if (lastEdited === 'tjm') solveBrutFromTJM(); else solveTJMFromBrut();
@@ -2369,11 +2379,15 @@ function setGDLieu(v) {
 // on affiche juste un warning et le calcul (_getTauxGD) utilise Math.min côté solveur.
 function onGDPersoChange() {
   var v = state.gd_lieu;
-  if (v !== 'perso_idf' && v !== 'perso_autre') return;
-  var max = (v === 'perso_idf') ? f('p_gd_idf') : f('p_gd_autre');
-  var val = f('gd_perso_montant');
+  if (v !== 'perso_idf' && v !== 'perso_autre' && v !== 'hors_france') return;
   var warnEl = document.getElementById('gd-perso-warn');
-  if (warnEl) warnEl.style.display = (val > max) ? 'block' : 'none';
+  if (v === 'hors_france') {
+    if (warnEl) warnEl.style.display = 'none'; // aucun plafond
+  } else {
+    var max = (v === 'perso_idf') ? f('p_gd_idf') : f('p_gd_autre');
+    var val = f('gd_perso_montant');
+    if (warnEl) warnEl.style.display = (val > max) ? 'block' : 'none';
+  }
   if (lastEdited === 'tjm') solveBrutFromTJM(); else solveTJMFromBrut();
 }
 
@@ -2392,6 +2406,7 @@ function _getTauxGD() {
     var max2 = f('p_gd_autre');
     return Math.min(f('gd_perso_montant'), max2);
   }
+  if (v === 'hors_france') return f('gd_perso_montant'); // Hors France : montant libre, sans plafond
   return f('p_gd_idf'); // fallback sûr
 }
 
@@ -2408,6 +2423,7 @@ function _formatGDLieuLabel(gd_lieu, gd_perso_montant) {
   var montantStr = montant > 0 ? ' (' + montant.toFixed(2).replace('.', ',') + ' €/j)' : '';
   if (gd_lieu === 'perso_idf')   return 'Personnalisé IDF'   + montantStr;
   if (gd_lieu === 'perso_autre') return 'Personnalisé Autre' + montantStr;
+  if (gd_lieu === 'hors_france') return 'Hors France'        + montantStr;
   return gd_lieu; // fallback : on affiche tel quel pour ne rien perdre
 }
 function setTT(v) {
@@ -3703,7 +3719,16 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.15f';
+  window.APP_VERSION = 'v2026.06.18a';
+  window.APP_BUILD = 2026061801;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  // Notification de nouvelle version vers les sessions ouvertes des autres postes
+  try {
+    setTimeout(function(){ if (typeof _appVersionCheck === 'function') _appVersionCheck(); }, 25000);
+    setInterval(function(){ if (typeof _appVersionCheck === 'function') _appVersionCheck(); }, 180000);
+    document.addEventListener('visibilitychange', function(){
+      if (!document.hidden && typeof _appVersionCheck === 'function') _appVersionCheck();
+    });
+  } catch(e) {}
   console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
   try {
     var _verEl = document.getElementById('app-version-badge');
@@ -8083,6 +8108,63 @@ function odAutoSync() {
   window._odAutoSyncTimer = setTimeout(odSilentFullSync, 120000);
 }
 
+// ═══════════════════════════════════════════════════════════
+// NOTIFICATION DE NOUVELLE VERSION (popup MAJ vers les postes)
+// Le poste le plus récent publie son build dans un mini-fichier OneDrive ;
+// les autres postes le lisent à intervalle régulier et proposent de recharger.
+// ═══════════════════════════════════════════════════════════
+var OD_VERSION_PATH = '/General/Seven Portage Simlateur/SP_App_Version.json';
+function _appVersionCheck() {
+  if (!odToken || window._appUpdateShown) return;
+  var url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + _odEncPath(OD_VERSION_PATH) + ':/content';
+  fetch(url, { headers: { Authorization: 'Bearer ' + odToken }, cache: 'no-store' })
+    .then(function(r){ return r.ok ? r.text() : null; })
+    .then(function(txt){
+      var data = null; try { data = txt ? JSON.parse(txt) : null; } catch(e) {}
+      var mine = parseInt(window.APP_BUILD) || 0;
+      var stored = (data && parseInt(data.build)) || 0;
+      if (stored > mine) { _showUpdateOverlay(data ? (data.version || '') : ''); }
+      else if (mine > stored) { _appVersionPublish(); }
+    })
+    .catch(function(){});
+}
+function _appVersionPublish() {
+  if (!odToken) return;
+  var url = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + _odEncPath(OD_VERSION_PATH) + ':/content';
+  fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + odToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ build: parseInt(window.APP_BUILD) || 0, version: window.APP_VERSION || '', updated_at: Date.now() })
+  }).catch(function(){});
+}
+function _showUpdateOverlay(newVer) {
+  if (window._appUpdateShown) return;
+  window._appUpdateShown = true;
+  var ov = document.createElement('div');
+  ov.id = 'app-update-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(40,30,90,0.78);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);font-family:sans-serif;';
+  var verStr = newVer ? ('<div style="font-size:12px;color:#9E94C4;margin-bottom:18px;">Nouvelle version : <strong>' + String(newVer).replace(/</g,'&lt;') + '</strong></div>') : '<div style="margin-bottom:18px;"></div>';
+  ov.innerHTML = '<div style="background:#fff;border-radius:20px;padding:42px 46px;max-width:500px;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,0.35);">'
+    + '<div style="font-size:52px;margin-bottom:8px;">&#128260;</div>'
+    + '<div style="font-size:23px;font-weight:800;color:#372EB6;margin-bottom:12px;">Mise &agrave; jour disponible</div>'
+    + '<div style="font-size:14.5px;color:#6B5E9C;line-height:1.55;margin-bottom:6px;">Une nouvelle version du CRM a &eacute;t&eacute; d&eacute;ploy&eacute;e. Merci de recharger la page pour en b&eacute;n&eacute;ficier.</div>'
+    + '<div style="font-size:12.5px;color:#9E94C4;margin-bottom:22px;">(Tes donn&eacute;es sont d&eacute;j&agrave; synchronis&eacute;es, tu ne perds rien.)</div>'
+    + verStr
+    + '<button onclick="_doAppUpdate()" style="padding:14px 32px;background:#7343EE;color:#fff;border:none;border-radius:11px;font-size:15.5px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 4px 14px rgba(115,67,238,0.4);">Mettre &agrave; jour maintenant</button>'
+    + '<div style="margin-top:16px;"><button onclick="_dismissUpdateOverlay()" style="background:none;border:none;color:#B5ADD6;font-size:12.5px;cursor:pointer;text-decoration:underline;font-family:inherit;">Plus tard</button></div>'
+    + '</div>';
+  document.body.appendChild(ov);
+}
+function _doAppUpdate() {
+  try { location.replace(location.pathname + '?maj=' + Date.now()); }
+  catch(e) { location.reload(); }
+}
+function _dismissUpdateOverlay() {
+  var ov = document.getElementById('app-update-overlay');
+  if (ov) ov.remove();
+  setTimeout(function(){ window._appUpdateShown = false; }, 600000); // re-proposer dans 10 min
+}
+
 function odSilentFullSync() {
   if (!odToken) return;
   // VERROU ANTI-409 : signale qu'une sync écrit en ce moment. Empêche _odEmergencyPush
@@ -9605,37 +9687,25 @@ function savePlacement() {
     contrat: document.getElementById('pl-contrat').value,
     date_entree: document.getElementById('pl-date-entree').value,
     commentaire: document.getElementById('pl-commentaire').value,
-    // Simulation — TOUS les champs transférés intégralement
-    tjm: sim ? sim.tjm : '',
-    nb_jours: sim ? sim.nb_jours : '',
-    salaire_annuel: salaireAnnuelContrat,
-    brut: sim ? sim.brut : '',
-    net_payer: sim ? sim.net_payer : '',
-    net_avant: sim ? sim.net_avant : '',
-    cout_global: sim ? sim.cout_global : '',
-    total_pat: sim ? (sim.total_pat || '') : '',
-    total_sal: sim ? (sim.total_sal || '') : '',
-    taux_restitution: sim ? sim.taux_restitution : '',
-    frais_gestion: sim ? (sim.marge || '') : '',
-    mutuelle: sim ? (sim.mutuelle || '') : '',
-    cp: sim ? (sim.cp || '') : '',
-    rtt: sim ? (sim.rtt || 0) : 0,
-    repas: sim ? (sim.repas || '') : '',
-    tt: sim ? (sim.tt ? 'Oui' : 'Non') : '',
-    gd_lieu: sim ? (sim.gd_lieu || '') : '',
-    gd_perso_montant: sim ? (parseFloat(sim.gd_perso_montant) || 0) : 0,  // FIX FRAIS : montant perso GD
-    ik_1ere: sim ? (sim.ik_1ere ? 'Oui' : 'Non') : '',
-    km_aller: sim ? (sim.km_aller || '') : '',
-    puissance_fiscale: sim ? (sim.puissance || '') : '',
-    abo_transport: sim ? (sim.abo_transport || '') : '',
-    abo_tel: sim ? (sim.abo_tel || '') : '',
-    abo_internet: sim ? (sim.abo_internet || '') : '',
-    frais_formation: sim ? (sim.frais_formation || '') : '',
-    frais_materiel: sim ? (sim.frais_materiel || '') : '',
-    taux_impot: sim ? (sim.taux_impot || '') : '',
-    frais_jour: sim ? (sim.frais_jour || '') : '',
+    // date_created (création) — préservé en édition
     date_created: idx >= 0 ? deals[idx].date_created : new Date().toLocaleDateString('fr-FR')
   };
+  // Champs issus de la SIMULATION : (ré)écrits UNIQUEMENT si la simu existe encore.
+  // Sinon on ne touche pas à ces champs du deal existant (évite la remise à zéro de la ligne).
+  if (sim) {
+    Object.assign(deal, {
+      tjm: sim.tjm, nb_jours: sim.nb_jours, salaire_annuel: salaireAnnuelContrat,
+      brut: sim.brut, net_payer: sim.net_payer, net_avant: sim.net_avant,
+      cout_global: sim.cout_global, total_pat: sim.total_pat || '', total_sal: sim.total_sal || '',
+      taux_restitution: sim.taux_restitution, frais_gestion: sim.marge || '',
+      mutuelle: sim.mutuelle || '', cp: sim.cp || '', rtt: sim.rtt || 0, repas: sim.repas || '',
+      tt: (sim.tt ? 'Oui' : 'Non'), gd_lieu: sim.gd_lieu || '', gd_perso_montant: parseFloat(sim.gd_perso_montant) || 0,
+      ik_1ere: (sim.ik_1ere ? 'Oui' : 'Non'), km_aller: sim.km_aller || '', puissance_fiscale: sim.puissance || '',
+      abo_transport: sim.abo_transport || '', abo_tel: sim.abo_tel || '', abo_internet: sim.abo_internet || '',
+      frais_formation: sim.frais_formation || '', frais_materiel: sim.frais_materiel || '',
+      taux_impot: sim.taux_impot || '', frais_jour: sim.frais_jour || ''
+    });
+  }
 
   // ── date_signature : enregistre la date quand l'état passe à "Signé" ──
   // Préserve la date existante si déjà signé précédemment
@@ -9654,7 +9724,7 @@ function savePlacement() {
   // Capturer l'ANCIEN nom d'entreprise du deal (avant remplacement) pour pouvoir
   // renommer la fiche client si l'utilisateur a modifié le nom dans la popup placement.
   var _ancienNomEntreprise = (idx >= 0 && deals[idx]) ? (deals[idx].entreprise || '') : '';
-  if (idx >= 0) deals[idx] = deal; else deals.unshift(deal);
+  if (idx >= 0) deals[idx] = Object.assign({}, deals[idx], deal); else deals.unshift(deal);
   saveDeals(deals);
   // Visite médicale : créer (si nouveau placement) ou mettre à jour la ligne liée
   try { if (typeof _vmSyncFromDeal === 'function') _vmSyncFromDeal(deal, isNewDeal); } catch(e) { console.warn('[VM] sync placement:', e); }
@@ -11477,6 +11547,8 @@ function getCellValue(d, key){
       } else if (_lieu === 'perso_autre') {
         var _perso2 = parseFloat(d.gd_perso_montant) || 0;
         _taux = Math.min(_perso2, _tauxAutre);
+      } else if (_lieu === 'hors_france') {
+        _taux = parseFloat(d.gd_perso_montant) || 0;  // Hors France : montant libre, sans plafond
       } else {
         _taux = _tauxIdf; // fallback historique
       }
@@ -13016,6 +13088,10 @@ function renderCandidats() {
   }
   if (filtStatut) {
     cands = cands.filter(function(cand) { return computeCandStatutAuto(cand) === filtStatut; });
+  }
+  var filtSB = document.getElementById('cand-filter-sb') ? document.getElementById('cand-filter-sb').value : '';
+  if (filtSB === 'bloque') {
+    cands = cands.filter(function(cand) { return typeof _sbIsCandBlocked === 'function' && _sbIsCandBlocked(cand); });
   }
   var filtDate = document.getElementById('cand-filter-date') ? document.getElementById('cand-filter-date').value : '';
   if (filtDate) {
@@ -19170,7 +19246,12 @@ function _sbCapAllComments(arr) {
   if (!Array.isArray(arr)) return arr;
   for (var i = 0; i < arr.length; i++) {
     var e = arr[i];
-    if (e && Array.isArray(e.commentaires) && e.commentaires.length > SB_MAX_COMMENTS) {
+    if (!e || !Array.isArray(e.commentaires)) continue;
+    // Entrée débloquée : on ne conserve pas l'historique automatique (uniquement les commentaires manuels)
+    if (e.statut === 'debloque') {
+      e.commentaires = e.commentaires.filter(function(cm){ return cm && cm.author !== 'Système (automatique)'; });
+    }
+    if (e.commentaires.length > SB_MAX_COMMENTS) {
       e.commentaires = e.commentaires.slice(0, SB_MAX_COMMENTS);
     }
   }
@@ -19385,7 +19466,7 @@ function runSalaireBloqueEngine(opts) {
       e.statut = 'debloque'; e.statut_ts = now;
       e.date_deblocage = new Date(now).toISOString();
       e.alerte_deblocage_envoyee = !!silent;
-      e.commentaires.unshift(_sbAutoComment('Salaire débloqué automatiquement (' + g.count + ' facture' + (g.count>1?'s':'') + ' impayée' + (g.count>1?'s':'') + ')'));
+      // (déblocage auto : pas de commentaire stocké — le statut « débloqué » + la date suffisent)
       e.updated_at = now; changed = true;
       if (!silent) pending.push({ entry: e, type: 'unblock' });
     }
@@ -19401,7 +19482,7 @@ function runSalaireBloqueEngine(opts) {
       e.statut = 'debloque'; e.statut_ts = now;
       e.date_deblocage = new Date(now).toISOString();
       e.alerte_deblocage_envoyee = !!silent;
-      e.commentaires.unshift(_sbAutoComment('Salaire débloqué automatiquement (0 facture impayée)'));
+      // (déblocage auto : pas de commentaire stocké)
       e.updated_at = now; changed = true;
       if (!silent) pending.push({ entry: e, type: 'unblock' });
     }
@@ -33622,6 +33703,16 @@ function showCommissionsSection(subtab) {
 var _dgFilterClient = '';
 var _dgFilterStatut = '';
 var _dgFilterMonth = '';
+var _dgGlobalUnlocked = false;  // vue globale (tous commerciaux) déverrouillée par mot de passe (session)
+var _dgFilterComm = '';         // commercial sélectionné en vue globale ('' = tous)
+function _dgUnlockGlobal() {
+  if (typeof promptGenericAdminPassword !== 'function') { _dgGlobalUnlocked = true; renderCommDealsGlobalView(); return; }
+  promptGenericAdminPassword(
+    { title: 'Vue globale des deals', subtitle: 'Saisissez le mot de passe administrateur pour voir les deals de tous les commerciaux.' },
+    function(){ _dgGlobalUnlocked = true; _dgFilterComm = ''; renderCommDealsGlobalView(); }
+  );
+}
+function _dgLockGlobal() { _dgGlobalUnlocked = false; _dgFilterComm = ''; renderCommDealsGlobalView(); }
 
 function _dgParseDate(s) {
   if (!s) return null; s = String(s).trim();
@@ -33656,7 +33747,18 @@ function renderCommDealsGlobalView() {
   var _dgMe = ((typeof getCommercialData === 'function' && getCommercialData().nom) || '').trim();
   var _dgMeLC = _dgMe.toLowerCase();
   var all = getDeals().filter(function(d){
-    return d && !d._deleted && (!_dgMeLC || (d.commercial||'').trim().toLowerCase() === _dgMeLC);
+    if (!d || d._deleted) return false;
+    if (_dgGlobalUnlocked) {
+      // Vue globale déverrouillée : tous les deals, ou filtrés sur un commercial précis
+      if (_dgFilterComm) {
+        return (typeof _sameCommercial === 'function')
+          ? _sameCommercial(d.commercial, _dgFilterComm)
+          : ((d.commercial||'').trim().toLowerCase() === _dgFilterComm.toLowerCase());
+      }
+      return true;
+    }
+    // Vue par commercial (connecté)
+    return (!_dgMeLC || (d.commercial||'').trim().toLowerCase() === _dgMeLC);
   });
 
   var clientSet = {}; all.forEach(function(d){ var e=(d.entreprise||'').trim(); if(e) clientSet[e]=1; });
@@ -33691,7 +33793,11 @@ function renderCommDealsGlobalView() {
   html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">'
     + '<button class="back-btn" onclick="mainNavTo(\'mission\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#fff;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;">← Retour</button>'
     + '<div style="font-size:13px;font-weight:700;color:#1A1033;">💰 Commissions</div>'
-    + (_dgMe ? '<div style="margin-left:6px;display:inline-flex;align-items:center;gap:5px;padding:4px 11px;background:#EEE9FE;color:#4B36EC;border-radius:20px;font-size:11.5px;font-weight:700;">👤 ' + _dgMe.replace(/</g,'&lt;') + '</div>' : '<div style="margin-left:6px;font-size:11.5px;color:#C0392B;font-weight:600;">⚠ Commercial non configuré (tous les deals affichés)</div>')
+    + (_dgGlobalUnlocked
+        ? ('<div style="margin-left:6px;display:inline-flex;align-items:center;gap:5px;padding:4px 11px;background:#FFF3E0;color:#B26A00;border-radius:20px;font-size:11.5px;font-weight:700;">&#127760; Vue globale</div>'
+           + '<button onclick="_dgLockGlobal()" style="margin-left:8px;padding:5px 11px;background:#fff;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;">&#128274; Revenir à mes deals</button>')
+        : ((_dgMe ? '<div style="margin-left:6px;display:inline-flex;align-items:center;gap:5px;padding:4px 11px;background:#EEE9FE;color:#4B36EC;border-radius:20px;font-size:11.5px;font-weight:700;">👤 ' + _dgMe.replace(/</g,'&lt;') + '</div>' : '<div style="margin-left:6px;font-size:11.5px;color:#C0392B;font-weight:600;">⚠ Commercial non configuré</div>')
+           + '<button onclick="_dgUnlockGlobal()" style="margin-left:8px;padding:5px 11px;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border:none;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;">&#128275; Vue globale (admin)</button>'))
     + '</div>';
   html += buildCommSubNav();
 
@@ -33713,7 +33819,9 @@ function renderCommDealsGlobalView() {
   // Filtres
   var clientOpts = '<option value="">Tous les clients</option>' + clientList.map(function(c){ var s=c===_dgFilterClient?' selected':''; return '<option value="'+c.replace(/"/g,'&quot;')+'"'+s+'>'+c+'</option>'; }).join('');
   var monthOpts = '<option value="">Tous les mois</option>' + MONTHS.map(function(m,i){ var s=String(i+1)===String(_dgFilterMonth)?' selected':''; return '<option value="'+(i+1)+'"'+s+'>'+m+'</option>'; }).join('');
+  var commOpts = '<option value="">Tous les commerciaux</option>' + ((typeof getAllCommercialsFromDeals==='function') ? getAllCommercialsFromDeals() : []).map(function(cm){ var s=cm===_dgFilterComm?' selected':''; return '<option value="'+cm.replace(/"/g,'&quot;')+'"'+s+'>'+cm.replace(/</g,'&lt;')+'</option>'; }).join('');
   html += '<div class="comm-card" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">'
+    + (_dgGlobalUnlocked ? ('<div style="min-width:200px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Commercial</label><select class="comm-param-input" onchange="_dgFilterComm=this.value;renderCommDealsGlobalView();" style="cursor:pointer;">' + commOpts + '</select></div>') : '')
     + '<div style="flex:1;min-width:220px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Client</label>'
     +   '<select class="comm-param-input" onchange="_dgFilterClient=this.value;renderCommDealsGlobalView();" style="cursor:pointer;">' + clientOpts + '</select></div>'
     + '<div style="min-width:170px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Mois du deal</label>'
