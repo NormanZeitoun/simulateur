@@ -3719,8 +3719,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.18f';
-  window.APP_BUILD = 2026061806;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  window.APP_VERSION = 'v2026.06.18h';
+  window.APP_BUILD = 2026061808;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
   // Notification de nouvelle version vers les sessions ouvertes des autres postes
   try {
     setTimeout(function(){ if (typeof _appVersionCheck === 'function') _appVersionCheck(); }, 25000);
@@ -9473,6 +9473,10 @@ function onEntrepriseChange() {
     setIfEmpty('pl-prenom-compta', cl.prenom_compta);
     setIfEmpty('pl-nom-compta',    cl.nom_compta);
     setIfEmpty('pl-email-compta',  cl.email_compta);
+    // Signataire NIVEAU CLIENT (même robustesse que le service comptable, indépendant du manager)
+    setIfEmpty('pl-nom-signataire',   cl.nom_signataire);
+    setIfEmpty('pl-tel-signataire',   cl.tel_signataire);
+    setIfEmpty('pl-email-signataire', cl.email_signataire);
     // Type contrat Seven/Client : pré-remplir si défini sur la fiche client
     if (cl.type_contrat_client) {
       var tccEl = document.getElementById('pl-type-contrat-client');
@@ -9519,12 +9523,20 @@ function onManagerSelect() {
   if (!mgrSel) return;
   var val = mgrSel.value;
   if (val === '' || val === '__new__') {
-    // Nouveau manager : vider les champs manager/signataire
+    // Nouveau manager : vider le manager ; CONSERVER le signataire niveau client s'il existe
     if (val === '__new__') {
       document.getElementById('pl-manager').value = '';
-      document.getElementById('pl-nom-signataire').value = '';
-      document.getElementById('pl-tel-signataire').value = '';
-      document.getElementById('pl-email-signataire').value = '';
+      var _entNew = document.getElementById('pl-entreprise').value.trim().toLowerCase();
+      var _clNew = getClients().find(function(c){ return (c.name||'').toLowerCase() === _entNew; });
+      if (_clNew && _clNew.nom_signataire) {
+        document.getElementById('pl-nom-signataire').value   = _clNew.nom_signataire || '';
+        document.getElementById('pl-tel-signataire').value   = _clNew.tel_signataire || '';
+        document.getElementById('pl-email-signataire').value = _clNew.email_signataire || '';
+      } else {
+        document.getElementById('pl-nom-signataire').value = '';
+        document.getElementById('pl-tel-signataire').value = '';
+        document.getElementById('pl-email-signataire').value = '';
+      }
       document.getElementById('pl-manager').focus();
     }
     return;
@@ -9544,11 +9556,17 @@ function onManagerSelect() {
   // On écrase systématiquement à la sélection d'un manager existant pour refléter le bon manager.
   if (mgr.tel) document.getElementById('pl-tel-client').value = mgr.tel;
   if (mgr.email) document.getElementById('pl-email-client').value = mgr.email;
-  document.getElementById('pl-tel-signataire').value = mgr.tel || '';
-  document.getElementById('pl-email-signataire').value = mgr.email || '';
-  // Le nom signataire = manager par défaut si vide
-  var sigField = document.getElementById('pl-nom-signataire');
-  if (sigField && !sigField.value) sigField.value = mgr.name || '';
+  // Signataire : si la fiche client a un signataire DÉDIÉ, on le préserve (ne pas écraser avec le manager)
+  if (cl.nom_signataire) {
+    if (!document.getElementById('pl-nom-signataire').value)   document.getElementById('pl-nom-signataire').value   = cl.nom_signataire || '';
+    if (!document.getElementById('pl-tel-signataire').value)   document.getElementById('pl-tel-signataire').value   = cl.tel_signataire || '';
+    if (!document.getElementById('pl-email-signataire').value) document.getElementById('pl-email-signataire').value = cl.email_signataire || '';
+  } else {
+    document.getElementById('pl-tel-signataire').value = mgr.tel || '';
+    document.getElementById('pl-email-signataire').value = mgr.email || '';
+    var sigField = document.getElementById('pl-nom-signataire');
+    if (sigField && !sigField.value) sigField.value = mgr.name || '';
+  }
 }
 
 
@@ -10831,6 +10849,7 @@ var DEAL_ALL_COLS = [
   {key:'tel',         label:'Téléphone'},
   {key:'poste',       label:'Poste'},
   {key:'entreprise',  label:'Entreprise'},
+  {key:'manager',     label:'Manager'},
   {key:'tjm',         label:'TJM'},
   {key:'nb_jours',    label:'Nb j.'},
   {key:'salaire_annuel', label:'Salaire an.'},
@@ -10912,8 +10931,20 @@ var DEAL_ONBOARDING_OPTIONS = {
   demande_autorisation:     ['','Non','Carte Temporaire','Carte Annuelle','Carte Resident','Récépissé','Autorisation provisoire','Autres'],
   decision_favorable:       ['','Non','Carte Temporaire','Carte Annuelle','Carte Resident','Récépissé','Autorisation provisoire','Autres']
 };
-var DEAL_DEFAULT_COLS = ['etat','candidat','poste','tjm','nb_jours','commercial','date_deal','date_entree','vm_inscription','vm_avis','fiches_r','actions'];
+var DEAL_DEFAULT_COLS = ['etat','candidat','poste','manager','tjm','nb_jours','commercial','date_deal','date_entree','vm_inscription','vm_avis','fiches_r','actions'];
 var dealVisibleCols = (function(){ try { var s=JSON.parse(localStorage.getItem('sp_deal_cols')||'null'); return s||DEAL_DEFAULT_COLS.slice(); } catch(e){ return DEAL_DEFAULT_COLS.slice(); } })();
+(function(){ try {
+  if (!localStorage.getItem('sp_deal_cols_mgr_added')) {
+    if (dealVisibleCols.indexOf('manager') < 0) {
+      var _iEnt = dealVisibleCols.indexOf('entreprise');
+      var _iCand = dealVisibleCols.indexOf('candidat');
+      var _pos = _iEnt >= 0 ? _iEnt + 1 : (_iCand >= 0 ? _iCand + 1 : dealVisibleCols.length);
+      dealVisibleCols.splice(_pos, 0, 'manager');
+      localStorage.setItem('sp_deal_cols', JSON.stringify(dealVisibleCols));
+    }
+    localStorage.setItem('sp_deal_cols_mgr_added','1');
+  }
+} catch(e){} })();
 var DEAL_VIEWS_KEY = 'sp_deal_views_v1';
 
 function getDealViews(){ try { return JSON.parse(localStorage.getItem(DEAL_VIEWS_KEY)||'[]'); } catch(e){ return []; } }
@@ -11317,6 +11348,20 @@ function getCellValue(d, key){
     case 'tel': return fmt(d.tel);
     case 'poste': return fmt(d.poste);
     case 'entreprise': return fmt(d.entreprise);
+    case 'manager':
+      var mgrName = d.manager || '';
+      if (!mgrName) return '\u2014';
+      var mgrClientId = null;
+      try {
+        var mgrCli = (typeof getClients === 'function') ? getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === (d.entreprise||'').trim().toLowerCase(); }) : null;
+        if (mgrCli) mgrClientId = mgrCli.id;
+      } catch(e) {}
+      if (mgrClientId != null) {
+        return '<span onclick="event.stopPropagation();mainNavTo(\'clients\');setTimeout(function(){openClientPage(' + mgrClientId + ');},120);" '
+          + 'style="color:#4B36EC;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" '
+          + 'title="Ouvrir la fiche client (managers)">' + String(mgrName).replace(/</g,'&lt;') + '</span>';
+      }
+      return fmt(mgrName);
     case 'tjm': return d.tjm ? '<span style="font-weight:600;color:#7343EE;">'+d.tjm+' €</span>' : '—';
     case 'nb_jours': return fmt(d.nb_jours);
     case 'salaire_annuel':
@@ -35521,6 +35566,7 @@ function exportCommHistCSV() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Contrat</label><select id="pl-type-contrat-client" onchange="updateTaciteField()" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Seven</option><option>Client</option></select></div>
         <!-- Adresse siège social (en pleine largeur) -->
         <div style="grid-column:1/-1;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Adresse siège social <span style="font-weight:500;text-transform:none;color:#9E94C4;">(adresse postale du client)</span></label><input id="pl-adresse-siege" type="text" placeholder="Siège social du client (facturation, courrier)" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Date d'entrée / Starter</label><input id="pl-date-entree" type="date" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Date de fin prévisionnelle</label><input id="pl-date-fin" type="date" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Tacite reconduction</label><select id="pl-tacite" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option value="Non">Non</option><option value="Oui">Oui</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Nom signataire</label><input id="pl-nom-signataire" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
@@ -35553,7 +35599,6 @@ function exportCommHistCSV() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Origine deal</label><select id="pl-origine" onchange="onPlCoopTypeChange()" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>Réseau</option><option>LinkedIn</option><option>Job board</option><option>Recommandation</option><option>Cooptation Client</option><option>Cooptation Candidat</option><option>Autre</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">État dossier <span style="font-weight:500;text-transform:none;color:#9E94C4;">(« Signé » est calculé auto)</span></label><select id="pl-etat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Nouveau placement</option><option>En cours</option><option>Annulé</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Type de contrat</label><select id="pl-contrat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>CDI</option><option>CDD</option><option>Portage</option></select></div>
-        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Date d'entrée / Starter</label><input id="pl-date-entree" type="date" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <!-- Adresse d'exécution : champ DEAL (lieu spécifique de la mission, peut différer du siège du client) -->
         <div style="grid-column:1/-1;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Adresse d'exécution <span style="font-weight:500;text-transform:none;color:#9E94C4;">(lieu de la mission)</span></label><input id="pl-adresse-exec" type="text" placeholder="Adresse de réalisation de la mission" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
       </div>
