@@ -3719,8 +3719,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.18h';
-  window.APP_BUILD = 2026061808;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  window.APP_VERSION = 'v2026.06.18m';
+  window.APP_BUILD = 2026061813;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
   // Notification de nouvelle version vers les sessions ouvertes des autres postes
   try {
     setTimeout(function(){ if (typeof _appVersionCheck === 'function') _appVersionCheck(); }, 25000);
@@ -8538,18 +8538,7 @@ function openPlacementPopup(ts) {
         if (existingClient.email_compta && document.getElementById('pl-email-compta')) {
           document.getElementById('pl-email-compta').value = existingClient.email_compta;
         }
-        // Si pas de signataire au niveau client, chercher manager correspondant
-        if (!document.getElementById('pl-nom-signataire').value && sim.manager) {
-          var mgrName = sim.manager.trim().toLowerCase();
-          var existingMgr = (existingClient.managers || []).find(function(m){
-            return (m.name||'').trim().toLowerCase() === mgrName;
-          });
-          if (existingMgr) {
-            document.getElementById('pl-nom-signataire').value = existingMgr.name || '';
-            document.getElementById('pl-tel-signataire').value = existingMgr.tel || '';
-            document.getElementById('pl-email-signataire').value = existingMgr.email || '';
-          }
-        }
+        // Signataire : uniquement depuis la fiche client — pas de remplissage auto par le manager
         // PRÉ-REMPLISSAGE TÉLÉPHONE/EMAIL MANAGER (indépendant du signataire)
         // Cherche le manager du placement dans la fiche client et pré-remplit
         // pl-tel-client (Téléphone manager) et pl-email-client (Email manager)
@@ -9556,16 +9545,11 @@ function onManagerSelect() {
   // On écrase systématiquement à la sélection d'un manager existant pour refléter le bon manager.
   if (mgr.tel) document.getElementById('pl-tel-client').value = mgr.tel;
   if (mgr.email) document.getElementById('pl-email-client').value = mgr.email;
-  // Signataire : si la fiche client a un signataire DÉDIÉ, on le préserve (ne pas écraser avec le manager)
+  // Signataire : uniquement depuis la fiche client — pas de remplissage auto par le manager
   if (cl.nom_signataire) {
     if (!document.getElementById('pl-nom-signataire').value)   document.getElementById('pl-nom-signataire').value   = cl.nom_signataire || '';
     if (!document.getElementById('pl-tel-signataire').value)   document.getElementById('pl-tel-signataire').value   = cl.tel_signataire || '';
     if (!document.getElementById('pl-email-signataire').value) document.getElementById('pl-email-signataire').value = cl.email_signataire || '';
-  } else {
-    document.getElementById('pl-tel-signataire').value = mgr.tel || '';
-    document.getElementById('pl-email-signataire').value = mgr.email || '';
-    var sigField = document.getElementById('pl-nom-signataire');
-    if (sigField && !sigField.value) sigField.value = mgr.name || '';
   }
 }
 
@@ -9751,6 +9735,7 @@ function savePlacement() {
   // Envoi automatique de notification interne uniquement pour nouveau placement
   if (isNewDeal) {
     try { sendPlacementNotificationEmail(deal); } catch(e) { console.error('[Notif] Exception:', e); }
+    try { if (typeof _maybeSendBadPayerAlert==='function') _maybeSendBadPayerAlert(deal); } catch(e) { console.error('[BadPayerAlert] Exception:', e); }
     // Mail au commercial avec PJ (docs + bulletin simu) — DÉSACTIVÉ TEMPORAIREMENT À LA DEMANDE
     // try { sendPlacementCommercialEmail(deal); } catch(e) { console.error('[PlacementCommercial] Exception:', e); }
   }
@@ -27881,6 +27866,7 @@ function mergeClients(remote) {
         var fields = ['tel','email','adresse','secteur','delai_paiement','banque','type_contrat_client',
                       'nom_signataire','tel_signataire','email_signataire',
                       'prenom_compta','nom_compta','email_compta',
+                      'mauvais_payeur_manuel',
                       'commentaire','updated'];
         fields.forEach(function(f){
           if (rc[f] !== undefined && rc[f] !== null && rc[f] !== '') nameMap[key][f] = rc[f];
@@ -27924,6 +27910,19 @@ var currentManagerIdx = null;
 
 function getClients() { try { return JSON.parse(localStorage.getItem(CLIENTS_KEY)||'[]'); } catch(e){ return []; } }
 function saveClientsArr(arr) { localStorage.setItem(CLIENTS_KEY, JSON.stringify(arr)); if (typeof odAutoSync === 'function') odAutoSync(); }
+function _clientUnpaidCount(cl){
+  if(!cl) return 0; var nm=(cl.name||'').trim().toLowerCase(); if(!nm) return 0;
+  var imp=[]; try{ imp=(typeof getImpayes==='function')?getImpayes():JSON.parse(localStorage.getItem('sp_impayes_v1')||'[]'); }catch(e){ imp=[]; }
+  var now=Date.now();
+  return (imp||[]).filter(function(r){
+    if(!r || (r.client||'').trim().toLowerCase()!==nm || r.statut==='paye') return false;
+    var due=(typeof _parseImpayeDate==='function') ? _parseImpayeDate(r.date_echeance) : (r.date_echeance?new Date(r.date_echeance):null);
+    var t = due ? (due.getTime ? due.getTime() : +due) : NaN;
+    return !isNaN(t) && t < now;
+  }).length;
+}
+function _clientIsBadPayer(cl){ if(!cl) return false; if(cl.mauvais_payeur_manuel) return true; return _clientUnpaidCount(cl)>=2; }
+function _clientBadPayerReason(cl){ if(cl && cl.mauvais_payeur_manuel) return 'marqu\u00e9 manuellement comme mauvais payeur'; var n=_clientUnpaidCount(cl); return n+' facture(s) en retard'; }
 
 function closeClientFiche() {
   var m = document.getElementById('modal-client-fiche');
@@ -28405,6 +28404,10 @@ function buildClientPageHTML(cl) {
           + '<option value="Client"' + (tcc === 'Client' ? ' selected' : '') + '>Client</option>'
           + '</select></div>';
       })()
+    + '<div><label style="' + LB + '">Statut paiement</label>'
+    +   '<label style="display:flex;align-items:center;gap:8px;padding:9px 12px;border:1.5px solid ' + (cl.mauvais_payeur_manuel ? '#E24B4A' : '#E4E0FA') + ';border-radius:9px;font-size:13px;cursor:pointer;background:' + (cl.mauvais_payeur_manuel ? '#FBE3E1' : '#fff') + ';color:' + (cl.mauvais_payeur_manuel ? '#C0392B' : '#1A1033') + ';font-weight:' + (cl.mauvais_payeur_manuel ? '700' : '500') + ';box-sizing:border-box;">'
+    +     '<input type="checkbox" ' + (cl.mauvais_payeur_manuel ? 'checked' : '') + ' onchange="toggleClientBadPayer(' + cl.id + ', this.checked)" style="width:16px;height:16px;cursor:pointer;accent-color:#C0392B;"> \u26a0 Mauvais payeur (manuel)'
+    +   '</label></div>'
     + '</div>'
     + '<div style="margin-top:14px;"><label style="' + LB + '">Commentaire</label>'
     +   '<textarea data-field="commentaire" data-clid="' + cl.id + '" onchange="updateClientField(this)"'
@@ -28621,6 +28624,11 @@ function buildClientPageHTML(cl) {
     simulations: tabSimulationsHtml
   };
 
+  // ── Statut mauvais payeur (≥2 factures non réglées, ou marqué manuellement) ──
+  var _isBadPayer = (typeof _clientIsBadPayer==='function') ? _clientIsBadPayer(cl) : false;
+  var _badPayerReason = (typeof _clientBadPayerReason==='function') ? _clientBadPayerReason(cl) : '';
+  var _heroGrad = _isBadPayer ? 'linear-gradient(135deg,#7A1B16 0%, #C0392B 50%, #E24B4A 100%)' : 'linear-gradient(135deg,#2A1E82 0%, #4B36EC 50%, #7343EE 100%)';
+
   // ── Rendu ──
   return '<div class="client-page-container" style="padding:4px 0 24px;max-width:1200px;">'
     // Breadcrumb + retour + barre d'édition
@@ -28638,8 +28646,10 @@ function buildClientPageHTML(cl) {
     +   '</div>'
     + '</div>'
 
+    // Bandeau MAUVAIS PAYEUR
+    + (_isBadPayer ? '<div style="background:linear-gradient(135deg,#E24B4A,#C0392B);color:#fff;border-radius:12px;padding:13px 18px;margin-bottom:12px;display:flex;align-items:center;gap:12px;box-shadow:0 6px 20px rgba(192,57,43,0.32);"><span style="font-size:22px;line-height:1;">\u26a0</span><div><div style="font-size:14.5px;font-weight:800;letter-spacing:0.02em;">ATTENTION \u2014 MAUVAIS PAYEUR</div><div style="font-size:11.5px;opacity:0.93;margin-top:2px;">' + _badPayerReason + '</div></div></div>' : '')
     // Hero compact gradient (style candidat)
-    + '<div style="position:relative;background:linear-gradient(135deg,#2A1E82 0%, #4B36EC 50%, #7343EE 100%);border-radius:14px 14px 0 0;padding:14px 20px;overflow:hidden;box-shadow:0 6px 20px rgba(75,54,236,0.22);">'
+    + '<div style="position:relative;background:' + _heroGrad + ';border-radius:14px 14px 0 0;padding:14px 20px;overflow:hidden;box-shadow:0 6px 20px ' + (_isBadPayer ? 'rgba(192,57,43,0.30)' : 'rgba(75,54,236,0.22)') + ';">'
     +   '<div style="position:absolute;top:-30px;right:-30px;width:140px;height:140px;border-radius:50%;background:radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);pointer-events:none;"></div>'
     +   '<div style="position:relative;display:flex;align-items:center;gap:14px;">'
     +     '<div style="width:46px;height:46px;border-radius:12px;background:rgba(255,255,255,0.16);backdrop-filter:blur(8px);border:1.5px solid rgba(255,255,255,0.28);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;flex-shrink:0;letter-spacing:-0.03em;">' + initials + '</div>'
@@ -29312,6 +29322,14 @@ function updateClientField(input) {
   renderClients();
 }
 
+function toggleClientBadPayer(clid, checked){
+  var clients=getClients(); var idx=clients.findIndex(function(c){return c.id===clid;}); if(idx<0) return;
+  clients[idx].mauvais_payeur_manuel = !!checked;
+  clients[idx].updated = new Date().toLocaleDateString('fr-FR');
+  saveClientsArr(clients);
+  if (typeof openClientPage==='function') openClientPage(clid);
+}
+
 function addManager(id) {
   var name = (document.getElementById('new-mgr-name-'+id)||{}).value||'';
   if (!name.trim()) { alert('Le nom est obligatoire.'); return; }
@@ -29708,6 +29726,48 @@ function getPlacementRecipients(nomCandidat) {
 }
 
 // Envoi automatique via Microsoft Graph
+function _maybeSendBadPayerAlert(deal){
+  try{
+    if(!deal || !deal.entreprise || !odToken) return;
+    var nm=(deal.entreprise||'').trim().toLowerCase();
+    var cl=(typeof getClients==='function')?getClients().find(function(c){return (c.name||'').trim().toLowerCase()===nm;}):null;
+    var probe = cl || { name: deal.entreprise };
+    if(typeof _clientIsBadPayer!=='function' || !_clientIsBadPayer(probe)) return;
+    _sendBadPayerAlertEmail(deal, _clientBadPayerReason(probe));
+  }catch(e){ console.error('[BadPayerAlert]', e); }
+}
+function _sendBadPayerAlertEmail(deal, reason){
+  try{
+    if(!odToken) return;
+    var em=getInternalEmails(); var to=[em.joanne, em.david].filter(Boolean);
+    to=to.filter(function(v,i){ return to.indexOf(v)===i; }); if(!to.length) return;
+    var ent=(deal.entreprise||'\u2014');
+    var subject='\u26a0 Client MAUVAIS PAYEUR \u2014 placement avec '+ent;
+    var html=''
+      + emailWrapperOpen()
+      + buildEmailHeader({ title:'\u26a0 Placement avec un client mauvais payeur', subtitle: ent })
+      + emailBodyOpen()
+      + '<div style="background:#FBE3E1;border:1.5px solid #E24B4A;border-radius:10px;padding:14px 16px;margin-bottom:16px;">'
+      +   '<div style="font-size:15px;font-weight:800;color:#C0392B;">\u26a0 ATTENTION \u2014 MAUVAIS PAYEUR</div>'
+      +   '<div style="font-size:12.5px;color:#7A2A22;margin-top:6px;line-height:1.5;">Un placement vient d\'\u00eatre r\u00e9alis\u00e9 avec <strong>'+String(ent).replace(/</g,'&lt;')+'</strong>, identifi\u00e9 comme <strong>mauvais payeur</strong> ('+reason+'). Vigilance recommand\u00e9e sur les conditions et le suivi des r\u00e8glements.</div>'
+      + '</div>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+      +   '<tr><td style="padding:6px 0;color:#6B5E9C;width:40%;">Client</td><td style="padding:6px 0;font-weight:700;">'+String(ent).replace(/</g,'&lt;')+'</td></tr>'
+      +   '<tr><td style="padding:6px 0;color:#6B5E9C;">Candidat</td><td style="padding:6px 0;font-weight:600;">'+((deal.prenom||'')+' '+(deal.nom||'')).trim()+'</td></tr>'
+      +   (deal.poste?'<tr><td style="padding:6px 0;color:#6B5E9C;">Poste</td><td style="padding:6px 0;">'+deal.poste+'</td></tr>':'')
+      +   '<tr><td style="padding:6px 0;color:#6B5E9C;">TJM</td><td style="padding:6px 0;">'+(deal.tjm?deal.tjm+' \u20ac/j':'\u2014')+'</td></tr>'
+      +   '<tr><td style="padding:6px 0;color:#6B5E9C;">Commercial</td><td style="padding:6px 0;">'+(deal.commercial||'\u2014')+'</td></tr>'
+      +   (deal.date_entree?'<tr><td style="padding:6px 0;color:#6B5E9C;">Date d\'entr\u00e9e</td><td style="padding:6px 0;">'+deal.date_entree+'</td></tr>':'')
+      + '</table>'
+      + '<div style="margin-top:16px;padding-top:12px;border-top:1px solid #E4E0FA;font-size:11px;color:#9E9E9E;">Alerte automatique \u2014 Seven Portage Simulateur</div>'
+      + emailBodyClose()
+      + emailWrapperClose();
+    var payload={ message:{ subject:subject, body:{contentType:'HTML',content:html}, toRecipients: to.map(function(e){return {emailAddress:{address:e}};}) }, saveToSentItems:true };
+    fetch('https://graph.microsoft.com/v1.0/me/sendMail',{ method:'POST', headers:{'Authorization':'Bearer '+odToken,'Content-Type':'application/json'}, body:JSON.stringify(payload) })
+      .then(function(r){ if(r.ok||r.status===202){ if(typeof showNotifToast==='function') showNotifToast('Alerte mauvais payeur envoy\u00e9e \u00e0 Joanne & David'); } else { console.error('[BadPayerAlert] status', r.status); } })
+      .catch(function(e){ console.error('[BadPayerAlert]', e); });
+  }catch(e){ console.error('[BadPayerAlert]', e); }
+}
 function sendPlacementNotificationEmail(deal) {
   if (!odToken) {
     console.warn('[Notification] OneDrive non connecté, mail non envoyé');
@@ -30107,6 +30167,7 @@ function refreshCustomSelectOptions() {
   var map = {
     'pl-secteur': ['-- Sélectionner --'].concat(lists.secteurs),
     'pl-origine': ['-- Sélectionner --'].concat(origines),
+    'source_origine': ['-- Sélectionner --'].concat(origines),
     'pl-commercial': ['-- Sélectionner --'].concat(lists.commerciaux || ['Norman','David','Rayan','Esteban','Sacha','Farah','Joanne']),
     'pl-contrat': ['-- Sélectionner --'].concat(lists.types_contrat),
     'pl-delai-paiement': ['-- Sélectionner --'].concat(lists.delais_paiement),
@@ -30117,7 +30178,8 @@ function refreshCustomSelectOptions() {
     if (!sel) return;
     var cur = sel.value;
     sel.innerHTML = map[id].map(function(o) {
-      return '<option value="' + o + '"' + (o === cur ? ' selected' : '') + '>' + o + '</option>';
+      var ov = (o === '-- Sélectionner --') ? '' : o;
+      return '<option value="' + ov + '"' + (ov === cur ? ' selected' : '') + '>' + o + '</option>';
     }).join('');
   });
 }
@@ -33838,22 +33900,29 @@ function renderCommDealsGlobalView() {
   var clientSet = {}; all.forEach(function(d){ var e=(d.entreprise||'').trim(); if(e) clientSet[e]=1; });
   var clientList = Object.keys(clientSet).sort(function(a,b){ return a.localeCompare(b); });
 
+  // ── Overrides commission (mêmes que la vue par commercial) : % ajusté, ajouts, suppressions ──
+  var _dgFg = (typeof getCommFgOverrides==='function') ? getCommFgOverrides() : {};
+  var _dgRemovedIds = {}; if (typeof getCommRemoved==='function'){ var _rm=getCommRemoved(); Object.keys(_rm).forEach(function(k){ (_rm[k]||[]).forEach(function(id){ _dgRemovedIds[String(id)]=1; }); }); }
+  var _dgManualIds = {}; if (typeof getCommManualIncludes==='function'){ var _mi=getCommManualIncludes(); Object.keys(_mi).forEach(function(k){ (_mi[k]||[]).forEach(function(id){ _dgManualIds[String(id)]=1; }); }); }
+  function _dgEffActif(d){ if(_dgRemovedIds[String(d.id)]) return false; if(_dgManualIds[String(d.id)]) return d.etat!=='Annulé'; return _dgIsActif(d); }
+  function _dgEffFg(d){ return (_dgFg[d.id]!==undefined) ? (parseFloat(_dgFg[d.id])||0) : (parseFloat(d.frais_gestion)||0); }
+
   var deals = all.filter(function(d){
     if (_dgFilterClient && (d.entreprise||'').trim() !== _dgFilterClient) return false;
     if (_dgFilterMonth !== '') { var dd=_dgDealDate(d); if (!dd || (dd.getMonth()+1) !== parseInt(_dgFilterMonth)) return false; }
-    if (_dgFilterStatut === 'actif' && !_dgIsActif(d)) return false;
-    if (_dgFilterStatut === 'inactif' && _dgIsActif(d)) return false;
+    if (_dgFilterStatut === 'actif' && !_dgEffActif(d)) return false;
+    if (_dgFilterStatut === 'inactif' && _dgEffActif(d)) return false;
     return true;
   });
 
   // ── KPIs (sur le périmètre filtré) ──
-  var actifs = deals.filter(_dgIsActif);
+  var actifs = deals.filter(_dgEffActif);
   var porteSet = {}; actifs.forEach(function(d){ var k=((d.email||'').trim().toLowerCase())||_personKey(d.prenom,d.nom); if(k) porteSet[k]=1; });
   var nbPorteActif = Object.keys(porteSet).length;
   var nbPlacements = deals.filter(function(d){ return d.etat !== 'Annulé'; }).length;
   var tjmVals = actifs.map(function(d){ return parseFloat(d.tjm)||0; }).filter(function(v){ return v>0; });
   var tjmMoy = tjmVals.length ? Math.round(tjmVals.reduce(function(a,b){return a+b;},0)/tjmVals.length) : 0;
-  var fgVals = actifs.map(function(d){ return parseFloat(d.frais_gestion)||0; }).filter(function(v){ return v>0; });
+  var fgVals = actifs.map(function(d){ return _dgEffFg(d); }).filter(function(v){ return v>0; });
   var fgMoy = fgVals.length ? (fgVals.reduce(function(a,b){return a+b;},0)/fgVals.length) : 0;
   var actByClient = {}; actifs.forEach(function(d){ var e=(d.entreprise||'').trim()||'—'; if(!actByClient[e]) actByClient[e]={}; var k=((d.email||'').trim().toLowerCase())||_personKey(d.prenom,d.nom); if(k) actByClient[e][k]=1; });
   var topActif = {n:'—',c:0}; Object.keys(actByClient).forEach(function(e){ var c=Object.keys(actByClient[e]).length; if(c>topActif.c) topActif={n:e,c:c}; });
@@ -33945,13 +34014,19 @@ function renderCommDealsGlobalView() {
         }
       } catch(e) {}
       var tjmCell = (parseFloat(d.tjm)||0) ? (parseInt(d.tjm) + ' €/j') : '—';
-      var fgCell = (parseFloat(d.frais_gestion)||0) ? (parseFloat(d.frais_gestion).toFixed(1).replace(/\.0$/,'') + ' %') : '—';
-      var actif = _dgIsActif(d);
+      var _fgOv = (_dgFg[d.id] !== undefined);
+      var _fgEff = _dgEffFg(d);
+      var fgCell = _fgEff ? ('<span style="' + (_fgOv?'color:#4B36EC;font-weight:700;':'') + '">' + _fgEff.toFixed(1).replace(/\.0$/,'') + ' %</span>' + (_fgOv?' <span title="Ajusté pour la commission" style="color:#7343EE;font-size:10px;">\u270e</span>':'')) : '—';
+      var _isRemoved = !!_dgRemovedIds[String(d.id)];
+      var _isManual = !!_dgManualIds[String(d.id)];
+      var actif = _dgEffActif(d);
       var statutCell = (d.etat === 'Annulé')
         ? '<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#FBE3E1;color:#C0392B;">Annulé</span>'
-        : (actif
-            ? '<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#DEF7EC;color:#1D9E75;">● Actif</span>'
-            : '<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#EEECF7;color:#6B5E9C;">○ Inactif</span>');
+        : (_isRemoved
+            ? '<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#FBE3E1;color:#C0392B;">\u2715 Retiré</span>'
+            : (actif
+                ? ('<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#DEF7EC;color:#1D9E75;">● Actif</span>' + (_isManual?' <span style="display:inline-block;padding:2px 7px;border-radius:8px;font-size:9.5px;font-weight:700;background:#EDE7FF;color:#4B36EC;vertical-align:middle;">AJOUTÉ</span>':''))
+                : '<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#EEECF7;color:#6B5E9C;">○ Inactif</span>'));
 
       html += '<tr style="border-top:1px solid #F0EDF9;">'
         + '<td style="padding:10px 12px;white-space:nowrap;color:#1A1033;font-weight:600;">' + moisCell + '</td>'
