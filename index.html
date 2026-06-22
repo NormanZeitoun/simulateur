@@ -3719,8 +3719,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.18m';
-  window.APP_BUILD = 2026061813;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  window.APP_VERSION = 'v2026.06.18n';
+  window.APP_BUILD = 2026061814;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
   // Notification de nouvelle version vers les sessions ouvertes des autres postes
   try {
     setTimeout(function(){ if (typeof _appVersionCheck === 'function') _appVersionCheck(); }, 25000);
@@ -7410,6 +7410,7 @@ var _SHARED_CONFIG_KEYS = [
   { ls: 'sp_commission_fg_overrides_v1', field: 'commission_fg_overrides' },
   { ls: 'sp_commission_manual_includes_v1', field: 'commission_manual_includes' },
   { ls: 'sp_commission_removed_v1', field: 'commission_removed' },
+  { ls: 'sp_commission_overrides_ts_v1', field: 'commission_overrides_ts' },
   { ls: 'sp_matching_jours_v1',      field: 'matching_jours' },
   { ls: 'sp_custom_doc_types_v1',    field: 'custom_doc_types' },
   { ls: 'sp_custom_client_doc_types_v1', field: 'custom_client_doc_types' },
@@ -7430,7 +7431,24 @@ function _collectSharedConfigs() {
 
 function _applySharedConfigs(shared) {
   if (!shared || typeof shared !== 'object') return;
+  // Overrides commission : horodatage DÉDIÉ (découplé du blob app_settings) pour éviter l'écrasement par d'autres configs
+  var _commOvrFields = { 'commission_fg_overrides':'sp_commission_fg_overrides_v1', 'commission_manual_includes':'sp_commission_manual_includes_v1', 'commission_removed':'sp_commission_removed_v1' };
+  var _remoteCommTs = +(shared.commission_overrides_ts || 0);
+  var _localCommTs = +(localStorage.getItem('sp_commission_overrides_ts_v1') || 0);
+  var _applyComm = _remoteCommTs > _localCommTs;
   _SHARED_CONFIG_KEYS.forEach(function(c) {
+    // Horodatage dédié : on garde toujours le plus récent
+    if (c.field === 'commission_overrides_ts') {
+      try { localStorage.setItem(c.ls, String(Math.max(_localCommTs, _remoteCommTs))); } catch(e){}
+      return;
+    }
+    // Stores commission : appliqués SEULEMENT si la version distante est plus récente (sinon on garde le local)
+    if (_commOvrFields[c.field]) {
+      if (_applyComm && shared[c.field] !== undefined && shared[c.field] !== null) {
+        try { localStorage.setItem(c.ls, JSON.stringify(shared[c.field])); } catch(e){}
+      }
+      return;
+    }
     if (shared[c.field] === undefined || shared[c.field] === null) return;
     // CAS SPÉCIAL TOMBSTONES : merge UNION avec les tombstones locaux
     // (pour ne pas écraser les suppressions locales avec celles du remote)
@@ -33571,9 +33589,9 @@ function saveCommExclusions(obj) {
 var COMM_FG_OVERRIDES_KEY = 'sp_commission_fg_overrides_v1';
 var COMM_MANUAL_INCLUDES_KEY = 'sp_commission_manual_includes_v1';
 function getCommFgOverrides() { try { return JSON.parse(localStorage.getItem(COMM_FG_OVERRIDES_KEY) || '{}'); } catch(e){ return {}; } }
-function saveCommFgOverrides(obj) { localStorage.setItem(COMM_FG_OVERRIDES_KEY, JSON.stringify(obj)); if (typeof _touchAppSettings==='function') _touchAppSettings(); if (typeof odAutoSync==='function') odAutoSync(); }
+function saveCommFgOverrides(obj) { localStorage.setItem(COMM_FG_OVERRIDES_KEY, JSON.stringify(obj)); try{localStorage.setItem('sp_commission_overrides_ts_v1',String(Date.now()));}catch(e){} if (typeof _touchAppSettings==='function') _touchAppSettings(); if (typeof odAutoSync==='function') odAutoSync(); }
 function getCommManualIncludes() { try { return JSON.parse(localStorage.getItem(COMM_MANUAL_INCLUDES_KEY) || '{}'); } catch(e){ return {}; } }
-function saveCommManualIncludes(obj) { localStorage.setItem(COMM_MANUAL_INCLUDES_KEY, JSON.stringify(obj)); if (typeof _touchAppSettings==='function') _touchAppSettings(); if (typeof odAutoSync==='function') odAutoSync(); }
+function saveCommManualIncludes(obj) { localStorage.setItem(COMM_MANUAL_INCLUDES_KEY, JSON.stringify(obj)); try{localStorage.setItem('sp_commission_overrides_ts_v1',String(Date.now()));}catch(e){} if (typeof _touchAppSettings==='function') _touchAppSettings(); if (typeof odAutoSync==='function') odAutoSync(); }
 function _commPeriodKey(commercial, year, month) { return (commercial||'').trim().toLowerCase() + '|' + year + '|' + month; }
 function setCommFgOverride(dealId, val) {
   var o = getCommFgOverrides();
@@ -33599,7 +33617,7 @@ function editCommFgOverride(dealId) {
 // Retrait d'un deal de la commission (liste 'removed' par commercial+période)
 var COMM_REMOVED_KEY = 'sp_commission_removed_v1';
 function getCommRemoved() { try { return JSON.parse(localStorage.getItem(COMM_REMOVED_KEY) || '{}'); } catch(e){ return {}; } }
-function saveCommRemoved(obj) { localStorage.setItem(COMM_REMOVED_KEY, JSON.stringify(obj)); if (typeof _touchAppSettings==='function') _touchAppSettings(); if (typeof odAutoSync==='function') odAutoSync(); }
+function saveCommRemoved(obj) { localStorage.setItem(COMM_REMOVED_KEY, JSON.stringify(obj)); try{localStorage.setItem('sp_commission_overrides_ts_v1',String(Date.now()));}catch(e){} if (typeof _touchAppSettings==='function') _touchAppSettings(); if (typeof odAutoSync==='function') odAutoSync(); }
 function _commRemovedIds(commercial, year, month) {
   var r = getCommRemoved();
   if (month !== null && month !== undefined) return (r[_commPeriodKey(commercial, year, month)] || []).map(String);
