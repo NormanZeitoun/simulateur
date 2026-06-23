@@ -3720,8 +3720,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.18r';
-  window.APP_BUILD = 2026061818;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  window.APP_VERSION = 'v2026.06.18s';
+  window.APP_BUILD = 2026061819;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
   // Notification de nouvelle version vers les sessions ouvertes des autres postes
   try {
     setTimeout(function(){ if (typeof _appVersionCheck === 'function') _appVersionCheck(); }, 25000);
@@ -11739,8 +11739,13 @@ function convertStandByToPlacement(dealId){
   var deals=getDeals(); var idx=deals.findIndex(function(x){return x.id===dealId;}); if(idx<0) return;
   var d=deals[idx];
   var miss=_placementMissing(d);
-  if(miss.length){ alert('Impossible de convertir : \u00e9l\u00e9ments manquants :\n\n\u2022 '+miss.join('\n\u2022 ')+'\n\nCompl\u00e9tez la fiche (\u270e Modifier) puis r\u00e9essayez.'); return; }
-  if(!confirm('Convertir ce deal en placement d\u00e9finitif ?\n\nLe deal sera activ\u00e9 et le mail de notification sera envoy\u00e9.')) return;
+  var msg;
+  if(miss.length){
+    msg = '\u26a0 \u00c9l\u00e9ments encore manquants :\n\n\u2022 '+miss.join('\n\u2022 ')+'\n\nConvertir quand m\u00eame en placement d\u00e9finitif ?\n(Le deal sera activ\u00e9 et le mail sera envoy\u00e9.)';
+  } else {
+    msg = 'Convertir ce deal en placement d\u00e9finitif ?\n\nLe deal sera activ\u00e9 et le mail de notification sera envoy\u00e9.';
+  }
+  if(!confirm(msg)) return;
   d.stand_by=false; d.updated_at=Date.now();
   deals[idx]=d; saveDeals(deals);
   try{ sendPlacementNotificationEmail(d); }catch(e){ console.error('[Notif] Exception:', e); }
