@@ -1983,6 +1983,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="Signé">Signé</option>
           <option value="Annulé">Annulé</option>
           <option value="Sorti des effectifs">Sorti des effectifs</option>
+          <option value="__standby__">⏸ Stand by</option>
         </select>
         <label id="deal-hide-annules-label" title="Quand cochée, les placements annulés sont masqués du tableau. Sélectionner 'État: Annulé' ci-contre annule temporairement ce filtre." style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;color:#1A1033;background:#fff;cursor:pointer;user-select:none;">
           <input type="checkbox" id="deal-hide-annules" checked onchange="dealHideAnnules=this.checked;renderDeals();" style="width:14px;height:14px;cursor:pointer;accent-color:#7343EE;margin:0;">
@@ -3719,8 +3720,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.18n';
-  window.APP_BUILD = 2026061814;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  window.APP_VERSION = 'v2026.06.18r';
+  window.APP_BUILD = 2026061818;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
   // Notification de nouvelle version vers les sessions ouvertes des autres postes
   try {
     setTimeout(function(){ if (typeof _appVersionCheck === 'function') _appVersionCheck(); }, 25000);
@@ -9745,13 +9746,14 @@ function savePlacement() {
   // Capturer l'ANCIEN nom d'entreprise du deal (avant remplacement) pour pouvoir
   // renommer la fiche client si l'utilisateur a modifié le nom dans la popup placement.
   var _ancienNomEntreprise = (idx >= 0 && deals[idx]) ? (deals[idx].entreprise || '') : '';
+  if (isNewDeal) deal.stand_by = !_placementIsComplete(deal);
   if (idx >= 0) deals[idx] = Object.assign({}, deals[idx], deal); else deals.unshift(deal);
   saveDeals(deals);
   // Visite médicale : créer (si nouveau placement) ou mettre à jour la ligne liée
   try { if (typeof _vmSyncFromDeal === 'function') _vmSyncFromDeal(deal, isNewDeal); } catch(e) { console.warn('[VM] sync placement:', e); }
 
-  // Envoi automatique de notification interne uniquement pour nouveau placement
-  if (isNewDeal) {
+  // Envoi automatique de notification interne uniquement pour nouveau placement (pas si Stand by)
+  if (isNewDeal && !deal.stand_by) {
     try { sendPlacementNotificationEmail(deal); } catch(e) { console.error('[Notif] Exception:', e); }
     try { if (typeof _maybeSendBadPayerAlert==='function') _maybeSendBadPayerAlert(deal); } catch(e) { console.error('[BadPayerAlert] Exception:', e); }
     // Mail au commercial avec PJ (docs + bulletin simu) — DÉSACTIVÉ TEMPORAIREMENT À LA DEMANDE
@@ -10493,7 +10495,8 @@ function renderDeals() {
   if (dealHideAnnules && dealFilterEtat !== 'Annulé') {
     deals = deals.filter(function(d) { return d.etat !== 'Annulé'; });
   }
-  if (dealFilterEtat !== '__all__') deals = deals.filter(function(d) { return d.etat === dealFilterEtat; });
+  if (dealFilterEtat === '__standby__') deals = deals.filter(function(d) { return d.stand_by === true; });
+  else if (dealFilterEtat !== '__all__') deals = deals.filter(function(d) { return d.etat === dealFilterEtat && !d.stand_by; });
   if (dealFilterComm === '__mine__') {
     var myName = (typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
     // FIX : comparaison tolérante (prénom, casse, espaces) — un deal "Norman"
@@ -11345,7 +11348,7 @@ function getCellValue(d, key){
   var ETAT_COLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
   var fmt=function(v){ return (v===null||v===undefined||v==='') ? '—' : String(v); };
   switch(key){
-    case 'etat': var co=ETAT_COLORS[d.etat]||'#6B5E9C'; return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:'+co+';white-space:nowrap;">'+(d.etat||'—')+'</span>';
+    case 'etat': if (d.stand_by) return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:#E08600;white-space:nowrap;">\u23f8 Stand by</span>'; var co=ETAT_COLORS[d.etat]||'#6B5E9C'; return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:'+co+';white-space:nowrap;">'+(d.etat||'—')+'</span>';
     case 'candidat': return '<span onclick="event.stopPropagation();openCandidatByEmail(\''+(d.email||'')+'\')" style="font-weight:600;color:#7343EE;cursor:pointer;text-decoration:underline;" title="Voir la fiche candidat">'+(d.prenom||'')+' '+(d.nom||'')+'</span>';
     case 'email': return fmt(d.email);
     case 'tel': return fmt(d.tel);
@@ -11661,10 +11664,11 @@ function getCellValue(d, key){
     case 'fiches_r':       return _dealFichesRSelect(d);
     case 'actions':
       var isCancelled = (d.etat === 'Annulé');
+      var convBtn = d.stand_by ? '<button onclick="convertStandByToPlacement('+d.id+')" title="Convertir en placement d\u00e9finitif (active le deal + envoie le mail)" style="padding:3px 8px;background:#1D9E75;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;margin-right:3px;">\u2713 Convertir</button>' : '';
       var annulerBtn = isCancelled
         ? '<button onclick="restoreDeal('+d.id+')" title="Restaurer (annuler l\'annulation)" style="padding:3px 7px;background:#F0FDF4;color:#1D9E75;border:1.5px solid #9FE1CB;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#8634;</button>'
         : '<button onclick="cancelDeal('+d.id+')" title="Annuler le placement" style="padding:3px 7px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#10060;</button>';
-      return '<button onclick="openPlacementPopup('+d.sim_ts+')" title="Modifier" style="padding:3px 7px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#9998;</button>'
+      return convBtn + '<button onclick="openPlacementPopup('+d.sim_ts+')" title="Modifier" style="padding:3px 7px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#9998;</button>'
            + '<button onclick="openSortiePopup('+d.sim_ts+')" title="Sortie" style="padding:3px 7px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#128683;</button>'
            + annulerBtn
            + '<button onclick="openSimFromDeal('+d.sim_ts+')" title="Voir simulation" style="padding:3px 7px;background:#F0FDF4;color:#1D9E75;border:1.5px solid #9FE1CB;border-radius:5px;font-size:11px;cursor:pointer;margin-right:2px;">&#128200;</button>'
@@ -11690,6 +11694,60 @@ function renderOnboardingSelect(d, key) {
     return '<option value="' + o + '"' + (o===current?' selected':'') + '>' + (o || '—') + '</option>';
   }).join('');
   return '<select onchange="updateDealField(' + d.id + ',\'' + key + '\',this.value);event.stopPropagation();" onclick="event.stopPropagation();" style="padding:2px 6px;border-radius:5px;border:1px solid #E4E0FA;font-size:10px;font-weight:700;background:' + bgStyle + ';color:' + fg + ';cursor:pointer;">' + opts + '</select>';
+}
+
+// ── Stand by : un placement est complet si toutes ces conditions sont remplies ──
+function _placementMissing(deal){
+  if(!deal) return [];
+  var miss=[];
+  function need(v,label){ if(!String(v==null?'':v).trim()) miss.push(label); }
+  // Candidat
+  need(deal.prenom, 'Prénom du candidat');
+  need(deal.nom, 'Nom du candidat');
+  need(deal.email, 'Email du candidat');
+  need(deal.tel, 'Téléphone du candidat');
+  need(deal.poste, 'Poste');
+  // Client
+  need(deal.entreprise, 'Entreprise (client)');
+  need(deal.manager, 'Manager / contact');
+  need(deal.tel_client, 'Téléphone manager');
+  need(deal.email_client, 'Email manager');
+  need(deal.adresse_siege, 'Adresse siège');
+  need(deal.adresse_exec, "Adresse d'exécution");
+  need(deal.type_contrat_client, 'Type de contrat');
+  need(deal.date_fin, 'Date de fin prévisionnelle');
+  need(deal.delai_paiement, 'Délai de paiement');
+  need(deal.banque, 'Banque');
+  // Deal
+  need(deal.commercial, 'Commercial');
+  need(deal.origine, 'Origine');
+  need(deal.etat, 'État');
+  need(deal.date_entree, "Date d'entrée");
+  // ── Exceptions ──
+  // Secteur d'activité : EXEMPTÉ (jamais bloquant)
+  // Service comptable : au moins 1 des 3
+  var hasCompta = String(deal.prenom_compta||'').trim() || String(deal.nom_compta||'').trim() || String(deal.email_compta||'').trim();
+  if(!hasCompta) miss.push('Service comptable (au moins prénom, nom ou email)');
+  // Salarié étranger : titre de séjour requis seulement si coché
+  if(deal.salarie_etranger && !String(deal.type_sejour||'').trim()) miss.push('Titre de séjour (salarié étranger coché)');
+  // « Nos contrats » (Seven) : au moins l'email du signataire (nom/tél non requis)
+  if(String(deal.type_contrat_client||'')==='Seven' && !String(deal.email_signataire||'').trim()) miss.push('Email du signataire (« Nos contrats »)');
+  return miss;
+}
+function _placementIsComplete(deal){ return _placementMissing(deal).length===0; }
+function convertStandByToPlacement(dealId){
+  var deals=getDeals(); var idx=deals.findIndex(function(x){return x.id===dealId;}); if(idx<0) return;
+  var d=deals[idx];
+  var miss=_placementMissing(d);
+  if(miss.length){ alert('Impossible de convertir : \u00e9l\u00e9ments manquants :\n\n\u2022 '+miss.join('\n\u2022 ')+'\n\nCompl\u00e9tez la fiche (\u270e Modifier) puis r\u00e9essayez.'); return; }
+  if(!confirm('Convertir ce deal en placement d\u00e9finitif ?\n\nLe deal sera activ\u00e9 et le mail de notification sera envoy\u00e9.')) return;
+  d.stand_by=false; d.updated_at=Date.now();
+  deals[idx]=d; saveDeals(deals);
+  try{ sendPlacementNotificationEmail(d); }catch(e){ console.error('[Notif] Exception:', e); }
+  try{ if(typeof _maybeSendBadPayerAlert==='function') _maybeSendBadPayerAlert(d); }catch(e){ console.error('[BadPayerAlert] Exception:', e); }
+  if(typeof odAutoSync==='function') odAutoSync();
+  if(typeof renderDeals==='function') renderDeals();
+  if(typeof showNotifToast==='function') showNotifToast('Placement activ\u00e9 + mail envoy\u00e9');
 }
 
 // ── Colonnes Visite médicale dans le tableau deals (autocomplete VM + manuel) ──
