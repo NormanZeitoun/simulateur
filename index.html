@@ -1878,10 +1878,8 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="Porté sans mission">Porté sans mission</option>
           <option value="Ancien porté">Ancien porté</option>
           <option value="Perdu">Perdu</option>
-        </select>
-        <select id="cand-filter-sb" onchange="renderCandidats()" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;background:#fff;cursor:pointer;">
-          <option value="">Tous (salaire)</option>
-          <option value="bloque">&#128274; Salaire bloqu&eacute;</option>
+          <option value="__standby__">&#9208; Stand by</option>
+          <option value="__bloque__">&#128274; Salaire bloqué</option>
         </select>
         <select id="cand-filter-date" onchange="renderCandidats()" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;background:#fff;cursor:pointer;">
           <option value="">Toutes dates</option>
@@ -1947,6 +1945,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="">Tous les commerciaux</option>
           <option value="__mine__">👤 Mes clients</option>
         </select>
+        <label title="Afficher uniquement les clients mauvais payeurs." style="display:flex;align-items:center;gap:6px;padding:7px 10px;border:1.5px solid #E24B4A;border-radius:9px;font-size:12px;color:#C0392B;background:#FFF5F4;cursor:pointer;user-select:none;font-weight:600;">
+          <input type="checkbox" id="clients-filter-badpayer" onchange="window._clientsFilterBadPayer=this.checked;renderClients();" style="width:14px;height:14px;cursor:pointer;accent-color:#C0392B;margin:0;">
+          <span>&#9888; Mauvais payeur</span>
+        </label>
       </div>
       <div id="clients-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;"></div>
     </div>
@@ -13215,7 +13217,11 @@ function renderCandidats() {
       return [(cand.prenom||''),(cand.nom||''),(cand.email||''),((cand.simulations||[]).map(function(s){return s.entreprise||'';}).join(' '))].join(' ').toLowerCase().indexOf(q) >= 0;
     });
   }
-  if (filtStatut) {
+  if (filtStatut === '__standby__') {
+    cands = cands.filter(function(cand) { return typeof _candIsStandBy === 'function' && _candIsStandBy(cand); });
+  } else if (filtStatut === '__bloque__') {
+    cands = cands.filter(function(cand) { return typeof _sbIsCandBlocked === 'function' && _sbIsCandBlocked(cand); });
+  } else if (filtStatut) {
     cands = cands.filter(function(cand) { return computeCandStatutAuto(cand) === filtStatut; });
   }
   var filtSB = document.getElementById('cand-filter-sb') ? document.getElementById('cand-filter-sb').value : '';
@@ -13298,6 +13304,10 @@ function renderCandidats() {
     var initials = ((cand.prenom||'').charAt(0)+(cand.nom||'').charAt(0)).toUpperCase();
     var statut = computeCandStatutAuto(cand);
     var scfg = statutCfg[statut] || statutCfg['Prospect'];
+    // STAND BY : la vignette passe en violet (priorité sur le statut portage).
+    var _isSB = (typeof _candIsStandBy === 'function') && _candIsStandBy(cand);
+    var _statutLabel = statut;
+    if (_isSB) { scfg = { color:'#7343EE', bg:'#EDE8FB' }; _statutLabel = '\u23f8 Stand by'; }
     // FIX : afficher le commercial de la FICHE (cand.commercial) — cohérent avec
     // le filtre. Avant : on affichait celui de la dernière simulation, ce qui créait
     // une incohérence (carte = commercial de la simu, filtre = commercial de la fiche).
@@ -13316,7 +13326,9 @@ function renderCandidats() {
     // Appliquer le style de fond sur la carte active (injection d'un style inline via class spécifique)
     var cardMarker = 'data-candid="' + cand.id + '"';
     var bgStyle = '';
-    if (statut === 'Porté') {
+    if (_isSB) {
+      bgStyle = 'border-color:#7343EE !important;background:#F5F3FF !important;';
+    } else if (statut === 'Porté') {
       bgStyle = 'border-color:#1D9E75 !important;background:#F0FDF4 !important;';
     } else if (statut === 'Prospect chaud') {
       bgStyle = 'border-color:#F0A500 !important;background:#FFF8E6 !important;';
@@ -13333,7 +13345,7 @@ function renderCandidats() {
     html += '<div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">' + initials + '</div>';
     html += '<div style="flex:1;min-width:0;">';
     html += '<div style="font-size:13px;font-weight:800;color:#1A1033;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (cand.prenom||'') + ' ' + (cand.nom||'') + '</div>';
-    html += '<span style="display:inline-block;padding:1px 8px;border-radius:20px;font-size:10px;font-weight:700;color:' + scfg.color + ';background:' + scfg.bg + ';margin-top:2px;">' + statut + '</span>';
+    html += '<span style="display:inline-block;padding:1px 8px;border-radius:20px;font-size:10px;font-weight:700;color:' + scfg.color + ';background:' + scfg.bg + ';margin-top:2px;">' + _statutLabel + '</span>';
     html += '</div>';
     if (hasCv) html += '<span style="font-size:10px;color:#1D9E75;background:#F0FDF4;padding:2px 6px;border-radius:5px;flex-shrink:0;white-space:nowrap;">&#128196; CV</span>';
     html += '</div>';
@@ -18447,11 +18459,12 @@ function savePortageCommercial() {
   if (typeof renderCandidats === 'function') { try { renderCandidats(); } catch(e){} }
   var savedCandId = _pcCandId;
   _resetPlacementMode();
-  // Rouvrir la fiche candidat sur l'onglet Portage Co.
+  // La fiche a été fermée avant l'ouverture du popup (plus d'empilement).
+  // On la rouvre proprement sur l'onglet Portage Co. pour montrer le deal créé.
   if (savedCandId != null) {
     setTimeout(function(){
-      try { openCandidatFiche(savedCandId); setTimeout(function(){ switchCandTab(savedCandId, 'portage_co'); }, 120); } catch(e){}
-    }, 200);
+      try { openCandidatFiche(savedCandId); setTimeout(function(){ switchCandTab(savedCandId, 'portage_co'); }, 150); } catch(e){}
+    }, 150);
   }
 }
 
@@ -28489,6 +28502,10 @@ function showClientsTab() {
       +       '<option value="">Tous les commerciaux</option>'
       +       '<option value="__mine__">👤 Mes clients</option>'
       +     '</select>'
+      +     '<label title="Afficher uniquement les clients mauvais payeurs." style="display:flex;align-items:center;gap:6px;padding:7px 10px;border:1.5px solid #E24B4A;border-radius:9px;font-size:12px;color:#C0392B;background:#FFF5F4;cursor:pointer;user-select:none;font-weight:600;">'
+      +       '<input type="checkbox" id="clients-filter-badpayer"' + (window._clientsFilterBadPayer ? ' checked' : '') + ' onchange="window._clientsFilterBadPayer=this.checked;renderClients();" style="width:14px;height:14px;cursor:pointer;accent-color:#C0392B;margin:0;">'
+      +       '<span>\u26a0 Mauvais payeur</span>'
+      +     '</label>'
       +   '</div>'
       +   '<div id="clients-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;"></div>'
       + '</div>';
@@ -28547,6 +28564,10 @@ function renderClients() {
   }
 
   if (q) clients = clients.filter(function(cl){ return cl.name.toLowerCase().indexOf(q)>=0; });
+  // Filtre Mauvais payeur
+  if (window._clientsFilterBadPayer) {
+    clients = clients.filter(function(cl){ return typeof _clientIsBadPayer === 'function' && _clientIsBadPayer(cl); });
+  }
   if (countEl) countEl.textContent = clients.length + ' client' + (clients.length>1?'s':'');
   if (!clients.length) {
     el.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:#9E9E9E;font-size:13px;">Aucun client. Ils sont cr\u00e9\u00e9s automatiquement lors de l\'enregistrement d\'un placement.</div>';
@@ -28556,12 +28577,22 @@ function renderClients() {
     var nbMgrs = (cl.managers||[]).length;
     var nbDeals = (cl.managers||[]).reduce(function(acc,m){ return acc + (m.deals||[]).length; }, 0);
     var initials = cl.name.split(' ').map(function(w){return w[0]||'';}).slice(0,2).join('').toUpperCase();
-    return '<div data-clid="'+cl.id+'" onclick="openClientPage(parseInt(this.dataset.clid))" class="cand-card" style="background:#fff;border:1.5px solid #E4E0FA;border-radius:10px;padding:14px;cursor:pointer;position:relative;overflow:hidden;">'
-      + '<div style="position:absolute;top:0;left:0;right:0;height:4px;background:#4B36EC;border-radius:10px 10px 0 0;"></div>'
+    var _bad = (typeof _clientIsBadPayer === 'function') && _clientIsBadPayer(cl);
+    var _cardBorder = _bad ? '#E24B4A' : '#E4E0FA';
+    var _cardBg = _bad ? '#FFF5F4' : '#fff';
+    var _topBar = _bad ? 'linear-gradient(135deg,#E24B4A,#C0392B)' : '#4B36EC';
+    var _avatar = _bad ? 'linear-gradient(135deg,#E24B4A,#C0392B)' : 'linear-gradient(135deg,#4B36EC,#7343EE)';
+    var _badBadge = _bad
+      ? '<span style="display:inline-block;margin-top:3px;padding:1px 8px;border-radius:20px;font-size:9.5px;font-weight:800;color:#fff;background:#C0392B;letter-spacing:0.03em;">\u26a0 Mauvais payeur</span>'
+      : '';
+    return '<div data-clid="'+cl.id+'" onclick="openClientPage(parseInt(this.dataset.clid))" class="cand-card" style="background:'+_cardBg+';border:1.5px solid '+_cardBorder+';border-radius:10px;padding:14px;cursor:pointer;position:relative;overflow:hidden;">'
+      + '<div style="position:absolute;top:0;left:0;right:0;height:4px;background:'+_topBar+';border-radius:10px 10px 0 0;"></div>'
       + '<div style="display:flex;align-items:center;gap:10px;margin-top:4px;">'
-      + '<div style="width:40px;height:40px;border-radius:8px;background:linear-gradient(135deg,#4B36EC,#7343EE);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex-shrink:0;">'+initials+'</div>'
+      + '<div style="width:40px;height:40px;border-radius:8px;background:'+_avatar+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex-shrink:0;">'+initials+'</div>'
       + '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:800;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+cl.name+'</div>'
-      + '<div style="font-size:11px;color:#6B5E9C;">'+(cl.secteur||'')+'</div></div>'
+      + '<div style="font-size:11px;color:#6B5E9C;">'+(cl.secteur||'')+'</div>'
+      + _badBadge
+      + '</div>'
       + '</div>'
       + '<div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:5px;">'
       + '<div><div style="font-size:10px;color:#9E9E9E;">Managers</div><div style="font-size:14px;font-weight:800;color:#4B36EC;">'+nbMgrs+'</div></div>'
@@ -29819,6 +29850,18 @@ function buildCandPlacementsHTML(cand) {
 // ═══════════════════════════════════════════════════════════════════
 function _isPCDeal(d) { return !!(d && d.type_deal === 'portage_commercial'); }
 
+// Un candidat est "en stand by" s'il a un placement actif (non annulé) marqué stand_by.
+function _candIsStandBy(cand) {
+  if (!cand) return false;
+  var em = (cand.email||'').trim().toLowerCase();
+  if (!em) return false;
+  try {
+    return (typeof getDeals==='function' ? getDeals() : []).some(function(d){
+      return d && (d.email||'').trim().toLowerCase()===em && d.etat!=='Annulé' && d.stand_by===true;
+    });
+  } catch(e){ return false; }
+}
+
 function buildCandPortageCoHTML(cand) {
   var deals = getDeals();
   var email = (cand.email||'').toLowerCase();
@@ -29832,7 +29875,7 @@ function buildCandPortageCoHTML(cand) {
   // Bouton Deal en tête (toujours visible)
   var head = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'
     + '<div style="font-size:12px;color:#6B5E9C;">Placements en <strong style="color:#7343EE;">portage commercial</strong> (saisie manuelle, sans simulation).</div>'
-    + '<button onclick="openPortageCommercialPopup(' + cand.id + ')" style="padding:7px 16px;background:linear-gradient(135deg,#7343EE,#9B6BFF);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">&#129309; + Deal</button>'
+    + '<button onclick="closeCandFiche();setTimeout(function(){openPortageCommercialPopup(' + cand.id + ')},100);" style="padding:7px 16px;background:linear-gradient(135deg,#7343EE,#9B6BFF);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">&#129309; + Deal</button>'
     + '</div>';
 
   if (!pcDeals.length) {
