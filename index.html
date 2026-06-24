@@ -3720,8 +3720,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.18s';
-  window.APP_BUILD = 2026061819;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  window.APP_VERSION = 'v2026.06.18t';
+  window.APP_BUILD = 2026061820;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
   // Notification de nouvelle version vers les sessions ouvertes des autres postes
   try {
     setTimeout(function(){ if (typeof _appVersionCheck === 'function') _appVersionCheck(); }, 25000);
@@ -11348,7 +11348,7 @@ function getCellValue(d, key){
   var ETAT_COLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
   var fmt=function(v){ return (v===null||v===undefined||v==='') ? '—' : String(v); };
   switch(key){
-    case 'etat': if (d.stand_by) return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:#E08600;white-space:nowrap;">\u23f8 Stand by</span>'; var co=ETAT_COLORS[d.etat]||'#6B5E9C'; return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:'+co+';white-space:nowrap;">'+(d.etat||'—')+'</span>';
+    case 'etat': if (d.stand_by) return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:#7343EE;white-space:nowrap;">\u23f8 Stand by</span>'; var co=ETAT_COLORS[d.etat]||'#6B5E9C'; return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:'+co+';white-space:nowrap;">'+(d.etat||'—')+'</span>';
     case 'candidat': return '<span onclick="event.stopPropagation();openCandidatByEmail(\''+(d.email||'')+'\')" style="font-weight:600;color:#7343EE;cursor:pointer;text-decoration:underline;" title="Voir la fiche candidat">'+(d.prenom||'')+' '+(d.nom||'')+'</span>';
     case 'email': return fmt(d.email);
     case 'tel': return fmt(d.tel);
@@ -26146,6 +26146,10 @@ function buildCandFicheHTML(cand) {
   }
 
   // Couleur du header selon statut portage effectif
+  var _candStandBy = (function(){
+    var em = (cand.email||'').trim().toLowerCase(); if(!em) return false;
+    try { return getDeals().some(function(d){ return d && (d.email||'').trim().toLowerCase()===em && d.etat!=='Annulé' && d.stand_by===true; }); } catch(e){ return false; }
+  })();
   var headerGradient, shadowColor, statutBadgeColor, statutBadgeBg;
   if (statutAuto === 'Porté') {
     headerGradient = 'linear-gradient(135deg,#0E7550,#1D9E75)';
@@ -26176,6 +26180,12 @@ function buildCandFicheHTML(cand) {
     shadowColor = 'rgba(115,67,238,0.2)';
     statutBadgeColor = '#4B36EC'; statutBadgeBg = '#E8E4FC';
   }
+  // Placement en Stand by : header en violet Seven (recalculé en direct -> revient \u00e0 la normale au changement d'\u00e9tat)
+  if (_candStandBy) {
+    headerGradient = 'linear-gradient(135deg,#372EB6,#7343EE)';
+    shadowColor = 'rgba(115,67,238,0.28)';
+    statutBadgeColor = '#4B36EC'; statutBadgeBg = '#E8E4FC';
+  }
 
   return '<div style="background:#fff;border-radius:14px;width:98%;max-width:1120px;margin:auto;box-shadow:0 8px 40px ' + shadowColor + ';">'
 
@@ -26189,6 +26199,7 @@ function buildCandFicheHTML(cand) {
     +     statutAuto
     +     (statutIsAuto ? '<span title="Statut calculé automatiquement à partir des placements" style="font-size:9px;opacity:0.85;">● auto</span>' : '')
     +   '</span>'
+    +   (_candStandBy ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:#7343EE;color:#fff;border-radius:14px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">\u23f8 Stand by</span>' : '')
     +   (_sbBlocked ? '<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:#C0392B;color:#fff;border-radius:14px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">🔒 Salaire bloqué</span>' : '')
     + '</div>'
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:3px;">'
