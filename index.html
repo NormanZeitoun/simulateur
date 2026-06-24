@@ -1989,6 +1989,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <input type="checkbox" id="deal-hide-annules" checked onchange="dealHideAnnules=this.checked;renderDeals();" style="width:14px;height:14px;cursor:pointer;accent-color:#7343EE;margin:0;">
           <span>Masquer annulés</span>
         </label>
+        <label id="deal-filter-pc-label" title="Afficher uniquement les placements en portage commercial." style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1.5px solid #C7B2F5;border-radius:8px;font-size:12px;color:#5B2BCC;background:#F7F4FF;cursor:pointer;user-select:none;font-weight:600;">
+          <input type="checkbox" id="deal-filter-pc" onchange="dealFilterPC=this.checked;renderDeals();" style="width:14px;height:14px;cursor:pointer;accent-color:#7343EE;margin:0;">
+          <span>🤝 Portage Co.</span>
+        </label>
         <select id="deal-filter-comm" onchange="dealFilterComm=this.value;renderDeals();" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;color:#1A1033;background:#fff;cursor:pointer;">
           <option value="__all__">Tous commerciaux</option>
         </select>
@@ -8358,6 +8362,7 @@ var dealFilterEtat = '__all__';
 var dealFilterComm = '__all__';  // Vue par défaut : tous les commerciaux
 var dealFilterEtranger = '__all__';
 var dealFilterADV = '__all__';
+var dealFilterPC = false;  // true = afficher uniquement les deals portage commercial
 // FIX UI — Filtre "Masquer annulés" : ON par défaut (les annulés polluent la vue quotidienne).
 // Ne s'applique PAS quand l'utilisateur a explicitement choisi "État: Annulé" dans le dropdown
 // d'à côté (priorité au filtre explicite : si on demande à voir les annulés, on les voit).
@@ -8415,8 +8420,9 @@ function recomputeAllDealsEtat() {
   var nbCorrected = 0, nbVraiSigne = 0, nbToujoursEnCours = 0;
   deals.forEach(function(d){
     if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return;
+    var _isPC = d.type_deal === 'portage_commercial';
     var sCdps = (d.signature_cdps || '').toString();
-    var sCdt  = (d.signature_contrat_travail || '').toString();
+    var sCdt  = _isPC ? (d.contrat_client || '').toString() : (d.signature_contrat_travail || '').toString();
     var hasAny = (sCdps && sCdps !== '') || (sCdt && sCdt !== '');
     var allOk = sCdps === 'Oui' && sCdt === 'Oui';
     var newEtat = d.etat;
@@ -9631,6 +9637,11 @@ function toggleDateDealLock() {
 }
 
 function savePlacement() {
+  // Mode PORTAGE COMMERCIAL : saisie manuelle, pas de simulation.
+  if (typeof _placementMode !== 'undefined' && (_placementMode === 'portage_commercial' || _placementMode === 'portage_commercial_prolong')) {
+    savePortageCommercial();
+    return;
+  }
   // Si la popup est ouverte en MODE mission parallèle : on ne crée pas de deal,
   // on crée un avenant via savePlacementAsMissionParallele().
   if (typeof _placementMode !== 'undefined' && _placementMode === 'mission_parallele') {
@@ -10516,6 +10527,9 @@ function renderDeals() {
   if (dealFilterEtranger === 'oui') deals = deals.filter(function(d) { return d.salarie_etranger === true; });
   if (dealFilterEtranger === 'non') deals = deals.filter(function(d) { return d.salarie_etranger !== true; });
 
+  // ── Filtre Portage commercial uniquement ──
+  if (dealFilterPC) deals = deals.filter(function(d) { return d.type_deal === 'portage_commercial'; });
+
   // ── Filtre ADV (Clémence A-H / Marie I-Z selon la 1ère lettre du nom du consultant) ──
   if (dealFilterADV === 'clemence') {
     deals = deals.filter(function(d){ return _getADVForDeal(d) === 'clemence'; });
@@ -11194,6 +11208,8 @@ function renderDealViewSelect(){
 
 function resetDealFilters(){
   dealFilterEtat='__all__'; dealFilterComm='__all__'; dealFilterEtranger='__all__'; dealFilterADV='__all__';
+  dealFilterPC=false;
+  var spc=document.getElementById('deal-filter-pc'); if(spc) spc.checked=false;
   dealHideAnnules = true;  // FIX UI : remettre le filtre annulés à son état par défaut
   dealVisibleCols=DEAL_DEFAULT_COLS.slice();
   localStorage.setItem('sp_deal_cols',JSON.stringify(dealVisibleCols));
@@ -11877,22 +11893,23 @@ function updateDealField(dealId, key, value) {
     deals[idx].relance2_prolong_ts = null;
   }
 
-  // ── Auto-transition d'état basée sur les 2 champs Signature ──
-  // Mode AUTOMATIQUE STRICT : l'état "Signé" est exclusivement calculé depuis :
-  //   - signature_cdps === 'Oui'
-  //   - signature_contrat_travail === 'Oui'
-  // Quand l'un des 2 champs change :
-  //   - Si les 2 sont à "Oui" → 'Signé'
-  //   - Si au moins 1 est rempli mais pas les 2 → 'En cours'
-  //   - Si l'état était 'Signé' mais qu'on a retiré un Oui → on retombe à 'En cours'
+  // ── Auto-transition d'état basée sur les champs Signature ──
+  // Deals STANDARD : 'Signé' = signature_cdps==='Oui' ET signature_contrat_travail==='Oui'.
+  // Deals PORTAGE COMMERCIAL : 'Signé' = signature_cdps==='Oui' ET contrat_client==='Oui'.
   // Les états 'Annulé' et 'Sorti des effectifs' ne sont JAMAIS écrasés (décision humaine).
-  if (key === 'signature_cdps' || key === 'signature_contrat_travail') {
+  var _isPC = deals[idx].type_deal === 'portage_commercial';
+  var _triggerKeys = _isPC
+    ? (key === 'signature_cdps' || key === 'contrat_client')
+    : (key === 'signature_cdps' || key === 'signature_contrat_travail');
+  if (_triggerKeys) {
     var currentEtat = deals[idx].etat || '';
     if (currentEtat !== 'Annulé' && currentEtat !== 'Sorti des effectifs') {
       var sCdps = (deals[idx].signature_cdps || '').toString();
-      var sCdt  = (deals[idx].signature_contrat_travail || '').toString();
-      var hasAny = (sCdps && sCdps !== '') || (sCdt && sCdt !== '');
-      var allOk = sCdps === 'Oui' && sCdt === 'Oui';
+      var sSecond = _isPC
+        ? (deals[idx].contrat_client || '').toString()
+        : (deals[idx].signature_contrat_travail || '').toString();
+      var hasAny = (sCdps && sCdps !== '') || (sSecond && sSecond !== '');
+      var allOk = sCdps === 'Oui' && sSecond === 'Oui';
       if (allOk) {
         deals[idx].etat = 'Signé';
       } else if (currentEtat === 'Signé') {
@@ -14168,6 +14185,9 @@ function renderProlongation() {
   var deals = getProlongationDeals();
   var cfg = getProlongConfig();
 
+  // ── Filtre Portage commercial ──
+  if (window._prolongFilterPC) deals = deals.filter(function(d){ return d.type_deal === 'portage_commercial'; });
+
   // Tri : fin de contrat la plus proche d'abord
   deals.sort(function(a, b) {
     var da = new Date(a.date_fin);
@@ -14185,7 +14205,11 @@ function renderProlongation() {
     +     '<div style="font-size:13px;font-weight:700;color:#1A1033;">&#9203; Prolongation — ' + periodLabel + '</div>'
     +     '<div style="font-size:11.5px;color:#6B5E9C;margin-top:3px;">Consultants avec fin de contrat dans le mois en cours</div>'
     +   '</div>'
-    +   '<div style="display:flex;align-items:center;gap:10px;">'
+    +   '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    +     '<label title="Afficher uniquement les prolongations de deals en portage commercial." style="display:flex;align-items:center;gap:6px;padding:5px 10px;border:1.5px solid #C7B2F5;border-radius:8px;font-size:11.5px;color:#5B2BCC;background:#fff;cursor:pointer;user-select:none;font-weight:600;">'
+    +       '<input type="checkbox" id="prolong-filter-pc"' + (window._prolongFilterPC ? ' checked' : '') + ' onchange="window._prolongFilterPC=this.checked;renderProlongation();" style="width:14px;height:14px;cursor:pointer;accent-color:#7343EE;margin:0;">'
+    +       '<span>🤝 Portage Co.</span>'
+    +     '</label>'
     +     '<span style="font-size:11px;color:#6B5E9C;">Relances : le <strong>' + cfg.jour_relance_1 + '</strong> et le <strong>' + cfg.jour_relance_2 + '</strong> du mois</span>'
     +     '<button onclick="checkAndSendProlongationRelances(true);renderProlongation();" style="padding:6px 12px;background:#fff;color:#4B36EC;border:1.5px solid #4B36EC;border-radius:8px;font-size:11.5px;font-weight:600;cursor:pointer;">&#128257; Vérifier maintenant</button>'
     +   '</div>'
@@ -14254,6 +14278,11 @@ function renderProlongation() {
           : '<span style="color:#9E9E9E;font-size:11px;">—</span>')
       + '</td>'
       + '<td style="padding:10px 8px;text-align:center;">'
+      +   (d.type_deal === 'portage_commercial'
+          ? '<span style="background:#F2ECFF;color:#5B2BCC;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700;">Oui</span>'
+          : '<span style="color:#9E9E9E;font-size:11px;">Non</span>')
+      + '</td>'
+      + '<td style="padding:10px 8px;text-align:center;">'
       +   (r1
           ? '<span style="background:#D4EDDA;color:#0F6E56;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">Oui · ' + r1.toLocaleDateString('fr-FR') + '</span>'
           : (mailsDisabled
@@ -14306,6 +14335,7 @@ function renderProlongation() {
     +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Commercial</th>'
     +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Date fin prévisionnelle</th>'
     +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Type contrat (Seven/Client)</th>'
+    +       '<th style="padding:11px 8px;text-align:center;color:#5B2BCC;font-weight:700;">Portage commercial</th>'
     +       '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Relance 1</th>'
     +       '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Relance 2</th>'
     +       '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Date de Fin</th>'
@@ -18201,8 +18231,17 @@ function proceedMissionParallele(dealId) {
 function _resetPlacementMode() {
   _placementMode = 'deal';
   _missionParalleleOriginDealId = null;
+  _pcCandId = null;
+  _pcProlongDealId = null;
   var banner = document.getElementById('pl-mode-parallele-banner');
   if (banner) banner.style.display = 'none';
+  // ── Restaurer les blocs masqués/affichés par le mode portage commercial ──
+  var pcBanner = document.getElementById('pl-mode-pc-banner'); if (pcBanner) pcBanner.style.display = 'none';
+  var pcBlock = document.getElementById('pl-pc-block'); if (pcBlock) pcBlock.style.display = 'none';
+  var etBlock = document.getElementById('pl-etranger-block'); if (etBlock) etBlock.style.display = '';
+  var simTitle = document.getElementById('pl-sim-title'); if (simTitle) simTitle.style.display = '';
+  var simGrid = document.getElementById('pl-sim-grid'); if (simGrid) simGrid.style.display = '';
+  var contratSel = document.getElementById('pl-contrat'); if (contratSel) { contratSel.disabled = false; contratSel.style.background = ''; }
   var btn = document.getElementById('pl-save-btn');
   if (btn) {
     btn.innerHTML = '\u2713 Enregistrer';
@@ -18211,6 +18250,212 @@ function _resetPlacementMode() {
   var titleEl = document.querySelector('#modal-placement div[style*="font-size:15px"]');
   if (titleEl) titleEl.innerHTML = '\ud83d\udccb Convertir en placement';
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// PORTAGE COMMERCIAL — popup de saisie manuelle (réutilise #modal-placement)
+// ═══════════════════════════════════════════════════════════════════
+var _pcCandId = null;          // candidat ciblé (création)
+var _pcProlongDealId = null;   // deal d'origine (prolongation)
+
+// Recalcule la marge = vente - achat
+function _pcRecalcMarge() {
+  var a = parseFloat((document.getElementById('pl-pc-achat')||{}).value) || 0;
+  var v = parseFloat((document.getElementById('pl-pc-vente')||{}).value) || 0;
+  var marge = v - a;
+  var el = document.getElementById('pl-pc-marge');
+  if (el) el.value = marge.toLocaleString('fr-FR') + ' €';
+}
+
+// Applique la mise en forme visuelle du mode portage commercial à la popup
+function _applyPCModeUI(isProlong) {
+  var pcBanner = document.getElementById('pl-mode-pc-banner'); if (pcBanner) pcBanner.style.display = 'block';
+  var pcBlock = document.getElementById('pl-pc-block'); if (pcBlock) pcBlock.style.display = 'block';
+  // Masquer : salarié étranger + section simulation (pas de simu en PC)
+  var etBlock = document.getElementById('pl-etranger-block'); if (etBlock) etBlock.style.display = 'none';
+  var simTitle = document.getElementById('pl-sim-title'); if (simTitle) simTitle.style.display = 'none';
+  var simGrid = document.getElementById('pl-sim-grid'); if (simGrid) simGrid.style.display = 'none';
+  // Type de contrat figé sur Portage Commercial
+  var contratSel = document.getElementById('pl-contrat');
+  if (contratSel) { contratSel.value = 'Portage Commercial'; contratSel.disabled = true; contratSel.style.background = '#F0EDF9'; }
+  // Bouton + titre
+  var btn = document.getElementById('pl-save-btn');
+  if (btn) { btn.innerHTML = isProlong ? '⏳ Enregistrer la prolongation' : '🤝 Créer le deal'; btn.style.background = 'linear-gradient(135deg,#7343EE,#9B6BFF)'; }
+  var titleEl = document.querySelector('#modal-placement div[style*="font-size:15px"]');
+  if (titleEl) titleEl.innerHTML = isProlong ? '⏳ Prolongation portage commercial' : '🤝 Deal portage commercial';
+  var pcTitle = document.getElementById('pl-mode-pc-title');
+  if (pcTitle) pcTitle.textContent = isProlong ? 'Mode prolongation portage commercial' : 'Mode portage commercial';
+}
+
+// Vide tous les champs de la popup placement (équivalent reset manuel sans simu)
+function _pcClearPlacementFields() {
+  var ids = ['pl-prenom','pl-nom','pl-email','pl-tel','pl-poste','pl-secteur','pl-entreprise',
+    'pl-tel-client','pl-email-client','pl-manager','pl-adresse-exec','pl-adresse-siege',
+    'pl-date-fin','pl-date-entree','pl-nom-signataire','pl-tel-signataire','pl-email-signataire',
+    'pl-prenom-compta','pl-nom-compta','pl-email-compta','pl-delai-paiement','pl-banque',
+    'pl-commercial','pl-origine','pl-commentaire','pl-pc-achat','pl-pc-vente','pl-pc-marge'];
+  ids.forEach(function(id){ var el = document.getElementById(id); if (el) el.value = ''; });
+  var etat = document.getElementById('pl-etat'); if (etat) etat.value = 'Nouveau placement';
+  var tacite = document.getElementById('pl-tacite'); if (tacite) tacite.value = 'Non';
+  var tcc = document.getElementById('pl-type-contrat-client'); if (tcc) tcc.value = 'Seven';
+  var ct = document.getElementById('pl-connait-tjm'); if (ct) ct.value = 'Non';
+  var se = document.getElementById('pl-salarie-etranger'); if (se) se.checked = false;
+  var dd = document.getElementById('pl-date-deal'); if (dd) dd.value = new Date().toISOString().split('T')[0];
+}
+
+// Ouvre la popup en mode CRÉATION portage commercial (depuis fiche candidat)
+function openPortageCommercialPopup(candId) {
+  var cand = getCandidats().find(function(c){ return c.id === candId; });
+  if (!cand) { alert('⚠ Candidat introuvable.'); return; }
+  _placementMode = 'portage_commercial';
+  _pcCandId = candId;
+  _pcProlongDealId = null;
+  window._plLastClientId = null;
+
+  _pcClearPlacementFields();
+  // Pré-remplir candidat depuis la fiche
+  var set = function(id,v){ var el=document.getElementById(id); if(el) el.value = v||''; };
+  set('pl-prenom', cand.prenom);
+  set('pl-nom', cand.nom);
+  set('pl-email', cand.email);
+  set('pl-tel', cand.tel);
+  set('pl-poste', cand.poste);
+  set('pl-commercial', cand.commercial);
+  // Peupler les selects dépendants (commerciaux, délai paiement, secteurs) comme dans openPlacementPopup
+  try { if (typeof refreshCustomSelectOptions === 'function') refreshCustomSelectOptions(); } catch(e){}
+  set('pl-commercial', cand.commercial);
+
+  openModal('modal-placement');
+  setTimeout(function(){ _applyPCModeUI(false); _pcRecalcMarge(); }, 50);
+}
+
+// Ouvre la popup en mode PROLONGATION d'un deal portage commercial existant
+function openPCProlongationPopup(dealId) {
+  var deals = getDeals();
+  var d = deals.find(function(x){ return String(x.id) === String(dealId); });
+  if (!d) { alert('⚠ Deal introuvable.'); return; }
+  _placementMode = 'portage_commercial_prolong';
+  _pcProlongDealId = dealId;
+  _pcCandId = null;
+  window._plLastClientId = null;
+
+  _pcClearPlacementFields();
+  var set = function(id,v){ var el=document.getElementById(id); if(el) el.value = v||''; };
+  // Pré-remplir avec les valeurs du deal d'origine (modifiables pour la prolongation)
+  set('pl-prenom', d.prenom); set('pl-nom', d.nom); set('pl-email', d.email);
+  set('pl-tel', d.tel); set('pl-poste', d.poste);
+  set('pl-entreprise', d.entreprise); set('pl-manager', d.manager);
+  set('pl-tel-client', d.tel_client); set('pl-email-client', d.email_client);
+  set('pl-adresse-exec', d.adresse_exec); set('pl-adresse-siege', d.adresse_siege);
+  set('pl-date-entree', d.date_entree); set('pl-date-fin', d.date_fin);
+  set('pl-commercial', d.commercial); set('pl-commentaire', '');
+  set('pl-pc-achat', d.prix_achat); set('pl-pc-vente', d.prix_vente);
+  try { if (typeof refreshCustomSelectOptions === 'function') refreshCustomSelectOptions(); } catch(e){}
+  set('pl-commercial', d.commercial);
+
+  openModal('modal-placement');
+  setTimeout(function(){ _applyPCModeUI(true); _pcRecalcMarge(); }, 50);
+}
+
+// Enregistre un deal portage commercial (création ou prolongation)
+function savePortageCommercial() {
+  var prixAchat = parseFloat((document.getElementById('pl-pc-achat')||{}).value) || 0;
+  var prixVente = parseFloat((document.getElementById('pl-pc-vente')||{}).value) || 0;
+  var marge = prixVente - prixAchat;
+  var g = function(id){ var el=document.getElementById(id); return el ? el.value : ''; };
+
+  // ── MODE PROLONGATION : on n'impacte PAS le deal d'origine ──
+  if (_placementMode === 'portage_commercial_prolong' && _pcProlongDealId != null) {
+    var deals = getDeals();
+    var idx = deals.findIndex(function(x){ return String(x.id) === String(_pcProlongDealId); });
+    if (idx < 0) { alert('⚠ Deal d\'origine introuvable.'); return; }
+    var d = deals[idx];
+    if (!Array.isArray(d.historique_prolongations)) d.historique_prolongations = [];
+    var nouvelleFin = g('pl-date-fin');
+    d.historique_prolongations.push({
+      type: 'prolongation_pc',
+      date: new Date().toISOString(),
+      nouvelle_date_fin: nouvelleFin,
+      ancienne_date_fin: d.date_fin || '',
+      prix_achat: prixAchat,
+      prix_vente: prixVente,
+      marge_pc: marge,
+      entreprise: g('pl-entreprise'),
+      manager: g('pl-manager'),
+      commentaire: g('pl-commentaire'),
+      created_by: (typeof _getCurrentUserName === 'function') ? _getCurrentUserName() : 'inconnu',
+      created_at: Date.now()
+    });
+    // Pour faire remonter la prolongation dans Suivi RH → Prolongation :
+    // on renseigne date_fin_nouvelle + date_avenant SANS toucher date_fin d'origine ni les prix d'origine.
+    if (nouvelleFin) d.date_fin_nouvelle = nouvelleFin;
+    d.date_avenant = new Date().toISOString();
+    d.updated = new Date().toISOString();
+    deals[idx] = d;
+    saveDeals(deals);
+    if (typeof odAutoSync === 'function') odAutoSync();
+    closeModal('modal-placement');
+    if (typeof showNotifToast === 'function') showNotifToast('⏳ Prolongation portage commercial enregistrée');
+    if (typeof renderDeals === 'function') { try { renderDeals(); } catch(e){} }
+    if (document.getElementById('prolongation-container') && document.getElementById('prolongation-container').style.display !== 'none') {
+      try { renderProlongation(); } catch(e){}
+    }
+    _resetPlacementMode();
+    return;
+  }
+
+  // ── MODE CRÉATION ──
+  if (!g('pl-prenom') && !g('pl-nom')) { alert('⚠ Renseignez le candidat.'); return; }
+  var deals2 = getDeals();
+  var deal = {
+    id: Date.now(),
+    sim_ts: null,
+    type_deal: 'portage_commercial',
+    // Candidat
+    prenom: g('pl-prenom'), nom: g('pl-nom'), email: g('pl-email'),
+    tel: g('pl-tel'), poste: g('pl-poste'), secteur: g('pl-secteur'),
+    connait_tjm: g('pl-connait-tjm'), salarie_etranger: false,
+    // Client
+    entreprise: g('pl-entreprise'), tel_client: g('pl-tel-client'), email_client: g('pl-email-client'),
+    manager: g('pl-manager'), adresse_exec: g('pl-adresse-exec'), adresse_siege: g('pl-adresse-siege'),
+    type_contrat_client: g('pl-type-contrat-client'), date_fin: g('pl-date-fin'), tacite: g('pl-tacite'),
+    nom_signataire: g('pl-nom-signataire'), tel_signataire: g('pl-tel-signataire'), email_signataire: g('pl-email-signataire'),
+    prenom_compta: g('pl-prenom-compta'), nom_compta: g('pl-nom-compta'), email_compta: g('pl-email-compta'),
+    delai_paiement: g('pl-delai-paiement'), banque: g('pl-banque'),
+    // Deal
+    date_deal: g('pl-date-deal') || new Date().toISOString().split('T')[0],
+    commercial: g('pl-commercial'), origine: g('pl-origine'),
+    etat: g('pl-etat') || 'Nouveau placement',
+    contrat: 'Portage Commercial',
+    date_entree: g('pl-date-entree'), commentaire: g('pl-commentaire'),
+    date_created: new Date().toLocaleDateString('fr-FR'),
+    // Portage commercial : prix & marge
+    prix_achat: prixAchat, prix_vente: prixVente, marge_pc: marge,
+    // TJM actuel = prix d'achat (sert à updateCandidatFromDeal)
+    tjm: prixAchat ? String(prixAchat) : ''
+  };
+  deals2.unshift(deal);
+  saveDeals(deals2);
+
+  // MAJ fiche candidat (dont tjm_actuel = prix d'achat) + fiche client
+  try { updateCandidatFromDeal(deal); } catch(e) { console.warn('[PC] updateCandidat:', e); }
+  try { saveClientFromDeal(deal); } catch(e) { console.warn('[PC] saveClient:', e); }
+
+  if (typeof odAutoSync === 'function') odAutoSync();
+  closeModal('modal-placement');
+  if (typeof showNotifToast === 'function') showNotifToast('🤝 Deal portage commercial créé');
+  if (typeof renderDeals === 'function') { try { renderDeals(); } catch(e){} }
+  if (typeof renderCandidats === 'function') { try { renderCandidats(); } catch(e){} }
+  var savedCandId = _pcCandId;
+  _resetPlacementMode();
+  // Rouvrir la fiche candidat sur l'onglet Portage Co.
+  if (savedCandId != null) {
+    setTimeout(function(){
+      try { openCandidatFiche(savedCandId); setTimeout(function(){ switchCandTab(savedCandId, 'portage_co'); }, 120); } catch(e){}
+    }, 200);
+  }
+}
+
+
 
 // Crée l'avenant mission parallèle à partir des champs de la popup placement.
 // Appelé par savePlacement() quand _placementMode === 'mission_parallele'.
@@ -26187,7 +26432,7 @@ function buildCandFicheHTML(cand) {
     statutBadgeColor = '#4B36EC'; statutBadgeBg = '#E8E4FC';
   }
 
-  return '<div style="background:#fff;border-radius:14px;width:98%;max-width:1120px;margin:auto;box-shadow:0 8px 40px ' + shadowColor + ';">'
+  return '<div style="background:#fff;border-radius:14px;width:98%;max-width:1380px;margin:auto;box-shadow:0 8px 40px ' + shadowColor + ';">'
 
     // ── Header ──
     + '<div style="background:' + headerGradient + ';padding:16px 22px;border-radius:14px 14px 0 0;">'
@@ -26266,16 +26511,17 @@ function buildCandFicheHTML(cand) {
 
     // Colonne gauche : onglets
     + '<div style="flex:1;min-width:0;border-right:2px solid #F0EDF9;">'
-    + '<div style="display:flex;align-items:center;border-bottom:2px solid #E4E0FA;padding:0 20px;background:#fff;overflow-x:auto;white-space:nowrap;">'
+    + '<div style="display:flex;align-items:center;flex-wrap:wrap;border-bottom:2px solid #E4E0FA;padding:0 20px;background:#fff;">'
     + '<button data-tab="simulations" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-simulations" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#7343EE;border-bottom:2px solid #7343EE;margin-bottom:-2px;cursor:pointer;">&#128200; Simulations (' + (function(){ var e=(cand.email||'').trim().toLowerCase(); var h=(typeof getHistory==='function'?getHistory():[]); var ck=(typeof _personKey==='function')?_personKey(cand.prenom,cand.nom):''; var seen={}; var n=0; h.forEach(function(s){ if(!s)return; var se=(s.email||'').trim().toLowerCase(); var m=false; if(e&&se&&se===e)m=true; if(!m&&ck&&typeof _splitFullName==='function'){ var np=_splitFullName(s.consultant); if(_personKey(np.prenom,np.nom)===ck)m=true; } if(m&&!seen[s.timestamp]){seen[s.timestamp]=1;n++;} }); if(!n&&(cand.simulations||[]).length)n=(cand.simulations||[]).length; return n; })() + ')</button>'
-    + '<button data-tab="placements" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-placements" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128203; Placements (' + (function(){ var e=(cand.email||'').toLowerCase(); var fn=((cand.prenom||'')+' '+(cand.nom||'')).trim().toLowerCase(); return (typeof getDeals==='function' ? getDeals() : []).filter(function(d){ return (d.email||'').toLowerCase()===e || ((d.prenom||'')+' '+(d.nom||'')).trim().toLowerCase()===fn; }).length; })() + ')</button>'
+    + '<button data-tab="placements" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-placements" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128203; Placements (' + (function(){ var e=(cand.email||'').toLowerCase(); var fn=((cand.prenom||'')+' '+(cand.nom||'')).trim().toLowerCase(); return (typeof getDeals==='function' ? getDeals() : []).filter(function(d){ return d.type_deal!=='portage_commercial' && ((d.email||'').toLowerCase()===e || ((d.prenom||'')+' '+(d.nom||'')).trim().toLowerCase()===fn); }).length; })() + ')</button>'
+    + '<button data-tab="portage_co" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-portage_co" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#129309; Portage Co. (' + (function(){ var e=(cand.email||'').toLowerCase(); var fn=((cand.prenom||'')+' '+(cand.nom||'')).trim().toLowerCase(); return (typeof getDeals==='function' ? getDeals() : []).filter(function(d){ return d.type_deal==='portage_commercial' && ((d.email||'').toLowerCase()===e || ((d.prenom||'')+' '+(d.nom||'')).trim().toLowerCase()===fn); }).length; })() + ')</button>'
     + '<button data-tab="avances" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-avances" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128182; Avances (' + (typeof getAvances==='function' ? getAvances().filter(function(a){ return a.candidat_id === cand.id; }).length : 0) + ')</button>'
     + '<button data-tab="documents" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-documents" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128196; Documents</button>'
     + '<button data-tab="compte_act" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-compte_act" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128202; Compte d\'activité</button>'
     + '<button data-tab="rappels" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-rappels" class="ct-btn-rappels" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128276; Rappels</button>'
     + '<button data-tab="paiement" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-paiement" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128176; Paiement (' + (typeof getPaiementsForCandidat === 'function' ? getPaiementsForCandidat(cand).length : 0) + ')</button>'
     + '</div>'
-    + '<div id="ct-content-' + cand.id + '" style="padding:16px 20px;min-height:280px;max-height:42vh;overflow-y:auto;"></div>'
+    + '<div id="ct-content-' + cand.id + '" style="padding:16px 20px;min-height:280px;"></div>'
     + '</div>'
 
     // Colonne droite : commentaires fixes
@@ -26284,7 +26530,7 @@ function buildCandFicheHTML(cand) {
     + '&#128172; Commentaires'
     + '<span style="font-size:10px;color:#9E9E9E;font-weight:400;">' + comments.length + ' note(s)</span>'
     + '</div>'
-    + '<div id="ct-comments-' + cand.id + '" style="flex:1;overflow-y:auto;padding:10px 14px;max-height:38vh;">' + cmHtml + '</div>'
+    + '<div id="ct-comments-' + cand.id + '" style="flex:1;padding:10px 14px;">' + cmHtml + '</div>'
     + '<div style="padding:10px 14px;border-top:1.5px solid #E4E0FA;">'
     + '<textarea data-always-editable id="cand-new-comment-' + cand.id + '" placeholder="Ajouter une note..." rows="2" style="width:100%;padding:7px 9px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;resize:none;outline:none;"></textarea>'
     + '<button data-candid="' + cand.id + '" onclick="addCandComment(parseInt(this.dataset.candid))" style="margin-top:5px;width:100%;padding:7px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;">+ Ajouter</button>'
@@ -26665,7 +26911,7 @@ function switchCandTab(id, tab) {
   var cand = cands.find(function(c) { return c.id === id; });
   if (!cand) return;
   // Mettre à jour les boutons
-  ['simulations','placements','avances','documents','compte_act','rappels','paiement'].forEach(function(t) {
+  ['simulations','placements','portage_co','avances','documents','compte_act','rappels','paiement'].forEach(function(t) {
     var btn = document.getElementById('ct-btn-' + t);
     if (!btn) return;
     var active = t === tab;
@@ -26677,6 +26923,7 @@ function switchCandTab(id, tab) {
   if (!cont) return;
   if (tab === 'simulations') cont.innerHTML = buildCandSimsHTML(cand);
   else if (tab === 'placements') cont.innerHTML = buildCandPlacementsHTML(cand);
+  else if (tab === 'portage_co') cont.innerHTML = buildCandPortageCoHTML(cand);
   else if (tab === 'avances') {
     cont.innerHTML = '<div id="cf-avances-content"></div>';
     if (typeof renderCandAvances === 'function') renderCandAvances(id);
@@ -29465,6 +29712,7 @@ function buildCandPlacementsHTML(cand) {
   var email = (cand.email||'').toLowerCase();
   var fullName = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim().toLowerCase();
   var candDeals = deals.filter(function(d) {
+    if (d.type_deal === 'portage_commercial') return false; // les PC ont leur propre onglet "Portage Co."
     return (d.email||'').toLowerCase() === email ||
            ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase() === fullName;
   });
@@ -29562,6 +29810,103 @@ function buildCandPlacementsHTML(cand) {
       + _renderPlacementHistory(d)
       + '</div>';
   }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ONGLET PORTAGE COMMERCIAL ("Portage Co.")
+// Deals de type 'portage_commercial' : saisie manuelle (sans simulation),
+// avec Prix d'achat / Prix de vente / Marge. Bouton Deal + Prolongation.
+// ═══════════════════════════════════════════════════════════════════
+function _isPCDeal(d) { return !!(d && d.type_deal === 'portage_commercial'); }
+
+function buildCandPortageCoHTML(cand) {
+  var deals = getDeals();
+  var email = (cand.email||'').toLowerCase();
+  var fullName = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim().toLowerCase();
+  var pcDeals = deals.filter(function(d) {
+    if (!_isPCDeal(d)) return false;
+    return (d.email||'').toLowerCase() === email ||
+           ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase() === fullName;
+  });
+
+  // Bouton Deal en tête (toujours visible)
+  var head = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'
+    + '<div style="font-size:12px;color:#6B5E9C;">Placements en <strong style="color:#7343EE;">portage commercial</strong> (saisie manuelle, sans simulation).</div>'
+    + '<button onclick="openPortageCommercialPopup(' + cand.id + ')" style="padding:7px 16px;background:linear-gradient(135deg,#7343EE,#9B6BFF);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">&#129309; + Deal</button>'
+    + '</div>';
+
+  if (!pcDeals.length) {
+    return head + '<div style="color:#C0B8E0;font-size:12px;padding:24px 0;text-align:center;border:1.5px dashed #E4E0FA;border-radius:10px;">Aucun deal en portage commercial. Cliquez sur « + Deal » pour en créer un.</div>';
+  }
+
+  var ECOLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
+  var euro = function(v){ var n = parseFloat(v); return (n||n===0) && !isNaN(n) ? n.toLocaleString('fr-FR') + ' €' : '—'; };
+
+  var cards = pcDeals.map(function(d) {
+    var color = ECOLORS[d.etat] || '#6B5E9C';
+    var isCancelled = d.etat === 'Annulé';
+    var cardStyle = isCancelled
+      ? 'background:#FDECEC;border:1px solid #F5B5B5;border-radius:10px;padding:12px 14px;margin-bottom:10px;opacity:0.85;'
+      : 'background:#F7F4FF;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:10px;';
+
+    var prixAchat = euro(d.prix_achat);
+    var prixVente = euro(d.prix_vente);
+    var marge = euro(d.marge_pc);
+    var dDeb = d.date_entree ? new Date(d.date_entree).toLocaleDateString('fr-FR') : '—';
+    var dFin = d.date_fin ? new Date(d.date_fin).toLocaleDateString('fr-FR') : '—';
+
+    var prolongBtn = '';
+    if (!isCancelled && d.etat !== 'Sorti des effectifs') {
+      prolongBtn = '<button onclick="closeCandFiche();setTimeout(function(){openPCProlongationPopup(' + d.id + ')},100);" title="Prolonger ce deal portage commercial (n\'impacte pas le placement d\'origine)" style="padding:4px 10px;background:#F0FAF4;color:#0F5132;border:1.5px solid #9FE1CB;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">⏳ Prolongation</button>';
+    }
+    var cancelBtn = isCancelled
+      ? '<button onclick="restoreDeal(' + d.id + ')" style="padding:4px 10px;background:#F0FDF4;color:#1D9E75;border:1.5px solid #9FE1CB;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#8634; Restaurer</button>'
+      : '<button onclick="cancelDeal(' + d.id + ')" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#10060; Annuler</button>';
+
+    // Historique des prolongations PC
+    var prolongHist = '';
+    var hist = Array.isArray(d.historique_prolongations) ? d.historique_prolongations.filter(function(h){ return h.type === 'prolongation_pc'; }) : [];
+    if (hist.length) {
+      prolongHist = '<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #D9D2F2;">'
+        + '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#7343EE;margin-bottom:6px;">⏳ Prolongations</div>'
+        + hist.map(function(h, i){
+            var hAchat = euro(h.prix_achat), hVente = euro(h.prix_vente), hMarge = euro(h.marge_pc);
+            var hFin = h.nouvelle_date_fin ? new Date(h.nouvelle_date_fin).toLocaleDateString('fr-FR') : '—';
+            var hDate = h.date ? new Date(h.date).toLocaleDateString('fr-FR') : '';
+            return '<div style="background:#fff;border:1px solid #E4E0FA;border-radius:7px;padding:7px 10px;margin-bottom:5px;font-size:11px;color:#1A1033;">'
+              + '<strong>Prolongation ' + (i+1) + '</strong> · ' + hDate
+              + ' — Nouvelle fin : <strong>' + hFin + '</strong>'
+              + ' · Achat ' + hAchat + ' / Vente ' + hVente + ' / Marge ' + hMarge
+              + (h.commentaire ? ' · ' + h.commentaire.replace(/</g,'&lt;') : '')
+              + '</div>';
+          }).join('')
+        + '</div>';
+    }
+
+    return '<div style="' + cardStyle + '">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;">'
+      +   '<div style="font-size:13px;font-weight:700;color:' + (isCancelled?'#9E4545':'#1A1033') + ';">' + (d.entreprise||'—').replace(/</g,'&lt;') + (d.manager ? ' · 👤 ' + d.manager.replace(/</g,'&lt;') : '') + '</div>'
+      +   '<span style="padding:2px 9px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:' + color + ';">' + (d.etat||'') + '</span>'
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-bottom:10px;">'
+      +   _pcKV('Date démarrage', dDeb)
+      +   _pcKV('Date de fin', dFin)
+      +   _pcKV('Prix d\'achat', prixAchat, '#7343EE')
+      +   _pcKV('Prix de vente', prixVente, '#1D9E75')
+      +   _pcKV('Marge', marge, '#0F5132')
+      + '</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">' + prolongBtn + cancelBtn + '</div>'
+      + prolongHist
+      + '</div>';
+  }).join('');
+
+  return head + cards;
+}
+function _pcKV(label, value, color) {
+  return '<div style="background:#fff;border:1px solid #ECE8FA;border-radius:7px;padding:6px 9px;">'
+    + '<div style="font-size:9px;color:#9E94C4;text-transform:uppercase;letter-spacing:0.04em;font-weight:700;margin-bottom:2px;">' + label + '</div>'
+    + '<div style="font-size:12.5px;font-weight:700;color:' + (color||'#1A1033') + ';">' + value + '</div>'
+    + '</div>';
 }
 
 // ── Historique chronologique d'un placement : original + prolongations + avenants ──
@@ -35689,6 +36034,12 @@ function exportCommHistCSV() {
         <div style="font-size:11px;color:#3A6EA5;margin-top:3px;line-height:1.5;">Ce formulaire crée une <strong>2ème mission</strong> pour ce consultant. À l'enregistrement, un <strong>avenant</strong> sera généré (pas un nouveau deal). Le placement d'origine reste inchangé.</div>
       </div>
 
+      <!-- Bandeau MODE PORTAGE COMMERCIAL (masqué par défaut) -->
+      <div id="pl-mode-pc-banner" style="display:none;background:linear-gradient(135deg,#F2ECFF,#E7DBFF);border:1.5px solid #C7B2F5;border-radius:9px;padding:11px 14px;margin-bottom:14px;">
+        <div style="font-size:12.5px;font-weight:700;color:#5B2BCC;display:flex;align-items:center;gap:7px;">🤝 <span id="pl-mode-pc-title">Mode portage commercial</span></div>
+        <div style="font-size:11px;color:#7343EE;margin-top:3px;line-height:1.5;">Saisie <strong>manuelle</strong> (sans simulation). Renseignez <strong>Prix d'achat / Prix de vente</strong> (la marge est calculée). Le <strong>TJM actuel</strong> du candidat sera mis à jour avec le prix d'achat.</div>
+      </div>
+
       <!-- CANDIDAT -->
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;color:#7343EE;">&#128100; Informations candidat</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
@@ -35699,7 +36050,7 @@ function exportCommHistCSV() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Poste</label><input id="pl-poste" type="text" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Secteur d'activité</label><select id="pl-secteur" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option value="">-- Sélectionner --</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Connait son TJM ?</label><select id="pl-connait-tjm" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Non</option><option>Oui</option></select></div>
-        <div style="grid-column:1/-1;padding:10px 12px;background:#FFF8E6;border-radius:8px;border-left:4px solid #F0A500;">
+        <div id="pl-etranger-block" style="grid-column:1/-1;padding:10px 12px;background:#FFF8E6;border-radius:8px;border-left:4px solid #F0A500;">
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:12px;font-weight:700;color:#B26A00;">
             <input type="checkbox" id="pl-salarie-etranger" style="accent-color:#F0A500;width:16px;height:16px;cursor:pointer;">
             Salari&eacute; &eacute;tranger (titre de s&eacute;jour requis)
@@ -35765,7 +36116,7 @@ function exportCommHistCSV() {
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Commercial</label><select id="pl-commercial" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option value="">-- Sélectionner --</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Origine deal</label><select id="pl-origine" onchange="onPlCoopTypeChange()" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>Réseau</option><option>LinkedIn</option><option>Job board</option><option>Recommandation</option><option>Cooptation Client</option><option>Cooptation Candidat</option><option>Autre</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">État dossier <span style="font-weight:500;text-transform:none;color:#9E94C4;">(« Signé » est calculé auto)</span></label><select id="pl-etat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Nouveau placement</option><option>En cours</option><option>Annulé</option></select></div>
-        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Type de contrat</label><select id="pl-contrat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>CDI</option><option>CDD</option><option>Portage</option></select></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Type de contrat</label><select id="pl-contrat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>CDI</option><option>CDD</option><option>Portage</option><option>Portage Commercial</option></select></div>
         <!-- Adresse d'exécution : champ DEAL (lieu spécifique de la mission, peut différer du siège du client) -->
         <div style="grid-column:1/-1;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Adresse d'exécution <span style="font-weight:500;text-transform:none;color:#9E94C4;">(lieu de la mission)</span></label><input id="pl-adresse-exec" type="text" placeholder="Adresse de réalisation de la mission" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
       </div>
@@ -35788,9 +36139,20 @@ function exportCommHistCSV() {
         <div style="font-size:10.5px;color:#8378B8;margin-top:6px;line-height:1.4;">Champ requis car <strong>Origine deal</strong> est sur une cooptation. Montant par défaut 500 € — modifiable depuis l'onglet Cooptations après création du deal.</div>
       </div>
 
+      <!-- PORTAGE COMMERCIAL : Prix achat / vente / marge (masqué par défaut) -->
+      <div id="pl-pc-block" style="display:none;margin-bottom:16px;padding:14px;background:#F7F4FF;border:1.5px solid #C7B2F5;border-radius:10px;">
+        <div style="font-size:11px;font-weight:800;color:#5B2BCC;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">🤝 Portage commercial — Prix &amp; marge</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+          <div><label style="font-size:10px;color:#5B2BCC;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Prix d'achat (€)</label><input id="pl-pc-achat" type="number" step="0.01" oninput="_pcRecalcMarge()" placeholder="0" style="width:100%;padding:7px 10px;border:1.5px solid #C7B2F5;border-radius:7px;font-size:12px;box-sizing:border-box;background:#fff;"></div>
+          <div><label style="font-size:10px;color:#5B2BCC;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Prix de vente (€)</label><input id="pl-pc-vente" type="number" step="0.01" oninput="_pcRecalcMarge()" placeholder="0" style="width:100%;padding:7px 10px;border:1.5px solid #C7B2F5;border-radius:7px;font-size:12px;box-sizing:border-box;background:#fff;"></div>
+          <div><label style="font-size:10px;color:#0F5132;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Marge (auto)</label><input id="pl-pc-marge" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #9FE1CB;border-radius:7px;font-size:12px;box-sizing:border-box;background:#EAFBF3;color:#0F5132;font-weight:700;"></div>
+        </div>
+        <div style="font-size:10px;color:#9E94C4;margin-top:6px;font-style:italic;">Marge = Prix de vente − Prix d'achat (calcul automatique).</div>
+      </div>
+
       <!-- SIMULATION -->
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;color:#6B5E9C;">&#128200; Données simulation (lecture seule)</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
+      <div id="pl-sim-title" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;color:#6B5E9C;">&#128200; Données simulation (lecture seule)</div>
+      <div id="pl-sim-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">TJM (€/j)</label><input id="pl-tjm" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Nb jours</label><input id="pl-nb-jours" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Salaire annuel sur contrat</label><input id="pl-salaire-contrat" type="text" readonly style="width:100%;padding:7px 10px;border:1.5px solid #F0EDF9;border-radius:7px;font-size:12px;background:#F8F7FF;box-sizing:border-box;"></div>
