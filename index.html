@@ -10948,10 +10948,10 @@ var DEAL_ONBOARDING_OPTIONS = {
   my_silae:                 ['','Oui','Non'],
   mutuelle_envoi_lien:      ['','Oui','Non'],
   envoi_carte_swile:        ['','Oui','Non'],
-  type_sejour:              ['','Non','Carte Temporaire','Carte Annuelle','Carte Resident','Récépissé','Autorisation provisoire','Autres'],
+  type_sejour:              ['','Salarié / Travailleur temporaire','Vie privée et familiale','Carte Talent (Passeport Talent)','Carte de résident',"Carte Recherche d'emploi / Création d'entreprise",'Étudiant','Certificat de résidence algérien','Autres'],
   mail_verif_titre:         ['','Oui','Non'],
-  demande_autorisation:     ['','Non','Carte Temporaire','Carte Annuelle','Carte Resident','Récépissé','Autorisation provisoire','Autres'],
-  decision_favorable:       ['','Non','Carte Temporaire','Carte Annuelle','Carte Resident','Récépissé','Autorisation provisoire','Autres']
+  demande_autorisation:     ['','Oui','Non'],
+  decision_favorable:       ['','Oui','Non','NC']
 };
 var DEAL_DEFAULT_COLS = ['etat','candidat','poste','manager','tjm','nb_jours','commercial','date_deal','date_entree','vm_inscription','vm_avis','fiches_r','actions'];
 var dealVisibleCols = (function(){ try { var s=JSON.parse(localStorage.getItem('sp_deal_cols')||'null'); return s||DEAL_DEFAULT_COLS.slice(); } catch(e){ return DEAL_DEFAULT_COLS.slice(); } })();
@@ -11859,6 +11859,39 @@ function updateDealField(dealId, key, value) {
   var previousValue = deals[idx][key];
   deals[idx][key] = value;
   deals[idx].updated = new Date().toISOString();
+
+  // ── Auto-complétion Titre de séjour (salarié étranger) ──
+  // Demande d'autorisation : auto-remplie selon le type de titre ;
+  // Décision favorable : NC forcé si Demande = Non, sinon saisie manuelle Oui/Non.
+  (function(){
+    var AUTO_DEMANDE = {
+      'Salarié / Travailleur temporaire': 'Oui',
+      'Vie privée et familiale': 'Non',
+      'Carte Talent (Passeport Talent)': 'Non',
+      'Carte de résident': 'Non',
+      "Carte Recherche d'emploi / Création d'entreprise": 'Non'
+    };
+    // 1) Changement de type de séjour → auto-remplissage de la demande d'autorisation
+    //    (Étudiant / Certificat de résidence algérien / Autres / vide : saisie manuelle, on ne force rien)
+    if (key === 'type_sejour') {
+      if (Object.prototype.hasOwnProperty.call(AUTO_DEMANDE, value)) {
+        deals[idx].demande_autorisation = AUTO_DEMANDE[value];
+      }
+    }
+    // 2) Règle Décision favorable en fonction de la Demande d'autorisation
+    var dem = (deals[idx].demande_autorisation || '').toString();
+    if (key === 'type_sejour' || key === 'demande_autorisation') {
+      if (dem === 'Non') {
+        deals[idx].decision_favorable = 'NC';            // Demande = Non → décision = NC
+      } else if ((deals[idx].decision_favorable || '') === 'NC') {
+        deals[idx].decision_favorable = '';              // NC obsolète (demande n'est plus Non) → re-saisie manuelle
+      }
+    }
+    // 3) Garde-fou : si on tente d'éditer la décision alors que la demande = Non, on force NC
+    if (key === 'decision_favorable' && dem === 'Non' && value !== 'NC') {
+      deals[idx].decision_favorable = 'NC';
+    }
+  })();
 
   // ── Hook : mail de bienvenue automatique au candidat ──
   // Se déclenche UNE SEULE FOIS quand mail_bienvenue passe à "Oui"
