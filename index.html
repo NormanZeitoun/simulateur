@@ -2014,7 +2014,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <label title="Afficher les starters (date d'entrée) du mois choisi" style="display:flex;align-items:center;gap:5px;padding:4px 9px;border:1.5px solid #C7E8D8;border-radius:8px;font-size:11px;color:#0F5132;background:#F0FAF4;font-weight:600;user-select:none;">&#128640; Starters (mois)
           <input type="month" id="deal-filter-month-entree" onchange="dealFilterMonthEntree=this.value;renderDeals();" style="border:none;font-size:12px;color:#1A1033;background:transparent;cursor:pointer;font-family:inherit;padding:0;">
         </label>
-        <span id="deal-counter" title="Nombre de deals et de starters affichés (selon les filtres actifs)" style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;background:#EEF9F3;color:#0F5132;border:1.5px solid #9FE1CB;white-space:nowrap;">&#128203; <b>0</b> deals &middot; &#128640; <b>0</b> starters</span>
+        <span id="deal-counter" title="Deals = signes ce mois (date deal). Starters = entres ce mois (date d&#39;entree). Sans filtre mois : total affiche. Se cumule avec les autres filtres (commercial, etat...)." style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;background:#EEF9F3;color:#0F5132;border:1.5px solid #9FE1CB;white-space:nowrap;">&#128197; <b>0</b> deals &middot; &#128640; <b>0</b> starters</span>
         <select id="deal-view-select" onchange="applyDealView(this.value)" style="padding:6px 10px;border:1.5px solid #7343EE;border-radius:8px;font-size:12px;color:#7343EE;background:#F5F3FF;cursor:pointer;font-weight:600;">
           <option value="__all__">Vue par défaut</option>
         </select>
@@ -5505,12 +5505,12 @@ function renderDashboardKPIs() {
   var candidats = (typeof getCandidats === 'function') ? getCandidats() : [];
 
   var placements = deals.filter(function(d) {
-    return d.etat !== 'Annulé' && _dashMatchCommercial(d) && _dashMatchPeriod(d.date_deal);
+    return d.etat !== 'Annulé' && !d.stand_by && _dashMatchCommercial(d) && _dashMatchPeriod(d.date_deal);
   });
   var nbPlacements = placements.length;
 
   var starters = deals.filter(function(d) {
-    return d.etat !== 'Annulé' && _dashMatchCommercial(d) && _dashMatchPeriod(d.date_entree);
+    return d.etat !== 'Annulé' && !d.stand_by && _dashMatchCommercial(d) && _dashMatchPeriod(d.date_entree);
   });
   var nbStarters = starters.length;
 
@@ -5535,19 +5535,31 @@ function renderDashboardKPIs() {
 
   var today = new Date();
   today.setHours(0,0,0,0);
+  // Portés actifs — ALIGNÉ sur l'onglet Candidats (computeCandStatutAuto) :
+  // un deal/candidat est "Porté" tant que l'état est Signé / En cours / Nouveau placement.
+  // On n'exclut PAS sur date_entree/date_fin (missions souvent renouvelées sans MAJ de la date de fin).
   var portesActifs = deals.filter(function(d) {
     if (!_dashMatchCommercial(d)) return false;
-    if (d.etat !== 'En cours' && d.etat !== 'Signé') return false;
-    if (!d.date_entree) return false;
-    var de = new Date(d.date_entree);
-    if (isNaN(de.getTime()) || de > today) return false;
-    if (d.date_fin) {
-      var df = new Date(d.date_fin);
-      if (!isNaN(df.getTime()) && df < today) return false;
-    }
-    return true;
+    if (d.stand_by === true) return false; // un placement en stand by n'est pas un deal actif
+    return d.etat === 'En cours' || d.etat === 'Signé' || d.etat === 'Nouveau placement';
   });
-  var nbPortesActifs = portesActifs.length;
+  // Compteur affiché = nombre de CANDIDATS au statut "Porté" pour ce commercial,
+  // calculé avec la MÊME fonction que la page Candidats (computeCandStatutAuto)
+  // → garantit que le Dashboard et l'onglet Candidats affichent le même nombre.
+  var nbPortesActifs;
+  try {
+    var _commSel = dashFilters.commercial;
+    nbPortesActifs = candidats.filter(function(c){
+      if (c && c._deleted) return false;
+      if (_commSel !== '__all__') {
+        var _ok = (typeof _sameCommercial === 'function')
+          ? _sameCommercial(c.commercial, _commSel)
+          : ((c.commercial||'').trim().toLowerCase() === (_commSel||'').trim().toLowerCase());
+        if (!_ok) return false;
+      }
+      return (typeof computeCandStatutAuto === 'function') && computeCandStatutAuto(c) === 'Porté';
+    }).length;
+  } catch(e) { nbPortesActifs = portesActifs.length; }
 
   var tjmValues = placements.map(function(d){ return parseFloat(d.tjm) || 0; }).filter(function(v){ return v > 0; });
   var avgTjm = tjmValues.length ? Math.round(tjmValues.reduce(function(a,b){ return a+b; }, 0) / tjmValues.length) : 0;
@@ -5596,10 +5608,10 @@ function renderDashboardKPIs() {
   var avgDaysDealToSig = daysDealToSig.length ? Math.round(daysDealToSig.reduce(function(a,b){ return a+b; }, 0) / daysDealToSig.length) : null;
 
   var portesGD = portesActifs.filter(function(d){ return d.repas === 'GD'; });
-  var pctGD = nbPortesActifs > 0 ? Math.round((portesGD.length / nbPortesActifs) * 100) : 0;
+  var pctGD = portesActifs.length > 0 ? Math.round((portesGD.length / portesActifs.length) * 100) : 0;
 
   var portesEtrangers = portesActifs.filter(function(d){ return d.salarie_etranger === true; });
-  var pctEtrangers = nbPortesActifs > 0 ? Math.round((portesEtrangers.length / nbPortesActifs) * 100) : 0;
+  var pctEtrangers = portesActifs.length > 0 ? Math.round((portesEtrangers.length / portesActifs.length) * 100) : 0;
 
   var originCount = {};
   placements.forEach(function(d){
@@ -5754,7 +5766,7 @@ function renderDashboardKPIs() {
 
     + '<div class="dash-section-title">👥 Portefeuille actif (instant T)</div>'
     + '<div class="dash-grid cols-4">'
-    +   kpi('kpi-violet', '👤', nbPortesActifs,  '', 'Portés actifs',    'Signés + En cours en mission', '_dashGoToCandidats(\'Porté\');')
+    +   kpi('kpi-violet', '👤', nbPortesActifs,  '', 'Portés actifs',    'Statut \u00ab Porté \u00bb (comme l\'onglet Candidats)', '_dashGoToCandidats(\'Porté\');')
     +   kpi('kpi-purple', '🏢', nbClientsActifs, '', 'Clients actifs',   '≥1 porté actif', 'mainNavTo(\'clients\');')
     +   kpi('kpi-blue',   '🌍', pctEtrangers,    '%', 'Étrangers',       '% portés avec titre de séjour')
     +   kpi('kpi-gold',   '🧳', pctGD,           '%', 'Grand déplacement','% portés GD')
@@ -9770,6 +9782,13 @@ function savePlacement() {
   var _ancienNomEntreprise = (idx >= 0 && deals[idx]) ? (deals[idx].entreprise || '') : '';
   if (isNewDeal) deal.stand_by = !_placementIsComplete(deal);
   if (idx >= 0) deals[idx] = Object.assign({}, deals[idx], deal); else deals.unshift(deal);
+  // AUTO-ACTIVATION : un deal EN ÉDITION qui était en stand by et qui a désormais TOUTES
+  // les infos requises sort automatiquement du stand by (placement actif).
+  // (Les nouveaux deals sont déjà gérés plus haut via deal.stand_by = !complet.)
+  var _autoActivatedStandBy = false;
+  if (idx >= 0 && deals[idx] && deals[idx].stand_by === true && _placementIsComplete(deals[idx])) {
+    deals[idx].stand_by = false; deals[idx].updated_at = Date.now(); _autoActivatedStandBy = true;
+  }
   saveDeals(deals);
   // Visite médicale : créer (si nouveau placement) ou mettre à jour la ligne liée
   try { if (typeof _vmSyncFromDeal === 'function') _vmSyncFromDeal(deal, isNewDeal); } catch(e) { console.warn('[VM] sync placement:', e); }
@@ -9780,6 +9799,12 @@ function savePlacement() {
     try { if (typeof _maybeSendBadPayerAlert==='function') _maybeSendBadPayerAlert(deal); } catch(e) { console.error('[BadPayerAlert] Exception:', e); }
     // Mail au commercial avec PJ (docs + bulletin simu) — DÉSACTIVÉ TEMPORAIREMENT À LA DEMANDE
     // try { sendPlacementCommercialEmail(deal); } catch(e) { console.error('[PlacementCommercial] Exception:', e); }
+  }
+  // Stand by → actif automatiquement (deal complété en édition) : on envoie le mail de notification
+  if (_autoActivatedStandBy) {
+    try { sendPlacementNotificationEmail(deals[idx]); } catch(e) { console.error('[Notif auto] Exception:', e); }
+    try { if (typeof _maybeSendBadPayerAlert==='function') _maybeSendBadPayerAlert(deals[idx]); } catch(e) { console.error('[BadPayerAlert auto] Exception:', e); }
+    try { if (typeof showNotifToast==='function') showNotifToast('Placement activé automatiquement + mail envoyé'); } catch(e){}
   }
 
   // Mettre à jour les infos de la fiche candidat à partir du placement
@@ -10580,13 +10605,27 @@ function renderDeals() {
   var listEl = document.getElementById('deals-list');
   if (!listEl) return;
 
-  // ── Compteurs deals / starters (reflètent les filtres actifs, ex. commercial + mois) ──
+  // ── Compteurs deals / starters (par colonne de date, selon le mois sélectionné) ──
+  //   • Deals    = comptés sur la DATE DEAL (date_deal)
+  //   • Starters = comptés sur la DATE D'ENTREE (date_entree)
+  //   Mois retenu : son propre filtre mois si défini, sinon celui de l'autre filtre mois.
+  //   Sans aucun filtre mois : total affiché (deals = lignes, starters = lignes avec date d'entree).
+  //   Ex. Starters=juillet sur 27 entrees signees en juin -> 0 deal (juil.) / 27 starters (juil.).
   try {
-    var _nDeals = deals.length;
-    var _nStarters = deals.filter(function(d){ return d && String(d.date_entree||'').trim(); }).length;
+    var _mDeals = dealFilterMonthDeal || dealFilterMonthEntree || '';
+    var _mStart = dealFilterMonthEntree || dealFilterMonthDeal || '';
+    // Un placement en stand by n'est pas un deal → exclu des compteurs.
+    var _real = deals.filter(function(d){ return d && d.stand_by !== true; });
+    var _nDeals = _mDeals
+      ? _real.filter(function(d){ return _dealMonthKey(d.date_deal) === _mDeals; }).length
+      : _real.length;
+    var _nStarters = _mStart
+      ? _real.filter(function(d){ return _dealMonthKey(d.date_entree) === _mStart; }).length
+      : _real.filter(function(d){ return String(d.date_entree||'').trim(); }).length;
+    var _moisLbl = _mDeals ? (' <span style=\"opacity:.7;font-weight:600;\">(' + _mDeals + ')</span>') : '';
     var _cEl = document.getElementById('deal-counter');
-    if (_cEl) _cEl.innerHTML = '&#128203; <b>' + _nDeals + '</b> deal' + (_nDeals>1?'s':'')
-      + ' &middot; &#128640; <b>' + _nStarters + '</b> starter' + (_nStarters>1?'s':'');
+    if (_cEl) _cEl.innerHTML = '&#128197; <b>' + _nDeals + '</b> deal' + (_nDeals>1?'s':'')
+      + ' &middot; &#128640; <b>' + _nStarters + '</b> starter' + (_nStarters>1?'s':'') + _moisLbl;
   } catch(e){}
 
   // Peupler select commercial — DÉ-DOUBLONNÉ par prénom (voir renderCandidats)
@@ -11754,37 +11793,54 @@ function _placementMissing(deal){
   if(!deal) return [];
   var miss=[];
   function need(v,label){ if(!String(v==null?'':v).trim()) miss.push(label); }
-  // Candidat
+  // ── Fiche client liée : les champs "client" peuvent être renseignés sur la fiche client
+  //    (signataire, service comptable, délai, banque, adresse siège, type de contrat) et
+  //    pas forcément recopiés sur le deal. On les considère présents si le deal OU le client les a.
+  var _cl = null;
+  try {
+    if (deal.entreprise && typeof getClients === 'function') {
+      var _nm = (deal.entreprise||'').trim().toLowerCase();
+      _cl = getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === _nm; }) || null;
+    }
+  } catch(e){}
+  function eff(dealVal, clientVal){
+    var a = String(dealVal==null?'':dealVal).trim();
+    if (a) return a;
+    return String(clientVal==null?'':clientVal).trim();
+  }
+  var effTypeContrat = eff(deal.type_contrat_client, _cl && _cl.type_contrat_client);
+  // Candidat (propre au deal)
   need(deal.prenom, 'Prénom du candidat');
   need(deal.nom, 'Nom du candidat');
   need(deal.email, 'Email du candidat');
   need(deal.tel, 'Téléphone du candidat');
   need(deal.poste, 'Poste');
-  // Client
+  // Client (avec repli sur la fiche client)
   need(deal.entreprise, 'Entreprise (client)');
   need(deal.manager, 'Manager / contact');
   need(deal.tel_client, 'Téléphone manager');
   need(deal.email_client, 'Email manager');
-  need(deal.adresse_siege, 'Adresse siège');
+  need(eff(deal.adresse_siege, _cl && _cl.adresse), 'Adresse siège');
   need(deal.adresse_exec, "Adresse d'exécution");
-  need(deal.type_contrat_client, 'Type de contrat');
+  need(effTypeContrat, 'Type de contrat');
   need(deal.date_fin, 'Date de fin prévisionnelle');
-  need(deal.delai_paiement, 'Délai de paiement');
-  need(deal.banque, 'Banque');
-  // Deal
+  need(eff(deal.delai_paiement, _cl && _cl.delai_paiement), 'Délai de paiement');
+  need(eff(deal.banque, _cl && _cl.banque), 'Banque');
+  // Deal (propre au deal)
   need(deal.commercial, 'Commercial');
   need(deal.origine, 'Origine');
   need(deal.etat, 'État');
   need(deal.date_entree, "Date d'entrée");
   // ── Exceptions ──
   // Secteur d'activité : EXEMPTÉ (jamais bloquant)
-  // Service comptable : au moins 1 des 3
-  var hasCompta = String(deal.prenom_compta||'').trim() || String(deal.nom_compta||'').trim() || String(deal.email_compta||'').trim();
+  // Service comptable : au moins 1 des 3 (sur le deal OU sur la fiche client)
+  var hasCompta = String(deal.prenom_compta||'').trim() || String(deal.nom_compta||'').trim() || String(deal.email_compta||'').trim()
+    || (_cl && (String(_cl.prenom_compta||'').trim() || String(_cl.nom_compta||'').trim() || String(_cl.email_compta||'').trim()));
   if(!hasCompta) miss.push('Service comptable (au moins prénom, nom ou email)');
   // Salarié étranger : titre de séjour requis seulement si coché
   if(deal.salarie_etranger && !String(deal.type_sejour||'').trim()) miss.push('Titre de séjour (salarié étranger coché)');
-  // « Nos contrats » (Seven) : au moins l'email du signataire (nom/tél non requis)
-  if(String(deal.type_contrat_client||'')==='Seven' && !String(deal.email_signataire||'').trim()) miss.push('Email du signataire (« Nos contrats »)');
+  // « Nos contrats » (Seven) : au moins l'email du signataire (deal OU client)
+  if(effTypeContrat==='Seven' && !eff(deal.email_signataire, _cl && _cl.email_signataire)) miss.push('Email du signataire (« Nos contrats »)');
   return miss;
 }
 function _placementIsComplete(deal){ return _placementMissing(deal).length===0; }
@@ -11992,7 +12048,18 @@ function updateDealField(dealId, key, value) {
     }
   }
 
+  // AUTO-ACTIVATION : si ce deal était en stand by et qu'il a désormais TOUTES les infos
+  // requises, il sort automatiquement du stand by (placement actif) + mail de notification.
+  var _autoAct = false;
+  if (deals[idx] && deals[idx].stand_by === true && typeof _placementIsComplete === 'function' && _placementIsComplete(deals[idx])) {
+    deals[idx].stand_by = false; deals[idx].updated_at = Date.now(); _autoAct = true;
+  }
   saveDeals(deals);
+  if (_autoAct) {
+    try { if (typeof sendPlacementNotificationEmail==='function') sendPlacementNotificationEmail(deals[idx]); } catch(e) { console.error('[Notif auto] Exception:', e); }
+    try { if (typeof _maybeSendBadPayerAlert==='function') _maybeSendBadPayerAlert(deals[idx]); } catch(e) {}
+    try { if (typeof showNotifToast==='function') showNotifToast('Placement activé automatiquement + mail envoyé'); } catch(e){}
+  }
   // Préserver la position de scroll du tableau (évite le saut à gauche au change de select)
   var _wrap = document.querySelector('.deals-table-wrap');
   var _scrollL = _wrap ? _wrap.scrollLeft : 0;
@@ -13121,6 +13188,7 @@ function computeCandStatutAuto(cand) {
   var allDeals = (typeof getDeals === 'function') ? getDeals() : [];
   var dealsOfCand = allDeals.filter(function(d){
     if (d.etat === 'Annulé') return false;
+    if (d.stand_by === true) return false; // un placement en stand by n'est pas (encore) un deal
     var de = (d.email || '').trim().toLowerCase();
     if (email && de && de === email) return true;
     if (candKey && (typeof _personKey === 'function') && _personKey(d.prenom, d.nom) === candKey) return true;
