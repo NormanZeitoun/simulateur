@@ -2008,12 +2008,13 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="clemence">👩 Clémence (A-H)</option>
           <option value="marie">👩 Marie (I-Z)</option>
         </select>
-        <label title="Afficher les deals dont la DATE DEAL est dans le mois choisi" style="display:flex;align-items:center;gap:5px;padding:4px 9px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:11px;color:#6B5E9C;background:#fff;font-weight:600;user-select:none;">\U0001F4C5 Deals (mois)
+        <label title="Afficher les deals dont la DATE DEAL est dans le mois choisi" style="display:flex;align-items:center;gap:5px;padding:4px 9px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:11px;color:#6B5E9C;background:#fff;font-weight:600;user-select:none;">&#128197; Deals (mois)
           <input type="month" id="deal-filter-month-deal" onchange="dealFilterMonthDeal=this.value;renderDeals();" style="border:none;font-size:12px;color:#1A1033;background:transparent;cursor:pointer;font-family:inherit;padding:0;">
         </label>
-        <label title="Afficher les starters (date d\'entr\u00e9e) du mois choisi" style="display:flex;align-items:center;gap:5px;padding:4px 9px;border:1.5px solid #C7E8D8;border-radius:8px;font-size:11px;color:#0F5132;background:#F0FAF4;font-weight:600;user-select:none;">\U0001F680 Starters (mois)
+        <label title="Afficher les starters (date d'entrée) du mois choisi" style="display:flex;align-items:center;gap:5px;padding:4px 9px;border:1.5px solid #C7E8D8;border-radius:8px;font-size:11px;color:#0F5132;background:#F0FAF4;font-weight:600;user-select:none;">&#128640; Starters (mois)
           <input type="month" id="deal-filter-month-entree" onchange="dealFilterMonthEntree=this.value;renderDeals();" style="border:none;font-size:12px;color:#1A1033;background:transparent;cursor:pointer;font-family:inherit;padding:0;">
         </label>
+        <span id="deal-counter" title="Nombre de deals et de starters affichés (selon les filtres actifs)" style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;background:#EEF9F3;color:#0F5132;border:1.5px solid #9FE1CB;white-space:nowrap;">&#128203; <b>0</b> deals &middot; &#128640; <b>0</b> starters</span>
         <select id="deal-view-select" onchange="applyDealView(this.value)" style="padding:6px 10px;border:1.5px solid #7343EE;border-radius:8px;font-size:12px;color:#7343EE;background:#F5F3FF;cursor:pointer;font-weight:600;">
           <option value="__all__">Vue par défaut</option>
         </select>
@@ -10578,6 +10579,15 @@ function renderDeals() {
 
   var listEl = document.getElementById('deals-list');
   if (!listEl) return;
+
+  // ── Compteurs deals / starters (reflètent les filtres actifs, ex. commercial + mois) ──
+  try {
+    var _nDeals = deals.length;
+    var _nStarters = deals.filter(function(d){ return d && String(d.date_entree||'').trim(); }).length;
+    var _cEl = document.getElementById('deal-counter');
+    if (_cEl) _cEl.innerHTML = '&#128203; <b>' + _nDeals + '</b> deal' + (_nDeals>1?'s':'')
+      + ' &middot; &#128640; <b>' + _nStarters + '</b> starter' + (_nStarters>1?'s':'');
+  } catch(e){}
 
   // Peupler select commercial — DÉ-DOUBLONNÉ par prénom (voir renderCandidats)
   var allDeals = getDeals();
@@ -28272,12 +28282,15 @@ function mergeClients(remote) {
       // ── Fusion last-write-wins pour les autres champs métier (signataire, compta, etc.) ──
       var localUpdated = (typeof _parseFRDate==='function') ? _parseFRDate(nameMap[key].updated) : 0;
       var remoteUpdated = (typeof _parseFRDate==='function') ? _parseFRDate(rc.updated) : 0;
-      if (remoteUpdated > localUpdated) {
+      var _lTs = nameMap[key].updated_ts || 0;
+      var _rTs = rc.updated_ts || 0;
+      var _remoteWins = (_lTs || _rTs) ? (_rTs >= _lTs) : (remoteUpdated > localUpdated);
+      if (_remoteWins) {
         var fields = ['tel','email','adresse','secteur','delai_paiement','banque','type_contrat_client',
                       'nom_signataire','tel_signataire','email_signataire',
                       'prenom_compta','nom_compta','email_compta',
                       'mauvais_payeur_manuel',
-                      'commentaire','updated'];
+                      'commentaire','updated','updated_ts'];
         fields.forEach(function(f){
           if (rc[f] !== undefined && rc[f] !== null && rc[f] !== '') nameMap[key][f] = rc[f];
         });
@@ -28399,6 +28412,37 @@ function updateCandidatFromDeal(deal) {
   }
 }
 
+function _backfillClientsFromDeals(){
+  try {
+    var deals = getDeals(); if(!deals || !deals.length) return;
+    var clients = getClients(); if(!clients || !clients.length) return;
+    var byName = {};
+    clients.forEach(function(cc){ byName[(cc.name||'').trim().toLowerCase()] = cc; });
+    var changed = false;
+    // champ deal -> champ client (adresse_siege alimente cl.adresse)
+    var FIELDS = ['nom_signataire','tel_signataire','email_signataire','prenom_compta','nom_compta','email_compta','adresse_siege','delai_paiement','banque','type_contrat_client'];
+    deals.forEach(function(d){
+      if(!d || !d.entreprise) return;
+      var cl = byName[(d.entreprise||'').trim().toLowerCase()];
+      if(!cl) return;
+      var clChanged = false;
+      FIELDS.forEach(function(f){
+        var clientField = (f === 'adresse_siege') ? 'adresse' : f;
+        var dealVal = (d[f]==null?'':String(d[f])).trim();
+        var clVal = (cl[clientField]==null?'':String(cl[clientField])).trim();
+        if(dealVal && !clVal){ cl[clientField] = d[f]; clChanged = true; }
+      });
+      if(clChanged){ cl.updated_ts = Date.now(); if(!cl.updated) cl.updated = new Date().toLocaleDateString('fr-FR'); changed = true; }
+    });
+    if(changed){
+      saveClientsArr(clients);
+      if(typeof renderClients==='function'){ try{ renderClients(); }catch(e){} }
+      console.log('[backfill] Fiches client complétées (signataire/compta) depuis les deals.');
+    }
+  } catch(e){ console.warn('[backfill clients]', e); }
+}
+window.addEventListener('load', function(){ setTimeout(_backfillClientsFromDeals, 3000); });
+
 function saveClientFromDeal(deal) {
   if (!deal.entreprise) return;
   var clients = getClients();
@@ -28484,6 +28528,7 @@ function saveClientFromDeal(deal) {
     clients[idx].nom_compta    = deal.nom_compta    || clients[idx].nom_compta    || '';
     clients[idx].email_compta  = deal.email_compta  || clients[idx].email_compta  || '';
     clients[idx].updated = new Date().toLocaleDateString('fr-FR');
+    clients[idx].updated_ts = Date.now();
     if (!clients[idx].managers) clients[idx].managers = [];
     // Trouver ou créer le manager
     var mIdx = -1;
@@ -28526,6 +28571,7 @@ function saveClientFromDeal(deal) {
       commentaire: '',
       created: new Date().toLocaleDateString('fr-FR'),
       updated: new Date().toLocaleDateString('fr-FR'),
+      updated_ts: Date.now(),
       managers: mgrs
     });
   }
@@ -29744,6 +29790,7 @@ function updateClientField(input) {
   }
   clients[idx][field] = input.value;
   clients[idx].updated = new Date().toLocaleDateString('fr-FR');
+  clients[idx].updated_ts = Date.now();
   saveClientsArr(clients);
   // Sync auto pour propager les modifs (signataire, comptable, adresse, secteur, etc.) à l'équipe
   if (typeof odAutoSync === 'function') odAutoSync();
