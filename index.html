@@ -2008,6 +2008,12 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="clemence">👩 Clémence (A-H)</option>
           <option value="marie">👩 Marie (I-Z)</option>
         </select>
+        <label title="Afficher les deals dont la DATE DEAL est dans le mois choisi" style="display:flex;align-items:center;gap:5px;padding:4px 9px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:11px;color:#6B5E9C;background:#fff;font-weight:600;user-select:none;">\U0001F4C5 Deals (mois)
+          <input type="month" id="deal-filter-month-deal" onchange="dealFilterMonthDeal=this.value;renderDeals();" style="border:none;font-size:12px;color:#1A1033;background:transparent;cursor:pointer;font-family:inherit;padding:0;">
+        </label>
+        <label title="Afficher les starters (date d\'entr\u00e9e) du mois choisi" style="display:flex;align-items:center;gap:5px;padding:4px 9px;border:1.5px solid #C7E8D8;border-radius:8px;font-size:11px;color:#0F5132;background:#F0FAF4;font-weight:600;user-select:none;">\U0001F680 Starters (mois)
+          <input type="month" id="deal-filter-month-entree" onchange="dealFilterMonthEntree=this.value;renderDeals();" style="border:none;font-size:12px;color:#1A1033;background:transparent;cursor:pointer;font-family:inherit;padding:0;">
+        </label>
         <select id="deal-view-select" onchange="applyDealView(this.value)" style="padding:6px 10px;border:1.5px solid #7343EE;border-radius:8px;font-size:12px;color:#7343EE;background:#F5F3FF;cursor:pointer;font-weight:600;">
           <option value="__all__">Vue par défaut</option>
         </select>
@@ -8365,6 +8371,8 @@ var dealFilterComm = '__all__';  // Vue par défaut : tous les commerciaux
 var dealFilterEtranger = '__all__';
 var dealFilterADV = '__all__';
 var dealFilterPC = false;  // true = afficher uniquement les deals portage commercial
+var dealFilterMonthDeal = '';    // '' = tous ; 'YYYY-MM' = filtre mois sur date_deal
+var dealFilterMonthEntree = '';  // '' = tous ; 'YYYY-MM' = filtre mois sur date_entree (starters)
 // FIX UI — Filtre "Masquer annulés" : ON par défaut (les annulés polluent la vue quotidienne).
 // Ne s'applique PAS quand l'utilisateur a explicitement choisi "État: Annulé" dans le dropdown
 // d'à côté (priorité au filtre explicite : si on demande à voir les annulés, on les voit).
@@ -10495,6 +10503,14 @@ function _getADVByLetter(letter) {
   return null;
 }
 
+// Extrait la clé 'YYYY-MM' d'une date (gère ISO YYYY-MM-DD et FR JJ/MM/AAAA)
+function _dealMonthKey(v){
+  if(!v) return '';
+  var s = String(v).trim();
+  var iso = s.match(/^(\d{4})-(\d{2})/); if(iso) return iso[1]+'-'+iso[2];
+  var fr = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(fr) return fr[3]+'-'+('0'+fr[2]).slice(-2);
+  return '';
+}
 function renderDeals() {
   var deals = getDeals();
   // FIX SYNC : filtrer les deals marqués _deleted (par _applyDealTombstonesLocally
@@ -10531,6 +10547,12 @@ function renderDeals() {
 
   // ── Filtre Portage commercial uniquement ──
   if (dealFilterPC) deals = deals.filter(function(d) { return d.type_deal === 'portage_commercial'; });
+
+  // ── Filtre Mois sur la DATE DEAL ──
+  if (dealFilterMonthDeal) deals = deals.filter(function(d){ return _dealMonthKey(d.date_deal) === dealFilterMonthDeal; });
+
+  // ── Filtre Mois sur la DATE D'ENTRÉE (starters du mois) ──
+  if (dealFilterMonthEntree) deals = deals.filter(function(d){ return _dealMonthKey(d.date_entree) === dealFilterMonthEntree; });
 
   // ── Filtre ADV (Clémence A-H / Marie I-Z selon la 1ère lettre du nom du consultant) ──
   if (dealFilterADV === 'clemence') {
@@ -11212,6 +11234,9 @@ function resetDealFilters(){
   dealFilterEtat='__all__'; dealFilterComm='__all__'; dealFilterEtranger='__all__'; dealFilterADV='__all__';
   dealFilterPC=false;
   var spc=document.getElementById('deal-filter-pc'); if(spc) spc.checked=false;
+  dealFilterMonthDeal=''; dealFilterMonthEntree='';
+  var smd=document.getElementById('deal-filter-month-deal'); if(smd) smd.value='';
+  var sme=document.getElementById('deal-filter-month-entree'); if(sme) sme.value='';
   dealHideAnnules = true;  // FIX UI : remettre le filtre annulés à son état par défaut
   dealVisibleCols=DEAL_DEFAULT_COLS.slice();
   localStorage.setItem('sp_deal_cols',JSON.stringify(dealVisibleCols));
