@@ -1957,9 +1957,18 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   <!-- TAB DEALS -->
   <div id="tab-deals" style="display:none;">
     <div style="padding:0 0 12px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
         <button class="back-btn" onclick="mainNavTo('mission')">&#8592; Retour</button>
-          <div style="font-size:13px;font-weight:700;color:#1A1033;">&#128203; Tableau de deals</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1;justify-content:center;">
+          <div style="font-size:15px;font-weight:800;color:#1A1033;white-space:nowrap;">&#128203; Tableau de deals</div>
+          <label title="Filtrer les deals dont la DATE DEAL est dans le mois choisi" style="display:flex;align-items:center;gap:5px;padding:4px 9px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:11px;color:#6B5E9C;background:#fff;font-weight:600;user-select:none;">&#128197; Deals
+            <input type="month" id="deal-filter-month-deal" onchange="dealFilterMonthDeal=this.value;renderDeals();" style="border:none;font-size:12px;color:#1A1033;background:transparent;cursor:pointer;font-family:inherit;padding:0;">
+          </label>
+          <label title="Starters : à venir à partir d'aujourd'hui ; si un mois est choisi, starters de ce mois" style="display:flex;align-items:center;gap:5px;padding:4px 9px;border:1.5px solid #C7E8D8;border-radius:8px;font-size:11px;color:#0F5132;background:#F0FAF4;font-weight:600;user-select:none;">&#128640; Starters
+            <input type="month" id="deal-filter-month-entree" onchange="dealFilterMonthEntree=this.value;renderDeals();" style="border:none;font-size:12px;color:#1A1033;background:transparent;cursor:pointer;font-family:inherit;padding:0;">
+          </label>
+          <span id="deal-counter" title="Deals = dans le mois choisi (date deal), sinon total. Starters = à venir à partir d'aujourd'hui, ou du mois choisi. Le stand by n'est pas compté. Se cumule avec les autres filtres." style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;background:#EEF9F3;color:#0F5132;border:1.5px solid #9FE1CB;white-space:nowrap;">&#128197; <b>0</b> deals &middot; &#128640; <b>0</b> starters</span>
+        </div>
         <div style="display:flex;gap:6px;">
           <button onclick="toggleDealsParams()" style="padding:5px 12px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;">&#9881;&#65039; Colonnes</button>
           <button onclick="exportDealsExcel()" style="padding:5px 12px;background:#1D9E75;color:#fff;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">&#8681; Export CSV</button>
@@ -2008,13 +2017,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="clemence">👩 Clémence (A-H)</option>
           <option value="marie">👩 Marie (I-Z)</option>
         </select>
-        <label title="Afficher les deals dont la DATE DEAL est dans le mois choisi" style="display:flex;align-items:center;gap:5px;padding:4px 9px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:11px;color:#6B5E9C;background:#fff;font-weight:600;user-select:none;">&#128197; Deals (mois)
-          <input type="month" id="deal-filter-month-deal" onchange="dealFilterMonthDeal=this.value;renderDeals();" style="border:none;font-size:12px;color:#1A1033;background:transparent;cursor:pointer;font-family:inherit;padding:0;">
-        </label>
-        <label title="Afficher les starters (date d'entrée) du mois choisi" style="display:flex;align-items:center;gap:5px;padding:4px 9px;border:1.5px solid #C7E8D8;border-radius:8px;font-size:11px;color:#0F5132;background:#F0FAF4;font-weight:600;user-select:none;">&#128640; Starters (mois)
-          <input type="month" id="deal-filter-month-entree" onchange="dealFilterMonthEntree=this.value;renderDeals();" style="border:none;font-size:12px;color:#1A1033;background:transparent;cursor:pointer;font-family:inherit;padding:0;">
-        </label>
-        <span id="deal-counter" title="Deals = signes ce mois (date deal). Starters = entres ce mois (date d&#39;entree). Sans filtre mois : total affiche. Se cumule avec les autres filtres (commercial, etat...)." style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;background:#EEF9F3;color:#0F5132;border:1.5px solid #9FE1CB;white-space:nowrap;">&#128197; <b>0</b> deals &middot; &#128640; <b>0</b> starters</span>
         <select id="deal-view-select" onchange="applyDealView(this.value)" style="padding:6px 10px;border:1.5px solid #7343EE;border-radius:8px;font-size:12px;color:#7343EE;background:#F5F3FF;cursor:pointer;font-weight:600;">
           <option value="__all__">Vue par défaut</option>
         </select>
@@ -10619,9 +10621,15 @@ function renderDeals() {
     var _nDeals = _mDeals
       ? _real.filter(function(d){ return _dealMonthKey(d.date_deal) === _mDeals; }).length
       : _real.length;
+    // Starters : si un mois est sélectionné → starters de CE mois ;
+    // sinon → les personnes qui vont commencer À PARTIR D'AUJOURD'HUI (date d'entrée >= aujourd'hui).
+    var _todayStart = new Date(); _todayStart.setHours(0,0,0,0);
     var _nStarters = _mStart
       ? _real.filter(function(d){ return _dealMonthKey(d.date_entree) === _mStart; }).length
-      : _real.filter(function(d){ return String(d.date_entree||'').trim(); }).length;
+      : _real.filter(function(d){
+          var _s = String(d.date_entree||'').trim(); if(!_s) return false;
+          var _de = new Date(_s); return !isNaN(_de.getTime()) && _de >= _todayStart;
+        }).length;
     var _moisLbl = _mDeals ? (' <span style=\"opacity:.7;font-weight:600;\">(' + _mDeals + ')</span>') : '';
     var _cEl = document.getElementById('deal-counter');
     if (_cEl) _cEl.innerHTML = '&#128197; <b>' + _nDeals + '</b> deal' + (_nDeals>1?'s':'')
@@ -17346,7 +17354,7 @@ function buildAvenantsContent() {
   // Tableau
   html += '<div class="av-table-wrap"><div class="av-table-scroll"><table class="av-table">'
     + '<thead><tr>'
-    + '<th>Date demande</th><th>Commercial</th><th>Porté</th><th>Type</th><th>Motif</th>'
+    + '<th>Date demande</th><th>Commercial</th><th>Porté</th><th>ADV</th><th>Type</th><th>Motif</th>'
     + '<th>CDPS</th><th>À partir du</th><th>Jusqu\'au</th><th>Contrat</th>'
     + '<th>TJM</th><th>Ancien salaire</th><th>Nouveau salaire</th><th>Frais ↗</th>'
     + '<th>Swile</th><th>Forfait repas</th><th>Km</th><th>TC</th><th>Télétravail</th>'
@@ -17455,10 +17463,17 @@ function buildAvenantsContent() {
       return formatted;
     }
     var nomComplet = ((a.prenom_porte||'') + ' ' + (a.nom_porte||'')).trim() || '—';
+    // ADV en charge du dossier : Clémence (A-H) / Marie (I-Z) selon le nom du porté (règle config-aware)
+    var _advKey = (typeof _getADVByLetter === 'function') ? _getADVByLetter((a.nom_porte||'').charAt(0)) : null;
+    var _advLabel = _advKey === 'clemence' ? 'Clémence' : (_advKey === 'marie' ? 'Marie' : '—');
+    var _advCell = (_advLabel === '—')
+      ? '<span style="color:#9E94C4;">—</span>'
+      : '<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10.5px;font-weight:700;background:' + (_advKey==='clemence' ? '#EEF4FF;color:#1A4F96' : '#FBEFFB;color:#8A3FA0') + ';">' + _advLabel + '</span>';
     html += '<tr>'
       + '<td style="font-weight:700;">' + _fmtAvDate(a.date_demande) + '</td>'
       + '<td>' + (a.commercial || '—') + '</td>'
       + '<td style="font-weight:600;">' + nomComplet + '</td>'
+      + '<td>' + _advCell + '</td>'
       + '<td>' + (a.type_avenant || '—') + '</td>'
       + '<td>' + (a.motif || '—') + '</td>'
       + '<td>' + (a.cdps_seven_client || '—') + '</td>'
