@@ -1886,7 +1886,9 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="week">Cette semaine</option>
           <option value="month">Ce mois</option>
         </select>
+        <button onclick="toggleAllCandTagsPanel()" title="Voir tous les tags créés et filtrer" style="padding:7px 12px;border:1.5px solid #C7B2F5;border-radius:9px;font-size:12px;background:#F7F4FF;color:#5B2BCC;cursor:pointer;font-weight:700;white-space:nowrap;">&#127991;&#65039; Tags</button>
       </div>
+      <div id="cand-all-tags-panel" style="display:none;background:#FCFBFF;border:1.5px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;"></div>
       <div id="candidats-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,190px));gap:12px;"></div>
     </div>
   </div>
@@ -9782,8 +9784,17 @@ function savePlacement() {
   // Capturer l'ANCIEN nom d'entreprise du deal (avant remplacement) pour pouvoir
   // renommer la fiche client si l'utilisateur a modifié le nom dans la popup placement.
   var _ancienNomEntreprise = (idx >= 0 && deals[idx]) ? (deals[idx].entreprise || '') : '';
+  // Ancienne date du deal (normalisée en ISO pour éviter les faux positifs de format)
+  var _oldDD = (idx >= 0 && deals[idx]) ? String(deals[idx].date_deal || '') : '';
+  if (typeof _toISODateInput === 'function' && _oldDD) { _oldDD = _toISODateInput(_oldDD) || _oldDD; }
   if (isNewDeal) deal.stand_by = !_placementIsComplete(deal);
   if (idx >= 0) deals[idx] = Object.assign({}, deals[idx], deal); else deals.unshift(deal);
+  // Si la DATE DU DEAL a été MODIFIÉE manuellement (édition), elle devient prioritaire dans
+  // le calcul des commissions (sinon c'est la date de création du dossier qui prime — règle actuelle).
+  if (idx >= 0) {
+    var _newDD = String(deal.date_deal || '').trim();
+    if (_newDD && _newDD !== _oldDD) { deals[idx].date_deal_modified = true; }
+  }
   // AUTO-ACTIVATION : un deal EN ÉDITION qui était en stand by et qui a désormais TOUTES
   // les infos requises sort automatiquement du stand by (placement actif).
   // (Les nouveaux deals sont déjà gérés plus haut via deal.stand_by = !complet.)
@@ -13358,7 +13369,7 @@ function renderCandidats() {
 
   if (q) {
     cands = cands.filter(function(cand) {
-      return [(cand.prenom||''),(cand.nom||''),(cand.email||''),((cand.simulations||[]).map(function(s){return s.entreprise||'';}).join(' '))].join(' ').toLowerCase().indexOf(q) >= 0;
+      return [(cand.prenom||''),(cand.nom||''),(cand.email||''),((cand.tags||[]).join(' ')),((cand.simulations||[]).map(function(s){return s.entreprise||'';}).join(' '))].join(' ').toLowerCase().indexOf(q) >= 0;
     });
   }
   if (filtStatut === '__standby__') {
@@ -26440,6 +26451,104 @@ function setDealsOriginalVisible(visible) {
 }
 
 
+// ══════════════════════════════════════════════════════════════════════════
+// TAGS CANDIDATS  (ajout/suppression sur fiche, recherche, vue globale, autocomplete)
+// ══════════════════════════════════════════════════════════════════════════
+function _tagEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function _candTagColor(tag){
+  var palette=[['#EEF4FF','#1A4F96'],['#FBEFFB','#8A3FA0'],['#E8FFF4','#0F7A54'],['#FFF3E0','#B26A00'],['#FDECEC','#B23A3A'],['#EDEBFF','#4B36EC'],['#E6F7FA','#0E6E86'],['#F2FBE7','#4A7A16']];
+  var s=String(tag||'').toLowerCase(),h=0;
+  for(var i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))&0x7fffffff; }
+  return palette[h%palette.length];
+}
+function _getAllCandTags(){
+  var counts={};
+  (typeof getCandidats==='function'?getCandidats():[]).forEach(function(cc){
+    if(!cc||cc._deleted||!Array.isArray(cc.tags)) return;
+    cc.tags.forEach(function(t){ var k=String(t||'').trim(); if(!k) return; var lk=k.toLowerCase(); if(!counts[lk]) counts[lk]={tag:k,count:0}; counts[lk].count++; });
+  });
+  return Object.keys(counts).map(function(k){ return counts[k]; }).sort(function(a,b){ return b.count-a.count||a.tag.localeCompare(b.tag); });
+}
+function _candTagChips(cand){
+  var tags=Array.isArray(cand.tags)?cand.tags:[];
+  if(!tags.length) return '<span style="font-size:11px;color:#B7ADD6;font-style:italic;">aucun tag</span>';
+  return tags.map(function(t,i){
+    var col=_candTagColor(t);
+    return '<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 4px 2px 9px;border-radius:12px;font-size:11px;font-weight:600;background:'+col[0]+';color:'+col[1]+';">'+_tagEsc(String(t))+'<span data-always-editable onclick="removeCandTagAt('+cand.id+','+i+')" title="Retirer ce tag" style="cursor:pointer;font-weight:800;opacity:.55;padding:0 3px;">&times;</span></span>';
+  }).join('');
+}
+function _updateCandTagsDatalist(){
+  var dl=document.getElementById('cand-tags-datalist'); if(!dl) return;
+  dl.innerHTML=_getAllCandTags().map(function(o){ return '<option value="'+_tagEsc(o.tag)+'">'; }).join('');
+}
+function _refreshCandTagsUI(id){
+  var cand=(typeof getCandidats==='function'?getCandidats():[]).find(function(cc){ return cc.id===id; });
+  var chipsEl=document.getElementById('cand-tags-chips-'+id);
+  if(chipsEl&&cand) chipsEl.innerHTML=_candTagChips(cand);
+  _updateCandTagsDatalist();
+}
+function _candTagKeydown(ev,id){ if(ev.key==='Enter'){ ev.preventDefault(); var i=document.getElementById('cand-tag-input-'+id); if(i){ addCandTag(id,i.value); i.value=''; } } }
+function _candTagAdd(id){ var i=document.getElementById('cand-tag-input-'+id); if(i){ addCandTag(id,i.value); i.value=''; i.focus(); } }
+function addCandTag(id,raw){
+  var tag=String(raw==null?'':raw).trim().replace(/\s+/g,' ');
+  if(!tag) return;
+  if(tag.length>40) tag=tag.slice(0,40);
+  var cands=getCandidats();
+  var idx=cands.findIndex(function(cc){ return cc.id===id; });
+  if(idx<0) return;
+  var tags=Array.isArray(cands[idx].tags)?cands[idx].tags.slice():[];
+  if(tags.some(function(t){ return String(t).toLowerCase()===tag.toLowerCase(); })){ _refreshCandTagsUI(id); return; }
+  tags.push(tag);
+  cands[idx].tags=tags; cands[idx].updated_at=Date.now(); cands[idx].updated_ts=Date.now();
+  saveCandidatsArr(cands);
+  if(typeof odAutoSync==='function') odAutoSync();
+  _refreshCandTagsUI(id);
+  if(typeof renderCandidats==='function') renderCandidats();
+}
+function removeCandTagAt(id,tagIdx){
+  var cands=getCandidats();
+  var idx=cands.findIndex(function(cc){ return cc.id===id; });
+  if(idx<0) return;
+  var tags=Array.isArray(cands[idx].tags)?cands[idx].tags.slice():[];
+  if(tagIdx<0||tagIdx>=tags.length) return;
+  tags.splice(tagIdx,1);
+  cands[idx].tags=tags; cands[idx].updated_at=Date.now(); cands[idx].updated_ts=Date.now();
+  saveCandidatsArr(cands);
+  if(typeof odAutoSync==='function') odAutoSync();
+  _refreshCandTagsUI(id);
+  if(typeof renderCandidats==='function') renderCandidats();
+}
+function _candTagsBar(cand){
+  return '<div style="padding:10px 20px;border-top:1.5px solid #F0EDF9;background:#FCFBFF;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    + '<span style="font-size:11px;font-weight:700;color:#7343EE;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;">&#127991;&#65039; Tags</span>'
+    + '<div id="cand-tags-chips-'+cand.id+'" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'+_candTagChips(cand)+'</div>'
+    + '<div style="display:flex;gap:6px;align-items:center;margin-left:auto;">'
+    +   '<input data-always-editable id="cand-tag-input-'+cand.id+'" list="cand-tags-datalist" autocomplete="off" placeholder="Ajouter / rechercher un tag..." onkeydown="_candTagKeydown(event,'+cand.id+')" style="padding:5px 9px;border:1.5px dashed #C7B2F5;border-radius:7px;font-size:11px;width:190px;outline:none;background:#fff;">'
+    +   '<button data-always-editable onclick="_candTagAdd('+cand.id+')" style="padding:5px 11px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">+ Tag</button>'
+    + '</div>'
+    + '<datalist id="cand-tags-datalist">'+_getAllCandTags().map(function(o){ return '<option value="'+_tagEsc(o.tag)+'">'; }).join('')+'</datalist>'
+    + '</div>';
+}
+function toggleAllCandTagsPanel(){
+  var p=document.getElementById('cand-all-tags-panel'); if(!p) return;
+  if(p.style.display==='none'||!p.style.display){ renderAllCandTagsPanel(); p.style.display='block'; } else p.style.display='none';
+}
+function renderAllCandTagsPanel(){
+  var p=document.getElementById('cand-all-tags-panel'); if(!p) return;
+  var all=_getAllCandTags();
+  if(!all.length){ p.innerHTML='<div style="font-size:12px;color:#9E94C4;">Aucun tag créé pour le moment. Ajoutez des tags depuis une fiche candidat.</div>'; return; }
+  p.innerHTML='<div style="font-size:11px;font-weight:700;color:#7343EE;margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px;">Tous les tags ('+all.length+')</div>'
+    + '<div style="display:flex;gap:7px;flex-wrap:wrap;">'
+    + all.map(function(o){ var col=_candTagColor(o.tag);
+        return '<button data-tag="'+_tagEsc(o.tag)+'" onclick="filterCandByTag(this.dataset.tag)" title="Filtrer les candidats ayant ce tag" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:14px;border:none;font-size:11px;font-weight:600;cursor:pointer;background:'+col[0]+';color:'+col[1]+';">'+_tagEsc(o.tag)+'<span style="background:'+col[1]+';color:#fff;border-radius:8px;padding:0 5px;font-size:9px;">'+o.count+'</span></button>';
+      }).join('')
+    + '</div>';
+}
+function filterCandByTag(tag){
+  var s=document.getElementById('cand-search'); if(s) s.value=tag;
+  if(typeof renderCandidats==='function') renderCandidats();
+}
+
 function openCandidatFiche(id) {
   var cands = getCandidats();
   var cand = cands.find(function(c) { return c.id === id; });
@@ -26669,6 +26778,7 @@ function buildCandFicheHTML(cand) {
     + sel('Commercial référent', cand.commercial||'', 'commercial', ['','David','Rayan','Esteban','Sacha','Farah','Joanne','Norman'])
     + '</div>'
     + '</div>'
+    + _candTagsBar(cand)
 
     // ── Corps : onglets gauche + commentaires droite ──
     + '<div style="display:flex;min-height:320px;">'
@@ -27814,6 +27924,13 @@ function mergeCandidats(remote) {
       });
       sims.sort(function(a,b){ return (b.timestamp||0)-(a.timestamp||0); });
       localMatch.simulations = sims;
+      // ── Fusion des TAGS (union insensible à la casse ; partage entre postes) ──
+      if (Array.isArray(rc.tags) && rc.tags.length) {
+        var _lt = Array.isArray(localMatch.tags) ? localMatch.tags.slice() : [];
+        var _seenT = {}; _lt.forEach(function(t){ _seenT[String(t).toLowerCase()] = 1; });
+        rc.tags.forEach(function(t){ var lk=String(t||'').toLowerCase(); if(t && !_seenT[lk]){ _lt.push(t); _seenT[lk]=1; } });
+        localMatch.tags = _lt;
+      }
       // Garder le SP-ID si absent
       if (!localMatch.sp_id && rc.sp_id) localMatch.sp_id = rc.sp_id;
       // Récupérer email/tel manquants depuis le remote
@@ -34345,6 +34462,12 @@ function _renderCommAddPorteList(q) {
 
 // Détermine la date de référence d'un deal (1er document uploadé sur le candidat, sinon fallback)
 function getDealReferenceDate(deal) {
+  // PRIORITÉ : si la DATE DU DEAL a été modifiée manuellement, elle fait foi dans les
+  // commissions (prioritaire sur la date de création du dossier / des documents).
+  if (deal && deal.date_deal_modified && deal.date_deal) {
+    var _dm = new Date(deal.date_deal);
+    if (!isNaN(_dm.getTime())) return _dm;
+  }
   // Chercher le candidat lié par email
   var email = (deal.email || '').trim().toLowerCase();
   if (email && typeof getCandidats === 'function') {
