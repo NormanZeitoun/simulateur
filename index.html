@@ -5013,6 +5013,46 @@ function buildEML(to, subject, htmlBody, attachments, boundary, cc) {
 // ═══════════════════════════════════════════════════════════
 // HISTORIQUE — version avancée
 // ═══════════════════════════════════════════════════════════
+// ===== Compression localStorage (LZString) pour les gros blocs (historique, impayés) =====
+// Lib LZString officielle (v1.x) — définit la globale LZString.
+var LZString=function(){var r=String.fromCharCode,o="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",n="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-$",e={};function t(r,o){if(!e[r]){e[r]={};for(var n=0;n<r.length;n++)e[r][r.charAt(n)]=n}return e[r][o]}var i={compressToBase64:function(r){if(null==r)return"";var n=i._compress(r,6,function(r){return o.charAt(r)});switch(n.length%4){default:case 0:return n;case 1:return n+"===";case 2:return n+"==";case 3:return n+"="}},decompressFromBase64:function(r){return null==r?"":""==r?null:i._decompress(r.length,32,function(n){return t(o,r.charAt(n))})},compressToUTF16:function(o){return null==o?"":i._compress(o,15,function(o){return r(o+32)})+" "},decompressFromUTF16:function(r){return null==r?"":""==r?null:i._decompress(r.length,16384,function(o){return r.charCodeAt(o)-32})},compressToUint8Array:function(r){for(var o=i.compress(r),n=new Uint8Array(2*o.length),e=0,t=o.length;e<t;e++){var s=o.charCodeAt(e);n[2*e]=s>>>8,n[2*e+1]=s%256}return n},decompressFromUint8Array:function(o){if(null==o)return i.decompress(o);for(var n=new Array(o.length/2),e=0,t=n.length;e<t;e++)n[e]=256*o[2*e]+o[2*e+1];var s=[];return n.forEach(function(o){s.push(r(o))}),i.decompress(s.join(""))},compressToEncodedURIComponent:function(r){return null==r?"":i._compress(r,6,function(r){return n.charAt(r)})},decompressFromEncodedURIComponent:function(r){return null==r?"":""==r?null:(r=r.replace(/ /g,"+"),i._decompress(r.length,32,function(o){return t(n,r.charAt(o))}))},compress:function(o){return i._compress(o,16,function(o){return r(o)})},_compress:function(r,o,n){if(null==r)return"";var e,t,i,s={},u={},a="",p="",c="",l=2,f=3,h=2,d=[],m=0,v=0;for(i=0;i<r.length;i+=1)if(a=r.charAt(i),Object.prototype.hasOwnProperty.call(s,a)||(s[a]=f++,u[a]=!0),p=c+a,Object.prototype.hasOwnProperty.call(s,p))c=p;else{if(Object.prototype.hasOwnProperty.call(u,c)){if(c.charCodeAt(0)<256){for(e=0;e<h;e++)m<<=1,v==o-1?(v=0,d.push(n(m)),m=0):v++;for(t=c.charCodeAt(0),e=0;e<8;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}else{for(t=1,e=0;e<h;e++)m=m<<1|t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t=0;for(t=c.charCodeAt(0),e=0;e<16;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}0==--l&&(l=Math.pow(2,h),h++),delete u[c]}else for(t=s[c],e=0;e<h;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1;0==--l&&(l=Math.pow(2,h),h++),s[p]=f++,c=String(a)}if(""!==c){if(Object.prototype.hasOwnProperty.call(u,c)){if(c.charCodeAt(0)<256){for(e=0;e<h;e++)m<<=1,v==o-1?(v=0,d.push(n(m)),m=0):v++;for(t=c.charCodeAt(0),e=0;e<8;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}else{for(t=1,e=0;e<h;e++)m=m<<1|t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t=0;for(t=c.charCodeAt(0),e=0;e<16;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}0==--l&&(l=Math.pow(2,h),h++),delete u[c]}else for(t=s[c],e=0;e<h;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1;0==--l&&(l=Math.pow(2,h),h++)}for(t=2,e=0;e<h;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1;for(;;){if(m<<=1,v==o-1){d.push(n(m));break}v++}return d.join("")},decompress:function(r){return null==r?"":""==r?null:i._decompress(r.length,32768,function(o){return r.charCodeAt(o)})},_decompress:function(o,n,e){var t,i,s,u,a,p,c,l=[],f=4,h=4,d=3,m="",v=[],g={val:e(0),position:n,index:1};for(t=0;t<3;t+=1)l[t]=t;for(s=0,a=Math.pow(2,2),p=1;p!=a;)u=g.val&g.position,g.position>>=1,0==g.position&&(g.position=n,g.val=e(g.index++)),s|=(u>0?1:0)*p,p<<=1;switch(s){case 0:for(s=0,a=Math.pow(2,8),p=1;p!=a;)u=g.val&g.position,g.position>>=1,0==g.position&&(g.position=n,g.val=e(g.index++)),s|=(u>0?1:0)*p,p<<=1;c=r(s);break;case 1:for(s=0,a=Math.pow(2,16),p=1;p!=a;)u=g.val&g.position,g.position>>=1,0==g.position&&(g.position=n,g.val=e(g.index++)),s|=(u>0?1:0)*p,p<<=1;c=r(s);break;case 2:return""}for(l[3]=c,i=c,v.push(c);;){if(g.index>o)return"";for(s=0,a=Math.pow(2,d),p=1;p!=a;)u=g.val&g.position,g.position>>=1,0==g.position&&(g.position=n,g.val=e(g.index++)),s|=(u>0?1:0)*p,p<<=1;switch(c=s){case 0:for(s=0,a=Math.pow(2,8),p=1;p!=a;)u=g.val&g.position,g.position>>=1,0==g.position&&(g.position=n,g.val=e(g.index++)),s|=(u>0?1:0)*p,p<<=1;l[h++]=r(s),c=h-1,f--;break;case 1:for(s=0,a=Math.pow(2,16),p=1;p!=a;)u=g.val&g.position,g.position>>=1,0==g.position&&(g.position=n,g.val=e(g.index++)),s|=(u>0?1:0)*p,p<<=1;l[h++]=r(s),c=h-1,f--;break;case 2:return v.join("")}if(0==f&&(f=Math.pow(2,d),d++),l[c])m=l[c];else{if(c!==h)return null;m=i+i.charAt(0)}v.push(m),l[h++]=i+m.charAt(0),i=m,0==--f&&(f=Math.pow(2,d),d++)}}};return i}();"function"==typeof define&&define.amd?define(function(){return LZString}):"undefined"!=typeof module&&null!=module?module.exports=LZString:"undefined"!=typeof angular&&null!=angular&&angular.module("LZString",[]).factory("LZString",function(){return LZString});
+// Helpers de lecture/écriture compressée (marqueur 'LZ1|'). Rétrocompatible :
+// une valeur non préfixée est lue en JSON brut (migration paresseuse à la prochaine écriture).
+function _lzSet(key, obj){
+  var json = JSON.stringify(obj == null ? null : obj);
+  try {
+    if (window.LZString && json && json.length > 2000) {
+      localStorage.setItem(key, 'LZ1|' + LZString.compressToUTF16(json));
+    } else {
+      localStorage.setItem(key, json);
+    }
+  } catch(e){
+    // Dernier recours : tenter le JSON brut, puis signaler le dépassement de quota
+    try { localStorage.setItem(key, json); }
+    catch(e2){ console.error('[localStorage plein] ' + key, e2); if (typeof showNotifToast==='function') { try{ showNotifToast('\u26A0 Stockage navigateur plein'); }catch(_){} } throw e2; }
+  }
+}
+function _lzGet(key){
+  var raw = localStorage.getItem(key);
+  if (raw == null) return null;
+  if (raw.indexOf('LZ1|') === 0) {
+    try { return JSON.parse(LZString.decompressFromUTF16(raw.slice(4))); } catch(e){ console.error('[LZ decompress] ' + key, e); return null; }
+  }
+  try { return JSON.parse(raw); } catch(e){ return null; }
+}
+// Migration one-shot : recompresse en place les gros blocs déjà stockés en JSON brut.
+function _lzMigrateBigKeys(){
+  try {
+    ['sp_historique_v3','sp_impayes_v1'].forEach(function(k){
+      var raw = localStorage.getItem(k);
+      if (raw != null && raw.indexOf('LZ1|') !== 0 && raw.length > 2000 && window.LZString) {
+        try { localStorage.setItem(k, 'LZ1|' + LZString.compressToUTF16(raw)); } catch(e){}
+      }
+    });
+  } catch(e){}
+}
+try { _lzMigrateBigKeys(); } catch(e){}
+
 var HIST_KEY = 'sp_historique_v3';
 var histSearch = '';
 var histFilter = '__all__';
@@ -5020,10 +5060,10 @@ var histFilterDest = '__all__';
 var histFilterCommercial = '__all__';
 
 function getHistory() {
-  try { return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch(e) { return []; }
+  try { var v = _lzGet(HIST_KEY); return Array.isArray(v) ? v : []; } catch(e) { return []; }
 }
 function saveHistoryArr(arr) {
-  localStorage.setItem(HIST_KEY, JSON.stringify(arr));
+  _lzSet(HIST_KEY, arr || []);
 }
 
 function highlight(text, query) {
@@ -9743,7 +9783,15 @@ function savePlacement() {
     })(),
     commercial: document.getElementById('pl-commercial').value,
     origine: document.getElementById('pl-origine').value,
-    etat: document.getElementById('pl-etat').value,
+    etat: (function(){
+      var v = document.getElementById('pl-etat').value;
+      if (v) return v;
+      // SÉCURITÉ : si le <select> état renvoie vide (ex. état non listé comme
+      // "Sorti des effectifs" / "Signé"), on PRÉSERVE l'état existant du deal
+      // au lieu de l'écraser par du vide (bug : la modif de date effaçait l'état).
+      if (idx >= 0 && deals[idx] && deals[idx].etat) return deals[idx].etat;
+      return v;
+    })(),
     contrat: document.getElementById('pl-contrat').value,
     date_entree: document.getElementById('pl-date-entree').value,
     commentaire: document.getElementById('pl-commentaire').value,
@@ -14217,6 +14265,8 @@ function sendMailViaGraph(options, onSuccess, onError) {
     saveToSentItems: true
   };
   if (ccRec.length) payload.message.ccRecipients = ccRec;
+  var replyRec = (options.replyTo || []).filter(Boolean).map(function(e){ return { emailAddress: { address: e } }; });
+  if (replyRec.length) payload.message.replyTo = replyRec;
   if (options.attachments && options.attachments.length) {
     payload.message.attachments = options.attachments.map(function(a) {
       return {
@@ -19625,12 +19675,12 @@ var IMPAYES_FILTER = {
 };
 
 function getImpayes() {
-  try { return JSON.parse(localStorage.getItem(IMPAYES_KEY) || '[]'); }
+  try { var v = _lzGet(IMPAYES_KEY); return Array.isArray(v) ? v : []; }
   catch(e) { return []; }
 }
 
 function saveImpayes(arr) {
-  localStorage.setItem(IMPAYES_KEY, JSON.stringify(arr || []));
+  _lzSet(IMPAYES_KEY, arr || []);
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 
@@ -19773,23 +19823,57 @@ var SB_EXCLUSIONS_KEY = 'sp_sb_exclusions_v1';        // { consultants:[], clien
 var SB_THRESHOLD_BLOCK = 2;    // ≥ 2 impayés → bloqué
 var SB_THRESHOLD_UNBLOCK = 1;  // ≤ 1 impayé  → débloqué (Norman : 0 ou 1)
 var SB_MAX_COMMENTS = 30;                 // plafond de commentaires par entrée (anti-saturation localStorage)
+var SB_MAX_AUTO_COMMENTS = 2;             // plafond de commentaires AUTOMATIQUES conservés (les plus récents)
 var SB_FLAP_GUARD_MS = 6 * 3600 * 1000;   // une entrée AUTO ne re-bascule pas dans les 6 h (anti-flapping)
 // Tronque les commentaires de chaque entrée aux plus récents (unshift = récents en tête)
 function _sbCapAllComments(arr) {
   if (!Array.isArray(arr)) return arr;
+  var isAuto = function(cm){ return cm && cm.author === 'Système (automatique)'; };
+  // Parse une date "JJ/MM/AAAA HH:MM" en timestamp (pour garder les AUTO les PLUS RÉCENTS)
+  var cmTime = function(cm){
+    var m = String(cm && cm.date || '').match(/(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+    return m ? new Date(+m[3], +m[2]-1, +m[1], +(m[4]||0), +(m[5]||0)).getTime() : 0;
+  };
   for (var i = 0; i < arr.length; i++) {
     var e = arr[i];
     if (!e || !Array.isArray(e.commentaires)) continue;
-    // Entrée débloquée : on ne conserve pas l'historique automatique (uniquement les commentaires manuels)
     if (e.statut === 'debloque') {
-      e.commentaires = e.commentaires.filter(function(cm){ return cm && cm.author !== 'Système (automatique)'; });
+      // Entrée débloquée : on ne conserve QUE les commentaires manuels (aucun auto)
+      e.commentaires = e.commentaires.filter(function(cm){ return !isAuto(cm); });
+    } else {
+      // Sinon : TOUS les commentaires manuels + au plus SB_MAX_AUTO_COMMENTS commentaires AUTO (les plus récents)
+      var keepAuto = e.commentaires.filter(isAuto)
+        .sort(function(a, b){ return cmTime(b) - cmTime(a); })
+        .slice(0, SB_MAX_AUTO_COMMENTS);
+      e.commentaires = e.commentaires.filter(function(cm){
+        return isAuto(cm) ? (keepAuto.indexOf(cm) >= 0) : true;
+      });
     }
+    // Garde-fou global (borne le total par sécurité)
     if (e.commentaires.length > SB_MAX_COMMENTS) {
       e.commentaires = e.commentaires.slice(0, SB_MAX_COMMENTS);
     }
   }
   return arr;
 }
+
+// Backfill one-shot : applique le plafond des commentaires auto (2 max) aux entrées DÉJÀ existantes.
+function _sbBackfillCapComments() {
+  try {
+    if (localStorage.getItem('sp_sb_autocap2_v1')) return;   // déjà appliqué sur ce poste
+    var arr = getSalairesBloques();
+    if (Array.isArray(arr) && arr.length) {
+      var before = JSON.stringify(arr);
+      _sbCapAllComments(arr);
+      if (JSON.stringify(arr) !== before) {
+        saveSalairesBloques(arr);   // persiste + sync (le merge re-plafonne aussi)
+        console.log('[SB] Historique de commentaires auto plafonné à ' + SB_MAX_AUTO_COMMENTS + ' sur les entrées existantes.');
+      }
+    }
+    localStorage.setItem('sp_sb_autocap2_v1', '1');
+  } catch(e){ console.warn('[SB cap backfill]', e); }
+}
+window.addEventListener('load', function(){ setTimeout(_sbBackfillCapComments, 6000); });
 // Garde anti-flapping : autorise un changement de statut auto seulement si le dernier date d'il y a > 6 h
 function _sbCanFlip(e, now) {
   return (now - ((e && e.statut_ts) || 0)) >= SB_FLAP_GUARD_MS;
@@ -31097,6 +31181,25 @@ function _findCommercialForClient(cl) {
   return { name: commName, email: commEmail };
 }
 
+// Email de l'ADV affecté au dossier (Clémence A-H / Marie I-Z selon le nom du consultant
+// du deal le plus récent du client). Retourne '' si introuvable.
+function _findADVEmailForClient(cl) {
+  if (!cl) return '';
+  try {
+    var deals = (typeof getDeals === 'function') ? getDeals() : [];
+    var name = (cl.name || '').toLowerCase().trim();
+    if (!name) return '';
+    var cds = deals.filter(function(d){ return (d.entreprise || '').toLowerCase().trim() === name; });
+    if (!cds.length) return '';
+    cds.sort(function(a, b){ return (b.updated_at || 0) - (a.updated_at || 0); });
+    var nom = (cds[0].nom || cds[0].nom_porte || '').trim();
+    var advKey = (typeof _getADVByLetter === 'function') ? _getADVByLetter(nom.charAt(0)) : null;
+    if (!advKey) return '';
+    var em = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+    return advKey === 'clemence' ? (em.clemence || '') : (advKey === 'marie' ? (em.marie || '') : '');
+  } catch(e) { return ''; }
+}
+
 // Construit le HTML du mail de relance pour un doc qui expire/est expiré
 function _buildRelanceMailHtml(cl, dt, doc, status) {
   var label = dt.label;
@@ -31156,6 +31259,11 @@ function runDocsRelanceScan(mode) {
     var commercial = _findCommercialForClient(cl);
     var ccList = [];
     if (commercial && commercial.email) ccList.push(commercial.email);
+    // ADV affecté au dossier (Clémence A-H / Marie I-Z selon le nom du consultant du deal le plus récent)
+    var advEmailCC = _findADVEmailForClient(cl);
+    if (advEmailCC) ccList.push(advEmailCC);
+    // Dédoublonnage + retrait des vides : en copie = commercial du deal + ADV (plus l'expéditeur perso)
+    ccList = ccList.filter(function(e, i){ return e && ccList.indexOf(e) === i; });
 
     ALL_TYPES.forEach(function(dt){
       var doc = cl.documents[dt.key];
@@ -31183,25 +31291,43 @@ function runDocsRelanceScan(mode) {
         + 'Renouvellement ' + dt.label + ' — ' + cl.name;
       var htmlBody = _buildRelanceMailHtml(cl, dt, doc, status);
 
-      // Envoi (asynchrone, fire-and-forget pour ne pas bloquer le scan)
+      // ── ANTI-DOUBLON : on pose le flag IMMÉDIATEMENT (avant l'envoi asynchrone),
+      //    pour qu'un 2e scan (autre onglet/poste) ne renvoie pas le même mail. ──
+      var clientsNow = getClients();
+      var idxNow = clientsNow.findIndex(function(c){ return c.id === cl.id; });
+      if (idxNow >= 0 && clientsNow[idxNow].documents && clientsNow[idxNow].documents[dt.key]) {
+        if (relanceType === 'j7') clientsNow[idxNow].documents[dt.key].relance_j7_sent = Date.now();
+        if (relanceType === 'j0') clientsNow[idxNow].documents[dt.key].relance_j0_sent = Date.now();
+        clientsNow[idxNow].updated = new Date().toLocaleDateString('fr-FR');
+        clientsNow[idxNow].updated_ts = Date.now();
+        saveClientsArr(clientsNow);
+        if (typeof odAutoSync === 'function') odAutoSync();
+      }
+      // marquer aussi l'objet local pour ne pas re-traiter dans la même boucle
+      if (relanceType === 'j7') doc.relance_j7_sent = Date.now();
+      if (relanceType === 'j0') doc.relance_j0_sent = Date.now();
+
+      // Envoi depuis la boîte partagée (plus "de moi") ; commercial + ADV en copie et en "répondre à"
       sendMailViaGraph({
+        from: 'social@seven-portage.fr',
         to: [emailCompta],
         cc: ccList,
+        replyTo: ccList,
         subject: subject,
         htmlBody: htmlBody
       }, function(){
-        // Succès : marquer le flag
-        var clientsRefresh = getClients();
-        var idx = clientsRefresh.findIndex(function(c){ return c.id === cl.id; });
-        if (idx >= 0 && clientsRefresh[idx].documents && clientsRefresh[idx].documents[dt.key]) {
-          if (relanceType === 'j7') clientsRefresh[idx].documents[dt.key].relance_j7_sent = Date.now();
-          if (relanceType === 'j0') clientsRefresh[idx].documents[dt.key].relance_j0_sent = Date.now();
-          clientsRefresh[idx].updated = new Date().toLocaleDateString('fr-FR');
-          saveClientsArr(clientsRefresh);
-          if (typeof odAutoSync === 'function') odAutoSync();
-        }
+        // succès : le flag est déjà posé, rien à faire
       }, function(err){
         console.error('[Relance] Échec ' + cl.name + ' / ' + dt.label, err);
+        // Échec d'envoi : on REVERT le flag pour retenter au prochain scan
+        var cr = getClients();
+        var ix = cr.findIndex(function(c){ return c.id === cl.id; });
+        if (ix >= 0 && cr[ix].documents && cr[ix].documents[dt.key]) {
+          if (relanceType === 'j7') cr[ix].documents[dt.key].relance_j7_sent = null;
+          if (relanceType === 'j0') cr[ix].documents[dt.key].relance_j0_sent = null;
+          saveClientsArr(cr);
+          if (typeof odAutoSync === 'function') odAutoSync();
+        }
       });
 
       relancesEnvoyees.push(cl.name + ' - ' + dt.label + ' (' + relanceType.toUpperCase() + ' → ' + emailCompta + (ccList.length ? ' cc ' + ccList.join(',') : '') + ')');
@@ -36469,7 +36595,7 @@ function exportCommHistCSV() {
         </div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Commercial</label><select id="pl-commercial" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option value="">-- Sélectionner --</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Origine deal</label><select id="pl-origine" onchange="onPlCoopTypeChange()" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>Réseau</option><option>LinkedIn</option><option>Job board</option><option>Recommandation</option><option>Cooptation Client</option><option>Cooptation Candidat</option><option>Autre</option></select></div>
-        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">État dossier <span style="font-weight:500;text-transform:none;color:#9E94C4;">(« Signé » est calculé auto)</span></label><select id="pl-etat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Nouveau placement</option><option>En cours</option><option>Annulé</option></select></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">État dossier <span style="font-weight:500;text-transform:none;color:#9E94C4;">(« Signé » est calculé auto)</span></label><select id="pl-etat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Nouveau placement</option><option>En cours</option><option>Signé</option><option>Annulé</option><option>Sorti des effectifs</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Type de contrat</label><select id="pl-contrat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>CDI</option><option>CDD</option><option>Portage</option><option>Portage Commercial</option></select></div>
         <!-- Adresse d'exécution : champ DEAL (lieu spécifique de la mission, peut différer du siège du client) -->
         <div style="grid-column:1/-1;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Adresse d'exécution <span style="font-weight:500;text-transform:none;color:#9E94C4;">(lieu de la mission)</span></label><input id="pl-adresse-exec" type="text" placeholder="Adresse de réalisation de la mission" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
