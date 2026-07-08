@@ -1862,7 +1862,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       <!-- Barre recherche + filtres -->
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <div style="position:relative;flex:1;min-width:200px;">
-          <input id="cand-search" type="text" placeholder="Rechercher par nom, email, entreprise..." oninput="renderCandidats()" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
+          <input id="cand-search" type="text" placeholder="Rechercher par nom, email, entreprise..." oninput="_debounceSearch('cand', renderCandidats)" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
           <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>
         </div>
         <select id="cand-filter-commercial" onchange="renderCandidats()" style="padding:7px 10px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;background:#F5F3FF;cursor:pointer;color:#4B36EC;font-weight:600;min-width:150px;">
@@ -1940,7 +1940,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <div style="position:relative;flex:1;min-width:200px;">
-          <input id="clients-search" type="text" placeholder="Rechercher une entreprise..." oninput="renderClients()" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
+          <input id="clients-search" type="text" placeholder="Rechercher une entreprise..." oninput="_debounceSearch(&quot;clients&quot;, renderClients)" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
           <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>
         </div>
         <select id="clients-filter-commercial" onchange="renderClients()" style="padding:7px 10px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;background:#F5F3FF;cursor:pointer;color:#4B36EC;font-weight:600;min-width:150px;">
@@ -3737,15 +3737,18 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.06.18t';
-  window.APP_BUILD = 2026061820;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
-  // Notification de nouvelle version vers les sessions ouvertes des autres postes
+  window.APP_VERSION = 'v2026.07.08a';
+  window.APP_BUILD = 2026070810;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  // Notification de nouvelle version : détection DIRECTE du déploiement (ETag/Last-Modified
+  // du fichier servi par Netlify) + repli OneDrive. Ne dépend plus qu'un autre poste "publie".
   try {
-    setTimeout(function(){ if (typeof _appVersionCheck === 'function') _appVersionCheck(); }, 25000);
-    setInterval(function(){ if (typeof _appVersionCheck === 'function') _appVersionCheck(); }, 180000);
+    if (typeof _appVersionCheckHTTP === 'function') _appVersionCheckHTTP();  // capture la version de référence au chargement
+    setTimeout(function(){ if (typeof _appVersionCheckAll === 'function') _appVersionCheckAll(); }, 8000);
+    setInterval(function(){ if (typeof _appVersionCheckAll === 'function') _appVersionCheckAll(); }, 60000);
     document.addEventListener('visibilitychange', function(){
-      if (!document.hidden && typeof _appVersionCheck === 'function') _appVersionCheck();
+      if (!document.hidden && typeof _appVersionCheckAll === 'function') _appVersionCheckAll();
     });
+    window.addEventListener('focus', function(){ if (typeof _appVersionCheckAll === 'function') _appVersionCheckAll(); });
   } catch(e) {}
   console.log('%c[Seven Portage] Version ' + window.APP_VERSION, 'color:#7343EE;font-weight:700;');
   try {
@@ -5976,11 +5979,29 @@ function renderHistorique() {
   listEl.innerHTML = html;
 }
 
+// ── Debounce générique des recherches : la variable de filtre est mise à jour
+//    immédiatement, mais le re-render (coûteux) n'a lieu qu'après une courte pause
+//    de frappe (200 ms). La saisie reste fluide, le tableau suit juste derrière. ──
+var _dbTimers = {};
+function _debounceSearch(key, fn, delay){
+  if (_dbTimers[key]) clearTimeout(_dbTimers[key]);
+  _dbTimers[key] = setTimeout(function(){ _dbTimers[key] = null; try { fn(); } catch(e){ console.error('[debounce '+key+']', e); } }, delay == null ? 200 : delay);
+}
+// Variante : re-render PUIS re-focus d'un input recréé par le render (curseur en fin)
+function _debounceSearchRefocus(key, renderFn, inputId, delay){
+  _debounceSearch(key, function(){
+    renderFn();
+    if (inputId) {
+      var e = document.getElementById(inputId);
+      if (e) { e.focus(); try { e.setSelectionRange(e.value.length, e.value.length); } catch(_){} }
+    }
+  }, delay);
+}
 function onHistSearch(val) {
   histSearch = val.trim().toLowerCase();
   var clearBtn = document.getElementById('hist-search-clear');
   if (clearBtn) clearBtn.classList.toggle('visible', histSearch.length > 0);
-  renderHistorique();
+  _debounceSearch('hist', renderHistorique);
 }
 
 function clearHistSearch() {
@@ -8252,6 +8273,30 @@ function _appVersionPublish() {
     headers: { Authorization: 'Bearer ' + odToken, 'Content-Type': 'application/json' },
     body: JSON.stringify({ build: parseInt(window.APP_BUILD) || 0, version: window.APP_VERSION || '', updated_at: Date.now() })
   }).catch(function(){});
+}
+// Vérification combinée : détection directe (HTTP) + repli OneDrive
+function _appVersionCheckAll() {
+  try { if (typeof _appVersionCheckHTTP === 'function') _appVersionCheckHTTP(); } catch(e) {}
+  try { if (typeof _appVersionCheck === 'function') _appVersionCheck(); } catch(e) {}
+}
+// Détection DIRECTE : compare l'ETag/Last-Modified du fichier déployé (Netlify) à celui du chargement.
+// Indépendant de OneDrive et sans attendre qu'un autre poste publie la version.
+function _appVersionCheckHTTP() {
+  try {
+    var u = (location.pathname || '/') + '?_v=' + Date.now();
+    fetch(u, { method: 'HEAD', cache: 'no-store' })
+      .then(function(r){
+        if (!r || !r.ok) return;
+        var tag = r.headers.get('ETag') || r.headers.get('Last-Modified') || '';
+        if (!tag) return;
+        if (!window._appDeployTag) { window._appDeployTag = tag; return; }  // 1er appel = référence
+        if (tag !== window._appDeployTag) {
+          window._appDeployTag = tag;   // évite les re-déclenchements en boucle
+          if (typeof _showUpdateOverlay === 'function') _showUpdateOverlay('');
+        }
+      })
+      .catch(function(){});
+  } catch(e) {}
 }
 function _showUpdateOverlay(newVer) {
   if (window._appUpdateShown) return;
@@ -11427,9 +11472,9 @@ function onDealConsultantSearchInput() {
   var clearBtn = document.getElementById('deal-search-clear');
   if (clearBtn) clearBtn.style.display = query ? 'block' : 'none';
 
-  // Mettre à jour le filtre actif → re-render le tableau immédiatement
+  // Mettre à jour le filtre actif ; le re-render (coûteux) est différé de 200 ms
   window._dealConsultantFilter = query;
-  if (typeof renderDeals === 'function') renderDeals();
+  _debounceSearch('deals', function(){ if (typeof renderDeals === 'function') renderDeals(); });
 
   // Afficher le dropdown avec les suggestions
   var dropdown = document.getElementById('deal-consultant-dropdown');
@@ -14208,7 +14253,7 @@ function renderVisiteMedicale() {
     + (VM_FILTER.mois_inscription ? '<button onclick="VM_FILTER.mois_inscription=\'\';renderVisiteMedicale();" title="Effacer" style="margin-left:5px;padding:6px 9px;border:1.5px solid #E4E0FA;border-radius:7px;background:#fff;color:#9E94C4;cursor:pointer;font-size:12px;">✕</button>' : '')
     + '</div>';
   h += '<div style="flex:1;min-width:200px;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Recherche par personne</label>'
-    + '<input id="vm-search" type="text" value="' + String(VM_FILTER.search||'').replace(/"/g,'&quot;') + '" placeholder="Nom ou prénom…" oninput="VM_FILTER.search=this.value;renderVisiteMedicale();setTimeout(function(){var e=document.getElementById(\'vm-search\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0);" style="width:100%;padding:7px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;"></div>';
+    + '<input id="vm-search" type="text" value="' + String(VM_FILTER.search||'').replace(/"/g,'&quot;') + '" placeholder="Nom ou prénom…" oninput="VM_FILTER.search=this.value;_debounceSearchRefocus(\'vm\', renderVisiteMedicale, \'vm-search\');" style="width:100%;padding:7px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;box-sizing:border-box;"></div>';
   h += '</div>';
   if (!list.length) {
     h += '<div style="padding:30px;text-align:center;color:#9E94C4;font-size:13px;">' + (all.length ? 'Aucune ligne ne correspond aux filtres.' : 'Aucune donnée. Clique sur \u00ab Importer l\'Excel \u00bb pour charger le fichier des visites médicales.') + '</div></div>';
@@ -15114,18 +15159,7 @@ var avantagesSearch = '';  // recherche candidat (prenom/nom)
 
 function setAvantagesSearch(val) {
   avantagesSearch = val || '';
-  // Re-render uniquement le tableau, pas toute la vue (pour garder le focus dans l'input)
-  if (typeof renderFrais === 'function') renderFrais();
-  // Restaurer le focus dans le champ de recherche
-  setTimeout(function(){
-    var el = document.getElementById('avantages-search-input');
-    if (el) {
-      el.focus();
-      var v = el.value;
-      el.value = '';
-      el.value = v; // remet le curseur en fin de champ
-    }
-  }, 30);
+  _debounceSearchRefocus('avantages', function(){ if (typeof renderFrais === 'function') renderFrais(); }, 'avantages-search-input');
 }
 
 function setAvantagesSort(col) {
@@ -15871,11 +15905,7 @@ function setFraisProFilter(field, value) {
 }
 function setFraisProSearch(val) {
   fraisProSearch = val || '';
-  if (typeof renderFrais === 'function') renderFrais();
-  setTimeout(function(){
-    var el = document.getElementById('fraispro-search-input');
-    if (el) { el.focus(); var v = el.value; el.value = ''; el.value = v; }
-  }, 30);
+  _debounceSearchRefocus('fraispro', function(){ if (typeof renderFrais === 'function') renderFrais(); }, 'fraispro-search-input');
 }
 function resetFraisProFilters() {
   fraisProFilters = { bp_fait: '', sans_montant: false };
@@ -16311,11 +16341,7 @@ function setEntreesFilter(field, value) {
 }
 function setEntreesSearch(val) {
   entreesSearch = val || '';
-  renderEntrees();
-  setTimeout(function(){
-    var el = document.getElementById('entrees-search-input');
-    if (el) { el.focus(); var v = el.value; el.value = ''; el.value = v; }
-  }, 30);
+  _debounceSearchRefocus('entrees', renderEntrees, 'entrees-search-input');
 }
 function resetEntreesFilters() {
   entreesFilters = { contacte: '', signature: '', mutuelle: '' };
@@ -16772,13 +16798,15 @@ function sendPremierMoisEmail(deal, onSuccess) {
   var candidat = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
   var prenom = (deal.prenom || '').trim();
 
-  // CC commercial
-  var ccList = [];
+  // EXPÉDITEUR = le commercial du deal (le mail "Premier mois" part de SON adresse,
+  // plus de l'adresse perso configurée). Repli : adresse de la config si commercial introuvable.
+  var commSenderEmail = '';
   if (deal.commercial && typeof getInternalEmails === 'function') {
     var emails = getInternalEmails();
     var commKey = deal.commercial.trim().toLowerCase();
-    if (emails[commKey]) ccList.push(emails[commKey]);
+    if (emails[commKey]) commSenderEmail = emails[commKey];
   }
+  var ccList = [];  // le commercial est l'expéditeur, plus besoin de le mettre en copie
 
   // Corps : template par défaut si vide dans config, sinon celui de la config
   var defaultCorps = ''
@@ -16848,7 +16876,7 @@ function sendPremierMoisEmail(deal, onSuccess) {
       cc: ccList,
       subject: sujet,
       htmlBody: htmlBody,
-      from: cfg.sender || undefined,  // override sender si supporté côté compte
+      from: commSenderEmail || cfg.sender || undefined,  // priorité : commercial du deal, sinon config
       attachments: attachments
     }, function() {
       if (onSuccess) onSuccess();
@@ -16961,11 +16989,7 @@ var comptesActFilters = { commercial: '' };
 
 function setComptesActSearch(val) {
   comptesActSearch = val || '';
-  renderComptesActivite();
-  setTimeout(function(){
-    var el = document.getElementById('comptes-act-search-input');
-    if (el) { el.focus(); var v = el.value; el.value = ''; el.value = v; }
-  }, 30);
+  _debounceSearchRefocus('comptesact', renderComptesActivite, 'comptes-act-search-input');
 }
 function setComptesActFilter(field, value) {
   comptesActFilters[field] = value;
@@ -17439,7 +17463,7 @@ function buildAvenantsContent() {
   html += '<div style="background:#fff;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">';
   html += '<div style="flex:1;min-width:200px;">'
     + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">🔍 Recherche</label>'
-    + '<input type="text" value="' + (AVENANTS_FILTER.search||'').replace(/"/g,'&quot;') + '" placeholder="Nom porté, commercial, commentaire…" oninput="AVENANTS_FILTER.search=this.value;renderAvenants();setTimeout(function(){var e=document.getElementById(\'av-search\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0);" id="av-search" style="width:100%;padding:8px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;">'
+    + '<input type="text" value="' + (AVENANTS_FILTER.search||'').replace(/"/g,'&quot;') + '" placeholder="Nom porté, commercial, commentaire…" oninput="AVENANTS_FILTER.search=this.value;_debounceSearchRefocus(\'av\', renderAvenants, \'av-search\');" id="av-search" style="width:100%;padding:8px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;">'
     + '</div>';
   html += '<div style="min-width:160px;">'
     + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Commercial</label>'
@@ -17720,26 +17744,107 @@ function openEditAvenantPopup(avenantId) {
   document.body.appendChild(modal);
 }
 
+function _avEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+// Envoi d'une notification à l'ADV en charge du dossier (Clémence A-H / Marie I-Z),
+// détaillant les changements effectués sur l'avenant. Depuis social@seven-portage.fr.
+function _notifyAvenantChange(a, changes) {
+  try {
+    if (typeof sendMailViaGraph !== 'function' || !changes || !changes.length) return;
+    var advKey = (typeof _getADVByLetter === 'function') ? _getADVByLetter((a.nom_porte||'').charAt(0)) : null;
+    var em = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+    var advEmail = advKey==='clemence' ? (em.clemence||'') : (advKey==='marie' ? (em.marie||'') : '');
+    if (!advEmail) { console.warn('[Notif avenant] ADV introuvable pour', a.nom_porte); return; }
+    var nom = ((a.prenom_porte||'')+' '+(a.nom_porte||'')).trim() || '—';
+    var who = a.updated_by || 'un utilisateur';
+    var when = new Date().toLocaleString('fr-FR');
+    var rows = changes.map(function(ch){
+      return '<tr>'
+        + '<td style="padding:6px 12px;border:1px solid #E4E0FA;font-weight:600;color:#372EB6;">'+_avEsc(ch.label)+'</td>'
+        + '<td style="padding:6px 12px;border:1px solid #E4E0FA;color:#9E94C4;">'+_avEsc(ch.old)+'</td>'
+        + '<td style="padding:6px 12px;border:1px solid #E4E0FA;font-weight:700;color:#0F5132;">'+_avEsc(ch.neu)+'</td>'
+        + '</tr>';
+    }).join('');
+    var html = '<div style="font-family:Arial,sans-serif;color:#1A1033;font-size:14px;line-height:1.5;">'
+      + '<p>Bonjour,</p>'
+      + '<p>Une modification a \u00e9t\u00e9 effectu\u00e9e sur l\'avenant du port\u00e9 <strong>'+_avEsc(nom)+'</strong> par <strong>'+_avEsc(who)+'</strong> le '+_avEsc(when)+'.</p>'
+      + '<p style="margin:4px 0;color:#6B5E9C;">Type : '+_avEsc(a.type_avenant||'\u2014')+' \u00b7 Motif : '+_avEsc(a.motif||'\u2014')+'</p>'
+      + '<table style="border-collapse:collapse;margin:12px 0;font-size:13px;">'
+      + '<tr>'
+      +   '<th style="padding:6px 12px;border:1px solid #E4E0FA;background:#F5F3FF;text-align:left;">Champ</th>'
+      +   '<th style="padding:6px 12px;border:1px solid #E4E0FA;background:#F5F3FF;text-align:left;">Avant</th>'
+      +   '<th style="padding:6px 12px;border:1px solid #E4E0FA;background:#F5F3FF;text-align:left;">Apr\u00e8s</th>'
+      + '</tr>'
+      + rows
+      + '</table>'
+      + '<p style="color:#9E94C4;font-size:12px;">Notification automatique \u2014 CRM Seven Portage.</p>'
+      + '</div>';
+    sendMailViaGraph({
+      from: 'social@seven-portage.fr',
+      to: [advEmail],
+      subject: 'Modification avenant \u2014 ' + nom,
+      htmlBody: html
+    }, function(){}, function(err){ console.error('[Notif avenant] \u00e9chec envoi', err); });
+  } catch(e) { console.error('[Notif avenant]', e); }
+}
 function saveEditAvenant(avenantId) {
   var all = getAvenants();
   var idx = all.findIndex(function(x){ return x.id === avenantId; });
   if (idx < 0) return;
-  all[idx].etat_avenant_cdt = document.getElementById('av-edit-etat-cdt').value || '';
-  all[idx].etat_av_cdps = document.getElementById('av-edit-etat-cdps').value || '';
-  all[idx].avenant_cdt_signe = document.getElementById('av-edit-cdt-signe').value || '';
-  all[idx].avenant_cdps_signe = document.getElementById('av-edit-cdps-signe').value || '';
-  all[idx].modif_laya = document.getElementById('av-edit-modif-laya').value || '';
-  all[idx].commentaires = document.getElementById('av-edit-commentaires').value || '';
-  var _avDD = document.getElementById('av-edit-date-debut');
-  var _avDF = document.getElementById('av-edit-date-fin');
-  if (_avDD) all[idx].date_debut = _avDD.value || '';
-  if (_avDF) all[idx].date_fin = _avDF.value || '';
-  all[idx].updated_at = Date.now();
-  all[idx].updated_by = (typeof _getCurrentUserName === 'function') ? _getCurrentUserName() : 'inconnu';
+  var a = all[idx];
+
+  // Valeurs proposées par le formulaire (undefined = champ absent du DOM)
+  var g = function(id){ var e = document.getElementById(id); return e ? (e.value || '') : undefined; };
+  var proposals = {
+    etat_avenant_cdt:   g('av-edit-etat-cdt'),
+    etat_av_cdps:       g('av-edit-etat-cdps'),
+    avenant_cdt_signe:  g('av-edit-cdt-signe'),
+    avenant_cdps_signe: g('av-edit-cdps-signe'),
+    modif_laya:         g('av-edit-modif-laya'),
+    commentaires:       g('av-edit-commentaires'),
+    date_debut:         g('av-edit-date-debut'),
+    date_fin:           g('av-edit-date-fin')
+  };
+  var LABELS = {
+    etat_avenant_cdt:'\u00c9tat Avenant CDT', etat_av_cdps:'\u00c9tat Av CDPS / New CDPS',
+    avenant_cdt_signe:'Avenant CDT sign\u00e9', avenant_cdps_signe:'Avenant / New CDPS Sign\u00e9',
+    modif_laya:'Modif LAYA', commentaires:'Commentaires',
+    date_debut:'\u00c0 partir du', date_fin:'Jusqu\'au'
+  };
+  var DATE_FIELDS = { date_debut:1, date_fin:1 };
+
+  // Calcul des changements réels (avant → après)
+  var changes = [];
+  Object.keys(proposals).forEach(function(f){
+    var nv = proposals[f];
+    if (nv === undefined) return;                       // champ non présent → on ignore
+    var ovRaw = (a[f] == null) ? '' : String(a[f]);
+    var nvStr = String(nv);
+    var ovCmp = ovRaw;
+    if (DATE_FIELDS[f] && typeof _toISODateInput === 'function') ovCmp = _toISODateInput(ovRaw) || ovRaw;
+    if (nvStr === ovCmp) return;                         // aucun changement sur ce champ
+    var fmt = function(v){ if(!v) return '(vide)'; return DATE_FIELDS[f] ? _fmtAvDate(v) : String(v); };
+    changes.push({ field:f, label:(LABELS[f]||f), old:fmt(ovCmp), neu:fmt(nvStr) });
+  });
+
+  // Aucune modification → on ne fait RIEN (ni sauvegarde, ni mail)
+  if (!changes.length) {
+    var m0 = document.getElementById('av-edit-modal'); if (m0) m0.remove();
+    if (typeof showNotifToast === 'function') showNotifToast('Aucune modification');
+    return;
+  }
+
+  // Application des changements
+  changes.forEach(function(ch){ a[ch.field] = proposals[ch.field]; });
+  a.updated_at = Date.now();
+  a.updated_by = (typeof _getCurrentUserName === 'function') ? _getCurrentUserName() : 'inconnu';
   saveAvenants(all);
+
+  // Notification à l'ADV en charge, avec le détail des changements
+  _notifyAvenantChange(a, changes);
+
   var modal = document.getElementById('av-edit-modal');
   if (modal) modal.remove();
-  if (typeof showNotifToast === 'function') showNotifToast('✓ Avenant mis à jour');
+  if (typeof showNotifToast === 'function') showNotifToast('\u2713 Avenant mis \u00e0 jour \u00b7 ADV notifi\u00e9');
   renderAvenants();
 }
 
@@ -20655,7 +20760,7 @@ function renderSalairesBloques() {
   h += sel('Banque', 'banque', banques);
   h += sel('Commercial', 'commercial', commerciaux);
   h += '<div style="flex:1;min-width:160px;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Recherche consultant</label>'
-    + '<input type="text" value="' + _sbEsc(SB_FILTER.search).replace(/"/g,'&quot;') + '" oninput="SB_FILTER.search=this.value;renderSalairesBloques();" placeholder="Nom du consultant\u2026" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;"></div>';
+    + '<input type="text" id="sb-search" value="' + _sbEsc(SB_FILTER.search).replace(/"/g,'&quot;') + '" oninput="SB_FILTER.search=this.value;_debounceSearchRefocus(\'sb\', renderSalairesBloques, \'sb-search\');" placeholder="Nom du consultant\u2026" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;"></div>';
   h += '</div>';
 
   // Table
@@ -21479,14 +21584,14 @@ function buildImpayesContent() {
   var qF = (IMPAYES_FILTER.search_fact||'').replace(/"/g,'&quot;');
   html += '<div style="min-width:200px;flex:1;max-width:320px;">'
     + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">🔍 N° Facture</label>'
-    + '<input type="text" value="' + qF + '" placeholder="Ex : FAC-2024-0123" oninput="IMPAYES_FILTER.search_fact=this.value;renderImpayes();setTimeout(function(){var e=document.getElementById(\'imp-search-fact\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0);" id="imp-search-fact" style="width:100%;padding:8px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;">'
+    + '<input type="text" value="' + qF + '" placeholder="Ex : FAC-2024-0123" oninput="IMPAYES_FILTER.search_fact=this.value;_debounceSearchRefocus(\'impf\', renderImpayes, \'imp-search-fact\');" id="imp-search-fact" style="width:100%;padding:8px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;">'
     + '</div>';
 
   // Recherche Client/Candidat
   var qN = (IMPAYES_FILTER.search_name||'').replace(/"/g,'&quot;');
   html += '<div style="min-width:240px;flex:2;">'
     + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">🔍 Client / Consultant</label>'
-    + '<input type="text" value="' + qN + '" placeholder="Ex : Dupont, Safran, commentaire…" oninput="IMPAYES_FILTER.search_name=this.value;renderImpayes();setTimeout(function(){var e=document.getElementById(\'imp-search-name\');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},0);" id="imp-search-name" style="width:100%;padding:8px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;">'
+    + '<input type="text" value="' + qN + '" placeholder="Ex : Dupont, Safran, commentaire…" oninput="IMPAYES_FILTER.search_name=this.value;_debounceSearchRefocus(\'impn\', renderImpayes, \'imp-search-name\');" id="imp-search-name" style="width:100%;padding:8px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;">'
     + '</div>';
 
   // Bouton clear filters
@@ -28959,7 +29064,7 @@ function showClientsTab() {
       +   '</div>'
       +   '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">'
       +     '<div style="position:relative;flex:1;min-width:200px;">'
-      +       '<input id="clients-search" type="text" placeholder="Rechercher une entreprise..." oninput="renderClients()" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">'
+      +       '<input id="clients-search" type="text" placeholder="Rechercher une entreprise..." oninput="_debounceSearch(&quot;clients&quot;, renderClients)" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">'
       +       '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>'
       +     '</div>'
       +     '<select id="clients-filter-commercial" onchange="renderClients()" style="padding:7px 10px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;background:#F5F3FF;cursor:pointer;color:#4B36EC;font-weight:600;min-width:150px;">'
