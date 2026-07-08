@@ -14077,10 +14077,36 @@ function triggerImportVM() {
   inp.onchange = function(){ if (inp.files && inp.files[0]) importVMFromFile(inp.files[0]); };
   inp.click();
 }
+// ── Verrouillage Suivi RH pour les deals en STAND BY ──
+// Un placement en stand by n'est pas (encore) un deal actif : ses lignes de Suivi RH
+// (Visite médicale, Entrées du mois) sont VERROUILLÉES jusqu'à la conversion/activation.
+function _standByLookup(){
+  var byId = {}, byKey = {};
+  try {
+    (typeof getDeals === 'function' ? getDeals() : []).forEach(function(d){
+      if (!d || d.stand_by !== true || d.etat === 'Annulé') return;
+      byId[String(d.id)] = true;
+      if (typeof _vmKey === 'function') byKey[_vmKey(d.nom, d.prenom)] = true;
+    });
+  } catch(e){}
+  return { byId: byId, byKey: byKey };
+}
+function _vmRowStandBy(v, sb){
+  if (!v) return false;
+  sb = sb || _standByLookup();
+  if (v.deal_id != null && sb.byId[String(v.deal_id)]) return true;
+  return !!(typeof _vmKey === 'function' && sb.byKey[_vmKey(v.nom, v.prenom)]);
+}
 function updateVMField(id, field, value) {
   var arr = getVisitesMedicales();
   var v = arr.find(function(x){ return x.id === id; });
   if (!v) return;
+  // Garde-fou : ligne liée à un deal en stand by → modification refusée
+  if (_vmRowStandBy(v)) {
+    if (typeof showNotifToast === 'function') showNotifToast('\u23F8 Deal en stand by \u2014 convertissez le placement pour d\u00e9bloquer cette ligne');
+    if (typeof renderVisiteMedicale === 'function') { try { renderVisiteMedicale(); } catch(e){} }
+    return;
+  }
   v[field] = value; v.updated_at = Date.now();
   saveVisitesMedicales(arr);
 }
@@ -14272,9 +14298,11 @@ function renderVisiteMedicale() {
   var dateInput = function(id, field, val){
     return '<input type="date" value="'+(String(val||'').slice(0,10))+'" onchange="updateVMField(\''+id+'\',\''+field+'\',this.value)" style="padding:3px 5px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;">';
   };
+  var _sbLk = _standByLookup();
   list.forEach(function(v){
-    h += '<tr style="border-bottom:1px solid #F0EDF9;">'
-      + '<td style="padding:8px 10px;font-weight:600;color:#1A1033;">' + (v.nom||'') + (_vmIsNew(v.date_entree) ? ' <span style="background:#1D9E75;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">NEW</span>' : '') + '</td>'
+    var _sbLocked = _vmRowStandBy(v, _sbLk);
+    h += '<tr title="' + (_sbLocked ? 'Deal en stand by \u2014 convertissez le placement pour d\u00e9bloquer' : '') + '" style="border-bottom:1px solid #F0EDF9;' + (_sbLocked ? 'opacity:.55;pointer-events:none;background:#F7F5FC;' : '') + '">'
+      + '<td style="padding:8px 10px;font-weight:600;color:#1A1033;">' + (v.nom||'') + (_sbLocked ? ' <span style="background:#7343EE;color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">\u23F8 STAND BY</span>' : '') + (_vmIsNew(v.date_entree) ? ' <span style="background:#1D9E75;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">NEW</span>' : '') + '</td>'
       + '<td style="padding:8px 10px;">' + (v.prenom||'') + '</td>'
       + '<td style="padding:8px 10px;"><select onchange="updateVMField(\''+v.id+'\',\'ville\',this.value)" style="padding:3px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;font-weight:700;background:'+(v.ville==='IDF'?'#EEF4FF':(v.ville==='Région'?'#FFF4EC':'#fff'))+';color:'+(v.ville==='IDF'?'#1A4F96':(v.ville==='Région'?'#9A5B00':'#9E94C4'))+';"><option value=""'+(!v.ville?' selected':'')+'>—</option><option value="IDF"'+(v.ville==='IDF'?' selected':'')+'>IDF</option><option value="Région"'+(v.ville==='Région'?' selected':'')+'>Région</option></select></td>'
       + '<td style="padding:8px 10px;color:#6B5E9C;min-width:220px;">' + String(v.adresse||'—').replace(/</g,'&lt;') + '</td>'
@@ -14466,6 +14494,7 @@ function getProlongationDeals() {
 
   return deals.filter(function(d) {
     if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return false;
+    if (d.stand_by === true) return false; // stand by : pas (encore) un deal actif → pas de relance prolongation
     if (!d.date_fin) return false;
     var df = new Date(d.date_fin);
     if (isNaN(df.getTime())) return false;
@@ -15569,10 +15598,11 @@ function buildAvantageRow(deal, existing, cfg, isExceptionnel, prenomNom) {
   } else if (bpStatut === 'Oui') {
     rowBg = 'background:#E8F5E9;';  // vert pâle
   }
-  var trStyle = 'border-bottom:1px solid #F0EDF9;' + rowBg;
+  var trStyle = 'border-bottom:1px solid #F0EDF9;' + rowBg + (_sbLocked ? 'opacity:.55;pointer-events:none;background:#F7F5FC;' : '');
+  var _sbBadge = _sbLocked ? ' <span title="Deal en stand by \u2014 convertissez le placement pour d\u00e9bloquer" style="background:#7343EE;color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">\u23F8 STAND BY</span>' : '';
 
   return '<tr data-deal-id="' + dealId + '" style="' + trStyle + '">'
-    + '<td style="padding:10px 8px;font-weight:600;color:#1A1033;">' + prenomNom + excBadge + '</td>'
+    + '<td style="padding:10px 8px;font-weight:600;color:#1A1033;">' + prenomNom + _sbBadge + excBadge + '</td>'
     + '<td style="padding:10px 8px;">'
     +   '<select onchange="updateAvantageField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'type_avantage\',this.value)" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:150px;cursor:pointer;">' + typeOptions + '</select>'
     + '</td>'
@@ -16631,19 +16661,25 @@ function buildEntreeRow(item) {
   var deal = item.deal;
   var etat = item.etat || {};
   var dealId = deal.id;
+  var _sbLocked = (deal.stand_by === true);
 
   var contacte = etat.contacte || '-';
   var signature = etat.signature_contrat || '';
   var mutuelle = etat.mutuelle || 'En Attente';
   var commentaire = etat.commentaire || '';
 
-  // Lookup manager email
+  // Lookup manager email + références pour les liens (fiche client / fiche manager)
   var managerEmail = '';
+  var _entClientId = null;   // id du client (lien Entreprise → fiche client)
+  var _mgrIdx = -1;          // index du manager dans la fiche client (lien Manager → fiche manager)
   try {
     var entName = (deal.entreprise || '').trim().toLowerCase();
     var cl = getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === entName; });
+    if (cl) _entClientId = cl.id;
     if (cl && deal.manager) {
-      var mgr = (cl.managers || []).find(function(m){ return (m.name||'').trim().toLowerCase() === (deal.manager||'').trim().toLowerCase(); });
+      var _mgrNameLc = (deal.manager||'').trim().toLowerCase();
+      _mgrIdx = (cl.managers || []).findIndex(function(m){ return (m.name||'').trim().toLowerCase() === _mgrNameLc; });
+      var mgr = _mgrIdx >= 0 ? cl.managers[_mgrIdx] : null;
       if (mgr && mgr.email) managerEmail = mgr.email;
     }
   } catch(e){}
@@ -16703,9 +16739,17 @@ function buildEntreeRow(item) {
     // 8. Commercial
     + '<td style="padding:9px 8px;color:#6B5E9C;">' + (deal.commercial || '—') + '</td>'
     // 9. Client
-    + '<td style="padding:9px 8px;color:#1A1033;">' + (deal.entreprise || '—').replace(/</g,'&lt;') + '</td>'
-    // 10. Manager
-    + '<td style="padding:9px 8px;color:#6B5E9C;">' + (deal.manager || '—').replace(/</g,'&lt;') + '</td>'
+    + '<td style="padding:9px 8px;color:#1A1033;">'
+    +   (_entClientId != null
+          ? '<a href="#" onclick="event.preventDefault();event.stopPropagation();mainNavTo(\'clients\');setTimeout(function(){openClientPage(' + _entClientId + ');},120);return false;" title="Ouvrir la fiche client" style="color:#4B36EC;text-decoration:none;font-weight:600;border-bottom:1px dashed #4B36EC;">' + (deal.entreprise || '—').replace(/</g,'&lt;') + '</a>'
+          : (deal.entreprise || '—').replace(/</g,'&lt;'))
+    + '</td>'
+    // 10. Manager (clic → fiche manager, comme signataire/comptable)
+    + '<td style="padding:9px 8px;color:#6B5E9C;">'
+    +   (_entClientId != null && _mgrIdx >= 0
+          ? '<a href="#" onclick="event.preventDefault();event.stopPropagation();openManagerFiche(' + _entClientId + ',' + _mgrIdx + ');return false;" title="Ouvrir la fiche du manager" style="color:#4B36EC;text-decoration:none;font-weight:600;border-bottom:1px dashed #4B36EC;">' + (deal.manager || '—').replace(/</g,'&lt;') + '</a>'
+          : (deal.manager || '—').replace(/</g,'&lt;'))
+    + '</td>'
     // 11. Mail manager
     + '<td style="padding:9px 8px;color:#6B5E9C;font-size:10.5px;">' + (managerEmail || '—').replace(/</g,'&lt;') + '</td>'
     // 12. Commentaire
@@ -16734,6 +16778,15 @@ function buildEntreeRow(item) {
 }
 
 function updateDemarrageField(dealId, field, value) {
+  // Garde-fou : deal en stand by → ligne verrouillée (aucune modif, aucun mail Premier mois)
+  try {
+    var _dSb = (typeof getDeals === 'function') ? getDeals().find(function(d){ return d.id === dealId; }) : null;
+    if (_dSb && _dSb.stand_by === true) {
+      if (typeof showNotifToast === 'function') showNotifToast('\u23F8 Deal en stand by \u2014 convertissez le placement pour d\u00e9bloquer cette ligne');
+      if (typeof renderEntrees === 'function') { try { renderEntrees(); } catch(e){} }
+      return;
+    }
+  } catch(e){}
   var all = getDemarrages();
   var idx = all.findIndex(function(a){ return a.deal_id === dealId; });
 
@@ -36938,5 +36991,83 @@ function exportCommHistCSV() {
   </div>
 </div>
 
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// BARRE DE DÉFILEMENT HORIZONTALE FLOTTANTE
+// Problème résolu : sur les grands tableaux (Suivi RH, deals, impayés...), la
+// scrollbar horizontale est tout en bas du tableau -> il fallait descendre toute
+// la page pour aller à droite/gauche. Cette barre reste TOUJOURS visible en bas
+// de l'écran, alignée sur le tableau affiché, synchronisée dans les deux sens.
+// (Astuce complémentaire : Maj + molette fait aussi défiler horizontalement.)
+// ═══════════════════════════════════════════════════════════════════════════
+(function(){
+  var bar, inner, target = null, syncing = false;
+
+  function ensureBar(){
+    if (bar) return;
+    bar = document.createElement('div');
+    bar.id = 'floating-hscroll';
+    bar.style.cssText = 'position:fixed;bottom:0;height:16px;overflow-x:auto;overflow-y:hidden;display:none;z-index:99990;background:rgba(250,249,255,0.95);border-top:1px solid #E4E0FA;box-shadow:0 -2px 8px rgba(20,10,60,0.06);border-radius:8px 8px 0 0;';
+    inner = document.createElement('div');
+    inner.style.cssText = 'height:1px;';
+    bar.appendChild(inner);
+    document.body.appendChild(bar);
+    bar.addEventListener('scroll', function(){
+      if (syncing || !target) return;
+      syncing = true; target.scrollLeft = bar.scrollLeft; syncing = false;
+    });
+  }
+
+  // Trouve le conteneur horizontalement scrollable le plus pertinent visible à l'écran
+  function findTarget(){
+    var best = null, bestArea = 0;
+    var els = document.querySelectorAll('div, section');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (el.id === 'floating-hscroll') continue;
+      if (el.scrollWidth <= el.clientWidth + 8) continue;
+      var cs = window.getComputedStyle(el);
+      if (cs.overflowX !== 'auto' && cs.overflowX !== 'scroll') continue;
+      var r = el.getBoundingClientRect();
+      if (r.width < 300 || r.height < 60) continue;
+      if (r.bottom < 80 || r.top > window.innerHeight - 40) continue;
+      var visH = Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0);
+      var area = r.width * Math.max(visH, 0);
+      if (area > bestArea) { bestArea = area; best = el; }
+    }
+    return best;
+  }
+
+  function tick(){
+    ensureBar();
+    var t = findTarget();
+    if (t !== target) {
+      if (target) target.removeEventListener('scroll', onTargetScroll);
+      target = t;
+      if (target) target.addEventListener('scroll', onTargetScroll, { passive: true });
+    }
+    if (!target) { bar.style.display = 'none'; return; }
+    var r = target.getBoundingClientRect();
+    if (r.bottom <= window.innerHeight - 2) { bar.style.display = 'none'; return; }
+    bar.style.display = 'block';
+    bar.style.left = Math.max(r.left, 0) + 'px';
+    bar.style.width = Math.min(r.width, window.innerWidth - Math.max(r.left, 0)) + 'px';
+    if (inner.style.width !== target.scrollWidth + 'px') inner.style.width = target.scrollWidth + 'px';
+    if (!syncing && Math.abs(bar.scrollLeft - target.scrollLeft) > 1) { syncing = true; bar.scrollLeft = target.scrollLeft; syncing = false; }
+  }
+
+  function onTargetScroll(){
+    if (syncing || !target || !bar) return;
+    syncing = true; bar.scrollLeft = target.scrollLeft; syncing = false;
+  }
+
+  window.addEventListener('load', function(){
+    ensureBar();
+    setInterval(tick, 350);
+    window.addEventListener('scroll', tick, { passive: true });
+    window.addEventListener('resize', tick);
+  });
+})();
+</script>
 </body>
 </html>
