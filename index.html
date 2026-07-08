@@ -14125,6 +14125,45 @@ function showVisiteMedicaleView() {
   container.style.display = 'block';
   renderVisiteMedicale();
 }
+// Liste des visites médicales filtrée (mêmes filtres que la vue) — utilisée par l'export
+function _vmFilteredList() {
+  var q = _vmNorm(VM_FILTER.search);
+  return getVisitesMedicales().filter(function(v){
+    if (VM_FILTER.ville !== 'all' && v.ville !== VM_FILTER.ville) return false;
+    if (VM_FILTER.annee !== 'all' && (v.date_inscription||'').slice(0,4) !== VM_FILTER.annee) return false;
+    if (VM_FILTER.mois_entree && (v.date_entree||'').slice(0,7) !== VM_FILTER.mois_entree) return false;
+    if (VM_FILTER.mois_inscription && (v.date_inscription||'').slice(0,7) !== VM_FILTER.mois_inscription) return false;
+    if (q && (_vmNorm(v.nom).indexOf(q) < 0 && _vmNorm(v.prenom).indexOf(q) < 0)) return false;
+    return true;
+  }).sort(function(a,b){ return String(b.date_inscription||'').localeCompare(String(a.date_inscription||'')); });
+}
+// Export Excel (.xlsx) des visites médicales affichées (respecte les filtres actifs)
+function exportVisitesMedicalesExcel() {
+  try {
+    if (typeof XLSX === 'undefined') { alert('Librairie Excel non disponible.'); return; }
+    var list = _vmFilteredList();
+    if (!list.length) {
+      if (typeof showNotifToast === 'function') showNotifToast('Aucune ligne à exporter'); else alert('Aucune ligne a exporter');
+      return;
+    }
+    var fdate = function(v){ if(!v) return ''; var p=String(v).slice(0,10).split('-'); return p.length===3 ? (p[2]+'/'+p[1]+'/'+p[0]) : String(v); };
+    var aoa = [['Nom','Prénom','Ville','Adresse','Date entrée','Date inscription','Inscription','Date VM','Avis aptitude','Prochaine VM']];
+    list.forEach(function(v){
+      aoa.push([
+        v.nom||'', v.prenom||'', v.ville||'', v.adresse||'',
+        fdate(v.date_entree), fdate(v.date_inscription),
+        v.inscription==='Oui'?'Oui':'Non', fdate(v.date_vm),
+        v.avis_aptitude==='Oui'?'Oui':'Non', fdate(v.date_prochaine_vm)
+      ]);
+    });
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wch:22},{wch:16},{wch:8},{wch:34},{wch:13},{wch:15},{wch:11},{wch:12},{wch:13},{wch:13}];
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Visites médicales');
+    XLSX.writeFile(wb, 'Visites_medicales_' + new Date().toISOString().slice(0,10) + '.xlsx');
+    if (typeof showNotifToast === 'function') showNotifToast(list.length + ' ligne(s) exportée(s)');
+  } catch(e){ console.error('[Export VM]', e); alert('Erreur export : ' + e.message); }
+}
 function renderVisiteMedicale() {
   var container = document.getElementById('rh-content-container');
   if (!container) return;
@@ -14149,6 +14188,7 @@ function renderVisiteMedicale() {
   h += '<h2 style="margin:0;font-size:18px;color:#1A1033;">\u{1F3E5} Visite médicale</h2>';
   h += '<span style="font-size:12px;color:#9E94C4;">' + all.length + ' personne(s) \u00b7 ' + nbIDF + ' IDF \u00b7 ' + nbReg + ' Région' + (nbNew ? ' \u00b7 <span style="color:#1D9E75;font-weight:700;">' + nbNew + ' new</span>' : '') + '</span>';
   h += '<button onclick="triggerImportVM()" style="margin-left:auto;padding:8px 14px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">\u2B06 Importer l\'Excel</button>';
+  h += '<button onclick="exportVisitesMedicalesExcel()" title="Exporter en Excel les lignes affichées" style="padding:8px 14px;background:#1D9E75;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">\u2B07 Export Excel</button>';
   h += '</div>';
   h += '<div style="background:#fff;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">';
   h += '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Zone</label><div style="display:flex;gap:6px;">'
@@ -17622,7 +17662,12 @@ function openEditAvenantPopup(avenantId) {
     +   '</div>'
     +   '<div style="background:#F5F3FF;border:1px solid #E4E0FA;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;line-height:1.5;color:#1A1033;">'
     +     '<div><strong>Type :</strong> ' + (a.type_avenant || '—') + ' · <strong>Motif :</strong> ' + (a.motif || '—') + '</div>'
-    +     '<div><strong>Période :</strong> ' + _fmtAvDate(a.date_debut) + ' → ' + _fmtAvDate(a.date_fin) + '</div>'
+    +   '</div>'
+    +   '<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">'
+    +     '<div style="flex:1;min-width:150px;"><label style="font-size:10.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:4px;">À partir du</label>'
+    +       '<input type="date" id="av-edit-date-debut" value="' + (typeof _toISODateInput==='function' ? _toISODateInput(a.date_debut) : String(a.date_debut||'').slice(0,10)) + '" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;background:#fff;"></div>'
+    +     '<div style="flex:1;min-width:150px;"><label style="font-size:10.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:4px;">Jusqu\'au</label>'
+    +       '<input type="date" id="av-edit-date-fin" value="' + (typeof _toISODateInput==='function' ? _toISODateInput(a.date_fin) : String(a.date_fin||'').slice(0,10)) + '" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;background:#fff;"></div>'
     +   '</div>'
 
     +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
@@ -17685,6 +17730,10 @@ function saveEditAvenant(avenantId) {
   all[idx].avenant_cdps_signe = document.getElementById('av-edit-cdps-signe').value || '';
   all[idx].modif_laya = document.getElementById('av-edit-modif-laya').value || '';
   all[idx].commentaires = document.getElementById('av-edit-commentaires').value || '';
+  var _avDD = document.getElementById('av-edit-date-debut');
+  var _avDF = document.getElementById('av-edit-date-fin');
+  if (_avDD) all[idx].date_debut = _avDD.value || '';
+  if (_avDF) all[idx].date_fin = _avDF.value || '';
   all[idx].updated_at = Date.now();
   all[idx].updated_by = (typeof _getCurrentUserName === 'function') ? _getCurrentUserName() : 'inconnu';
   saveAvenants(all);
