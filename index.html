@@ -1153,6 +1153,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
             <label style="font-size:11px;color:var(--muted);min-height:18px;">Frais Seven Affiché (%)</label>
             <input type="number" id="marge_affichee" min="0" max="100" step="0.5" placeholder="" style="color:#7343EE;">
           </div>
+          <div class="field">
+            <label title="% RÉEL de marge — fait foi pour les commissions et les tableaux de deals. Laisser vide si identique aux Frais Gestion Seven." style="font-size:11px;color:#0F5132;min-height:18px;font-weight:700;">Frais Gestion RÉEL (%)</label>
+            <input type="number" id="fg_reel" min="0" max="100" step="0.1" placeholder="= Seven si vide" title="% réel de marge (référence commissions / tableau deals). Les Frais Gestion Seven servent uniquement au calcul de la simulation." style="color:#0F5132;border-color:#9FE1CB;background:#F6FDF9;">
+          </div>
         </div>
 
         <!-- TJM équivalent affiché quand on saisit BRUT -->
@@ -4162,6 +4166,7 @@ function getSimData() {
     tjm:           document.getElementById('tjm')   ? document.getElementById('tjm').value   : '',
     nb_jours:      document.getElementById('nb_jours') ? document.getElementById('nb_jours').value : '',
     marge:         document.getElementById('marge') ? document.getElementById('marge').value : '',
+    fg_reel:       document.getElementById('fg_reel') ? document.getElementById('fg_reel').value : '',
     marge_affichee: (function() {
       var el = document.getElementById('marge_affichee');
       var v = el ? el.value.trim() : '';
@@ -6037,7 +6042,7 @@ function _updateDealFromEditedSim(ts, oldE, newE) {
     if (salaireAnnuel) d.salaire_annuel = salaireAnnuel;
     d.brut = newE.brut; d.net_payer = newE.net_payer; d.net_avant = newE.net_avant || '';
     d.cout_global = newE.cout_global || ''; d.total_pat = newE.total_pat || ''; d.total_sal = newE.total_sal || '';
-    d.taux_restitution = newE.taux_restitution || ''; d.frais_gestion = newE.marge || '';
+    d.taux_restitution = newE.taux_restitution || ''; d.frais_gestion = newE.marge || ''; d.fg_reel = newE.fg_reel || '';
     d.mutuelle = newE.mutuelle || ''; d.cp = newE.cp || ''; d.rtt = newE.rtt || 0; d.repas = newE.repas || '';
     d.tt = newE.tt ? 'Oui' : 'Non'; d.gd_lieu = newE.gd_lieu || ''; d.gd_perso_montant = parseFloat(newE.gd_perso_montant) || 0;
     d.ik_1ere = newE.ik_1ere ? 'Oui' : 'Non'; d.km_aller = newE.km_aller || ''; d.puissance_fiscale = newE.puissance || '';
@@ -6089,6 +6094,7 @@ function saveHistorique(data, dest, email, consultantName) {
     timestamp: Date.now(),
     frais_gestion: data.frais_gestion || '',
     marge: data.marge || '',
+    fg_reel: data.fg_reel || '',
     consultant: name,
     commercial: data.commercial || '',
     poste: data.poste || '',
@@ -6196,7 +6202,7 @@ function saveHistorique(data, dest, email, consultantName) {
 function captureSnapshotForHistory() {
   // Champs texte/number à capturer par valeur
   var textIds = ['prenom','nom','email','email_client','entreprise','manager','poste','civilite','tel','source_origine',
-    'tjm','nb_jours','marge','brut','brut_annuel','taux_impot',
+    'tjm','nb_jours','marge','fg_reel','brut','brut_annuel','taux_impot',
     'km_aller','puissance_fiscale','jours_presentiels',
     'swile_val','abo_transport','abo_tel','abo_internet','abo_telnet',
     'gd_perso_montant',  // FIX FRAIS : capturer le montant perso GD pour le restaurer à la réouverture
@@ -9877,7 +9883,7 @@ function savePlacement() {
       tjm: sim.tjm, nb_jours: sim.nb_jours, salaire_annuel: salaireAnnuelContrat,
       brut: sim.brut, net_payer: sim.net_payer, net_avant: sim.net_avant,
       cout_global: sim.cout_global, total_pat: sim.total_pat || '', total_sal: sim.total_sal || '',
-      taux_restitution: sim.taux_restitution, frais_gestion: sim.marge || '',
+      taux_restitution: sim.taux_restitution, frais_gestion: sim.marge || '', fg_reel: sim.fg_reel || '',
       mutuelle: sim.mutuelle || '', cp: sim.cp || '', rtt: sim.rtt || 0, repas: sim.repas || '',
       tt: (sim.tt ? 'Oui' : 'Non'), gd_lieu: sim.gd_lieu || '', gd_perso_montant: parseFloat(sim.gd_perso_montant) || 0,
       ik_1ere: (sim.ik_1ere ? 'Oui' : 'Non'), km_aller: sim.km_aller || '', puissance_fiscale: sim.puissance || '',
@@ -11679,7 +11685,11 @@ function getCellValue(d, key){
         if (delCli && delCli.delai_paiement) return delCli.delai_paiement;
       } catch(e) {}
       return '\u2014';
-    case 'frais_gestion': return d.frais_gestion ? d.frais_gestion+'%' : '—';
+    case 'frais_gestion': {
+      var _fgR = (d.fg_reel !== undefined && d.fg_reel !== null && String(d.fg_reel).trim() !== '') ? parseFloat(d.fg_reel) : null;
+      if (_fgR !== null && isFinite(_fgR)) return _fgR + '%';   // FG RÉEL = référence
+      return d.frais_gestion ? d.frais_gestion+'%' : '—';
+    }
     case 'mutuelle': 
       var mutLabels = { 'isolee':'Isol\u00e9e', 'famille':'Famille', 'isolee_seven':'Isol\u00e9e (Seven)', 'renoncement':'Non', 'non':'Non' };
       return d.mutuelle ? (mutLabels[d.mutuelle] || d.mutuelle) : '\u2014';
@@ -34867,6 +34877,14 @@ function getDealReferenceDate(deal) {
   return null;
 }
 
+// FG EFFECTIF d'un deal : le "Frais de Gestion RÉEL" (fg_reel) fait foi s'il est renseigné
+// (cas des anciennes simulations resaisies avec un FG Seven ajusté), sinon frais_gestion.
+function _dealFGEffectif(d) {
+  if (!d) return 0;
+  var r = parseFloat(d.fg_reel);
+  if (isFinite(r) && String(d.fg_reel).trim() !== '') return r;
+  return parseFloat(d.frais_gestion) || 0;
+}
 // Filtre les deals éligibles pour un commercial + période (année+mois éventuel)
 function getCommDealsForPeriod(commercial, year, month /* 0-11, null = toute l'année */) {
   var params = getCommParams();
@@ -34893,7 +34911,7 @@ function getCommDealsForPeriod(commercial, year, month /* 0-11, null = toute l'a
     if (wanted && dealComm !== wanted) return false;
     if (d.etat === 'Annulé') return false;
     // Frais de gestion ≥ seuil (override commission prioritaire)
-    var fg = (fgOv[d.id] !== undefined) ? fgOv[d.id] : (parseFloat(d.frais_gestion) || 0);
+    var fg = (fgOv[d.id] !== undefined) ? fgOv[d.id] : _dealFGEffectif(d);
     if (fg < seuilFG) return false;
     var ref = getDealReferenceDate(d);
     if (!ref) return false;
@@ -35329,7 +35347,7 @@ function renderCommCurrentView() {
       var excluded = !!ex.excluded;
       var isManual = !!d._commManual;
       var _fgOv = (fgOverrides[d.id] !== undefined);
-      var _fgEff = _fgOv ? fgOverrides[d.id] : (parseFloat(d.frais_gestion)||0);
+      var _fgEff = _fgOv ? fgOverrides[d.id] : _dealFGEffectif(d);
       var tarifApplied = '';
       if (!excluded) {
         countedIdx++;
@@ -35916,7 +35934,7 @@ function computeYearlyDealsAggregate(commercial, year) {
   });
   var nb = counted.length;
   var sumFG = 0;
-  counted.forEach(function(d) { sumFG += parseFloat(d.frais_gestion) || 0; });
+  counted.forEach(function(d) { sumFG += _dealFGEffectif(d); });
   var moy = nb > 0 ? (sumFG / nb) : 0;
   // Répartition par mois (pour affichage)
   var byMonth = {};
