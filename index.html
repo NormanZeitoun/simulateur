@@ -15608,6 +15608,8 @@ function buildAvantageRow(deal, existing, cfg, isExceptionnel, prenomNom) {
   } else if (bpStatut === 'Oui') {
     rowBg = 'background:#E8F5E9;';  // vert pâle
   }
+  // Deal en stand by -> ligne verrouillée (deal peut être null sur une ligne exceptionnelle)
+  var _sbLocked = !!(deal && deal.stand_by === true);
   var trStyle = 'border-bottom:1px solid #F0EDF9;' + rowBg + (_sbLocked ? 'opacity:.55;pointer-events:none;background:#F7F5FC;' : '');
   var _sbBadge = _sbLocked ? ' <span title="Deal en stand by \u2014 convertissez le placement pour d\u00e9bloquer" style="background:#7343EE;color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">\u23F8 STAND BY</span>' : '';
 
@@ -16716,7 +16718,9 @@ function buildEntreeRow(item) {
   var signatureCellBg = signature ? '#E8F5E9' : '#FDECEC';
   var signatureCellColor = signature ? '#0F6E56' : '#C24141';
 
-  var trStyle = 'border-bottom:1px solid #F0EDF9;' + rowBg;
+  // Deal en stand by -> ligne verrouillée jusqu'à conversion/activation
+  var trStyle = 'border-bottom:1px solid #F0EDF9;' + rowBg + (_sbLocked ? 'opacity:.55;pointer-events:none;background:#F7F5FC;' : '');
+  var _sbBadgeEntree = _sbLocked ? ' <span title="Deal en stand by \u2014 convertissez le placement pour d\u00e9bloquer" style="background:#7343EE;color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">\u23F8 STAND BY</span>' : '';
   var civilite = etat.civilite || deal.civilite || '';
 
   return '<tr data-deal-id="' + dealId + '" style="' + trStyle + '">'
@@ -16736,8 +16740,8 @@ function buildEntreeRow(item) {
     +     '<option value="Non"' + (contacte === 'Non' ? ' selected' : '') + '>Non</option>'
     +   '</select>'
     + '</td>'
-    // 3. Nom
-    + '<td style="padding:9px 8px;font-weight:600;color:#1A1033;">' + (deal.nom || '').replace(/</g,'&lt;') + '</td>'
+    // 3. Nom (+ badge stand by si verrouillé)
+    + '<td style="padding:9px 8px;font-weight:600;color:#1A1033;">' + (deal.nom || '').replace(/</g,'&lt;') + _sbBadgeEntree + '</td>'
     // 4. Prénom
     + '<td style="padding:9px 8px;color:#1A1033;">' + (deal.prenom || '').replace(/</g,'&lt;') + '</td>'
     // 5. Email
@@ -27099,6 +27103,7 @@ function buildCandFicheHTML(cand) {
       })()
     + fld('Disponibilité', cand.disponibilite, 'disponibilite', 'date')
     + fld('Anniversaire', cand.anniversaire, 'anniversaire', 'date')
+    + fld('Enfants à charge', cand.enfants_charge, 'enfants_charge', 'number')
     + sel('Statut', cand.statut||'', 'statut', ['','Freelance','Salarié','En poste','Disponible','En recherche'])
     + selStatutPortage()
     + fld('Ville', cand.ville, 'ville')
@@ -28313,7 +28318,7 @@ function mergeCandidats(remote) {
         // collègue le corrigeait, et la raison du "Perdu" ne voyageait pas).
         var simpleFields = ['prenom', 'nom', 'email', 'tel', 'poste', 'profil', 'techno', 'ville',
                             'linkedin', 'tjm_actuel', 'entreprise', 'commercial', 'secteur',
-                            'civilite', 'disponibilite', 'anniversaire', 'statut',
+                            'civilite', 'disponibilite', 'anniversaire', 'statut', 'enfants_charge',
                             'commentaire', 'updated', 'updated_at'];
         simpleFields.forEach(function(f){
           if (rc[f] !== undefined && rc[f] !== null && rc[f] !== '') {
