@@ -15348,6 +15348,57 @@ function mergeAvantagesSociaux(remote) {
 // ── Récupérer les portés actifs pour un mois donné (YYYY-MM) ──
 // Règle : deal.etat ∈ {En cours, Signé} ET date_entree ≤ dernier jour du mois
 // ET (pas de date_fin OU date_fin ≥ premier jour du mois)
+// ── Colonne "enfants" conditionnelle du tableau Avantages Sociaux ──
+// Noël Enfant  -> nb d'enfants de MOINS de 16 ans (0..15)
+// Rentrée Scolaire -> nb d'enfants ENTRE 3 et 16 ans (inclus)
+function _avNorm(s){ return String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase(); }
+function _avantagesEnfantsColInfo() {
+  var t = (typeof avantagesFilters !== 'undefined' && avantagesFilters.type) ? avantagesFilters.type : '';
+  var nrm = _avNorm(t);
+  if (nrm.indexOf('noel') >= 0 && nrm.indexOf('enfant') >= 0) return { label: 'Enfants &lt; 16 ans', min: null, max: 15 };
+  if (nrm.indexOf('rentree') >= 0) return { label: 'Enfants 3-16 ans', min: 3, max: 16 };
+  return null;
+}
+// Âge en années révolues (null si date invalide)
+function _candAgeYears(dob) {
+  if (!dob) return null;
+  var d = new Date(dob); if (isNaN(d.getTime())) return null;
+  var now = new Date();
+  var a = now.getFullYear() - d.getFullYear();
+  var mD = now.getMonth() - d.getMonth();
+  if (mD < 0 || (mD === 0 && now.getDate() < d.getDate())) a--;
+  return a >= 0 ? a : null;
+}
+// Candidat lié à un deal : email d'abord, puis nom+prénom (accents/casse/inversion tolérés)
+function _candForDeal(deal) {
+  if (!deal) return null;
+  var cands = (typeof getCandidats === 'function') ? getCandidats() : [];
+  var em = (deal.email || '').trim().toLowerCase();
+  if (em) {
+    var byEmail = cands.find(function(cc){ return cc && !cc._deleted && (cc.email||'').trim().toLowerCase() === em; });
+    if (byEmail) return byEmail;
+  }
+  var dn = _avNorm(deal.nom), dp = _avNorm(deal.prenom);
+  if (!dn && !dp) return null;
+  return cands.find(function(cc){
+    if (!cc || cc._deleted) return false;
+    var cn = _avNorm(cc.nom), cp = _avNorm(cc.prenom);
+    return (cn === dn && cp === dp) || (cn === dp && cp === dn);
+  }) || null;
+}
+// Nombre d'enfants du candidat lié au deal dont l'âge est dans [minAge, maxAge] (bornes null = ignorées)
+function _dealEnfantsInRange(deal, minAge, maxAge) {
+  var cand = _candForDeal(deal);
+  if (!cand || !Array.isArray(cand.enfants)) return 0;
+  return cand.enfants.filter(function(dob){
+    var a = _candAgeYears(dob);
+    if (a === null) return false;
+    if (minAge != null && a < minAge) return false;
+    if (maxAge != null && a > maxAge) return false;
+    return true;
+  }).length;
+}
+
 function getPortesActifsForMois(moisStr) {
   var parts = moisStr.split('-');
   var year = parseInt(parts[0]);
@@ -15484,7 +15535,7 @@ function buildFraisAvantagesContent() {
     emptyMsg = 'Aucune ligne ne correspond aux filtres actifs.';
   }
   var emptyState = emptyMsg
-    ? '<tr><td colspan="8" style="padding:40px;text-align:center;color:#9E9E9E;font-size:12.5px;font-style:italic;">' + emptyMsg + '</td></tr>'
+    ? '<tr><td colspan="' + (_avantagesEnfantsColInfo() ? 9 : 8) + '" style="padding:40px;text-align:center;color:#9E9E9E;font-size:12.5px;font-style:italic;">' + emptyMsg + '</td></tr>'
     : '';
 
   // Filtre Type : dropdown dynamique basé sur la config
@@ -15547,6 +15598,7 @@ function buildFraisAvantagesContent() {
     +     '<thead style="background:#F5F3FF;">'
     +       '<tr style="border-bottom:2px solid #E4E0FA;">'
     +         '<th onclick="setAvantagesSort(\'nom\')" style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;cursor:pointer;user-select:none;" title="Trier par nom">Prénom Nom' + sortArrow('nom') + '</th>'
+    +         ((function(){ var ci = _avantagesEnfantsColInfo(); return ci ? '<th style="padding:11px 8px;text-align:center;color:#0F5132;font-weight:700;background:#F0FAF4;" title="Calculé depuis les dates de naissance de la fiche candidat">' + ci.label + '</th>' : ''; })())
     +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Type d\'avantage</th>'
     +         '<th onclick="setAvantagesSort(\'montant\')" style="padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;cursor:pointer;user-select:none;" title="Trier par montant">Montant (€)' + sortArrow('montant') + '</th>'
     +         '<th style="padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;">Ajustement (÷' + cfg.coefficient_ajustement + ')</th>'
@@ -15613,8 +15665,15 @@ function buildAvantageRow(deal, existing, cfg, isExceptionnel, prenomNom) {
   var trStyle = 'border-bottom:1px solid #F0EDF9;' + rowBg + (_sbLocked ? 'opacity:.55;pointer-events:none;background:#F7F5FC;' : '');
   var _sbBadge = _sbLocked ? ' <span title="Deal en stand by \u2014 convertissez le placement pour d\u00e9bloquer" style="background:#7343EE;color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">\u23F8 STAND BY</span>' : '';
 
+  var _enfCol = _avantagesEnfantsColInfo();
+  var _enfCell = '';
+  if (_enfCol) {
+    var _nEnf = deal ? _dealEnfantsInRange(deal, _enfCol.min, _enfCol.max) : null;
+    _enfCell = '<td style="padding:10px 8px;text-align:center;font-weight:800;color:' + (_nEnf ? '#0F5132' : '#B7ADD6') + ';background:#FBFEFC;">' + (_nEnf === null ? '\u2014' : _nEnf) + '</td>';
+  }
   return '<tr data-deal-id="' + dealId + '" style="' + trStyle + '">'
     + '<td style="padding:10px 8px;font-weight:600;color:#1A1033;">' + prenomNom + _sbBadge + excBadge + '</td>'
+    + _enfCell
     + '<td style="padding:10px 8px;">'
     +   '<select onchange="updateAvantageField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'type_avantage\',this.value)" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:150px;cursor:pointer;">' + typeOptions + '</select>'
     + '</td>'
@@ -26784,6 +26843,111 @@ function setDealsOriginalVisible(visible) {
 
 
 // ══════════════════════════════════════════════════════════════════════════
+// ENFANTS À CHARGE (fiche candidat) — liste de dates de naissance,
+// nombre calculé automatiquement, âges calculés, panneau dépliable.
+// Données : cand.enfants = ['YYYY-MM-DD', ...] ; cand.enfants_charge = enfants.length
+// ══════════════════════════════════════════════════════════════════════════
+var _candEnfantsOpen = {};   // id candidat -> panneau ouvert ?
+function _candAge(dob) {
+  if (!dob) return '';
+  var d = new Date(dob); if (isNaN(d.getTime())) return '';
+  var now = new Date();
+  var months = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+  if (now.getDate() < d.getDate()) months--;
+  if (months < 0) return '';
+  if (months < 12) return months + ' mois';
+  return Math.floor(months / 12) + ' ans';
+}
+function _candEnfantsCount(cand) {
+  if (Array.isArray(cand.enfants)) return cand.enfants.length;
+  return parseInt(cand.enfants_charge) || 0;   // rétrocompat : nombre saisi à la main avant l'évolution
+}
+function _candEnfantsRows(cand) {
+  var arr = Array.isArray(cand.enfants) ? cand.enfants : [];
+  if (!arr.length) return '<div style="font-size:11px;color:#B7ADD6;font-style:italic;padding:2px 0;">Aucun enfant saisi \u2014 cliquez sur + pour ajouter</div>';
+  return arr.map(function(dob, i){
+    var age = _candAge(dob);
+    return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;">'
+      + '<span style="font-size:11px;font-weight:700;color:#6B5E9C;min-width:58px;">Enfant ' + (i+1) + '</span>'
+      + '<input data-always-editable type="date" value="' + (dob||'') + '" onchange="updateCandEnfantDob(' + cand.id + ',' + i + ',this.value)" style="padding:4px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;font-family:inherit;background:#fff;">'
+      + '<span id="cand-enfant-age-' + cand.id + '-' + i + '" style="font-size:11px;font-weight:600;color:#0F5132;min-width:52px;">' + (age ? age : '\u2014') + '</span>'
+      + '<span data-always-editable onclick="removeCandEnfant(' + cand.id + ',' + i + ')" title="Retirer cet enfant" style="cursor:pointer;font-weight:800;color:#C24141;opacity:.6;padding:0 4px;">&times;</span>'
+      + '</div>';
+  }).join('');
+}
+function _candEnfantsField(cand) {
+  var count = _candEnfantsCount(cand);
+  var open = !!_candEnfantsOpen[cand.id];
+  return '<div><label class="cf-lbl">Enfants \u00e0 charge</label>'
+    + '<div style="display:flex;align-items:center;gap:6px;">'
+    +   '<span id="cand-enfants-count-' + cand.id + '" class="cf-inp" style="flex:0 0 auto;min-width:34px;text-align:center;font-weight:700;background:#F7F4FF;border:1.5px solid #E4E0FA;border-radius:7px;padding:5px 10px;">' + count + '</span>'
+    +   '<button data-always-editable id="cand-enfants-arrow-' + cand.id + '" onclick="toggleCandEnfants(' + cand.id + ')" title="Voir / masquer les enfants" style="padding:5px 9px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11px;font-weight:800;cursor:pointer;">' + (open ? '\u25BC' : '\u25B6') + '</button>'
+    +   '<button data-always-editable onclick="addCandEnfant(' + cand.id + ')" title="Ajouter un enfant (date de naissance)" style="padding:5px 11px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:800;cursor:pointer;">+</button>'
+    + '</div>'
+    + '<div id="cand-enfants-panel-' + cand.id + '" style="display:' + (open ? 'block' : 'none') + ';margin-top:6px;padding:8px 10px;background:#FCFBFF;border:1.5px solid #F0EDF9;border-radius:8px;">' + _candEnfantsRows(cand) + '</div>'
+    + '</div>';
+}
+function _refreshCandEnfantsUI(id) {
+  var cand = (typeof getCandidats === 'function' ? getCandidats() : []).find(function(cc){ return cc.id === id; });
+  if (!cand) return;
+  var cEl = document.getElementById('cand-enfants-count-' + id);
+  if (cEl) cEl.textContent = _candEnfantsCount(cand);
+  var pEl = document.getElementById('cand-enfants-panel-' + id);
+  if (pEl) { pEl.innerHTML = _candEnfantsRows(cand); pEl.style.display = _candEnfantsOpen[id] ? 'block' : 'none'; }
+  var aEl = document.getElementById('cand-enfants-arrow-' + id);
+  if (aEl) aEl.innerHTML = _candEnfantsOpen[id] ? '\u25BC' : '\u25B6';
+}
+function toggleCandEnfants(id) {
+  _candEnfantsOpen[id] = !_candEnfantsOpen[id];
+  _refreshCandEnfantsUI(id);
+}
+function _candEnfantsSave(cands) {
+  saveCandidatsArr(cands);
+  if (typeof odAutoSync === 'function') odAutoSync();
+}
+function addCandEnfant(id) {
+  var cands = getCandidats();
+  var idx = cands.findIndex(function(cc){ return cc.id === id; });
+  if (idx < 0) return;
+  var arr = Array.isArray(cands[idx].enfants) ? cands[idx].enfants.slice() : [];
+  arr.push('');   // date à saisir
+  cands[idx].enfants = arr;
+  cands[idx].enfants_charge = arr.length;   // nombre AUTO
+  cands[idx].updated_at = Date.now(); cands[idx].updated_ts = Date.now();
+  _candEnfantsSave(cands);
+  _candEnfantsOpen[id] = true;   // ouvrir le panneau pour saisir la date
+  _refreshCandEnfantsUI(id);
+}
+function updateCandEnfantDob(id, i, val) {
+  var cands = getCandidats();
+  var idx = cands.findIndex(function(cc){ return cc.id === id; });
+  if (idx < 0) return;
+  var arr = Array.isArray(cands[idx].enfants) ? cands[idx].enfants.slice() : [];
+  if (i < 0 || i >= arr.length) return;
+  arr[i] = val || '';
+  cands[idx].enfants = arr;
+  cands[idx].enfants_charge = arr.length;
+  cands[idx].updated_at = Date.now(); cands[idx].updated_ts = Date.now();
+  _candEnfantsSave(cands);
+  // Recalcul de l'\u00e2ge en direct sans re-render (conserve le focus)
+  var ageEl = document.getElementById('cand-enfant-age-' + id + '-' + i);
+  if (ageEl) { var a = _candAge(val); ageEl.textContent = a ? a : '\u2014'; }
+}
+function removeCandEnfant(id, i) {
+  var cands = getCandidats();
+  var idx = cands.findIndex(function(cc){ return cc.id === id; });
+  if (idx < 0) return;
+  var arr = Array.isArray(cands[idx].enfants) ? cands[idx].enfants.slice() : [];
+  if (i < 0 || i >= arr.length) return;
+  arr.splice(i, 1);
+  cands[idx].enfants = arr;
+  cands[idx].enfants_charge = arr.length;
+  cands[idx].updated_at = Date.now(); cands[idx].updated_ts = Date.now();
+  _candEnfantsSave(cands);
+  _refreshCandEnfantsUI(id);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // TAGS CANDIDATS  (ajout/suppression sur fiche, recherche, vue globale, autocomplete)
 // ══════════════════════════════════════════════════════════════════════════
 function _tagEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -27103,7 +27267,7 @@ function buildCandFicheHTML(cand) {
       })()
     + fld('Disponibilité', cand.disponibilite, 'disponibilite', 'date')
     + fld('Anniversaire', cand.anniversaire, 'anniversaire', 'date')
-    + fld('Enfants à charge', cand.enfants_charge, 'enfants_charge', 'number')
+    + _candEnfantsField(cand)
     + sel('Statut', cand.statut||'', 'statut', ['','Freelance','Salarié','En poste','Disponible','En recherche'])
     + selStatutPortage()
     + fld('Ville', cand.ville, 'ville')
@@ -28318,7 +28482,7 @@ function mergeCandidats(remote) {
         // collègue le corrigeait, et la raison du "Perdu" ne voyageait pas).
         var simpleFields = ['prenom', 'nom', 'email', 'tel', 'poste', 'profil', 'techno', 'ville',
                             'linkedin', 'tjm_actuel', 'entreprise', 'commercial', 'secteur',
-                            'civilite', 'disponibilite', 'anniversaire', 'statut', 'enfants_charge',
+                            'civilite', 'disponibilite', 'anniversaire', 'statut', 'enfants_charge', 'enfants',
                             'commentaire', 'updated', 'updated_at'];
         simpleFields.forEach(function(f){
           if (rc[f] !== undefined && rc[f] !== null && rc[f] !== '') {
