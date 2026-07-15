@@ -15671,11 +15671,23 @@ function buildAvantageRow(deal, existing, cfg, isExceptionnel, prenomNom) {
     var _nEnf = deal ? _dealEnfantsInRange(deal, _enfCol.min, _enfCol.max) : null;
     _enfCell = '<td style="padding:10px 8px;text-align:center;font-weight:800;color:' + (_nEnf ? '#0F5132' : '#B7ADD6') + ';background:#FBFEFC;">' + (_nEnf === null ? '\u2014' : _nEnf) + '</td>';
   }
+  // Badge PAR LIGNE : si le type choisi sur CETTE ligne est "Noël Enfant" ou "Rentrée Scolaire",
+  // afficher sous le sélecteur le nombre d'enfants éligibles (dates de naissance de la fiche candidat).
+  var _enfLineBadge = '';
+  (function(){
+    var nrm = _avNorm(typeSel);
+    var inf = null;
+    if (nrm.indexOf('noel') >= 0 && nrm.indexOf('enfant') >= 0) inf = { min: null, max: 15, lbl: '&lt; 16 ans' };
+    else if (nrm.indexOf('rentree') >= 0) inf = { min: 3, max: 16, lbl: '3-16 ans' };
+    if (!inf) return;
+    var nE = deal ? _dealEnfantsInRange(deal, inf.min, inf.max) : null;
+    _enfLineBadge = '<div title="Calcul\u00e9 depuis les dates de naissance de la fiche candidat" style="margin-top:3px;font-size:10px;font-weight:700;color:' + (nE ? '#0F5132' : '#C24141') + ';">&#128118; ' + (nE === null ? '\u2014' : nE) + ' enfant' + (nE > 1 ? 's' : '') + ' ' + inf.lbl + '</div>';
+  })();
   return '<tr data-deal-id="' + dealId + '" style="' + trStyle + '">'
     + '<td style="padding:10px 8px;font-weight:600;color:#1A1033;">' + prenomNom + _sbBadge + excBadge + '</td>'
     + _enfCell
     + '<td style="padding:10px 8px;">'
-    +   '<select onchange="updateAvantageField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'type_avantage\',this.value)" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:150px;cursor:pointer;">' + typeOptions + '</select>'
+    +   '<select onchange="updateAvantageField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'type_avantage\',this.value)" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:150px;cursor:pointer;">' + typeOptions + '</select>' + _enfLineBadge
     + '</td>'
     + '<td style="padding:10px 8px;text-align:right;">'
     +   '<input type="number" min="0"' + (currentMax > 0 ? ' max="' + currentMax + '"' : '') + ' step="0.01" value="' + (montant || '') + '" onchange="updateAvantageField(' + dealId + ',' + (recordId || 'null') + ',' + isExceptionnel + ',\'montant\',parseFloat(this.value)||0)" style="' + montantStyle + '">'
