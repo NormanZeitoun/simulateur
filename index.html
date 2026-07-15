@@ -26878,13 +26878,17 @@ function _candEnfantsRows(cand) {
 function _candEnfantsField(cand) {
   var count = _candEnfantsCount(cand);
   var open = !!_candEnfantsOpen[cand.id];
-  return '<div><label class="cf-lbl">Enfants \u00e0 charge</label>'
-    + '<div style="display:flex;align-items:center;gap:6px;">'
-    +   '<span id="cand-enfants-count-' + cand.id + '" class="cf-inp" style="flex:0 0 auto;min-width:34px;text-align:center;font-weight:700;background:#F7F4FF;border:1.5px solid #E4E0FA;border-radius:7px;padding:5px 10px;">' + count + '</span>'
-    +   '<button data-always-editable id="cand-enfants-arrow-' + cand.id + '" onclick="toggleCandEnfants(' + cand.id + ')" title="Voir / masquer les enfants" style="padding:5px 9px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11px;font-weight:800;cursor:pointer;">' + (open ? '\u25BC' : '\u25B6') + '</button>'
-    +   '<button data-always-editable onclick="addCandEnfant(' + cand.id + ')" title="Ajouter un enfant (date de naissance)" style="padding:5px 11px;background:#7343EE;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:800;cursor:pointer;">+</button>'
+  // Case compacte alignée sur les autres champs : nombre + flèche + bouton "+" INTÉGRÉS dans la case.
+  // La liste des enfants s'ouvre en menu déroulant PAR-DESSUS la fiche (n'écrase pas la grille).
+  return '<div style="position:relative;"><label class="cf-lbl">Enfants \u00e0 charge</label>'
+    + '<div class="cf-inp" style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:4px 6px 4px 10px;background:#F7F4FF;">'
+    +   '<span id="cand-enfants-count-' + cand.id + '" style="font-weight:700;color:#1A1033;">' + count + '</span>'
+    +   '<span style="display:flex;gap:5px;align-items:center;flex:0 0 auto;">'
+    +     '<span data-always-editable id="cand-enfants-arrow-' + cand.id + '" onclick="toggleCandEnfants(' + cand.id + ')" title="Voir / masquer les enfants" style="cursor:pointer;color:#7343EE;font-size:10px;font-weight:800;padding:2px 4px;user-select:none;">' + (open ? '\u25BC' : '\u25B6') + '</span>'
+    +     '<span data-always-editable onclick="addCandEnfant(' + cand.id + ')" title="Ajouter un enfant (date de naissance)" style="cursor:pointer;background:#7343EE;color:#fff;border-radius:5px;padding:0 7px;font-weight:800;font-size:13px;line-height:19px;user-select:none;">+</span>'
+    +   '</span>'
     + '</div>'
-    + '<div id="cand-enfants-panel-' + cand.id + '" style="display:' + (open ? 'block' : 'none') + ';margin-top:6px;padding:8px 10px;background:#FCFBFF;border:1.5px solid #F0EDF9;border-radius:8px;">' + _candEnfantsRows(cand) + '</div>'
+    + '<div id="cand-enfants-panel-' + cand.id + '" style="display:' + (open ? 'block' : 'none') + ';position:absolute;top:100%;left:0;min-width:295px;z-index:60;background:#fff;border:1.5px solid #E4E0FA;border-radius:9px;box-shadow:0 10px 28px rgba(20,10,60,0.16);padding:9px 11px;margin-top:3px;">' + _candEnfantsRows(cand) + '</div>'
     + '</div>';
 }
 function _refreshCandEnfantsUI(id) {
