@@ -15370,9 +15370,16 @@ function _candAgeYears(dob) {
   return a >= 0 ? a : null;
 }
 // Candidat lié à un deal : email d'abord, puis nom+prénom (accents/casse/inversion tolérés)
+// PERF : la liste des candidats est mémoïsée 800 ms (évite un JSON.parse de ~600 Ko PAR LIGNE de tableau)
+var _candForDealMemo = { ts: 0, list: null };
 function _candForDeal(deal) {
   if (!deal) return null;
-  var cands = (typeof getCandidats === 'function') ? getCandidats() : [];
+  var _nowM = Date.now();
+  if (!_candForDealMemo.list || (_nowM - _candForDealMemo.ts) > 800) {
+    _candForDealMemo.list = (typeof getCandidats === 'function') ? getCandidats() : [];
+    _candForDealMemo.ts = _nowM;
+  }
+  var cands = _candForDealMemo.list;
   var em = (deal.email || '').trim().toLowerCase();
   if (em) {
     var byEmail = cands.find(function(cc){ return cc && !cc._deleted && (cc.email||'').trim().toLowerCase() === em; });
@@ -37221,16 +37228,17 @@ function exportCommHistCSV() {
     });
   }
 
-  // Trouve le conteneur horizontalement scrollable le plus pertinent visible à l'écran
+  // Trouve le conteneur horizontalement scrollable le plus pertinent visible à l'écran.
+  // PERF : sélecteur CIBLÉ (~20 conteneurs à overflow-x inline) au lieu de scanner tous les
+  // divs de la page, et lecture du style inline (pas de getComputedStyle → pas de recalc forcé).
   function findTarget(){
     var best = null, bestArea = 0;
-    var els = document.querySelectorAll('div, section');
+    var els = document.querySelectorAll('.deals-table-wrap, [style*="overflow-x:auto"], [style*="overflow-x: auto"], [style*="overflow-x:scroll"]');
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
       if (el.id === 'floating-hscroll') continue;
+      if (el.offsetParent === null) continue;                        // masqué (vue inactive)
       if (el.scrollWidth <= el.clientWidth + 8) continue;
-      var cs = window.getComputedStyle(el);
-      if (cs.overflowX !== 'auto' && cs.overflowX !== 'scroll') continue;
       var r = el.getBoundingClientRect();
       if (r.width < 300 || r.height < 60) continue;
       if (r.bottom < 80 || r.top > window.innerHeight - 40) continue;
@@ -37242,6 +37250,7 @@ function exportCommHistCSV() {
   }
 
   function tick(){
+    if (document.visibilityState === 'hidden') return;   // onglet caché : aucun travail
     ensureBar();
     var t = findTarget();
     if (t !== target) {
@@ -37266,8 +37275,14 @@ function exportCommHistCSV() {
 
   window.addEventListener('load', function(){
     ensureBar();
-    setInterval(tick, 350);
-    window.addEventListener('scroll', tick, { passive: true });
+    setInterval(tick, 900);
+    // Scroll : throttlé via requestAnimationFrame (1 tick max par frame, au lieu d'un par événement)
+    var _rafPending = false;
+    window.addEventListener('scroll', function(){
+      if (_rafPending) return;
+      _rafPending = true;
+      requestAnimationFrame(function(){ _rafPending = false; tick(); });
+    }, { passive: true });
     window.addEventListener('resize', tick);
   });
 })();
