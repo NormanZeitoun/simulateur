@@ -19167,7 +19167,17 @@ function deleteMissionParallele(avenantId) {
   if (typeof renderAvenants === 'function') { try { renderAvenants(); } catch(e){} }
   if (typeof renderCandidats === 'function') { try { renderCandidats(); } catch(e){} }
   if (typeof renderClients === 'function') { try { renderClients(); } catch(e){} }
-  if (typeof showNotifToast === 'function') showNotifToast('\u2713 Mission parall\u00e8le supprim\u00e9e');
+  // (4) Rafraîchir la FICHE CANDIDAT si elle est ouverte (sinon l'avenant supprimé
+  //     reste affiché à l'écran et la suppression semble ne rien faire)
+  try {
+    var _mf = document.getElementById('modal-cand-fiche');
+    if (_mf && typeof openCandidatFiche === 'function') {
+      var _cidEl = _mf.querySelector('[data-candid]');
+      var _cid = _cidEl ? parseInt(_cidEl.dataset.candid) : null;
+      if (_cid) openCandidatFiche(_cid);
+    }
+  } catch(e){ console.warn('[delMission//] refresh fiche:', e); }
+  if (typeof showNotifToast === 'function') showNotifToast('\u2713 Avenant supprim\u00e9');
 }
 
 // Version silencieuse (sans alert) pour la réparation automatique au démarrage
