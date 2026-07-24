@@ -13897,6 +13897,7 @@ var currentRHSubTab = 'deals';
 var RH_SUBTABS = [
   { key: 'deals',        label: 'Tableau des deals', icon: '\u{1F4CB}', ready: true  },
   { key: 'entrees',      label: 'Entrées du mois',   icon: '\u{1F389}', ready: true  },
+  { key: 'periode_essai', label: 'Période d\'essai',  icon: '\u{23F1}',  ready: true  },
   { key: 'prolongation', label: 'Prolongation',      icon: '\u{23F3}',  ready: true  },
   { key: 'avenants',     label: 'Avenants',          icon: '\u{1F4DD}', ready: true  },
   { key: 'sortants',     label: 'Sortants',          icon: '\u{1F6AA}', ready: true  },
@@ -13937,11 +13938,294 @@ function showRHSection(subtab) {
     showAvenantsView();
   } else if (subtab === 'visite_medicale') {
     showVisiteMedicaleView();
+  } else if (subtab === 'periode_essai') {
+    showPeriodeEssaiView();
   } else {
     // Placeholder pour les sous-sections non encore implémentées
     showRHPlaceholder(subtab);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// PÉRIODE D'ESSAI (Suivi RH)
+// Consultants dont la période d'essai n'est PAS validée.
+// Règles :
+//  • Validation AUTOMATIQUE à 8 mois d'ancienneté (le consultant sort de la liste)
+//  • PE initiale de 4 mois (Syntec) à partir de la date de début du décompte
+//    (modifiable ; par défaut = date d'entrée)
+//  • Mail 1 à Marie + Clémence à 3 mois d'ancienneté
+//  • Mail d'ALERTE à Marie + Clémence 1 semaine avant la fin de la PE (début + 4 mois - 7 j)
+//  • Si le menu « PE envoyée » est rempli (Oui / Non / Validé) → AUCUN mail
+// Stockage : champs pe_* directement sur le deal (synchronisés avec le deal).
+// ═══════════════════════════════════════════════════════════════════
+var PE_DUREE_INITIALE_MOIS = 4;
+var PE_VALIDATION_AUTO_MOIS = 8;
+var PE_ALERTE1_MOIS = 3;
+var PE_ALERTE_FIN_JOURS = 7;
+var PE_SCAN_KEY = 'sp_pe_scan_v1';
+var peFilters = { commercial: '', mois_entree: '' };
+
+function _peDebut(d) { return (d.pe_date_debut || d.date_entree || '').slice(0, 10); }
+// Ancienneté en mois révolus depuis la date de début du décompte
+function _peAncienneteMois(d, ref) {
+  var deb = _peDebut(d);
+  if (!deb) return null;
+  var s = new Date(deb); if (isNaN(s.getTime())) return null;
+  ref = ref || new Date();
+  var m = (ref.getFullYear() - s.getFullYear()) * 12 + (ref.getMonth() - s.getMonth());
+  if (ref.getDate() < s.getDate()) m--;
+  return m < 0 ? null : m;
+}
+// Fin de la PE initiale = début + 4 mois
+function _peFinDate(d) {
+  var deb = _peDebut(d);
+  if (!deb) return null;
+  var s = new Date(deb); if (isNaN(s.getTime())) return null;
+  var f = new Date(s); f.setMonth(f.getMonth() + PE_DUREE_INITIALE_MOIS);
+  return f;
+}
+function _peFmtDate(v) {
+  if (!v) return '\u2014';
+  var s = String(v).slice(0, 10).split('-');
+  return s.length === 3 ? (s[2] + '/' + s[1] + '/' + s[0]) : String(v);
+}
+// Deals concernés par le suivi de PE (avant coupure par validation)
+function _peBaseDeals() {
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  return deals.filter(function(d) {
+    if (!d || d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return false;
+    if (d.stand_by === true) return false;
+    if (d.etat !== 'En cours' && d.etat !== 'Signé' && d.etat !== 'Nouveau placement') return false;
+    if (!(d.date_entree || d.pe_date_debut)) return false;
+    return true;
+  });
+}
+// Liste affichée : PE non validée (ni manuellement, ni par les 8 mois)
+function _peEligibleDeals() {
+  return _peBaseDeals().filter(function(d) {
+    if (d.pe_statut === 'Validé') return false;
+    var anc = _peAncienneteMois(d);
+    if (anc === null) return false;
+    if (anc >= PE_VALIDATION_AUTO_MOIS) return false;   // validé automatiquement
+    return true;
+  });
+}
+function setPEFilter(field, value) {
+  peFilters[field] = value;
+  renderPeriodeEssai();
+}
+function updatePEField(dealId, field, value) {
+  var deals = getDeals();
+  var idx = deals.findIndex(function(d){ return d.id === dealId; });
+  if (idx < 0) return;
+  deals[idx][field] = value;
+  deals[idx].updated_at = Date.now();
+  saveDeals(deals);
+  if (typeof odAutoSync === 'function') odAutoSync();
+  renderPeriodeEssai();
+}
+function renderPeriodeEssai() {
+  var container = document.getElementById('rh-content-container');
+  if (!container) return;
+  var list = _peEligibleDeals();
+
+  // Filtres
+  if (peFilters.commercial) {
+    list = list.filter(function(d) {
+      return (typeof _sameCommercial === 'function')
+        ? _sameCommercial(d.commercial, peFilters.commercial)
+        : ((d.commercial||'').trim().toLowerCase() === peFilters.commercial.trim().toLowerCase());
+    });
+  }
+  if (peFilters.mois_entree) {
+    list = list.filter(function(d){ return (d.date_entree||'').slice(0,7) === peFilters.mois_entree; });
+  }
+  // Tri : les plus anciens (fin de PE la plus proche) d'abord
+  list.sort(function(a, b) { return (_peAncienneteMois(b)||0) - (_peAncienneteMois(a)||0); });
+
+  // Options commerciaux dynamiques
+  var _comms = {};
+  _peEligibleDeals().forEach(function(d){ var cm=(d.commercial||'').trim(); if(cm) _comms[cm]=1; });
+  if (peFilters.commercial) _comms[peFilters.commercial] = 1;
+  var commOpts = Object.keys(_comms).sort(function(a,b){ return a.localeCompare(b); })
+    .map(function(cm){ return '<option value="'+cm.replace(/"/g,'&quot;')+'"'+(cm===peFilters.commercial?' selected':'')+'>'+cm+'</option>'; }).join('');
+
+  var now = new Date();
+  var rows = list.map(function(d) {
+    var anc = _peAncienneteMois(d);
+    var fin = _peFinDate(d);
+    var joursAvantFin = fin ? Math.ceil((fin.getTime() - now.getTime()) / 86400000) : null;
+    var statut = d.pe_statut || '';
+    // Badges d'état des alertes
+    var badges = '';
+    if (statut === '') {
+      if (d.pe_mail_3m_sent) badges += '<span title="Mail 3 mois envoyé le ' + new Date(d.pe_mail_3m_sent).toLocaleDateString('fr-FR') + '" style="display:inline-block;padding:1px 7px;background:#EEF4FF;color:#1A4F96;border-radius:9px;font-size:9.5px;font-weight:700;margin-right:3px;">\u2709 3 mois</span>';
+      if (d.pe_mail_fin_sent) badges += '<span title="Alerte fin de PE envoyée le ' + new Date(d.pe_mail_fin_sent).toLocaleDateString('fr-FR') + '" style="display:inline-block;padding:1px 7px;background:#FDECEC;color:#B23A3A;border-radius:9px;font-size:9.5px;font-weight:700;margin-right:3px;">\u26A0 Fin PE</span>';
+    }
+    if (joursAvantFin !== null && joursAvantFin <= PE_ALERTE_FIN_JOURS && joursAvantFin >= 0 && statut !== 'Oui' && statut !== 'Validé') {
+      badges += '<span style="display:inline-block;padding:1px 7px;background:#FFF3E0;color:#B26A00;border-radius:9px;font-size:9.5px;font-weight:700;">\u23F3 fin dans ' + joursAvantFin + ' j</span>';
+    } else if (joursAvantFin !== null && joursAvantFin < 0 && statut !== 'Oui' && statut !== 'Validé') {
+      badges += '<span style="display:inline-block;padding:1px 7px;background:#FDECEC;color:#B23A3A;border-radius:9px;font-size:9.5px;font-weight:700;">\u26A0 PE dépassée de ' + (-joursAvantFin) + ' j</span>';
+    }
+    var ancTxt = anc === null ? '\u2014' : (anc < 1 ? '&lt; 1 mois' : anc + ' mois');
+    var ancColor = anc === null ? '#9E94C4' : (anc >= PE_ALERTE1_MOIS ? '#B26A00' : '#0F5132');
+    return '<tr style="border-bottom:1px solid #F0EDF9;">'
+      + '<td style="padding:9px 10px;font-weight:600;color:#1A1033;">' + (((d.prenom||'')+' '+(d.nom||'')).trim() || '\u2014').replace(/</g,'&lt;') + '</td>'
+      + '<td style="padding:9px 10px;color:#6B5E9C;">' + ((d.entreprise||'\u2014')).replace(/</g,'&lt;') + '</td>'
+      + '<td style="padding:9px 10px;color:#6B5E9C;">' + ((d.commercial||'\u2014')).replace(/</g,'&lt;') + '</td>'
+      + '<td style="padding:9px 10px;">' + _peFmtDate(d.date_entree) + '</td>'
+      + '<td style="padding:9px 10px;"><input type="date" value="' + _peDebut(d) + '" onchange="updatePEField(' + d.id + ',\'pe_date_debut\',this.value)" title="Date de début du décompte de la période d\'essai (par défaut : date d\'entrée)" style="padding:4px 7px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;font-family:inherit;background:#fff;"></td>'
+      + '<td style="padding:9px 10px;text-align:center;font-weight:800;color:' + ancColor + ';">' + ancTxt + '</td>'
+      + '<td style="padding:9px 10px;color:#6B5E9C;">' + (fin ? _peFmtDate(fin.toISOString()) : '\u2014') + '</td>'
+      + '<td style="padding:9px 10px;">' + (badges || '<span style="color:#B7ADD6;font-size:10.5px;">\u2014</span>') + '</td>'
+      + '<td style="padding:9px 10px;">'
+      +   '<select onchange="updatePEField(' + d.id + ',\'pe_statut\',this.value)" title="Renouvellement de période d\'essai envoyé ? (rempli = plus aucun mail automatique)" style="padding:5px 8px;border:1.5px solid ' + (statut ? '#9FE1CB' : '#E4E0FA') + ';border-radius:6px;font-size:11.5px;cursor:pointer;font-family:inherit;background:' + (statut === 'Validé' ? '#E8FFF4' : '#fff') + ';font-weight:600;">'
+      +     '<option value=""' + (statut===''?' selected':'') + '>\u2014</option>'
+      +     '<option value="Oui"' + (statut==='Oui'?' selected':'') + '>Envoyé : Oui</option>'
+      +     '<option value="Non"' + (statut==='Non'?' selected':'') + '>Envoyé : Non</option>'
+      +     '<option value="Validé"' + (statut==='Validé'?' selected':'') + '>Validé</option>'
+      +   '</select>'
+      + '</td>'
+      + '</tr>';
+  }).join('');
+
+  container.innerHTML = ''
+    + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'
+    +   '<div style="font-size:15px;font-weight:800;color:#1A1033;">\u23F1 Période d\'essai</div>'
+    +   '<span title="PE non validées. Validation automatique à ' + PE_VALIDATION_AUTO_MOIS + ' mois d\'ancienneté." style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;background:#EEF9F3;color:#0F5132;border:1.5px solid #9FE1CB;">' + list.length + ' consultant' + (list.length>1?'s':'') + '</span>'
+    +   '<select onchange="setPEFilter(\'commercial\',this.value)" title="Filtrer par commercial" style="padding:7px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;background:#fff;cursor:pointer;font-family:inherit;">'
+    +     '<option value=""' + (peFilters.commercial?'':' selected') + '>Tous commerciaux</option>' + commOpts
+    +   '</select>'
+    +   '<label title="Filtrer par mois d\'entrée" style="display:flex;align-items:center;gap:5px;padding:4px 9px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:11px;color:#6B5E9C;background:#fff;font-weight:600;">Mois d\'entrée'
+    +     '<input type="month" value="' + (peFilters.mois_entree||'') + '" onchange="setPEFilter(\'mois_entree\',this.value)" style="border:none;font-size:12px;color:#1A1033;background:transparent;cursor:pointer;font-family:inherit;padding:0;">'
+    +   '</label>'
+    +   ((peFilters.commercial || peFilters.mois_entree)
+        ? '<button onclick="peFilters={commercial:\'\',mois_entree:\'\'};renderPeriodeEssai();" style="padding:5px 12px;background:#fff;color:#E24B4A;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">\u2715 Réinitialiser</button>'
+        : '')
+    + '</div>'
+    + '<div style="font-size:11px;color:#9E94C4;margin-bottom:10px;">Validation automatique à <b>' + PE_VALIDATION_AUTO_MOIS + ' mois</b>. PE initiale de <b>' + PE_DUREE_INITIALE_MOIS + ' mois</b> à partir du début du décompte. Mails automatiques à Marie + Clémence : à <b>' + PE_ALERTE1_MOIS + ' mois</b>, puis <b>' + PE_ALERTE_FIN_JOURS + ' j avant la fin</b> \u2014 aucun mail si le menu \u00ab PE envoyée \u00bb est rempli.</div>'
+    + '<div style="overflow-x:auto;background:#fff;border:1.5px solid #F0EDF9;border-radius:11px;">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1050px;">'
+    + '<thead><tr style="background:#F7F4FF;">'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;">Consultant</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;">Entreprise</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;">Commercial</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;">Date d\'entrée</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;" title="Date à partir de laquelle le compteur d\'ancienneté se déclenche (modifiable)">Début décompte</th>'
+    +   '<th style="padding:10px;text-align:center;color:#4B36EC;font-weight:700;">Ancienneté</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;" title="Fin de la PE initiale (' + PE_DUREE_INITIALE_MOIS + ' mois)">Fin PE</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;">Alertes</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;">PE envoyée</th>'
+    + '</tr></thead>'
+    + '<tbody>' + (rows || '<tr><td colspan="9" style="padding:36px;text-align:center;color:#9E9E9E;font-style:italic;">Aucune période d\'essai en cours \u2014 toutes validées \u2713</td></tr>') + '</tbody>'
+    + '</table></div>';
+}
+function showPeriodeEssaiView() {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-deals'); if (!tab) return;
+  tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+  if (typeof setDealsOriginalVisible === 'function') setDealsOriginalVisible(false);
+  injectRHSubNav();
+  var container = document.getElementById('rh-content-container');
+  if (!container) { container = document.createElement('div'); container.id = 'rh-content-container'; tab.appendChild(container); }
+  container.style.display = 'block';
+  renderPeriodeEssai();
+}
+// ── Scan quotidien : validation auto + mails Marie/Clémence ──
+function _peSendMail(d, kind, onOk, onErr) {
+  var em = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+  var to = [em.marie, em.clemence].filter(Boolean);
+  to = to.filter(function(e, i){ return to.indexOf(e) === i; });
+  if (!to.length) { onErr && onErr('emails Marie/Clémence non configurés'); return; }
+  var nom = ((d.prenom||'')+' '+(d.nom||'')).trim() || '\u2014';
+  var anc = _peAncienneteMois(d);
+  var fin = _peFinDate(d);
+  var sujet = (kind === '3m')
+    ? '\u23F1 Période d\'essai \u2014 3 mois atteints \u2014 ' + nom
+    : '\u26A0 Période d\'essai \u2014 fin dans ' + PE_ALERTE_FIN_JOURS + ' jours \u2014 ' + nom;
+  var intro = (kind === '3m')
+    ? 'Le consultant a atteint <b>' + PE_ALERTE1_MOIS + ' mois</b> d\'ancienneté : merci de préparer le renouvellement de sa période d\'essai.'
+    : 'La période d\'essai arrive à échéance dans <b>moins de ' + PE_ALERTE_FIN_JOURS + ' jours</b> et le renouvellement n\'est pas marqué comme envoyé.';
+  var html = '<div style="font-family:Arial,sans-serif;color:#1A1033;font-size:14px;line-height:1.5;">'
+    + '<p>Bonjour,</p><p>' + intro + '</p>'
+    + '<table style="border-collapse:collapse;margin:12px 0;font-size:13px;">'
+    + '<tr><td style="padding:5px 12px;border:1px solid #E4E0FA;color:#6B5E9C;">Consultant</td><td style="padding:5px 12px;border:1px solid #E4E0FA;font-weight:700;">' + nom + '</td></tr>'
+    + '<tr><td style="padding:5px 12px;border:1px solid #E4E0FA;color:#6B5E9C;">Client</td><td style="padding:5px 12px;border:1px solid #E4E0FA;">' + (d.entreprise||'\u2014') + '</td></tr>'
+    + '<tr><td style="padding:5px 12px;border:1px solid #E4E0FA;color:#6B5E9C;">Commercial</td><td style="padding:5px 12px;border:1px solid #E4E0FA;">' + (d.commercial||'\u2014') + '</td></tr>'
+    + '<tr><td style="padding:5px 12px;border:1px solid #E4E0FA;color:#6B5E9C;">Date d\'entrée</td><td style="padding:5px 12px;border:1px solid #E4E0FA;">' + _peFmtDate(d.date_entree) + '</td></tr>'
+    + '<tr><td style="padding:5px 12px;border:1px solid #E4E0FA;color:#6B5E9C;">Ancienneté</td><td style="padding:5px 12px;border:1px solid #E4E0FA;">' + (anc===null?'\u2014':anc+' mois') + '</td></tr>'
+    + '<tr><td style="padding:5px 12px;border:1px solid #E4E0FA;color:#6B5E9C;">Fin de PE</td><td style="padding:5px 12px;border:1px solid #E4E0FA;font-weight:700;">' + (fin?_peFmtDate(fin.toISOString()):'\u2014') + '</td></tr>'
+    + '</table>'
+    + '<p style="color:#9E94C4;font-size:12px;">Notification automatique \u2014 CRM Seven Portage (onglet Suivi RH \u203A Période d\'essai). Renseignez le menu \u00ab PE envoyée \u00bb pour stopper ces alertes.</p>'
+    + '</div>';
+  sendMailViaGraph({ from: 'social@seven-portage.fr', to: to, subject: sujet, htmlBody: html }, onOk, onErr);
+}
+function runPeriodeEssaiScan() {
+  try {
+    var deals = getDeals();
+    var changed = false;
+    var now = new Date();
+    _peBaseDeals().forEach(function(bd) {
+      var idx = deals.findIndex(function(x){ return x.id === bd.id; });
+      if (idx < 0) return;
+      var d = deals[idx];
+      var anc = _peAncienneteMois(d, now);
+      if (anc === null) return;
+      // (a) Validation automatique à 8 mois
+      if (anc >= PE_VALIDATION_AUTO_MOIS && d.pe_statut !== 'Validé') {
+        d.pe_statut = 'Validé'; d.pe_valide_auto = Date.now(); d.updated_at = Date.now();
+        changed = true;
+        return;
+      }
+      // (b) Mails uniquement si le menu n'est PAS rempli
+      if (d.pe_statut) return;
+      var fin = _peFinDate(d);
+      // Mail 1 : 3 mois atteints
+      if (anc >= PE_ALERTE1_MOIS && !d.pe_mail_3m_sent) {
+        d.pe_mail_3m_sent = Date.now(); d.updated_at = Date.now(); changed = true;   // flag AVANT envoi (anti-doublon)
+        saveDeals(deals);
+        (function(dealRef){
+          _peSendMail(dealRef, '3m', function(){}, function(err){
+            console.error('[PE] échec mail 3 mois', err);
+            var dd = getDeals(); var i2 = dd.findIndex(function(x){ return x.id === dealRef.id; });
+            if (i2 >= 0) { dd[i2].pe_mail_3m_sent = null; saveDeals(dd); }   // revert → retentera demain
+          });
+        })(d);
+      }
+      // Mail 2 : 1 semaine avant la fin
+      if (fin && !d.pe_mail_fin_sent) {
+        var jours = Math.ceil((fin.getTime() - now.getTime()) / 86400000);
+        if (jours <= PE_ALERTE_FIN_JOURS) {
+          d.pe_mail_fin_sent = Date.now(); d.updated_at = Date.now(); changed = true;
+          saveDeals(deals);
+          (function(dealRef){
+            _peSendMail(dealRef, 'fin', function(){}, function(err){
+              console.error('[PE] échec mail fin', err);
+              var dd = getDeals(); var i2 = dd.findIndex(function(x){ return x.id === dealRef.id; });
+              if (i2 >= 0) { dd[i2].pe_mail_fin_sent = null; saveDeals(dd); }
+            });
+          })(d);
+        }
+      }
+    });
+    if (changed) { saveDeals(deals); if (typeof odAutoSync === 'function') odAutoSync(); }
+  } catch(e) { console.error('[PE scan]', e); }
+}
+function maybeRunPeriodeEssaiScan() {
+  try {
+    var today = new Date().toISOString().slice(0, 10);
+    if (localStorage.getItem(PE_SCAN_KEY) === today) return;   // 1 scan par jour max
+    localStorage.setItem(PE_SCAN_KEY, today);
+    runPeriodeEssaiScan();
+  } catch(e) {}
+}
+window.addEventListener('load', function(){ setTimeout(maybeRunPeriodeEssaiScan, 7000); });
 
 // ═══════════════════════════════════════════════════════════════════
 // VISITE MÉDICALE — suivi inscriptions / avis d'aptitude (Suivi RH)
@@ -16443,7 +16727,7 @@ var entreesCurrentMois = (function() {
 })();
 
 var entreesSort = { col: null, dir: 'asc' };
-var entreesFilters = { contacte: '', signature: '', mutuelle: '' };
+var entreesFilters = { contacte: '', signature: '', mutuelle: '', commercial: '' };
 var entreesSearch = '';
 
 function setEntreesSort(col) {
@@ -16464,7 +16748,7 @@ function setEntreesSearch(val) {
   _debounceSearchRefocus('entrees', renderEntrees, 'entrees-search-input');
 }
 function resetEntreesFilters() {
-  entreesFilters = { contacte: '', signature: '', mutuelle: '' };
+  entreesFilters = { contacte: '', signature: '', mutuelle: '', commercial: '' };
   entreesSort = { col: null, dir: 'asc' };
   entreesSearch = '';
   renderEntrees();
@@ -16615,6 +16899,12 @@ function buildEntreesContent() {
   var searchLc = (entreesSearch || '').trim().toLowerCase();
   var filteredItems = items.filter(function(it) {
     if (searchLc && (it.prenomNom || '').toLowerCase().indexOf(searchLc) < 0) return false;
+    if (entreesFilters.commercial) {
+      var _okComm = (typeof _sameCommercial === 'function')
+        ? _sameCommercial(it.deal.commercial, entreesFilters.commercial)
+        : ((it.deal.commercial||'').trim().toLowerCase() === entreesFilters.commercial.trim().toLowerCase());
+      if (!_okComm) return false;
+    }
     if (entreesFilters.contacte) {
       var c = it.etat.contacte || '-';
       if (c !== entreesFilters.contacte) return false;
@@ -16694,6 +16984,15 @@ function buildEntreesContent() {
     +     '<input id="entrees-search-input" type="text" value="' + (entreesSearch||'').replace(/"/g,'&quot;') + '" oninput="setEntreesSearch(this.value)" placeholder="Rechercher un candidat…" style="width:100%;padding:7px 10px 7px 32px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;font-family:inherit;">'
     +   '</div>'
     +   '<span style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Filtres :</span>'
+    +   (function(){
+          var _comms = {};
+          items.forEach(function(it){ var cm=(it.deal.commercial||'').trim(); if(cm) _comms[cm]=1; });
+          if (entreesFilters.commercial) _comms[entreesFilters.commercial]=1;  // garder la sélection active
+          var _opts = Object.keys(_comms).sort(function(a,b){ return a.localeCompare(b); })
+            .map(function(cm){ return '<option value="'+cm.replace(/"/g,'&quot;')+'"'+(cm===entreesFilters.commercial?' selected':'')+'>'+cm+'</option>'; }).join('');
+          return '<select onchange="setEntreesFilter(\'commercial\',this.value)" title="Filtrer par commercial" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
+            + '<option value=""'+(entreesFilters.commercial?'':' selected')+'>Tous commerciaux</option>' + _opts + '</select>';
+        })()
     +   '<select onchange="setEntreesFilter(\'contacte\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
     +     '<option value="">Contacté : tous</option>'
     +     '<option value="Oui"' + (entreesFilters.contacte === 'Oui' ? ' selected' : '') + '>Contacté : Oui</option>'
