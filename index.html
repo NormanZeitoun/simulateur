@@ -4199,7 +4199,7 @@ function getSimData() {
       return v ? parseInt(v) : 0;
     })(),
     mutuelle:      window.state ? window.state.mutuelle : '',
-    frais_detail:  (function(){ try { var _bd=(typeof calc==='function')?calc():{}; return { repas:_bd.frais_repas||0, ik:_bd.frais_ik||0, tt:_bd.frais_tt||0, transport:_bd.frais_transport||0, telnet:_bd.frais_telnet||0, formation:_bd.frais_formation||0, materiel:_bd.frais_materiel||0 }; } catch(e){ return { repas:0,ik:0,tt:0,transport:0,telnet:0,formation:0,materiel:0 }; } })(),
+    frais_detail:  (function(){ var _bd = window._lastBulletinData || {}; return { repas:_bd.frais_repas||0, ik:_bd.frais_ik||0, tt:_bd.frais_tt||0, transport:_bd.frais_transport||0, telnet:_bd.frais_telnet||0, formation:_bd.frais_formation||0, materiel:_bd.frais_materiel||0 }; })(),
     source_origine: (function(){ var el=document.getElementById('source_origine'); return el ? el.value : ''; })(),
     // Cooptation héritée du champ Origine : on persiste le payload si choisi
     coop_data: (function(){ var el=document.getElementById('sim-coop-data'); return el && el.value ? el.value : ''; })(),
