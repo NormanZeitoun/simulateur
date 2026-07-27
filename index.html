@@ -4199,6 +4199,7 @@ function getSimData() {
       return v ? parseInt(v) : 0;
     })(),
     mutuelle:      window.state ? window.state.mutuelle : '',
+    frais_detail:  (function(){ try { var _bd=(typeof calc==='function')?calc():{}; return { repas:_bd.frais_repas||0, ik:_bd.frais_ik||0, tt:_bd.frais_tt||0, transport:_bd.frais_transport||0, telnet:_bd.frais_telnet||0, formation:_bd.frais_formation||0, materiel:_bd.frais_materiel||0 }; } catch(e){ return { repas:0,ik:0,tt:0,transport:0,telnet:0,formation:0,materiel:0 }; } })(),
     source_origine: (function(){ var el=document.getElementById('source_origine'); return el ? el.value : ''; })(),
     // Cooptation héritée du champ Origine : on persiste le payload si choisi
     coop_data: (function(){ var el=document.getElementById('sim-coop-data'); return el && el.value ? el.value : ''; })(),
@@ -4239,132 +4240,68 @@ function getSimData() {
   };
 }
 
-function buildMailHTML(data, msgCustom) {
-  var prenom = data.consultant ? data.consultant.trim().split(' ')[0] : '';
-  var purple = '#7343EE';
-  var dark   = '#1A1033';
-  var muted  = '#6B5E9C';
-  var green  = '#1D9E75';
-  var bg     = '#F7F6FF';
-  var custom = msgCustom ? '<p style="margin:0 0 16px;color:'+dark+';">'+msgCustom.replace(/\n/g,'<br>')+'</p>' : '';
+function _spTh(n){ n=Math.round(n); var s=String(Math.abs(n)); s=s.replace(/\B(?=(\d{3})+(?!\d))/g,' '); return (n<0?'-':'')+s; }
+function _nf2(v){ return (Math.round(v*100)/100).toFixed(2).replace('.',','); }
+function _mutLabelMail(m){
+  m=(m||'').toString().toLowerCase();
+  if(m==='famille') return 'Incluse (Famille)';
+  if(m==='isolee'||m==='isol\u00e9e'||m==='isolee_seven') return 'Incluse (Isol&eacute;e)';
+  return 'Renoncement';
+}
+function _rowN(label,val){ return '<tr><td style="padding:1px 0;line-height:16px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;text-align:left;vertical-align:top;">&bull;&nbsp;&nbsp;'+label+'</td><td style="padding:1px 0;line-height:16px;mso-line-height-rule:exactly;font-size:12px;font-weight:600;color:#1A1033;text-align:right;white-space:nowrap;vertical-align:top;">'+val+'</td></tr>'; }
+function _rowI(label,val){ return '<tr><td style="padding:0 0 0 18px;line-height:14px;mso-line-height-rule:exactly;font-size:11px;font-style:italic;color:#6B5E9C;text-align:left;vertical-align:top;">'+label+'</td><td style="padding:0;line-height:14px;mso-line-height-rule:exactly;font-size:11px;font-style:italic;color:#6B5E9C;text-align:right;white-space:nowrap;vertical-align:top;">'+val+'</td></tr>'; }
 
-  return '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:'+bg+';font-family:Segoe UI,Arial,sans-serif;">' +
-  '<table width="100%" cellpadding="0" cellspacing="0" style="background:'+bg+';padding:24px 0;">' +
-  '<tr><td align="center">' +
-  '<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(115,67,238,0.10);">' +
+function buildMailHTML(data, msgCustom){
+  var PRENOM = data.consultant ? data.consultant.trim().split(' ')[0] : '';
+  var C_NOM  = data.commercial || 'Seven Portage';
+  var C_TELD = data.commercial_tel || '';
+  var C_TELH = (data.commercial_tel||'').replace(/[^0-9+]/g,'');
+  var C_MAIL = data.commercial_email || '';
+  var NB     = (data.nb_jours!==undefined && data.nb_jours!=='') ? String(data.nb_jours) : '21';
+  var NETP   = data.net_payer || '';
+  var NETA   = data.net_avant || '';
+  var FRAISV = data.frais || '';
+  var _fnum  = parseFloat(String(data.frais||'0').replace(/[^0-9,.-]/g,'').replace(/\s/g,'').replace(',','.'))||0;
+  var REVENU = _spTh(_fnum*12) + ' &euro;';
+  var custom = msgCustom ? '<p style="margin:0 0 16px;color:#1A1033;">'+msgCustom.replace(/\n/g,'<br>')+'</p>' : '';
 
-  // Header
-  '<tr><td bgcolor="#4B36EC" style="background:#4B36EC;padding:28px 36px;">' +
-  '<table width="100%" cellpadding="0" cellspacing="0"><tr>' +
-  '<td><img src="' + SP_LOGO_SRC + '" alt="Seven Portage" style="height:40px;display:block;" border="0"></td>' +
-  '<td align="right" style="vertical-align:top">' +
-    '<p style="margin:0;font-size:13px;font-weight:700;color:#fff;">' + (data.commercial || 'Seven Portage') + '</p>' +
-    (data.commercial_tel   ? '<p style="margin:2px 0 0;font-size:11px;color:rgba(255,255,255,0.8);">&#128222; ' + data.commercial_tel   + '</p>' : '') +
-    (data.commercial_email ? '<p style="margin:2px 0 0;font-size:11px;color:rgba(255,255,255,0.8);">&#9993; '  + data.commercial_email + '</p>' : '') +
-  '</td>' +
-  '</tr>' +
-  '<tr><td colspan="2" style="padding-top:10px">' +
-    '<span style="background:rgba(255,255,255,0.2);color:#fff;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;letter-spacing:0.5px;">Simulation</span>' +
-  '</td></tr>' +
-  '</table></td></tr>' +
+  var PRE1 = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light only"><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no"><style>:root{color-scheme:light only;supported-color-schemes:light only;}a[x-apple-data-detectors]{color:inherit !important;text-decoration:none !important;font-size:inherit !important;font-family:inherit !important;font-weight:inherit !important;line-height:inherit !important;}.sp-hdr,.sp-hdr a{color:#FFFFFF !important;text-decoration:none !important;}.sp-ftr,.sp-ftr a{color:#4A4270 !important;text-decoration:none !important;}</style></head><body style="margin:0;padding:0;background:#F7F6FF;font-family:Segoe UI,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F7F6FF;padding:24px 0;"><tr><td align="left"><table width="660" cellpadding="0" cellspacing="0" bgcolor="#FFFFFF" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(115,67,238,0.10);"><tr><td bgcolor="#4B36EC" style="background:#4B36EC;padding:28px 36px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td><img src="data:image/png;base64,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" alt="Seven Portage" style="height:40px;display:block;" border="0"></td><td align="right" style="vertical-align:top"><p style="margin:0;font-size:13px;font-weight:700;color:#fff;">' + (C_NOM) + '</p><p class="sp-hdr" style="margin:2px 0 0;font-size:11px;color:#FFFFFF;">&#128222; <a href="' + ('tel:'+C_TELH) + '" style="color:#FFFFFF;text-decoration:none;">' + (C_TELD) + '</a></p><p class="sp-hdr" style="margin:2px 0 0;font-size:11px;color:#FFFFFF;">&#9993; <a href="' + ('mailto:'+C_MAIL) + '" style="color:#FFFFFF;text-decoration:none;">' + (C_MAIL) + '</a></p></td></tr><tr><td colspan="2" style="padding-top:10px"><span style="background:#6B57F2;color:#FFFFFF;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;letter-spacing:0.5px;">Simulation</span></td></tr></table></td></tr><tr><td style="padding:28px 36px 0;"><p style="margin:0 0 8px;font-size:14px;font-weight:400;color:#444;line-height:1.6;">' + ('Bonjour '+PRENOM+',') + '</p><p style="margin:0 0 16px;color:#444;font-size:14px;line-height:1.6;">Je fais suite &agrave; notre conversation de ce jour et vous prie de trouver ci-dessous la simulation demand&eacute;e.</p>';
+  var PRE2 = '</td></tr><tr><td style="padding:0 36px 16px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td width="49%" style="background:#FAFAFA;border:1.5px solid #E4E0FA;border-radius:10px;padding:16px;text-align:center;"><div style="font-size:12px;color:#6B5E9C;margin-bottom:8px;">Salaire net avant imp&ocirc;t</div><div style="font-size:22px;font-weight:700;color:#7343EE;">' + (NETA) + '</div></td><td width="2%"></td><td width="49%" style="background:#FAFAFA;border:1.5px solid #E4E0FA;border-radius:10px;padding:16px;text-align:center;"><div style="font-size:12px;color:#6B5E9C;margin-bottom:8px;">Frais rembours&eacute;s <span style="font-size:10px;">(nets et non imposables)</span></div><div style="font-size:22px;font-weight:700;color:#1D9E75;">' + (FRAISV) + '</div></td></tr></table></td></tr><tr><td style="padding:0 36px 16px;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F0EDFF;border:2px solid #7343EE;border-radius:12px;padding:11px 14px;text-align:center;"><tr><td><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#7343EE;margin-bottom:5px;text-align:center;">Total vers&eacute; en fin de mois</div><div style="font-size:33px;font-weight:800;color:#7343EE;letter-spacing:-1px;text-align:center;line-height:37px;mso-line-height-rule:exactly;">' + (NETP) + '</div><div style="font-size:11px;color:#6B5E9C;margin-top:3px;text-align:center;">Salaire net avant imp&ocirc;t + Frais rembours&eacute;s (nets et non imposables)</div></td></tr></table></td></tr><tr><td style="padding:0 36px 16px;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F3FF;border-radius:8px;padding:14px 18px;"><tr><td style="font-size:8pt;color:#1A1033;line-height:12pt;mso-line-height-rule:exactly;">Les frais de <strong>' + (FRAISV) + '</strong> sont au forfait. Vous n&rsquo;avez donc pas besoin de justificatifs &agrave; fournir en fin de mois.<br>Autrement dit, ' + ('sur <strong>'+NB+' jours</strong>') + ' travaill&eacute;s, vous toucherez <strong>' + (NETP) + '</strong>, mais vous paierez vos imp&ocirc;ts uniquement sur <strong>' + (NETA) + '</strong>, soit un revenu non fiscalis&eacute; de <strong>' + (REVENU) + '</strong>/an.</td></tr></table></td></tr><tr><td style="padding:0 36px;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F7F6FF;border-radius:10px;"><tr><td style="padding:20px;"><table width="100%" cellpadding="0" cellspacing="0">';
+  var POST = '</table></td></tr></table></td></tr><tr><td style="padding:0 36px 20px;"><p style="margin:0 0 6px;font-size:13px;color:#1A1033;">Vous pouvez &eacute;galement faire passer en frais professionnels tous frais li&eacute;s &agrave; votre activit&eacute; (t&eacute;l&eacute;phone portable, tablette, ordinateur, bureau, chaise, licences informatiques, certifications, formations, etc.)</p></td></tr><tr><td style="padding:0 36px 20px;"><table width="100%" cellpadding="0" cellspacing="0" style="border:1.5px solid #E4E0FA;border-radius:10px;overflow:hidden;"><tr><td style="background:#7343EE;padding:12px 18px;font-size:12px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.8px;">Seven Portage — vous accompagne dans vos projets &agrave; travers nos 7 engagements :</td></tr><tr><td style="padding:14px 18px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128640; Simplicit&eacute;</span> 0 d&eacute;marche et 0 contrainte administrative</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#9889; Rapidit&eacute;</span> Contrat sous 24 heures</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128269; Transparence</span> Transparence sur les frais pr&eacute;lev&eacute;s</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128274; S&eacute;curit&eacute;</span> CDI, couverture sociale et droit au ch&ocirc;mage</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128181; Paiement</span> Salaires pay&eacute;s en fin de mois ind&eacute;pendamment de votre client</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128222; Disponibilit&eacute;</span> 7/7, retours dans la journ&eacute;e</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#129309; Accompagnement</span> Proximit&eacute;, interlocuteur unique, conseils personnalis&eacute;s</td></tr></table></td></tr></table></td></tr><tr><td style="padding:0 36px 28px;"><p style="margin:0 0 6px;font-size:13px;color:#1A1033;">N&#39;h&eacute;sitez pas &agrave; me contacter si vous avez des questions, je reste &agrave; votre disposition.</p><p style="margin:0;font-size:13px;color:#1A1033;">Excellente journ&eacute;e,</p></td></tr><tr><td bgcolor="#F7F6FF" style="background:#F7F6FF;padding:16px 36px;border-top:1.5px solid #E4E0FA;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td><p style="margin:0;font-size:13px;font-weight:700;color:#7343EE;">' + (C_NOM) + '</p><p class="sp-ftr" style="margin:2px 0 0;font-size:12px;color:#4A4270;">&#128222; <a href="' + ('tel:'+C_TELH) + '" style="color:#4A4270;text-decoration:none;">' + (C_TELD) + '</a></p><p class="sp-ftr" style="margin:2px 0 0;font-size:12px;color:#4A4270;">&#9993; <a href="' + ('mailto:'+C_MAIL) + '" style="color:#4A4270;text-decoration:none;">' + (C_MAIL) + '</a></p><p style="margin:4px 0 0;font-size:11px;color:#6B5E9C;">Seven Portage &mdash; <a href="https://www.sevenportage.fr" style="color:#7343EE;">www.sevenportage.fr</a></p></td></tr></table><p style="margin:8px 0 0;font-size:10px;color:#aaa;">Pi&egrave;ces jointes : Seven_Portage_Avantages_Sociaux_2026.pdf &bull; Seven_Portage_Tableau_Garanties_Henner.pdf</p></td></tr></table></td></tr></table></body></html>';
 
-  // Intro
-  '<tr><td style="padding:28px 36px 0;">' +
-  '<p style="margin:0 0 8px;font-size:16px;font-weight:700;color:'+dark+';">Bonjour ' + prenom + ',</p>' +
-  '<p style="margin:0 0 16px;color:#444;font-size:14px;line-height:1.6;">Je fais suite &agrave; notre conversation de ce jour et vous prie de trouver ci-dessous la simulation demand&eacute;e.</p>' +
-  custom +
-  '</td></tr>' +
+  // ---- Bloc DÉTAIL (reconstruit, conditionnel) ----
+  var nbNum = parseFloat(NB)||21;
+  var fd = data.frais_detail || {};
+  var cp = data.cp, rtt = (data.rtt||0);
+  var D = '<tr><td colspan="2" style="padding:0 0 6px 0;line-height:16px;mso-line-height-rule:exactly;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;text-align:left;color:#7343EE;">D&eacute;tail de la simulation</td></tr>';
+  if(!data.hide_tjm_mail) D += _rowN('TJM ou taux journalier factur&eacute; par SEVEN', (data.tjm||'')+' &euro;/jour');
+  if(cp!=='CP')           D += _rowN('Nb jours de la simulation (1j travaill&eacute; = 1j pay&eacute;)', NB+' jours');
+  if(data.brut_contrat_annuel) D += _rowN('Salaire brut annuel', _spTh(data.brut_contrat_annuel)+' &euro;');
+  if(cp==='CP')           D += _rowN('Cong&eacute;s pay&eacute;s', '25j/an');
+  if(rtt===6||rtt===12)   D += _rowN('RTT', rtt+'j/an');
+  // section frais
+  D += '<tr><td colspan="2" style="padding:0 0 6px 0;line-height:16px;mso-line-height-rule:exactly;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;text-align:left;color:#7343EE;padding-top:10px;' + (data.hide_tjm_mail?'':'border-top:1px solid #E4E0FA;') + '">Frais professionnels journaliers</td></tr>';
+  D += _rowN('Frais professionnels journaliers', (data.frais_jour||'')+' &euro;/jour');
+  var repasLabel = data.repas==='Forfait' ? 'Forfait repas' : (data.repas==='GD' ? 'Grand d\u00e9placement' : 'Titre restaurant (Swile)');
+  function perday(v){ return (nbNum>0 ? (v/nbNum) : 0); }
+  var rubs = [
+    [repasLabel, fd.repas],
+    ['Indemnit\u00e9s kilom\u00e9triques', fd.ik],
+    ['T\u00e9l\u00e9travail', fd.tt],
+    ['Remboursement transport (75%)', fd.transport],
+    ['Abonnement t\u00e9l\u00e9phone + internet', fd.telnet],
+    ['Formation', fd.formation],
+    ['Mat\u00e9riel', fd.materiel]
+  ];
+  for(var r=0;r<rubs.length;r++){ var m=parseFloat(rubs[r][1])||0; if(m>0){ D += _rowI(rubs[r][0], _nf2(perday(m))+' &euro;/jour'); } }
+  D += '<tr><td colspan="2" style="font-size:1px;line-height:7px;mso-line-height-rule:exactly;">&nbsp;</td></tr>';
+  D += _rowN('Mutuelle Henner (base confort) &mdash; voir PJ'.replace('&mdash;','\u2014'), _mutLabelMail(data.mutuelle));
+  D += _rowN('Paiement salaire en fin de mois','Oui');
+  D += _rowN('Gestion des frais professionnels','Oui');
+  D += _rowN('Type de contrat','CDI');
+  D += _rowN('Avantages sociaux','Oui (ch&egrave;ques cadeaux, CESU, Vacances, Culture...)');
 
-  // Bloc résultats — design image 1 + 2
-  // Grand bloc TOTAL VERSÉ
-  '<tr><td style="padding:0 36px 16px;">' +
-  '<table width="100%" cellpadding="0" cellspacing="0" style="background:#F0EDFF;border:2px solid #7343EE;border-radius:12px;padding:20px;text-align:center;">' +
-  '<tr><td>' +
-    '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:'+purple+';margin-bottom:8px;">Total vers&eacute; en fin de mois</div>' +
-    '<div style="font-size:36px;font-weight:800;color:'+purple+';letter-spacing:-1px;">' + data.net_payer + '</div>' +
-    '<div style="font-size:12px;color:'+muted+';margin-top:6px;">net d&rsquo;imp&ocirc;t et de charges &bull; taux de restitution ' + data.taux_restitution + ' du CA</div>' +
-  '</td></tr></table></td></tr>' +
-
-  // Deux petites cartes côte à côte
-  '<tr><td style="padding:0 36px 16px;">' +
-  '<table width="100%" cellpadding="0" cellspacing="0"><tr>' +
-    '<td width="49%" style="background:#FAFAFA;border:1.5px solid #E4E0FA;border-radius:10px;padding:16px;text-align:center;">' +
-      '<div style="font-size:12px;color:'+muted+';margin-bottom:8px;">Salaire net avant imp&ocirc;t</div>' +
-      '<div style="font-size:22px;font-weight:700;color:'+purple+';">' + data.net_avant + '</div>' +
-    '</td>' +
-    '<td width="2%"></td>' +
-    '<td width="49%" style="background:#FAFAFA;border:1.5px solid #E4E0FA;border-radius:10px;padding:16px;text-align:center;">' +
-      '<div style="font-size:12px;color:'+muted+';margin-bottom:8px;">Frais rembours&eacute;s <span style="font-size:10px;">(nets et non imposables)</span></div>' +
-      '<div style="font-size:22px;font-weight:700;color:'+green+';">' + data.frais + '</div>' +
-    '</td>' +
-  '</tr></table></td></tr>' +
-
-  // Explication frais
-  '<tr><td style="padding:0 36px 16px;">' +
-  '<table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F3FF;border-radius:8px;padding:14px 18px;">' +
-  '<tr><td style="font-size:13px;color:'+dark+';line-height:1.7;">' +
-  'Les frais de <strong>' + data.frais + '</strong> sont au forfait. Vous n&rsquo;avez donc pas besoin de justificatifs &agrave; fournir en fin de mois.<br>' +
-  'Autrement dit, sur <strong>' + data.nb_jours + ' jours</strong> travaill&eacute;s, vous toucherez <strong>' + data.net_payer + '</strong>, mais vous paierez vos imp&ocirc;ts uniquement sur <strong>' + data.net_avant + '</strong>.' +
-  '</td></tr></table></td></tr>' +
-
-  // Bloc simulation
-  '<tr><td style="padding:0 36px;">' +
-  '<table width="100%" cellpadding="0" cellspacing="0" style="background:'+bg+';border-radius:10px;padding:20px;margin-bottom:20px;">' +
-  '<tr><td colspan="2" style="padding-bottom:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:'+purple+';">D&eacute;tail de la simulation</td></tr>' +
-  (!data.hide_tjm_mail ? row2('TJM ou taux journalier', data.tjm + ' &euro;/jour', dark, muted) : '') +
-  (!data.hide_tjm_mail ? row2('Nb jours de la simulation', data.nb_jours + ' jours', dark, muted) : '') +
-  (!data.hide_tjm_mail ? '<tr><td colspan="2" style="padding:6px 0 3px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:'+purple+';border-top:1px solid #E4E0FA;">Frais affich&eacute;s</td></tr>' : '') +
-  (!data.hide_tjm_mail ? row2('Frais de gestion Seven Portage', data.marge_affichee + '%', purple, muted) : '') +
-  row2('Frais professionnels journaliers (estimatif)', data.frais_jour + ' &euro;/jour', dark, muted) +
-  row2('Mutuelle Henner (base confort) — voir PJ', data.mutuelle, dark, muted) +
-  row2('Paiement salaire en fin de mois', 'Oui', dark, muted) +
-  row2('Gestion des frais professionnels', 'Oui', dark, muted) +
-  row2('Type de contrat', 'CDI', dark, muted) +
-  row2('Avantages sociaux', 'Oui (&eacute;ch&egrave;ques cadeaux, CESU, Culture...)', dark, muted) +
-  '</table></td></tr>' +
-
-  // Frais pro
-  '<tr><td style="padding:0 36px 20px;">' +
-  '<p style="margin:0 0 6px;font-size:13px;color:'+dark+';">Vous pouvez &eacute;galement faire passer en frais professionnels tous frais li&eacute;s &agrave; votre activit&eacute; (t&eacute;l&eacute;phone, tablette, ordinateur, bureau, chaise, licences, certifications, formations, etc.)</p>' +
-  '</td></tr>' +
-
-  // 7 engagements
-  '<tr><td style="padding:0 36px 20px;">' +
-  '<table width="100%" cellpadding="0" cellspacing="0" style="border:1.5px solid #E4E0FA;border-radius:10px;overflow:hidden;">' +
-  '<tr><td style="background:'+purple+';padding:12px 18px;font-size:12px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.8px;">Seven Portage — Nos 7 engagements</td></tr>' +
-  '<tr><td style="padding:14px 18px;">' +
-  engList([
-    ['&#128640; Simplicit&eacute;', '0 d&eacute;marche et 0 contrainte administrative'],
-    ['&#9889; Rapidit&eacute;', 'Contrat sous 24 heures'],
-    ['&#128269; Transparence', 'Transparence sur les frais pr&eacute;lev&eacute;s'],
-    ['&#128274; S&eacute;curit&eacute;', 'CDI, couverture sociale et droit au ch&ocirc;mage'],
-    ['&#128181; Paiement', 'Salaires pay&eacute;s en fin de mois ind&eacute;pendamment de votre client'],
-    ['&#128222; Disponibilit&eacute;', '7/7, retours dans la journ&eacute;e'],
-    ['&#129309; Accompagnement', 'Proximit&eacute;, interlocuteur unique, conseils personnalis&eacute;s']
-  ], dark, muted) +
-  '</td></tr></table></td></tr>' +
-
-  // CTA + footer
-  '<tr><td style="padding:0 36px 28px;">' +
-  '<p style="margin:0 0 6px;font-size:13px;color:'+dark+';">N&#39;h&eacute;sitez pas &agrave; me contacter si vous avez des questions, je reste &agrave; votre disposition.</p>' +
-  '<p style="margin:0;font-size:13px;color:'+dark+';">Excellente journ&eacute;e,</p>' +
-  '</td></tr>' +
-  '<tr><td style="background:'+bg+';padding:16px 36px;border-top:1.5px solid #E4E0FA;">' +
-  '<table width="100%" cellpadding="0" cellspacing="0"><tr>' +
-  '<td><p style="margin:0;font-size:13px;font-weight:700;color:'+purple+';">' + (data.commercial || 'Seven Portage') + '</p>' +
-  (data.commercial_tel   ? '<p style="margin:2px 0 0;font-size:12px;color:'+dark+';">&#128222; ' + data.commercial_tel   + '</p>' : '') +
-  (data.commercial_email ? '<p style="margin:2px 0 0;font-size:12px;color:'+dark+';">&#9993; '  + data.commercial_email + '</p>' : '') +
-  '<p style="margin:4px 0 0;font-size:11px;color:'+muted+';">Seven Portage &mdash; <a href="https://www.sevenportage.fr" style="color:'+purple+';">www.sevenportage.fr</a></p>' +
-  '</td></tr></table>' +
-  (function() {
-    var pjTxt = 'Pi&egrave;ces jointes : Seven_Portage_Avantages_Sociaux_2026.pdf &bull; Seven_Portage_Tableau_Garanties_Henner.pdf';
-    var extra = getExtraPDFs();
-    extra.forEach(function(p) { pjTxt += ' &bull; ' + p.name; });
-    return '<p style="margin:8px 0 0;font-size:10px;color:#aaa;">' + pjTxt + '</p>';
-  })() +
-  '</td></tr>' +
-
-  '</table></td></tr></table></body></html>';
+  return PRE1 + custom + PRE2 + D + POST;
 }
 
 function row2(label, val, dark, muted) {
