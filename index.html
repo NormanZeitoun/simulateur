@@ -1866,7 +1866,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       <!-- Barre recherche + filtres -->
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <div style="position:relative;flex:1;min-width:200px;">
-          <input id="cand-search" type="text" placeholder="Rechercher par nom, email, entreprise..." oninput="_debounceSearch('cand', renderCandidats)" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
+          <input id="cand-search" type="text" placeholder="Rechercher par nom, email, entreprise..." oninput="_debounceSearch('cand', renderCandidats, 300)" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
           <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>
         </div>
         <select id="cand-filter-commercial" onchange="renderCandidats()" style="padding:7px 10px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;background:#F5F3FF;cursor:pointer;color:#4B36EC;font-weight:600;min-width:150px;">
@@ -1891,6 +1891,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="month">Ce mois</option>
         </select>
         <button onclick="toggleAllCandTagsPanel()" title="Voir tous les tags créés et filtrer" style="padding:7px 12px;border:1.5px solid #C7B2F5;border-radius:9px;font-size:12px;background:#F7F4FF;color:#5B2BCC;cursor:pointer;font-weight:700;white-space:nowrap;">&#127991;&#65039; Tags</button>
+        <label id="cand-sort-fraicheur-label" title="Trier les candidats du plus récent au plus ancien (mémorisé pour vous)" style="display:flex;align-items:center;gap:6px;padding:7px 12px;border:1.5px solid #C7B2F5;border-radius:9px;font-size:12px;background:#F7F4FF;color:#5B2BCC;cursor:pointer;font-weight:700;white-space:nowrap;user-select:none;">
+          <input type="checkbox" id="cand-sort-fraicheur" onchange="setCandSortFraicheur(this.checked)" style="width:14px;height:14px;cursor:pointer;accent-color:#7343EE;margin:0;">
+          <span>&#128340; Tri par fra&icirc;cheur</span>
+        </label>
       </div>
       <div id="cand-all-tags-panel" style="display:none;background:#FCFBFF;border:1.5px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;"></div>
       <div id="candidats-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,190px));gap:12px;"></div>
@@ -1987,7 +1991,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
                  oninput="onDealConsultantSearchInput()"
                  onfocus="onDealConsultantSearchInput()"
                  onblur="setTimeout(hideDealConsultantDropdown, 200)"
-                 placeholder="🔎 Rechercher un consultant (nom, prénom, email, entreprise)..."
+                 placeholder="Rechercher un consultant (nom, prénom, email, entreprise)..."
                  style="width:100%;padding:8px 30px 8px 32px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;background:#FAFBFF;">
           <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#7343EE;font-size:14px;pointer-events:none;">&#128269;</span>
           <button id="deal-search-clear" onclick="clearDealConsultantSearch()" style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);background:#FCEBEB;color:#A8322A;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;font-size:14px;line-height:1;padding:0;font-family:inherit;">×</button>
@@ -9850,7 +9854,16 @@ function savePlacement() {
   // Ancienne date du deal (normalisée en ISO pour éviter les faux positifs de format)
   var _oldDD = (idx >= 0 && deals[idx]) ? String(deals[idx].date_deal || '') : '';
   if (typeof _toISODateInput === 'function' && _oldDD) { _oldDD = _toISODateInput(_oldDD) || _oldDD; }
-  if (isNewDeal) deal.stand_by = !_placementIsComplete(deal);
+  if (isNewDeal) {
+    var _miss = (typeof _placementMissing === 'function') ? _placementMissing(deal) : [];
+    if (_miss.length) {
+      var _msgMiss = '\u26a0 \u00c9l\u00e9ments manquants :\n\n\u2022 ' + _miss.join('\n\u2022 ')
+        + '\n\nCe placement sera enregistr\u00e9 en STAND BY (non d\u00e9finitif) tant que ces \u00e9l\u00e9ments ne sont pas renseign\u00e9s.'
+        + '\n\nEnregistrer quand m\u00eame en stand by ?\n(Annuler pour compl\u00e9ter maintenant.)';
+      if (!confirm(_msgMiss)) return;
+    }
+    deal.stand_by = _miss.length > 0;
+  }
   if (idx >= 0) deals[idx] = Object.assign({}, deals[idx], deal); else deals.unshift(deal);
   // Si la DATE DU DEAL a été MODIFIÉE manuellement (édition), elle devient prioritaire dans
   // le calcul des commissions (sinon c'est la date de création du dossier qui prime — règle actuelle).
@@ -11419,7 +11432,8 @@ function onDealConsultantSearchInput() {
   window._dealConsultantFilter = query;
   _debounceSearch('deals', function(){ if (typeof renderDeals === 'function') renderDeals(); });
 
-  // Afficher le dropdown avec les suggestions
+  // Afficher le dropdown avec les suggestions — construction débouncée (fluidité de frappe)
+  _debounceSearch('deals_dd', function(){
   var dropdown = document.getElementById('deal-consultant-dropdown');
   if (!dropdown) return;
   if (!query || query.trim().length < 1) {
@@ -11479,6 +11493,7 @@ function onDealConsultantSearchInput() {
   }
   dropdown.innerHTML = html;
   dropdown.style.display = 'block';
+  }, 150);
 }
 
 function selectDealConsultant(email) {
@@ -13340,9 +13355,32 @@ function computeCandStatutAuto(cand) {
   return (manualStatut === 'Prospect chaud') ? 'Prospect chaud' : 'Prospect';
 }
 
+var CAND_SORT_FRAICHEUR_KEY = 'sp_cand_sort_fraicheur_v1';
+function _candCurrentUserKey() {
+  return ((typeof getCommercialData === 'function' && getCommercialData().nom) || '').trim().toLowerCase() || '__default__';
+}
+function getCandSortFraicheurPref() {
+  try { return JSON.parse(localStorage.getItem(CAND_SORT_FRAICHEUR_KEY) || '{}') || {}; } catch(e){ return {}; }
+}
+function isCandSortFraicheur() {
+  return !!getCandSortFraicheurPref()[_candCurrentUserKey()];
+}
+function setCandSortFraicheur(on) {
+  var pr = getCandSortFraicheurPref(); pr[_candCurrentUserKey()] = !!on;
+  try { localStorage.setItem(CAND_SORT_FRAICHEUR_KEY, JSON.stringify(pr)); } catch(e){}
+  renderCandidats();
+}
+function _candFreshTs(c) {
+  var v = c && c.created_at;
+  if (v != null) { var t = (typeof v === 'number') ? v : new Date(v).getTime(); if (!isNaN(t)) return t; }
+  return (c && c.id) || 0;
+}
+
 function renderCandidats() {
   var el = document.getElementById('candidats-list');
   if (!el) return;
+  var _sortChk = document.getElementById('cand-sort-fraicheur');
+  if (_sortChk) _sortChk.checked = isCandSortFraicheur();
   var cands = getCandidats();
   // FIX : exclure les fiches tombstonées (supprimées via fusion ou suppression cross-user)
   cands = cands.filter(function(c){ return c && !c._deleted; });
@@ -13474,6 +13512,10 @@ function renderCandidats() {
   // ── Tri par défaut : ordre alphabétique sur le NOM (puis prénom en départage).
   // localeCompare avec sensitivity 'base' : insensible à la casse ET aux accents
   // (Élise et Elise au même niveau, Côté avant Coutu, etc.).
+  if (isCandSortFraicheur()) {
+    // Tri par fraîcheur : du plus récent au plus ancien (created_at, fallback id)
+    cands.sort(function(a, b) { return _candFreshTs(b) - _candFreshTs(a); });
+  } else {
   cands.sort(function(a, b) {
     var nA = (a.nom || '').trim().toLowerCase();
     var nB = (b.nom || '').trim().toLowerCase();
@@ -13486,6 +13528,7 @@ function renderCandidats() {
     var pB = (b.prenom || '').trim().toLowerCase();
     return pA.localeCompare(pB, 'fr', { sensitivity: 'base' });
   });
+  }
   var statutCfg = {
     'Non Attribué':       { color:'#4A4068', bg:'#EEEBF7' },
     'Prospect':           { color:'#9AA0A6', bg:'#F5F5F5' },
@@ -14720,8 +14763,8 @@ function emailWrapperClose() {
 function getProlongationDeals() {
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
   var today = new Date();
-  var curYear = today.getFullYear();
-  var curMonth = today.getMonth(); // 0-11
+  var curYear = (window._prolongYear != null) ? window._prolongYear : today.getFullYear();
+  var curMonth = (window._prolongMonth != null) ? window._prolongMonth : today.getMonth(); // 0-11
 
   return deals.filter(function(d) {
     if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return false;
@@ -14768,6 +14811,23 @@ function showProlongationView() {
   renderProlongation();
 }
 
+function prolongSetPeriod(month, year) {
+  window._prolongMonth = month; window._prolongYear = year;
+  renderProlongation();
+}
+function prolongShiftMonth(delta) {
+  var t = new Date();
+  var m = (window._prolongMonth != null) ? window._prolongMonth : t.getMonth();
+  var y = (window._prolongYear != null) ? window._prolongYear : t.getFullYear();
+  var d = new Date(y, m + delta, 1);
+  window._prolongMonth = d.getMonth(); window._prolongYear = d.getFullYear();
+  renderProlongation();
+}
+function prolongResetPeriod() {
+  var t = new Date(); window._prolongMonth = t.getMonth(); window._prolongYear = t.getFullYear();
+  renderProlongation();
+}
+
 function renderProlongation() {
   var container = document.getElementById('prolongation-container');
   if (!container) return;
@@ -14785,16 +14845,28 @@ function renderProlongation() {
   });
 
   var monthNames = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
-  var now = new Date();
-  var periodLabel = monthNames[now.getMonth()] + ' ' + now.getFullYear();
+  var _pToday = new Date();
+  var _pMonth = (window._prolongMonth != null) ? window._prolongMonth : _pToday.getMonth();
+  var _pYear  = (window._prolongYear != null) ? window._prolongYear : _pToday.getFullYear();
+  var _pIsCurrent = (_pMonth === _pToday.getMonth() && _pYear === _pToday.getFullYear());
+  var periodLabel = monthNames[_pMonth] + ' ' + _pYear;
+  var monthOpts = monthNames.map(function(nm,i){ return '<option value="'+i+'"'+(i===_pMonth?' selected':'')+'>'+nm.charAt(0).toUpperCase()+nm.slice(1)+'</option>'; }).join('');
+  var yearOpts = ''; for (var _yy=_pToday.getFullYear()-2; _yy<=_pToday.getFullYear()+2; _yy++){ yearOpts += '<option value="'+_yy+'"'+(_yy===_pYear?' selected':'')+'>'+_yy+'</option>'; }
 
   var header = ''
     + '<div style="padding:12px 16px;background:linear-gradient(135deg,#EDE8FB 0%,#F5F3FF 100%);border-radius:10px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">'
     +   '<div>'
     +     '<div style="font-size:13px;font-weight:700;color:#1A1033;">&#9203; Prolongation — ' + periodLabel + '</div>'
-    +     '<div style="font-size:11.5px;color:#6B5E9C;margin-top:3px;">Consultants avec fin de contrat dans le mois en cours</div>'
+    +     '<div style="font-size:11.5px;color:#6B5E9C;margin-top:3px;">Consultants avec fin de contrat en ' + periodLabel + '</div>'
     +   '</div>'
     +   '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    +     '<div style="display:flex;align-items:center;gap:2px;background:#fff;border:1.5px solid #C7B2F5;border-radius:8px;padding:3px 4px;">'
+    +       '<button onclick="prolongShiftMonth(-1)" title="Mois pr\u00e9c\u00e9dent" style="border:none;background:none;color:#5B2BCC;cursor:pointer;font-size:13px;padding:0 6px;line-height:1;">&#9664;</button>'
+    +       '<select onchange="prolongSetPeriod(parseInt(this.value),' + _pYear + ')" style="border:none;background:#fff;color:#1A1033;font-size:11.5px;font-weight:600;cursor:pointer;">' + monthOpts + '</select>'
+    +       '<select onchange="prolongSetPeriod(' + _pMonth + ',parseInt(this.value))" style="border:none;background:#fff;color:#1A1033;font-size:11.5px;font-weight:600;cursor:pointer;">' + yearOpts + '</select>'
+    +       '<button onclick="prolongShiftMonth(1)" title="Mois suivant" style="border:none;background:none;color:#5B2BCC;cursor:pointer;font-size:13px;padding:0 6px;line-height:1;">&#9654;</button>'
+    +     '</div>'
+    +     (_pIsCurrent ? '' : '<button onclick="prolongResetPeriod()" title="Revenir au mois en cours" style="padding:5px 10px;border:1.5px solid #C7B2F5;border-radius:8px;font-size:11.5px;color:#5B2BCC;background:#fff;cursor:pointer;font-weight:600;">&#8635; Mois en cours</button>')
     +     '<label title="Afficher uniquement les prolongations de deals en portage commercial." style="display:flex;align-items:center;gap:6px;padding:5px 10px;border:1.5px solid #C7B2F5;border-radius:8px;font-size:11.5px;color:#5B2BCC;background:#fff;cursor:pointer;user-select:none;font-weight:600;">'
     +       '<input type="checkbox" id="prolong-filter-pc"' + (window._prolongFilterPC ? ' checked' : '') + ' onchange="window._prolongFilterPC=this.checked;renderProlongation();" style="width:14px;height:14px;cursor:pointer;accent-color:#7343EE;margin:0;">'
     +       '<span>🤝 Portage Co.</span>'
@@ -14807,7 +14879,7 @@ function renderProlongation() {
   if (!deals.length) {
     container.innerHTML = header
       + '<div style="text-align:center;padding:60px 20px;color:#9E9E9E;font-size:13px;background:#fff;border-radius:10px;border:1.5px dashed #E4E0FA;">'
-      +   '&#9989; Aucun contrat ne se termine ce mois-ci.'
+      +   '&#9989; Aucun contrat ne se termine en ' + periodLabel + '.'
       + '</div>';
     return;
   }
@@ -17579,7 +17651,10 @@ var AVENANTS_FILTER = {
   commercial: 'all',
   etat_cdt: 'all',
   etat_cdps: 'all',
-  statut: 'all'  // 'all' / 'a_traiter' (au moins une signature manquante OU LAYA non fait) / 'finalise' (tout = Oui)
+  statut: 'all',  // 'all' / 'a_traiter' (au moins une signature manquante OU LAYA non fait) / 'finalise' (tout = Oui)
+  month: (new Date()).getMonth(),
+  year: (new Date()).getFullYear(),
+  adv: 'all'
 };
 
 // Helper : un avenant est "finalisé" quand CDT signé = Oui ET CDPS signé = Oui ET Modif LAYA = Oui
@@ -17766,6 +17841,15 @@ function updateAvenantField(avenantId, field, value) {
   }
 }
 
+function avShiftMonth(delta){
+  if (AVENANTS_FILTER.month === 'all'){ var _t=new Date(); AVENANTS_FILTER.month=_t.getMonth(); AVENANTS_FILTER.year=_t.getFullYear(); }
+  var _d=new Date(AVENANTS_FILTER.year, AVENANTS_FILTER.month+delta, 1);
+  AVENANTS_FILTER.month=_d.getMonth(); AVENANTS_FILTER.year=_d.getFullYear();
+  renderAvenants();
+}
+function avSetMonth(m){ AVENANTS_FILTER.month=(m==='all')?'all':parseInt(m,10); renderAvenants(); }
+function avSetYear(y){ AVENANTS_FILTER.year=parseInt(y,10); renderAvenants(); }
+
 function buildAvenantsContent() {
   var avenants = getAvenants();
 
@@ -17780,6 +17864,15 @@ function buildAvenantsContent() {
     }
     if (AVENANTS_FILTER.etat_cdps !== 'all') {
       if ((a.etat_av_cdps || '') !== AVENANTS_FILTER.etat_cdps) return false;
+    }
+    if (AVENANTS_FILTER.month !== 'all' && AVENANTS_FILTER.month != null) {
+      var _dd = a.date_demande ? new Date(a.date_demande) : null;
+      if (!_dd || isNaN(_dd.getTime())) return false;
+      if (_dd.getMonth() !== AVENANTS_FILTER.month || _dd.getFullYear() !== AVENANTS_FILTER.year) return false;
+    }
+    if (AVENANTS_FILTER.adv && AVENANTS_FILTER.adv !== 'all') {
+      var _advA = (typeof _getADVByLetter === 'function') ? _getADVByLetter((a.nom_porte||'').charAt(0)) : null;
+      if (_advA !== AVENANTS_FILTER.adv) return false;
     }
     if (AVENANTS_FILTER.search) {
       var q = AVENANTS_FILTER.search.toLowerCase();
@@ -17801,7 +17894,7 @@ function buildAvenantsContent() {
   avenants.forEach(function(a){ if (a.commercial) commerciauxSet[a.commercial] = (commerciauxSet[a.commercial] || 0) + 1; });
   var commerciauxList = Object.keys(commerciauxSet).sort(function(a,b){ return a.localeCompare(b,'fr'); });
 
-  var hasActiveFilter = AVENANTS_FILTER.commercial !== 'all' || AVENANTS_FILTER.etat_cdt !== 'all' || AVENANTS_FILTER.etat_cdps !== 'all' || AVENANTS_FILTER.search || AVENANTS_FILTER.statut !== 'all';
+  var hasActiveFilter = AVENANTS_FILTER.commercial !== 'all' || AVENANTS_FILTER.etat_cdt !== 'all' || AVENANTS_FILTER.etat_cdps !== 'all' || AVENANTS_FILTER.search || AVENANTS_FILTER.statut !== 'all' || AVENANTS_FILTER.adv !== 'all';
 
   var html = '<style>'
     + '.av-wrap{padding:14px 18px;max-width:100%;}'
@@ -17809,7 +17902,18 @@ function buildAvenantsContent() {
     + '.av-title{font-size:18px;font-weight:800;color:#1A1033;}'
     + '.av-title span.sub{font-size:11px;font-weight:600;color:#9E94C4;margin-left:8px;}'
     + '.av-table-wrap{background:#fff;border:1px solid #E4E0FA;border-radius:12px;overflow:hidden;}'
-    + '.av-table-scroll{overflow-x:auto;}'
+    + '.av-table-scroll{overflow:auto;max-height:68vh;}'
+    + '.av-table-scroll::-webkit-scrollbar{height:16px;width:16px;}'
+    + '.av-table-scroll::-webkit-scrollbar-track{background:#EFEAFB;}'
+    + '.av-table-scroll::-webkit-scrollbar-thumb{background:#B9A9F5;border-radius:8px;border:3px solid #EFEAFB;}'
+    + '.av-table-scroll::-webkit-scrollbar-thumb:hover{background:#7343EE;}'
+    + '.av-table th.avfix,.av-table td.avfix{position:sticky;background:#fff;z-index:2;overflow:hidden;text-overflow:ellipsis;}'
+    + '.av-table th.avfix{background:#F5F3FF;z-index:4;}'
+    + '.avfix1{left:0;width:95px;min-width:95px;max-width:95px;}'
+    + '.avfix2{left:95px;width:110px;min-width:110px;max-width:110px;}'
+    + '.avfix3{left:205px;width:150px;min-width:150px;max-width:150px;}'
+    + '.av-table td.avfix3,.av-table th.avfix3{box-shadow:2px 0 5px -2px rgba(74,54,140,0.25);}'
+    + '.av-table tr:hover td.avfix{background:#FAFAFE;}'
     + '.av-table{width:100%;border-collapse:collapse;font-size:11px;min-width:2400px;}'
     + '.av-table th{background:#F5F3FF;color:#1A1033;font-weight:800;text-align:left;padding:8px 8px;border-bottom:2px solid #E4E0FA;font-size:9.5px;text-transform:uppercase;letter-spacing:0.04em;white-space:nowrap;position:sticky;top:0;z-index:1;}'
     + '.av-table td{padding:7px 8px;border-bottom:1px solid #F0EDF9;vertical-align:middle;font-size:11px;white-space:nowrap;}'
@@ -17869,8 +17973,28 @@ function buildAvenantsContent() {
     +   '<option value="Reçu"' + (AVENANTS_FILTER.etat_cdps==='Reçu'?' selected':'') + '>Reçu</option>'
     +   '<option value="En attente"' + (AVENANTS_FILTER.etat_cdps==='En attente'?' selected':'') + '>En attente</option>'
     + '</select></div>';
+  var _avMN = ['Janvier','F\u00e9vrier','Mars','Avril','Mai','Juin','Juillet','Ao\u00fbt','Septembre','Octobre','Novembre','D\u00e9cembre'];
+  var _avCM = AVENANTS_FILTER.month, _avCY = AVENANTS_FILTER.year, _avNY = (new Date()).getFullYear();
+  var _avMonthOpts = '<option value="all"' + (_avCM==='all'?' selected':'') + '>Tous les mois</option>';
+  _avMN.forEach(function(nm,i){ _avMonthOpts += '<option value="'+i+'"'+(_avCM===i?' selected':'')+'>'+nm+'</option>'; });
+  var _avYearOpts=''; for(var _avyy=_avNY-2;_avyy<=_avNY+2;_avyy++){ _avYearOpts+='<option value="'+_avyy+'"'+(_avCY===_avyy?' selected':'')+'>'+_avyy+'</option>'; }
+  html += '<div style="min-width:210px;">'
+    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">P\u00e9riode (date demande)</label>'
+    + '<div style="display:flex;align-items:center;gap:2px;">'
+    +   '<button onclick="avShiftMonth(-1)" title="Mois pr\u00e9c\u00e9dent" style="border:1.5px solid #E4E0FA;background:#fff;color:#5B2BCC;cursor:pointer;font-size:13px;padding:6px 8px;border-radius:7px;line-height:1;">&#9664;</button>'
+    +   '<select onchange="avSetMonth(this.value)" style="flex:1;padding:8px 6px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;">' + _avMonthOpts + '</select>'
+    +   '<select onchange="avSetYear(this.value)" style="padding:8px 6px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;">' + _avYearOpts + '</select>'
+    +   '<button onclick="avShiftMonth(1)" title="Mois suivant" style="border:1.5px solid #E4E0FA;background:#fff;color:#5B2BCC;cursor:pointer;font-size:13px;padding:6px 8px;border-radius:7px;line-height:1;">&#9654;</button>'
+    + '</div></div>';
+  html += '<div style="min-width:150px;">'
+    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">ADV</label>'
+    + '<select onchange="AVENANTS_FILTER.adv=this.value;renderAvenants();" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;">'
+    +   '<option value="all"' + (AVENANTS_FILTER.adv==='all'?' selected':'') + '>Tous</option>'
+    +   '<option value="clemence"' + (AVENANTS_FILTER.adv==='clemence'?' selected':'') + '>Cl\u00e9mence (A\u2013H)</option>'
+    +   '<option value="marie"' + (AVENANTS_FILTER.adv==='marie'?' selected':'') + '>Marie (I\u2013Z)</option>'
+    + '</select></div>';
   if (hasActiveFilter) {
-    html += '<button onclick="AVENANTS_FILTER={search:\'\',commercial:\'all\',etat_cdt:\'all\',etat_cdps:\'all\',statut:\'all\'};renderAvenants();" style="padding:8px 14px;background:#FFF4D6;color:#8A5F00;border:1.5px solid #F0A500;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;align-self:flex-end;">✗ Effacer les filtres</button>';
+    html += '<button onclick="AVENANTS_FILTER={search:\'\',commercial:\'all\',etat_cdt:\'all\',etat_cdps:\'all\',statut:\'all\',month:(new Date()).getMonth(),year:(new Date()).getFullYear(),adv:\'all\'};renderAvenants();" style="padding:8px 14px;background:#FFF4D6;color:#8A5F00;border:1.5px solid #F0A500;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;align-self:flex-end;">✗ Effacer les filtres</button>';
   }
   html += '</div>';
 
@@ -17887,7 +18011,7 @@ function buildAvenantsContent() {
   // Tableau
   html += '<div class="av-table-wrap"><div class="av-table-scroll"><table class="av-table">'
     + '<thead><tr>'
-    + '<th>Date demande</th><th>Commercial</th><th>Porté</th><th>ADV</th><th>Type</th><th>Motif</th>'
+    + '<th class="avfix avfix1">Date demande</th><th class="avfix avfix2">Commercial</th><th class="avfix avfix3">Porté</th><th>ADV</th><th>Type</th><th>Motif</th>'
     + '<th>CDPS</th><th>À partir du</th><th>Jusqu\'au</th><th>Contrat</th>'
     + '<th>TJM</th><th>Ancien salaire</th><th>Nouveau salaire</th><th>Frais ↗</th>'
     + '<th>Swile</th><th>Forfait repas</th><th>Km</th><th>TC</th><th>Télétravail</th>'
@@ -18003,9 +18127,9 @@ function buildAvenantsContent() {
       ? '<span style="color:#9E94C4;">—</span>'
       : '<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10.5px;font-weight:700;background:' + (_advKey==='clemence' ? '#EEF4FF;color:#1A4F96' : '#FBEFFB;color:#8A3FA0') + ';">' + _advLabel + '</span>';
     html += '<tr>'
-      + '<td style="font-weight:700;">' + _fmtAvDate(a.date_demande) + '</td>'
-      + '<td>' + (a.commercial || '—') + '</td>'
-      + '<td style="font-weight:600;">' + nomComplet + '</td>'
+      + '<td class="avfix avfix1" style="font-weight:700;">' + _fmtAvDate(a.date_demande) + '</td>'
+      + '<td class="avfix avfix2">' + (a.commercial || '—') + '</td>'
+      + '<td class="avfix avfix3" style="font-weight:600;">' + nomComplet + '</td>'
       + '<td>' + _advCell + '</td>'
       + '<td>' + (a.type_avenant || '—') + '</td>'
       + '<td>' + (a.motif || '—') + '</td>'
@@ -18463,6 +18587,7 @@ function sendProlongationSimpleEmail(deal, ancienneDateFin, nouvelleDateFin, com
     +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Client</td><td style="padding:6px 0;">' + (deal.entreprise || '—') + '</td></tr>'
     +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Mission / Poste</td><td style="padding:6px 0;">' + (deal.poste || '—') + '</td></tr>'
     +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Commercial</td><td style="padding:6px 0;">' + (deal.commercial || '—') + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;border-top:1px solid #F0EDF9;padding-top:10px;">À partir du</td><td style="padding:6px 0;border-top:1px solid #F0EDF9;padding-top:10px;font-weight:700;">' + (ancienneDateFin ? _fmtAvDate(ancienneDateFin) : '—') + '</td></tr>'
     +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;border-top:1px solid #F0EDF9;padding-top:10px;">Ancienne date de fin</td><td style="padding:6px 0;border-top:1px solid #F0EDF9;padding-top:10px;color:#9E94C4;text-decoration:line-through;">' + (ancienneDateFin ? _fmtAvDate(ancienneDateFin) : '—') + '</td></tr>'
     +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Nouvelle date de fin</td><td style="padding:6px 0;color:#0F5132;font-weight:700;">' + _fmtAvDate(nouvelleDateFin) + '</td></tr>'
     +   '</table>'
@@ -19621,7 +19746,7 @@ function sendMissionParalleleEmail(deal, avenant, sim) {
     +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">2\u00e8me mission \u2014 Client</td><td style="padding:6px 0;color:#1A4F96;font-weight:700;">' + (avenant.client || '\u2014') + '</td></tr>'
     +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">2\u00e8me mission \u2014 Poste</td><td style="padding:6px 0;">' + (avenant.poste || '\u2014') + '</td></tr>'
     +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">2\u00e8me mission \u2014 TJM</td><td style="padding:6px 0;color:#1A4F96;font-weight:700;">' + (avenant.tjm ? avenant.tjm + ' \u20ac/j' : '\u2014') + '</td></tr>'
-    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">Date de d\u00e9but</td><td style="padding:6px 0;">' + _fmtAvDate(avenant.date_debut) + '</td></tr>'
+    +     '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;">\u00c0 partir du</td><td style="padding:6px 0;">' + _fmtAvDate(avenant.date_debut) + '</td></tr>'
     +   '</table>'
     + (avenant.commentaires ? '<div style="margin-top:14px;padding:10px 12px;background:#EEF4FF;border-left:3px solid #1A4F96;border-radius:4px;font-size:12.5px;"><strong>Commentaire :</strong><br>' + avenant.commentaires.replace(/\n/g,'<br>') + '</div>' : '')
     +   '<div style="margin-top:18px;padding-top:12px;border-top:1px solid #F0EDF9;font-size:11px;color:#9E94C4;">\ud83d\udccc Action attendue : \u00e9tablir le contrat de la 2\u00e8me mission et mettre \u00e0 jour LAYA. Le consultant cumule d\u00e9sormais 2 missions.</div>'
@@ -20178,7 +20303,8 @@ function sendProlongationAvenantEmail(deal, avenant, oldFrais, newFrais) {
     +     '<tr><td style="padding:5px 10px 5px 0;color:#6B5E9C;font-weight:700;">Client</td><td style="padding:5px 0;">' + (avenant.client||'—') + '</td></tr>'
     +     '<tr><td style="padding:5px 10px 5px 0;color:#6B5E9C;font-weight:700;">Mission</td><td style="padding:5px 0;">' + (avenant.poste||'—') + '</td></tr>'
     +     '<tr><td style="padding:5px 10px 5px 0;color:#6B5E9C;font-weight:700;">Commercial</td><td style="padding:5px 0;">' + (avenant.commercial||'—') + '</td></tr>'
-    +     '<tr><td style="padding:5px 10px 5px 0;color:#6B5E9C;font-weight:700;border-top:1px solid #F0EDF9;padding-top:10px;">Période</td><td style="padding:5px 0;border-top:1px solid #F0EDF9;padding-top:10px;font-weight:700;">' + _fmtAvDate(avenant.date_debut) + ' → ' + _fmtAvDate(avenant.date_fin) + '</td></tr>'
+    +     '<tr><td style="padding:5px 10px 5px 0;color:#6B5E9C;font-weight:700;border-top:1px solid #F0EDF9;padding-top:10px;">À partir du</td><td style="padding:5px 0;border-top:1px solid #F0EDF9;padding-top:10px;font-weight:700;">' + _fmtAvDate(avenant.date_debut) + '</td></tr>'
+    +     '<tr><td style="padding:5px 10px 5px 0;color:#6B5E9C;font-weight:700;">Jusqu\'au</td><td style="padding:5px 0;font-weight:700;">' + _fmtAvDate(avenant.date_fin) + '</td></tr>'
     +     '<tr><td style="padding:5px 10px 5px 0;color:#6B5E9C;font-weight:700;">Date avenant</td><td style="padding:5px 0;">' + _fmtAvDate(avenant.date_avenant) + '</td></tr>'
     +   '</table>'
     +   '<div style="margin-top:14px;padding-top:14px;border-top:1px solid #F0EDF9;">'
@@ -21630,6 +21756,9 @@ function showImpayesView() {
   renderImpayes();
 }
 
+function getImpayesLastImport() {
+  try { var v = localStorage.getItem('sp_impayes_last_import_v1'); return v ? parseInt(v,10) : 0; } catch(e){ return 0; }
+}
 function renderImpayes() {
   var el = document.getElementById('rh-content-container');
   if (!el) return;
@@ -21812,7 +21941,7 @@ function buildImpayesContent() {
     + '</style>'
     + '<div class="imp-wrap">'
     +   '<div class="imp-header">'
-    +     '<div class="imp-title">💳 Impayés <span class="sub">' + impayes.length + ' ligne' + (impayes.length>1?'s':'') + '</span></div>'
+    +     '<div class="imp-title">💳 Impayés <span class="sub">' + impayes.length + ' ligne' + (impayes.length>1?'s':'') + (function(){ var _li=getImpayesLastImport(); return _li ? ' · dernier import : ' + new Date(_li).toLocaleDateString('fr-FR') + ' à ' + new Date(_li).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) : ''; })() + '</span></div>'
     +     '<div class="imp-actions">'
     +       '<button class="imp-btn" onclick="exportImpayes()" title="Exporter le tableau actuel en Excel">📥 Export</button>'
     +       (impayes.length > 0 ? '<button class="imp-btn" onclick="confirmClearImpayes()" title="Vider la table (mot de passe admin requis)" style="color:#A8322A;border-color:#F5B5B5;">🗑 Vider</button>' : '')
@@ -22318,6 +22447,7 @@ function parseAndImportImpayesFile(file) {
       // Appliquer (newByNf inclut maintenant les factures impayées + les nouvellement payées)
       var finalArr = Object.values(newByNf);
       saveImpayes(finalArr);
+      try { localStorage.setItem('sp_impayes_last_import_v1', String(Date.now())); } catch(_e){}
       // Salaires Bloqués : recalcul + transitions après chaque import
       try { if (typeof runSalaireBloqueEngine === 'function') runSalaireBloqueEngine(); } catch(_sbErr) { console.warn('[SB engine import]', _sbErr); }
 
@@ -35511,7 +35641,7 @@ function renderCommDealsGlobalView() {
   var _dgFg = (typeof getCommFgOverrides==='function') ? getCommFgOverrides() : {};
   var _dgRemovedIds = {}; if (typeof getCommRemoved==='function'){ var _rm=getCommRemoved(); Object.keys(_rm).forEach(function(k){ (_rm[k]||[]).forEach(function(id){ _dgRemovedIds[String(id)]=1; }); }); }
   var _dgManualIds = {}; if (typeof getCommManualIncludes==='function'){ var _mi=getCommManualIncludes(); Object.keys(_mi).forEach(function(k){ (_mi[k]||[]).forEach(function(id){ _dgManualIds[String(id)]=1; }); }); }
-  function _dgEffActif(d){ if(_dgRemovedIds[String(d.id)]) return false; if(_dgManualIds[String(d.id)]) return d.etat!=='Annulé'; return _dgIsActif(d); }
+  function _dgEffActif(d){ if(_dgManualIds[String(d.id)]) return d.etat!=='Annulé'; if(_dgRemovedIds[String(d.id)]) return false; return _dgIsActif(d); }
   function _dgEffFg(d){ return (_dgFg[d.id]!==undefined) ? (parseFloat(_dgFg[d.id])||0) : (parseFloat(d.frais_gestion)||0); }
 
   var deals = all.filter(function(d){
@@ -35629,11 +35759,13 @@ function renderCommDealsGlobalView() {
       var actif = _dgEffActif(d);
       var statutCell = (d.etat === 'Annulé')
         ? '<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#FBE3E1;color:#C0392B;">Annulé</span>'
-        : (_isRemoved
-            ? '<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#FBE3E1;color:#C0392B;">\u2715 Retiré</span>'
-            : (actif
-                ? ('<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#DEF7EC;color:#1D9E75;">● Actif</span>' + (_isManual?' <span style="display:inline-block;padding:2px 7px;border-radius:8px;font-size:9.5px;font-weight:700;background:#EDE7FF;color:#4B36EC;vertical-align:middle;">AJOUTÉ</span>':''))
-                : '<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#EEECF7;color:#6B5E9C;">○ Inactif</span>'));
+        : (_isManual
+            ? ('<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#DEF7EC;color:#1D9E75;">● Actif</span>' + ' <span style="display:inline-block;padding:2px 7px;border-radius:8px;font-size:9.5px;font-weight:700;background:#EDE7FF;color:#4B36EC;vertical-align:middle;">AJOUTÉ</span>')
+            : (_isRemoved
+                ? '<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#FBE3E1;color:#C0392B;">\u2715 Retiré</span>'
+                : (actif
+                    ? '<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#DEF7EC;color:#1D9E75;">● Actif</span>'
+                    : '<span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10.5px;font-weight:700;background:#EEECF7;color:#6B5E9C;">○ Inactif</span>')));
 
       html += '<tr style="border-top:1px solid #F0EDF9;">'
         + '<td style="padding:10px 12px;white-space:nowrap;color:#1A1033;font-weight:600;">' + moisCell + '</td>'
