@@ -3644,6 +3644,7 @@ function calc() {
     // Frais par type
     frais_ik: ik.mensuelle,
     frais_repas: frais_repas,
+    repas_mode: state.repas,
     frais_tt: frais_tt,
     frais_transport: frais_transport,
     frais_telnet: frais_telnet,
@@ -4697,7 +4698,13 @@ function buildBulletinPaieHTML(data) {
       + '<td style="text-align:right;padding:3px 6px;border-bottom:0.5px solid #f0f0f0;">' + (montant > 0.01 ? _bpFmt(montant, 2) + ' €' : '') + '</td>'
       + '</tr>';
   }
-  if (bd.frais_repas > 0) tableRows += fraisRow('FORFAIT REPAS (BS) / TITRE RESTAURANT (Swile)', repasJour, bd.frais_repas);
+  if (bd.frais_repas > 0) {
+    var _repasLbl = (bd.repas_mode === 'Swile') ? 'TITRE RESTAURANT (Swile)'
+                  : (bd.repas_mode === 'Forfait') ? 'FORFAIT REPAS (BS)'
+                  : (bd.repas_mode === 'GD') ? 'GRAND DEPLACEMENT'
+                  : 'FORFAIT REPAS (BS) / TITRE RESTAURANT (Swile)';
+    tableRows += fraisRow(_repasLbl, repasJour, bd.frais_repas);
+  }
   if (bd.frais_ik > 0) tableRows += fraisRow('INDEMNITE KM', ikJour, bd.frais_ik);
   if (bd.frais_tt > 0) tableRows += fraisRow('TELETRAVAIL', ttJour, bd.frais_tt);
   if (bd.frais_transport > 0) tableRows += fraisRow('REMBOURSEMENT TRANSPORT (75%)', transportJour, bd.frais_transport);
@@ -9722,6 +9729,43 @@ function toggleDateDealLock() {
   }
 }
 
+function sendFinMissionEmail(deal) {
+  if (typeof odToken === 'undefined' || !odToken) { console.warn('[FinMission] Pas de token OneDrive — email non envoyé'); return; }
+  var commercialEmail = (typeof findCommercialEmailByName === 'function') ? findCommercialEmailByName(deal.commercial || '') : '';
+  var toList = []; if (commercialEmail) toList.push(commercialEmail);
+  toList = toList.filter(function(e,i,a){ return e && a.indexOf(e)===i; });
+  if (!toList.length) { console.warn('[FinMission] Pas de destinataire (commercial introuvable) — email non envoyé'); return; }
+  var ccList = ['social@seven-portage.fr'].filter(function(e,i,a){ return e && a.indexOf(e)===i && toList.indexOf(e)<0; });
+  var cand = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim() || '—';
+  var client = deal.entreprise || '—';
+  var poste = deal.poste || '—';
+  var tjm = deal.tjm ? (deal.tjm + ' €/j') : '—';
+  var dfin = (typeof _fmtAvDate === 'function') ? _fmtAvDate(deal.date_fin) : (deal.date_fin || '—');
+  var subject = '⏳ Fin de mission — ' + cand + ' (' + client + ') — ' + dfin;
+  function frow(lbl,val,bold,color,border){ var b = border ? 'border-top:1px solid #F0EDF9;padding-top:10px;' : ''; return '<tr><td style="padding:6px 0;color:#6B5E9C;font-weight:700;width:40%;'+b+'">'+lbl+'</td><td style="padding:6px 0;font-weight:'+(bold||'600')+';color:'+(color||'#1A1033')+';'+b+'">'+val+'</td></tr>'; }
+  var html = '<div style="font-family:Arial,sans-serif;font-size:13px;color:#1A1033;line-height:1.6;">'
+    + '<div style="background:linear-gradient(135deg,#F0A500,#D46A00);color:#fff;padding:14px 20px;border-radius:8px 8px 0 0;">'
+    +   '<div style="font-size:16px;font-weight:700;">⏳ Fin de mission à venir</div>'
+    +   '<div style="font-size:12px;opacity:0.9;margin-top:3px;">La date de fin de ce placement a été renseignée / mise à jour</div>'
+    + '</div>'
+    + '<div style="background:#fff;padding:18px 22px;border:1px solid #E4E0FA;border-top:none;border-radius:0 0 8px 8px;">'
+    +   '<p style="margin:0 0 14px;">La mission de <strong>' + cand + '</strong> chez <strong>' + client + '</strong> arrive à échéance le <strong style="color:#D46A00;">' + dfin + '</strong>.</p>'
+    +   '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+    +     frow('Consultant', cand, '700')
+    +     frow('Client', client)
+    +     frow('Poste', poste)
+    +     frow('TJM', tjm)
+    +     frow('Date de fin de mission', dfin, '700', '#D46A00', true)
+    +   '</table>'
+    +   '<div style="margin-top:16px;padding:12px 14px;background:#FFF6E8;border-left:3px solid #F0A500;border-radius:4px;font-size:12.5px;"><strong>⚠ Action attendue :</strong> merci de <strong>déclencher la sortie</strong> de ce consultant (onglet Suivi RH → Sortants), pour établir les documents de fin de mission et de contrat.</div>'
+    +   '<div style="margin-top:18px;padding-top:12px;border-top:1px solid #F0EDF9;font-size:11px;color:#9E94C4;">Alerte automatique — Seven Portage Simulateur</div>'
+    + '</div></div>';
+  var payload = { message: { subject: subject, body: { contentType: 'HTML', content: html }, toRecipients: toList.map(function(e){ return { emailAddress: { address: e } }; }), ccRecipients: ccList.map(function(e){ return { emailAddress: { address: e } }; }) }, saveToSentItems: true };
+  fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method:'POST', headers:{ 'Authorization':'Bearer '+odToken, 'Content-Type':'application/json' }, body: JSON.stringify(payload) })
+    .then(function(r){ if (r.ok || r.status===202) { console.log('[FinMission] Email envoyé à', toList.join(', ')); } else { r.text().then(function(t){ console.error('[FinMission] Échec:', r.status, t); }); } })
+    .catch(function(err){ console.error('[FinMission] Erreur:', err); });
+}
+
 function savePlacement() {
   // Mode PORTAGE COMMERCIAL : saisie manuelle, pas de simulation.
   if (typeof _placementMode !== 'undefined' && (_placementMode === 'portage_commercial' || _placementMode === 'portage_commercial_prolong')) {
@@ -9853,6 +9897,7 @@ function savePlacement() {
   var _ancienNomEntreprise = (idx >= 0 && deals[idx]) ? (deals[idx].entreprise || '') : '';
   // Ancienne date du deal (normalisée en ISO pour éviter les faux positifs de format)
   var _oldDD = (idx >= 0 && deals[idx]) ? String(deals[idx].date_deal || '') : '';
+  var _oldDateFin = (idx >= 0 && deals[idx]) ? (deals[idx].date_fin || '') : '';
   if (typeof _toISODateInput === 'function' && _oldDD) { _oldDD = _toISODateInput(_oldDD) || _oldDD; }
   if (isNewDeal) {
     var _miss = (typeof _placementMissing === 'function') ? _placementMissing(deal) : [];
@@ -9878,6 +9923,12 @@ function savePlacement() {
   if (idx >= 0 && deals[idx] && deals[idx].stand_by === true && _placementIsComplete(deals[idx])) {
     deals[idx].stand_by = false; deals[idx].updated_at = Date.now(); _autoActivatedStandBy = true;
   }
+  // Mail fin de mission : UNIQUEMENT en édition, quand la date de fin change (pas à la création)
+  var _sendFinMission = false;
+  if (idx >= 0 && deals[idx] && deals[idx].date_fin && deals[idx].date_fin !== _oldDateFin && deals[idx].date_fin !== deals[idx].fin_mission_mail_sent_for) {
+    deals[idx].fin_mission_mail_sent_for = deals[idx].date_fin;
+    _sendFinMission = true;
+  }
   saveDeals(deals);
   // Visite médicale : créer (si nouveau placement) ou mettre à jour la ligne liée
   try { if (typeof _vmSyncFromDeal === 'function') _vmSyncFromDeal(deal, isNewDeal); } catch(e) { console.warn('[VM] sync placement:', e); }
@@ -9894,6 +9945,11 @@ function savePlacement() {
     try { sendPlacementNotificationEmail(deals[idx]); } catch(e) { console.error('[Notif auto] Exception:', e); }
     try { if (typeof _maybeSendBadPayerAlert==='function') _maybeSendBadPayerAlert(deals[idx]); } catch(e) { console.error('[BadPayerAlert auto] Exception:', e); }
     try { if (typeof showNotifToast==='function') showNotifToast('Placement activé automatiquement + mail envoyé'); } catch(e){}
+  }
+  // Envoi du mail fin de mission (édition avec date de fin modifiée)
+  if (_sendFinMission) {
+    try { sendFinMissionEmail(deals[idx]); } catch(e) { console.error('[FinMission] Exception:', e); }
+    try { if (typeof showNotifToast==='function') showNotifToast('Mail fin de mission envoyé au commercial'); } catch(e){}
   }
 
   // Mettre à jour les infos de la fiche candidat à partir du placement
@@ -10504,6 +10560,7 @@ function cancelSortie(sortantId) {
   // Supprimer la fiche sortant
   sortants = sortants.filter(function(x){ return x.id !== sortantId; });
   saveSortants(sortants);
+  if (typeof addTombstone === 'function') addTombstone('sortants', sortantId);
 
   // Remettre le deal en "En cours" et nettoyer les champs de sortie
   if (s.deal_id) {
@@ -10514,6 +10571,7 @@ function cancelSortie(sortantId) {
       delete deals[idx].date_sortie;
       delete deals[idx].raison_sortie;
       delete deals[idx].commentaire_sortie;
+      deals[idx].updated_at = Date.now();
       saveDeals(deals);
     }
   }
@@ -13368,7 +13426,7 @@ function isCandSortFraicheur() {
 function setCandSortFraicheur(on) {
   var pr = getCandSortFraicheurPref(); pr[_candCurrentUserKey()] = !!on;
   try { localStorage.setItem(CAND_SORT_FRAICHEUR_KEY, JSON.stringify(pr)); } catch(e){}
-  renderCandidats();
+  setTimeout(function(){ renderCandidats(); }, 0);
 }
 function _candFreshTs(c) {
   var v = c && c.created_at;
@@ -17767,6 +17825,22 @@ function renderAvenants() {
   var el = document.getElementById('rh-content-container');
   if (!el) return;
   el.innerHTML = buildAvenantsContent();
+  _avAdjustScrollHeight();
+  if (!window._avResizeBound) {
+    window._avResizeBound = true;
+    window.addEventListener('resize', function(){ try { _avAdjustScrollHeight(); } catch(e){} });
+  }
+}
+function _avAdjustScrollHeight() {
+  var el = document.getElementById('rh-content-container');
+  if (!el) return;
+  var sc = el.querySelector('.av-table-scroll');
+  if (!sc) return;
+  var top = sc.getBoundingClientRect().top;
+  if (top > 0) {
+    var h = window.innerHeight - top - 24;
+    if (h > 200) sc.style.maxHeight = h + 'px';
+  }
 }
 
 function _fmtAvDate(v) {
@@ -17902,7 +17976,7 @@ function buildAvenantsContent() {
     + '.av-title{font-size:18px;font-weight:800;color:#1A1033;}'
     + '.av-title span.sub{font-size:11px;font-weight:600;color:#9E94C4;margin-left:8px;}'
     + '.av-table-wrap{background:#fff;border:1px solid #E4E0FA;border-radius:12px;overflow:hidden;}'
-    + '.av-table-scroll{overflow:auto;max-height:68vh;}'
+    + '.av-table-scroll{overflow:auto;max-height:calc(100vh - 300px);}'
     + '.av-table-scroll::-webkit-scrollbar{height:16px;width:16px;}'
     + '.av-table-scroll::-webkit-scrollbar-track{background:#EFEAFB;}'
     + '.av-table-scroll::-webkit-scrollbar-thumb{background:#B9A9F5;border-radius:8px;border:3px solid #EFEAFB;}'
@@ -30563,6 +30637,17 @@ function openManagerFiche(clid, mgridx) {
   document.body.appendChild(modal);
 }
 
+function _prolongEncartHTML(deal){
+  var hist = (deal && Array.isArray(deal.historique_prolongations)) ? deal.historique_prolongations : [];
+  var prol = hist.filter(function(h){ return h && (h.nouvelle_date_fin || h.ancienne_date_fin); });
+  if (!prol.length) return '';
+  var fmt = function(v){ if(!v) return '\u2014'; try { return (typeof _frDate==='function') ? _frDate(v) : String(v); } catch(e){ return String(v); } };
+  var rows = prol.map(function(h, i){
+    var dt = h.date ? fmt(h.date) : '';
+    return '<div style="font-size:11px;color:#6B5E9C;padding:1px 0;">\u23f3 Prolongation ' + (i+1) + ' : <span style="text-decoration:line-through;color:#9E94C4;">' + fmt(h.ancienne_date_fin) + '</span> \u2192 <strong style="color:#0F5132;">' + fmt(h.nouvelle_date_fin) + '</strong>' + (dt ? ' <span style="color:#9E94C4;">(' + dt + ')</span>' : '') + '</div>';
+  }).join('');
+  return '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #E4E0FA;">' + rows + '</div>';
+}
 function buildManagerFicheHTML(cl, mgridx, m) {
   var IS = 'width:100%;padding:6px 9px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;';
   var LB = 'font-size:10px;font-weight:700;color:#9E9E9E;text-transform:uppercase;display:block;margin-bottom:3px;';
@@ -30602,7 +30687,8 @@ function buildManagerFicheHTML(cl, mgridx, m) {
       commercial: src.commercial || d.commercial || '',
       date_deal: src.date_deal || d.date_deal || '',
       date_entree: src.date_entree || d.date_entree || '',
-      date_fin: src.date_fin || d.date_fin || ''
+      date_fin: src.date_fin || d.date_fin || '',
+      historique_prolongations: src.historique_prolongations || d.historique_prolongations || []
     };
   });
 
@@ -30647,6 +30733,7 @@ function buildManagerFicheHTML(cl, mgridx, m) {
       + '<button data-email="' + (d.email_candidat||'') + '" onclick="openCandidatByEmail(this.dataset.email)" style="padding:3px 8px;background:#F0FDF4;color:#1D9E75;border:1.5px solid #9FE1CB;border-radius:5px;font-size:11px;cursor:pointer;">&#128100;</button>'
       + '</div>'
       + '</div>'
+      + _prolongEncartHTML(d)
       + '</div>';
   }).join('') : '<div style="color:#C0B8E0;font-size:12px;">Aucun placement.</div>';
 
