@@ -7487,6 +7487,7 @@ var _SHARED_CONFIG_KEYS = [
   { ls: 'sp_custom_doc_types_v1',    field: 'custom_doc_types' },
   { ls: 'sp_custom_client_doc_types_v1', field: 'custom_client_doc_types' },
   { ls: 'sp_adv_letters_v1',         field: 'adv_letters' },
+  { ls: 'sp_impayes_last_import_v1',  field: 'impayes_last_import' },
   { ls: 'sp_tombstones_v1',          field: 'tombstones' }
 ];
 
@@ -7512,6 +7513,15 @@ function _applySharedConfigs(shared) {
     // Horodatage dédié : on garde toujours le plus récent
     if (c.field === 'commission_overrides_ts') {
       try { localStorage.setItem(c.ls, String(Math.max(_localCommTs, _remoteCommTs))); } catch(e){}
+      return;
+    }
+    // Date du dernier import impayés : on garde toujours la plus récente (max), partagée entre tous les postes
+    if (c.field === 'impayes_last_import') {
+      try {
+        var _rImp = +(shared.impayes_last_import || 0);
+        var _lImp = +(localStorage.getItem(c.ls) || 0);
+        localStorage.setItem(c.ls, String(Math.max(_lImp, _rImp)));
+      } catch(e){}
       return;
     }
     // Stores commission : appliqués SEULEMENT si la version distante est plus récente (sinon on garde le local)
@@ -12000,6 +12010,12 @@ function _placementMissing(deal){
   if(deal.salarie_etranger && !String(deal.type_sejour||'').trim()) miss.push('Titre de séjour (salarié étranger coché)');
   // « Nos contrats » (Seven) : au moins l'email du signataire (deal OU client)
   if(effTypeContrat==='Seven' && !eff(deal.email_signataire, _cl && _cl.email_signataire)) miss.push('Email du signataire (« Nos contrats »)');
+  // Au moins 1 document candidat (uploadé ou reçu) — sinon le placement reste en stand by
+  try {
+    var _emCand = (deal.email_candidat_reel || deal.email || '').toLowerCase().trim();
+    var _candDoc = _emCand ? getCandidats().find(function(cc){ return cc && !cc._deleted && (cc.email||'').toLowerCase().trim() === _emCand; }) : null;
+    if (!_candDoc || !_candHasAnyDoc(_candDoc)) miss.push('Au moins 1 document candidat (CV, CNI, RIB\u2026)');
+  } catch(e){}
   return miss;
 }
 function _placementIsComplete(deal){ return _placementMissing(deal).length===0; }
@@ -12041,6 +12057,31 @@ function _candHasDoc(cand, docKey) {
   if (!cand || !cand.documents) return false;
   var doc = cand.documents[docKey];
   return !!(doc && !doc._deleted && (doc.od_id || doc.od_url || doc.name || doc.recu));
+}
+function _candHasAnyDoc(cand) {
+  if (!cand || !cand.documents) return false;
+  return Object.keys(cand.documents).some(function(k){ return _candHasDoc(cand, k); });
+}
+function _reevalCandStandByPlacements(cand) {
+  if (!cand) return;
+  var em = (cand.email || '').toLowerCase().trim();
+  if (!em) return;
+  var deals = getDeals();
+  var changed = false;
+  deals.forEach(function(d){
+    if (!d || d.stand_by !== true) return;
+    var dem = (d.email_candidat_reel || d.email || '').toLowerCase().trim();
+    if (dem !== em) return;
+    if (typeof _placementIsComplete === 'function' && _placementIsComplete(d)) {
+      d.stand_by = false; d.updated_at = Date.now(); changed = true;
+      try { sendPlacementNotificationEmail(d); } catch(e){ console.error('[ReevalStandBy] mail', e); }
+    }
+  });
+  if (changed) {
+    saveDeals(deals);
+    try { if (typeof showNotifToast==='function') showNotifToast('Placement activé (document reçu) + mail envoyé'); } catch(e){}
+    try { if (typeof renderCandidats==='function') renderCandidats(); } catch(e){}
+  }
 }
 function _vmCellSelect(current, onchangeJs, title) {
   var bg = current==='Oui' ? '#1D9E75' : (current==='Non' ? '#E24B4A' : '#9E9E9E');
@@ -15165,6 +15206,8 @@ function checkAndSendProlongationRelances(force) {
   if (!odToken) {
     return;
   }
+  // Attendre la synchro initiale avant d'envoyer (évite un double envoi cross-poste). Le bouton « Vérifier maintenant » (force) passe outre.
+  if (!force && window._initialSyncDone !== true) return;
   var cfg = getProlongConfig();
   var today = new Date();
   var day = today.getDate();
@@ -25982,10 +26025,19 @@ function sendCooptationReminderEmail(coop) {
 (function initCooptationReminders(){
   if (window._coopRemindersDone) return;
   window._coopRemindersDone = true;
-  // Attendre que odToken soit éventuellement dispo après auto-login silencieux
-  setTimeout(function(){
-    try { processCooptationReminders(); } catch(e) { console.warn('[Cooptations] init error', e); }
-  }, 3000);
+  // Attendre la fin de la synchro initiale (pull) AVANT de scanner : sinon un autre poste
+  // ayant déjà envoyé le mail (flag mail_60j_envoye_ts) ne serait pas vu → double envoi.
+  var _coopTries = 0;
+  (function _waitSyncCoop(){
+    if (window._initialSyncDone === true) {
+      try { processCooptationReminders(); } catch(e) { console.warn('[Cooptations] init error', e); }
+    } else if (_coopTries < 40) {
+      _coopTries++;
+      setTimeout(_waitSyncCoop, 500);
+    } else {
+      try { processCooptationReminders(); } catch(e) { console.warn('[Cooptations] init error (fallback)', e); }
+    }
+  })();
 })();
 
 // ═══════════════════════════════════════════════════════════
@@ -32260,12 +32312,19 @@ function maybeRunDocsRelanceScan() {
   var lastScan = _getLastRelanceScanDate();
   var todayISO = new Date().toISOString().slice(0,10);
   if (lastScan === todayISO) return; // déjà scanné aujourd'hui
-  // Petit délai pour laisser l'app charger ses données + token
-  setTimeout(function(){
-    if (odToken) {
-      runDocsRelanceScan('auto');
+  // Attendre la fin de la synchro initiale (pull) AVANT de scanner : sinon un autre poste
+  // ayant déjà envoyé les relances ne serait pas vu → double relance.
+  var _docTries = 0;
+  (function _waitSyncDocs(){
+    if (window._initialSyncDone === true) {
+      if (odToken) { runDocsRelanceScan('auto'); }
+    } else if (_docTries < 40) {
+      _docTries++;
+      setTimeout(_waitSyncDocs, 500);
+    } else {
+      if (odToken) { runDocsRelanceScan('auto'); }
     }
-  }, 8000);
+  })();
 }
 
 // Lancer le scan au chargement de la page (1x par jour max)
@@ -32887,6 +32946,7 @@ function uploadCandDoc(input) {
           };
           cands[idx].updated = new Date().toLocaleDateString('fr-FR');
           saveCandidatsArr(cands);
+          try { _reevalCandStandByPlacements(cands[idx]); } catch(e){}
           // Liaison Visite médicale : un Avis d'aptitude chargé → Inscription + Avis = Oui
           if (docKey === 'avis_aptitude') { try { if (typeof _vmApplyAvisAptitude === 'function') _vmApplyAvisAptitude(cands[idx]); } catch(e) {} }
           // Rafraîchir l'onglet docs
@@ -33348,6 +33408,7 @@ function toggleDocRecu(input) {
   if (!cands[idx].documents[docKey]) cands[idx].documents[docKey] = {};
   cands[idx].documents[docKey].recu = input.checked;
   saveCandidatsArr(cands);
+  if (input.checked) { try { _reevalCandStandByPlacements(cands[idx]); } catch(e){} }
 }
 
 // ═══════════════════════════════════════════════════════════
