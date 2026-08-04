@@ -9989,6 +9989,8 @@ function savePlacement() {
   } catch(e) { console.error('[Cooptation] Exception:', e); }
 
   closeModal('modal-placement');
+  // PERF : rendus lourds différés d'un cycle → la modale se ferme instantanément
+  setTimeout(function(){
   renderHistorique();
   // FIX : on appelle TOUJOURS renderDeals (pas seulement si l'onglet est ouvert).
   // Le DOM du tableau peut exister hors écran ; le re-rendre garantit qu'il sera à jour
@@ -10007,6 +10009,7 @@ function savePlacement() {
   if (typeof renderCandidats === 'function') {
     try { renderCandidats(); } catch(e) {}
   }
+  }, 0);
   // Déclenche sync auto (debouncée) pour pousser deal + candidat + client sur SharePoint
   if (typeof odAutoSync === 'function') odAutoSync();
 }
@@ -11498,7 +11501,7 @@ function onDealConsultantSearchInput() {
 
   // Mettre à jour le filtre actif ; le re-render (coûteux) est différé de 200 ms
   window._dealConsultantFilter = query;
-  _debounceSearch('deals', function(){ if (typeof renderDeals === 'function') renderDeals(); });
+  _debounceSearch('deals', function(){ if (typeof renderDeals === 'function') renderDeals(); }, 300);
 
   // Afficher le dropdown avec les suggestions — construction débouncée (fluidité de frappe)
   _debounceSearch('deals_dd', function(){
@@ -11561,7 +11564,7 @@ function onDealConsultantSearchInput() {
   }
   dropdown.innerHTML = html;
   dropdown.style.display = 'block';
-  }, 150);
+  }, 300);
 }
 
 function selectDealConsultant(email) {
@@ -12260,13 +12263,16 @@ function updateDealField(dealId, key, value) {
     try { if (typeof _maybeSendBadPayerAlert==='function') _maybeSendBadPayerAlert(deals[idx]); } catch(e) {}
     try { if (typeof showNotifToast==='function') showNotifToast('Placement activé automatiquement + mail envoyé'); } catch(e){}
   }
-  // Préserver la position de scroll du tableau (évite le saut à gauche au change de select)
-  var _wrap = document.querySelector('.deals-table-wrap');
-  var _scrollL = _wrap ? _wrap.scrollLeft : 0;
-  var _scrollT = _wrap ? _wrap.scrollTop  : 0;
-  renderDeals();
-  var _wrap2 = document.querySelector('.deals-table-wrap');
-  if (_wrap2) { _wrap2.scrollLeft = _scrollL; _wrap2.scrollTop = _scrollT; }
+  // PERF : re-rendu du tableau débouncé (plusieurs cellules remplies d'affilée → 1 seul re-rendu),
+  // avec préservation de la position de scroll (capturée au moment du rendu différé).
+  _debounceSearch('deals_upd', function(){
+    var _wrap = document.querySelector('.deals-table-wrap');
+    var _scrollL = _wrap ? _wrap.scrollLeft : 0;
+    var _scrollT = _wrap ? _wrap.scrollTop  : 0;
+    renderDeals();
+    var _wrap2 = document.querySelector('.deals-table-wrap');
+    if (_wrap2) { _wrap2.scrollLeft = _scrollL; _wrap2.scrollTop = _scrollT; }
+  }, 300);
   // Sync auto après modif d'un champ deal
   if (typeof odAutoSync === 'function') odAutoSync();
 }
