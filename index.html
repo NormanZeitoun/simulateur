@@ -10982,12 +10982,37 @@ function renderDeals() {
   }, true);
 })();
 
+function _isMgrDealTombstoned(d) {
+  if (!d || typeof isTombstoned !== 'function') return false;
+  try {
+    if (d.avenant_id && isTombstoned('mgr_deals', 'av:' + d.avenant_id)) return true;
+    if (d.sim_ts != null && d.sim_ts !== '' && isTombstoned('mgr_deals', 'sim:' + d.sim_ts)) return true;
+  } catch(e){}
+  return false;
+}
+
 function deleteDeal(id) {
   if (!confirm('Supprimer ce deal ?')) return;
   // FIX : comparaison tolérante au type (string ou number)
+  var _delDeal = getDeals().find(function(d) { return String(d.id) === String(id); });
   var deals = getDeals().filter(function(d) { return String(d.id) !== String(id); });
   saveDeals(deals);
   if (typeof addTombstone === 'function') addTombstone('deals', id);
+  // Nettoyage côté CLIENT : retirer le rattachement manager + tombstone dédié (sinon l'union du merge le réintroduit)
+  if (_delDeal && _delDeal.sim_ts != null && _delDeal.sim_ts !== '') {
+    try {
+      if (typeof addTombstone === 'function') addTombstone('mgr_deals', 'sim:' + _delDeal.sim_ts);
+      var _cls = getClients(); var _clsChanged = false;
+      _cls.forEach(function(cc){ ((cc && cc.managers) || []).forEach(function(m){
+        if (m && Array.isArray(m.deals)) {
+          var _b = m.deals.length;
+          m.deals = m.deals.filter(function(dd){ return !dd || dd.sim_ts !== _delDeal.sim_ts; });
+          if (m.deals.length !== _b) _clsChanged = true;
+        }
+      }); });
+      if (_clsChanged) saveClientsArr(_cls);
+    } catch(e){ console.warn('[deleteDeal] nettoyage client:', e); }
+  }
   try { if (typeof _vmRemoveForDeal === 'function') _vmRemoveForDeal(id); } catch(e) {}
   renderDeals();
 }
@@ -18514,6 +18539,15 @@ function confirmDeleteAvenant(avenantId) {
   var all = getAvenants().filter(function(x){ return x.id !== avenantId; });
   saveAvenants(all);
   if (typeof addTombstone === 'function') addTombstone('avenants', avenantId);
+  // Nettoyage côté CLIENT (rattachement mission // éventuel) + tombstone dédié anti-réintroduction
+  if (typeof addTombstone === 'function') addTombstone('mgr_deals', 'av:' + avenantId);
+  try {
+    var _cls2 = getClients(); var _ch2 = false;
+    _cls2.forEach(function(cc){ ((cc && cc.managers) || []).forEach(function(m){
+      if (m && Array.isArray(m.deals)) { var _b2 = m.deals.length; m.deals = m.deals.filter(function(dd){ return !dd || dd.avenant_id !== avenantId; }); if (m.deals.length !== _b2) _ch2 = true; }
+    }); });
+    if (_ch2) saveClientsArr(_cls2);
+  } catch(e){ console.warn('[delAvenant] nettoyage client:', e); }
   var modal = document.getElementById('av-edit-modal');
   if (modal) modal.remove();
   if (typeof showNotifToast === 'function') showNotifToast('🗑 Avenant supprimé');
@@ -19649,6 +19683,7 @@ function deleteMissionParallele(avenantId) {
     if (typeof saveAvenants === 'function') saveAvenants(allAv);
     // Tombstone pour propager la suppression en sync
     if (typeof addTombstone === 'function') addTombstone('avenants', avenantId);
+    if (typeof addTombstone === 'function') addTombstone('mgr_deals', 'av:' + avenantId);
   } catch(e) { console.warn('[delMission//] avenants:', e); }
 
   // (2) Retirer la trace de l'accordéon (deal.avenants_mission)
@@ -20056,6 +20091,15 @@ function _avCompareWithPlacement(newFrais, deal) {
 }
 
 // ── Popup principale : sélection SIMU + formulaire avenant ──
+function _avUpdateManagerDatalist() {
+  var inp = document.getElementById('av-new-entreprise');
+  var dl = document.getElementById('av-managers-dl');
+  if (!inp || !dl) return;
+  var q = (inp.value || '').trim().toLowerCase();
+  var cl = q ? getClients().find(function(_c){ return _c && String(_c.name||'').trim().toLowerCase() === q; }) : null;
+  dl.innerHTML = (cl && Array.isArray(cl.managers)) ? cl.managers.map(function(_m){ return '<option value="' + String(_m.name||'').replace(/"/g,'&quot;') + '">'; }).join('') : '';
+}
+
 function openProlongationAvenantPopup(dealId, mode) {
   var existing = document.getElementById('av-popup-modal');
   if (existing) existing.remove();
@@ -20187,8 +20231,10 @@ function renderAvenantPopupBody(simTimestamp) {
   if (mode === 'nouveau_client') {
     html += '<div style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;">🏢 Nouveau client (à renseigner)</div>';
     html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">'
-      + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Nouvelle entreprise</label><input id="av-new-entreprise" type="text" placeholder="Ex: Société XYZ" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
-      + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Manager / Contact</label><input id="av-new-manager" type="text" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
+      + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Nouvelle entreprise</label><input id="av-new-entreprise" type="text" list="av-clients-dl" autocomplete="off" oninput="_avUpdateManagerDatalist()" placeholder="Ex: Société XYZ" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
+      + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Manager / Contact</label><input id="av-new-manager" type="text" list="av-managers-dl" autocomplete="off" onfocus="_avUpdateManagerDatalist()" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
+      + '<datalist id="av-clients-dl">' + getClients().map(function(_cl){ return '<option value="' + String(_cl.name||'').replace(/"/g,'&quot;') + '">'; }).join('') + '</datalist>'
+      + '<datalist id="av-managers-dl"></datalist>'
       + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Mission / Poste</label><input id="av-new-poste" type="text" value="' + (sim.poste || '').replace(/"/g,'&quot;') + '" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
       + '</div>';
   } else {
@@ -29492,15 +29538,16 @@ function mergeClients(remote) {
       var mgrNames = mgrs.map(function(m){ return m.name.toLowerCase(); });
       (rc.managers||[]).forEach(function(rm) {
         if (mgrNames.indexOf(rm.name.toLowerCase()) < 0) {
+          if (rm && Array.isArray(rm.deals)) rm.deals = rm.deals.filter(function(d){ return !_isMgrDealTombstoned(d); });
           mgrs.push(rm);
           mgrNames.push(rm.name.toLowerCase());
         } else {
-          // Fusionner deals du manager
+          // Fusionner deals du manager (en excluant les rattachements supprimés = tombstonés)
           var mIdx = mgrNames.indexOf(rm.name.toLowerCase());
-          var localDeals = mgrs[mIdx].deals || [];
+          var localDeals = (mgrs[mIdx].deals || []).filter(function(d){ return !_isMgrDealTombstoned(d); });
           var tsSet = {};
           localDeals.forEach(function(d){ tsSet[d.sim_ts] = 1; });
-          (rm.deals||[]).forEach(function(d){ if (!tsSet[d.sim_ts]) localDeals.push(d); });
+          (rm.deals||[]).forEach(function(d){ if (!tsSet[d.sim_ts] && !_isMgrDealTombstoned(d)) localDeals.push(d); });
           mgrs[mIdx].deals = localDeals;
         }
       });
@@ -30764,7 +30811,7 @@ function buildManagerFicheHTML(cl, mgridx, m) {
   var _allDealsForMgr = (typeof getDeals === 'function') ? getDeals() : [];
   var _dealsBySimTsMgr = {};
   _allDealsForMgr.forEach(function(x){ if (x && x.sim_ts) _dealsBySimTsMgr[x.sim_ts] = x; });
-  var mgrDeals = (m.deals || []).map(function(d){
+  var mgrDeals = (m.deals || []).filter(function(d){ return !_isMgrDealTombstoned(d); }).map(function(d){
     if (!d) return d;
     var src = d.sim_ts ? _dealsBySimTsMgr[d.sim_ts] : null;
     if (!src) return d; // fallback : on garde la copie figée
@@ -31209,7 +31256,13 @@ function buildCandPlacementsHTML(cand) {
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">'
       + '<div>'
       + '<div style="font-size:12px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#1A1033') + ';">' + clientDisplay + (d.poste ? ' · ' + d.poste : '') + sortantBadge + '</div>'
-      + '<div style="font-size:11px;color:' + (isCancelled ? '#B47979' : '#6B5E9C') + ';">' + (d.date_entree||d.date_deal||'') + (d.commercial ? ' · ' + d.commercial : '') + managerDisplay + '</div>'
+      + '<div style="font-size:11px;color:' + (isCancelled ? '#B47979' : '#6B5E9C') + ';">' + (function(){
+          var _fmt = function(v){ try { return (typeof _fmtAvDate === 'function') ? _fmtAvDate(v) : v; } catch(e){ return v; } };
+          var _dd = d.date_entree || d.date_deal || '';
+          var _s = _dd ? ('Du ' + _fmt(_dd)) : '';
+          if (d.date_fin) _s += (_s ? ' ' : '') + 'au ' + _fmt(d.date_fin);
+          return _s;
+        })() + (d.commercial ? ' · ' + d.commercial : '') + managerDisplay + '</div>'
       + '</div>'
       + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
       + (d.tjm ? '<span style="font-size:12px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#7343EE') + ';">' + d.tjm + ' €/j</span>' : '')
@@ -31381,7 +31434,7 @@ function _renderPlacementHistory(deal) {
       entry.icon = '⏳';
       entry.color = '#0F5132';
       entry.bg = '#F0FAF4';
-      entry.detail = 'Nouvelle fin : ' + fmtDate(h.nouvelle_date_fin) + (h.commentaire ? ' · ' + h.commentaire : '');
+      entry.detail = 'Du ' + fmtDate(h.ancienne_date_fin) + ' au ' + fmtDate(h.nouvelle_date_fin) + (h.commentaire ? ' · ' + h.commentaire : '');
       // Pas de SIMU dédiée pour prolongation simple : pointe vers la SIMU active du moment
       entry.sim_ts = h.sim_ts || null;
     } else if (h.type === 'avenant_nouveau_client') {
@@ -31392,7 +31445,7 @@ function _renderPlacementHistory(deal) {
       entry.color = '#8A5F00';
       entry.bg = '#FFF8E8';
       var clt = h.nouveau_client || h.ancien_client || '';
-      entry.detail = (h.type_avenant ? h.type_avenant + ' · ' : '') + (h.motif || '') + (clt ? ' → ' + clt : '');
+      entry.detail = (h.type_avenant ? h.type_avenant + ' · ' : '') + (h.motif || '') + (clt ? ' → ' + clt : '') + ((h.ancienne_date_fin || h.nouvelle_date_fin) ? ' · Du ' + fmtDate(h.ancienne_date_fin) + ' au ' + fmtDate(h.nouvelle_date_fin) : '');
       entry.sim_ts = h.sim_ts || null;
     } else if (h.type === 'avenant_nouvelle_simu') {
       avenantCount++;
@@ -31401,7 +31454,7 @@ function _renderPlacementHistory(deal) {
       entry.icon = '📊';
       entry.color = '#1A4F96';
       entry.bg = '#EEF4FF';
-      entry.detail = (h.type_avenant ? h.type_avenant + ' · ' : '') + (h.motif || '');
+      entry.detail = (h.type_avenant ? h.type_avenant + ' · ' : '') + (h.motif || '') + ((h.ancienne_date_fin || h.nouvelle_date_fin) ? ' · Du ' + fmtDate(h.ancienne_date_fin) + ' au ' + fmtDate(h.nouvelle_date_fin) : '');
       entry.sim_ts = h.sim_ts || null;
     } else {
       // Fallback type inconnu
