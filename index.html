@@ -3716,8 +3716,12 @@ function updateBadgeCommercial() {
     nom = el.value.trim();
   } else {
     try {
-      var saved = JSON.parse(localStorage.getItem('sp_params_v2') || '{}');
-      nom = saved['p_commercial_nom'] || '';
+      var _rawP = localStorage.getItem('sp_params_v2') || '{}';
+      if (_rawP !== window._badgeParamsRaw) {
+        window._badgeParamsRaw = _rawP;
+        try { window._badgeParams = JSON.parse(_rawP); } catch(_e){ window._badgeParams = {}; }
+      }
+      nom = (window._badgeParams || {})['p_commercial_nom'] || '';
     } catch(e) {}
   }
   badge.textContent = nom || 'Commercial';
@@ -3810,7 +3814,7 @@ window.addEventListener('DOMContentLoaded', () => {
           if (_ts) { _c.statut_portage_at = _ts; _bfChanged = true; }
         }
       });
-      if (_bfChanged) localStorage.setItem(CAND_KEY, JSON.stringify(_bfArr));
+      if (_bfChanged) { localStorage.setItem(CAND_KEY, JSON.stringify(_bfArr)); window._candsCache = null; }
     }
   } catch(e) { console.warn('[Backfill statut_portage_at]', e); }
 
@@ -8471,10 +8475,25 @@ var dealFilterMonthEntree = '';  // '' = tous ; 'YYYY-MM' = filtre mois sur date
 // d'à côté (priorité au filtre explicite : si on demande à voir les annulés, on les voit).
 var dealHideAnnules = true;
 
+// ═══ PERF : cache mémoire des stores volumineux (deals / candidats / clients) ═══
+// Évite de re-parser tout le localStorage à chaque lecture. Invalidé à chaque écriture
+// (saveX, boot-fix quota) et si un autre onglet modifie la clé (event storage).
+try {
+  window.addEventListener('storage', function(e){
+    try {
+      if (!e || !e.key) { window._dealsCache = window._candsCache = window._clientsCache = null; return; }
+      if (typeof DEALS_KEY !== 'undefined' && e.key === DEALS_KEY) window._dealsCache = null;
+      else if (typeof CAND_KEY !== 'undefined' && e.key === CAND_KEY) window._candsCache = null;
+      else if (typeof CLIENTS_KEY !== 'undefined' && e.key === CLIENTS_KEY) window._clientsCache = null;
+    } catch(_e){}
+  });
+} catch(_e){}
 function getDeals() {
-  try { return JSON.parse(localStorage.getItem(DEALS_KEY) || '[]'); } catch(e) { return []; }
+  if (window._dealsCache != null) return window._dealsCache;
+  try { window._dealsCache = JSON.parse(localStorage.getItem(DEALS_KEY) || '[]'); return window._dealsCache; } catch(e) { return []; }
 }
 function saveDeals(arr) {
+  window._dealsCache = null; // PERF : invalider le cache (re-lu au prochain accès)
   // Stamp updated_at en millis sur chaque deal modifié pour que le merge
   // inter-utilisateurs (mergeDeals) puisse choisir le plus récent.
   // Stratégie : on compare avec la version actuellement stockée et on stamp
@@ -12763,9 +12782,23 @@ function confirmMergeCandidats(targetId) {
 }
 
 function getCandidats() {
-  try { return JSON.parse(localStorage.getItem(CAND_KEY) || '[]'); } catch(e) { return []; }
+  if (window._candsCache != null) return window._candsCache;
+  try { window._candsCache = JSON.parse(localStorage.getItem(CAND_KEY) || '[]'); return window._candsCache; } catch(e) { return []; }
 }
 function saveCandidatsArr(arr) {
+  window._candsCache = null; // PERF : invalider le cache (re-lu au prochain accès)
+  // ═══ DÉGONFLAGE : retirer les od_url des documents (jamais lues ; ~190 car/doc).
+  // Placé AVANT le stamping → le changement est détecté → les fiches allégées se propagent.
+  if (Array.isArray(arr)) {
+    arr.forEach(function(_c){
+      if (_c && _c.documents) {
+        Object.keys(_c.documents).forEach(function(_dk){
+          var _dd = _c.documents[_dk];
+          if (_dd && _dd.od_url !== undefined) delete _dd.od_url;
+        });
+      }
+    });
+  }
   // Stamp updated_at (timestamp millis) sur chaque candidat modifié pour que
   // le merge inter-utilisateurs puisse choisir le plus récent (last-write-wins
   // au niveau ms plutôt que jour).
@@ -29559,8 +29592,8 @@ var CLIENTS_KEY = 'sp_clients_v1';
 var currentClientId = null;
 var currentManagerIdx = null;
 
-function getClients() { try { return JSON.parse(localStorage.getItem(CLIENTS_KEY)||'[]'); } catch(e){ return []; } }
-function saveClientsArr(arr) { localStorage.setItem(CLIENTS_KEY, JSON.stringify(arr)); if (typeof odAutoSync === 'function') odAutoSync(); }
+function getClients() { if (window._clientsCache != null) return window._clientsCache; try { window._clientsCache = JSON.parse(localStorage.getItem(CLIENTS_KEY)||'[]'); return window._clientsCache; } catch(e){ return []; } }
+function saveClientsArr(arr) { window._clientsCache = null; if (Array.isArray(arr)) { arr.forEach(function(_c){ if (_c && _c.documents) { Object.keys(_c.documents).forEach(function(_dk){ var _dd = _c.documents[_dk]; if (_dd && _dd.od_url !== undefined) delete _dd.od_url; }); } }); } localStorage.setItem(CLIENTS_KEY, JSON.stringify(arr)); if (typeof odAutoSync === 'function') odAutoSync(); }
 function _clientUnpaidCount(cl){
   if(!cl) return 0; var nm=(cl.name||'').trim().toLowerCase(); if(!nm) return 0;
   var imp=[]; try{ imp=(typeof getImpayes==='function')?getImpayes():JSON.parse(localStorage.getItem('sp_impayes_v1')||'[]'); }catch(e){ imp=[]; }
@@ -32692,7 +32725,6 @@ function uploadClientDocFromFile(clid, docKey, docLabel, file) {
             clients[idx].documents[docKey] = {
               od_path: filePath,
               od_id: data.id,
-              od_url: data.webUrl || '',
               name: fileName,
               uploaded: new Date().toLocaleDateString('fr-FR'),
               doc_date: existingDocDate || todayISO,
@@ -32945,7 +32977,6 @@ function uploadCandDoc(input) {
           cands[idx].documents[docKey] = {
             od_path: filePath,
             od_id: data.id,
-            od_url: data.webUrl || '',
             name: fileName,
             uploaded: new Date().toLocaleDateString('fr-FR'),
             recu: true
