@@ -10192,7 +10192,7 @@ function mergeSortants(remote) {
   if (!Array.isArray(remote)) return;
   var local = getSortants();
   var byId = {};
-  local.forEach(function(s){ if (s && s.id) byId[s.id] = s; });
+  local.forEach(function(s){ if (!s || !s.id) return; if (typeof isTombstoned === 'function' && isTombstoned('sortants', s.id)) return; byId[s.id] = s; });
   remote.forEach(function(s){
     if (typeof isTombstoned === 'function' && s && isTombstoned('sortants', s.id)) return;
     if (!s || !s.id) return;
@@ -11029,6 +11029,7 @@ function cancelDeal(id) {
   if (!confirm('Annuler le placement de ' + name + ' chez ' + (d.entreprise || '—') + ' ?\n\nLes informations sont conservées. Vous pourrez restaurer le placement ultérieurement.')) return;
   d.etat = 'Annulé';
   d._cancelled_at = new Date().toISOString();
+  d.updated_at = Date.now();
   saveDeals(deals);
   // Visite médicale : retirer la ligne auto-créée pour ce placement annulé (Excel non touché)
   try { if (typeof _vmSyncFromDeal === 'function') _vmSyncFromDeal(d, false); } catch(e) {}
@@ -17884,7 +17885,7 @@ function mergeAvenants(remote) {
   if (!Array.isArray(remote)) return;
   var local = getAvenants();
   var byId = {};
-  local.forEach(function(a){ if (a.id) byId[a.id] = a; });
+  local.forEach(function(a){ if (!a || !a.id) return; if (typeof isTombstoned === 'function' && isTombstoned('avenants', a.id)) return; byId[a.id] = a; });
   remote.forEach(function(r){
     if (!r || !r.id) return;
     if (typeof isTombstoned === 'function' && isTombstoned('avenants', r.id)) return;
@@ -29175,7 +29176,9 @@ function _parseFRDate(s) {
 function mergeDeals(remote) {
   var local = getDeals();
   var idMap = {};
-  local.forEach(function(d) { idMap[d.id] = d; });
+  // FIX PROPAGATION : purger aussi les deals LOCAUX tombstonés (supprimés sur un autre poste),
+  // sinon ce poste garde et re-pousse indéfiniment un deal supprimé ailleurs.
+  local.forEach(function(d) { if (d && typeof isTombstoned === 'function' && isTombstoned('deals', d.id)) return; idMap[d.id] = d; });
 
   // Helper : fusionne deux tableaux d'objets identifiés (par avenant_id ou created_at)
   // sans doublon. Garantit qu'aucune trace cumulative n'est perdue au merge.
