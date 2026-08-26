@@ -29208,7 +29208,8 @@ function mergeDeals(remote) {
     // CUMULATIFS. Même si une version "gagne" le last-write-wins, on doit fusionner
     // ces traces des deux côtés — sinon un avenant créé sur un poste disparaît quand
     // l'autre poste avait modifié le deal (le merge écrasait le deal entier).
-    var mergedAvenants = _mergeTraces(existing.avenants_mission, d.avenants_mission, 'avenant_id');
+    var mergedAvenants = _mergeTraces(existing.avenants_mission, d.avenants_mission, 'avenant_id')
+      .filter(function(_av){ return !(_av && _av.avenant_id && typeof isTombstoned === 'function' && isTombstoned('avenants', _av.avenant_id)); });
     var mergedHist     = _mergeTraces(existing.historique_prolongations, d.historique_prolongations, 'id');
 
     // FIX SYNC : on utilise >= (pas > strict) pour gérer le cas où deux commerciaux
@@ -31387,7 +31388,8 @@ function _pcKV(label, value, color) {
 // ── Historique chronologique d'un placement : original + prolongations + avenants ──
 function _renderPlacementHistory(deal) {
   var hist = Array.isArray(deal.historique_prolongations) ? deal.historique_prolongations : [];
-  var avMission = Array.isArray(deal.avenants_mission) ? deal.avenants_mission : [];
+  var avMission = (Array.isArray(deal.avenants_mission) ? deal.avenants_mission : [])
+    .filter(function(_av){ return !(_av && _av.avenant_id && typeof isTombstoned === 'function' && isTombstoned('avenants', _av.avenant_id)); });
   if (hist.length === 0 && avMission.length === 0) return '';
 
   function fmtDate(v) {
