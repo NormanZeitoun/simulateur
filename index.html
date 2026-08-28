@@ -31684,7 +31684,14 @@ function _renderPlacementHistory(deal) {
       return '<div style="background:#FFFBF2;border:1px solid #F0DCAE;border-radius:7px;padding:8px 10px;margin-bottom:6px;">'
         + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px;">'
         +   '<span style="font-size:11px;font-weight:700;color:#8A5F00;">📑 Avenant</span>'
-        +   '<span style="font-size:10.5px;color:#9E94C4;" title="Avenant enregistré le ' + fmtDate(av.date) + '">' + ((av.date_debut || av.date_fin) ? ('Du ' + (av.date_debut ? fmtDate(av.date_debut) : '—') + ' au ' + (av.date_fin ? fmtDate(av.date_fin) : '—')) : fmtDate(av.date)) + '</span>'
+        +   '<span style="font-size:10.5px;color:#9E94C4;" title="Avenant enregistré le ' + fmtDate(av.date) + '">' + (function(){
+          var _dd = av.date_debut, _df = av.date_fin;
+          // Anciennes entrées sans dates → on va les chercher sur l'avenant du store (onglet Avenants)
+          if (!_dd && !_df && av.avenant_id && typeof getAvenants === 'function') {
+            try { var _sa = getAvenants().find(function(x){ return x && x.id === av.avenant_id; }); if (_sa) { _dd = _sa.date_debut; _df = _sa.date_fin; } } catch(_e){}
+          }
+          return (_dd || _df) ? ('Du ' + (_dd ? fmtDate(_dd) : '—') + ' au ' + (_df ? fmtDate(_df) : '—')) : fmtDate(av.date);
+        })() + '</span>'
         +   simBtn
         +   delBtn
         + '</div>'
