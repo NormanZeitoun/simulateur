@@ -2091,6 +2091,13 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 
   </div>
 
+  <!-- COMMENTAIRE DE SIMULATION (stocké à l'envoi + propagé fiche candidat / manager) -->
+  <div style="margin:-6px 0 18px;">
+    <label style="font-size:10.5px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px;">💬 Note interne (visible uniquement dans le CRM)</label>
+    <textarea id="sim-comment" rows="2" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;resize:vertical;font-family:inherit;outline:none;"></textarea>
+    <div id="sim-comment-meta" style="font-size:10.5px;color:#9E94C4;margin-top:3px;"></div>
+  </div>
+
   <!-- DÉCOMPOSITION FRAIS (remontée sous le bouton Envoyer) -->
   <div class="frais-table" id="frais-section" style="margin-bottom:18px;">
     <div style="background:#F0FDF8;padding:10px 16px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--success);">
@@ -2655,6 +2662,7 @@ function syncTelnetField() {
 function resetSimulateur() {
   // Déverrouiller le simulateur (on quitte toute simulation rattachée)
   try { window._currentReopenedSimTs = null; if (typeof _applySimLock === 'function') _applySimLock(null); } catch(e) {}
+  try { var _sc = document.getElementById('sim-comment'); if (_sc) _sc.value = ''; var _scm = document.getElementById('sim-comment-meta'); if (_scm) _scm.textContent = ''; } catch(e) {}
   // Remet tous les champs du simulateur aux valeurs initiales définies dans le HTML
   // sans recharger la page (pas de synchro déclenchée).
   // ── Valeurs par défaut des champs numériques / texte ──
@@ -4334,6 +4342,63 @@ function buildMailSubject(data) {
   return 'Simulation salariale Seven Portage - ' + nom;
 }
 
+function _propagateSimComment(data, dest) {
+  var el = document.getElementById('sim-comment');
+  var txt = el ? (el.value||'').trim() : '';
+  if (!txt) return;
+  var who = (typeof getCommercialData === 'function') ? (getCommercialData().nom || '') : '';
+  var n = new Date();
+  var stamp = n.toLocaleDateString('fr-FR') + ' ' + n.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+  if (dest === 'candidat' || dest === 'les_deux') {
+    try {
+      var em = (function(){ var e2 = document.getElementById('email'); return e2 ? (e2.value||'').trim().toLowerCase() : ''; })();
+      if (em) {
+        var cands = getCandidats();
+        var ci = cands.findIndex(function(cc){ return cc && !cc._deleted && (cc.email||'').trim().toLowerCase() === em; });
+        if (ci >= 0) {
+          cands[ci].commentaires = cands[ci].commentaires || [];
+          cands[ci].commentaires.unshift({ date: stamp, text: '[Simulation] ' + txt, author: who });
+          saveCandidatsArr(cands);
+        }
+      }
+    } catch(e){ console.warn('[SimComment] candidat:', e); }
+  }
+  if (dest === 'client' || dest === 'les_deux') {
+    try {
+      var entName = (data.entreprise||'').trim().toLowerCase();
+      var mgrName = (data.manager||'').trim().toLowerCase();
+      if (entName) {
+        var cls = getClients();
+        var cli = cls.findIndex(function(cc){ return cc && (cc.name||'').trim().toLowerCase() === entName; });
+        if (cli >= 0) {
+          var mgrs = cls[cli].managers || [];
+          var mi = mgrName ? mgrs.findIndex(function(m){ return m && (m.name||'').trim().toLowerCase() === mgrName; }) : -1;
+          if (mi < 0 && mgrs.length === 1) mi = 0;
+          if (mi >= 0) {
+            var prev = mgrs[mi].commentaire || '';
+            mgrs[mi].commentaire = (prev ? prev + '\n' : '') + stamp + ' — ' + who + ' [Simulation] : ' + txt;
+            saveClientsArr(cls);
+          }
+        }
+      }
+    } catch(e){ console.warn('[SimComment] manager:', e); }
+  }
+}
+
+function _loadSimCommentFromEntry(entry) {
+  try {
+    var _scEl = document.getElementById('sim-comment');
+    var _scMeta = document.getElementById('sim-comment-meta');
+    if (_scEl) _scEl.value = (entry && entry.commentaire) || '';
+    if (_scMeta) {
+      if (entry && entry.commentaire && entry.commentaire_ts) {
+        var _scD = new Date(entry.commentaire_ts);
+        _scMeta.textContent = '💬 Commentaire enregistré le ' + _scD.toLocaleDateString('fr-FR') + ' à ' + _scD.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) + (entry.commentaire_auteur ? ' — ' + entry.commentaire_auteur : '');
+      } else { _scMeta.textContent = ''; }
+    }
+  } catch(_e){}
+}
+
 function doEnvoi() {
   var email      = document.getElementById('envoi-email').value.trim();
   var emailClient = currentDest === 'les_deux' ? (document.getElementById('envoi-email-client') ? document.getElementById('envoi-email-client').value.trim() : '') : '';
@@ -4387,6 +4452,7 @@ function doEnvoi() {
         setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
 
         saveHistorique(data, currentDest, email, consultant);
+        try { _propagateSimComment(data, currentDest); } catch(_e){ console.warn('[SimComment]', _e); }
         closeModal('modal-envoi');
       }
 
@@ -6041,6 +6107,8 @@ function saveHistorique(data, dest, email, consultantName) {
   var name = (consultantName || data.consultant || 'Inconnu').trim();
   var existing = hist.filter(function(h) { return h.consultant === name; });
   var version = existing.length + 1;
+  var _simComment = (function(){ var el = document.getElementById('sim-comment'); return el ? (el.value||'').trim() : ''; })();
+  var _simCommentWho = (typeof getCommercialData === 'function') ? (getCommercialData().nom || '') : '';
   var entry = {
     id: Date.now(),
     timestamp: Date.now(),
@@ -6100,6 +6168,9 @@ function saveHistorique(data, dest, email, consultantName) {
     tt_internet: (function(){ var el=document.getElementById('tt_internet'); return el ? (parseFloat(el.value)||0) : 0; })(),
     tt_mobile: (function(){ var el=document.getElementById('tt_mobile'); return el ? (parseFloat(el.value)||0) : 0; })(),
     hide_tjm_mail: data.hide_tjm_mail || false,
+    commentaire: _simComment,
+    commentaire_ts: _simComment ? Date.now() : 0,
+    commentaire_auteur: _simComment ? _simCommentWho : '',
     dest: dest,
     email: email,
     // FIX : entry.email peut contenir l'email CLIENT (quand dest='client', le popup
@@ -6328,6 +6399,7 @@ function reopenSim(ts) {
   // Puis restaurer le snapshot après que la navigation soit effective
   setTimeout(function() {
     restoreSnapshot(entry.snapshot);
+    _loadSimCommentFromEntry(entry);
     // Recalculer pour afficher les résultats
     try { if (typeof calc === 'function') calc(); } catch(e) { console.warn('calc error', e); }
     // Verrou : si la simu est rattachée à un placement/avenant → lecture seule
@@ -6346,6 +6418,7 @@ function newVersionSim(ts) {
   mainNavTo('mission');
   setTimeout(function() {
     restoreSnapshot(entry.snapshot);
+    _loadSimCommentFromEntry(entry);
     try { if (typeof calc === 'function') calc(); } catch(e) {}
     window._currentReopenedSimTs = null;
     try { if (typeof _applySimLock === 'function') _applySimLock(null); } catch(e) {}
@@ -7517,6 +7590,30 @@ function _applySharedConfigs(shared) {
     // Horodatage dédié : on garde toujours le plus récent
     if (c.field === 'commission_overrides_ts') {
       try { localStorage.setItem(c.ls, String(Math.max(_localCommTs, _remoteCommTs))); } catch(e){}
+      return;
+    }
+function _mergeCommExclusions(localObj, remoteVal) {
+  var out = {};
+  var lo = (localObj && typeof localObj === 'object' && !Array.isArray(localObj)) ? localObj : {};
+  Object.keys(lo).forEach(function(k){ out[k] = lo[k]; });
+  var ro = {};
+  if (Array.isArray(remoteVal)) {
+    // Compat ancien format tableau [{deal_id,...}]
+    remoteVal.forEach(function(re){ if (re && re.deal_id != null) ro[String(re.deal_id)] = { excluded: (re.excluded !== false), comment: re.comment || '', ts: re.updated_ts || re.ts || 0 }; });
+  } else if (remoteVal && typeof remoteVal === 'object') { ro = remoteVal; }
+  Object.keys(ro).forEach(function(k){
+    var r = ro[k] || {}, l = out[k];
+    if (!l || (r.ts || 0) > (l.ts || 0)) out[k] = r;
+  });
+  return out;
+}
+
+    // Exclusions de commissions : fusion par entrée (ts le plus récent gagne, le local prime à égalité)
+    if (c.field === 'commission_exclusions') {
+      try {
+        var _lEx = {}; try { _lEx = JSON.parse(localStorage.getItem(c.ls) || '{}') || {}; } catch(_e2){}
+        localStorage.setItem(c.ls, JSON.stringify(_mergeCommExclusions(_lEx, shared.commission_exclusions)));
+      } catch(e){}
       return;
     }
     // Date du dernier import impayés : on garde toujours la plus récente (max), partagée entre tous les postes
@@ -18849,7 +18946,7 @@ function openAvenantMissionPopup(dealId) {
 
   var simOptions = '<option value="">— Aucune simulation (saisie manuelle) —</option>'
     + sims.map(function(s){
-        var lbl = (s.date || '') + ' · TJM ' + (s.tjm || '?') + '€ · ' + (s.entreprise || 'sans client');
+        var lbl = (s.date || '') + (s.heure ? ' ' + s.heure : '') + ' · TJM ' + (s.tjm || '?') + '€ · ' + (s.entreprise || 'sans client');
         return '<option value="' + s.timestamp + '">' + lbl.replace(/</g,'&lt;') + '</option>';
       }).join('');
 
@@ -19240,7 +19337,7 @@ function openMissionParallelePopup(dealId) {
 
   var simOptions = '<option value="">\u2014 Choisir une simulation \u2014</option>'
     + sims.map(function(s){
-        var lbl = (s.date || '') + ' \u00b7 ' + (s.entreprise || 'sans client') + ' \u00b7 TJM ' + (s.tjm || '?') + '\u20ac \u00b7 ' + (s.poste || 'poste ?');
+        var lbl = (s.date || '') + (s.heure ? ' ' + s.heure : '') + ' \u00b7 ' + (s.entreprise || 'sans client') + ' \u00b7 TJM ' + (s.tjm || '?') + '\u20ac \u00b7 ' + (s.poste || 'poste ?');
         return '<option value="' + s.timestamp + '">' + lbl.replace(/</g,'&lt;') + '</option>';
       }).join('');
 
@@ -27884,6 +27981,13 @@ function buildCandFicheHTML(cand) {
     + fld('Ville', cand.ville, 'ville')
     + fld('LinkedIn', cand.linkedin, 'linkedin')
     + sel('Commercial référent', cand.commercial||'', 'commercial', ['','David','Rayan','Esteban','Sacha','Farah','Joanne','Norman'])
+    + (function(){
+        var _i = (typeof _candSortieDureeInfo === 'function') ? _candSortieDureeInfo(cand) : { sortie:'\u2014', sortieColor:'#1A1033', duree:'\u2014' };
+        var _lbl = 'font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;';
+        var _val = 'width:100%;padding:7px 10px;border:1.5px solid #EDEAF8;border-radius:7px;font-size:12px;box-sizing:border-box;background:#FAFAFE;font-weight:600;min-height:31px;display:flex;align-items:center;';
+        return '<div><label style="' + _lbl + '">Sortie des effectifs</label><div style="' + _val + 'color:' + _i.sortieColor + ';">' + _i.sortie + '</div></div>'
+          + '<div><label style="' + _lbl + '">Derni\u00e8re mission (dur\u00e9e)</label><div style="' + _val + 'color:#1A1033;" title="Mission chez le dernier client, avenants et placements chez ce client compris">' + _i.duree + '</div></div>';
+      })()
     + '</div>'
     + '</div>'
     + _candTagsBar(cand)
@@ -28402,7 +28506,7 @@ function buildCandSimsHTML(cand) {
     return '<div style="' + rowStyle + '">'
       + '<div>'
       + '<div style="font-size:12px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#1A1033') + ';">' + (s.entreprise||'—') + (s.poste ? ' · ' + s.poste : '') + statutBadge + '</div>'
-      + '<div style="font-size:11px;color:' + (isCancelled ? '#B47979' : '#6B5E9C') + ';">' + (s.date||'') + (s.commercial ? ' · ' + s.commercial : '') + '</div>'
+      + '<div style="font-size:11px;color:' + (isCancelled ? '#B47979' : '#6B5E9C') + ';">' + (s.date||'') + (s.heure ? ' ' + s.heure : '') + (s.commercial ? ' · ' + s.commercial : '') + '</div>'
       + '</div>'
       + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
       + (s.tjm ? '<span style="font-size:13px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#7343EE') + ';">' + s.tjm + ' €/j</span>' : '')
@@ -29421,22 +29525,12 @@ function mergeParams(remote) {
     }
   }
 
-  // Exclusions de commissions (collection avec deal_id)
-  if (Array.isArray(remote.commission_exclusions)) {
-    var localCE = JSON.parse(localStorage.getItem('sp_commission_exclusions_v1') || '[]');
-    var mapCE = {};
-    localCE.forEach(function(e){
-      if (e && e.deal_id != null) mapCE[String(e.deal_id)] = e;
-    });
-    remote.commission_exclusions.forEach(function(re){
-      if (!re || re.deal_id == null) return;
-      var k = String(re.deal_id);
-      var existing = mapCE[k];
-      if (!existing || (re.updated_ts || 0) > (existing.updated_ts || 0)) {
-        mapCE[k] = re;
-      }
-    });
-    localStorage.setItem('sp_commission_exclusions_v1', JSON.stringify(Object.values(mapCE)));
+  // Exclusions de commissions — format canonique OBJET {dealId:{excluded,comment,ts}} ; fusion par entrée la plus récente
+  if (remote.commission_exclusions != null) {
+    try {
+      var localCE = {}; try { localCE = JSON.parse(localStorage.getItem('sp_commission_exclusions_v1') || '{}') || {}; } catch(_e3){}
+      localStorage.setItem('sp_commission_exclusions_v1', JSON.stringify(_mergeCommExclusions(localCE, remote.commission_exclusions)));
+    } catch(e){}
   }
 
   // Objectifs annuels commissions
@@ -30377,7 +30471,7 @@ function buildClientPageHTML(cl) {
       var rowBg = i % 2 === 0 ? '#fff' : '#FAFAFF';
       var destLabel = s.dest === 'les_deux' ? '👥 Les deux' : '🏢 Client';
       tabSimulationsHtml += '<tr style="border-bottom:1px solid #F0EDF9;background:' + rowBg + ';">'
-        + '<td style="padding:8px 10px;color:#1A1033;font-weight:600;">' + (s.date || '—') + '</td>'
+        + '<td style="padding:8px 10px;color:#1A1033;font-weight:600;">' + (s.date || '—') + (s.heure ? ' ' + s.heure : '') + '</td>'
         + (function(){
             var _nm = (s.consultant || '').trim();
             var _em = (s.email_candidat_reel || s.email || '').trim();
@@ -30777,6 +30871,47 @@ function openManagerFiche(clid, mgridx) {
     _mdt = null;
   });
   document.body.appendChild(modal);
+}
+
+function _candSortieDureeInfo(cand) {
+  var out = { sortie: '\u2014', sortieColor: '#1A1033', duree: '\u2014' };
+  try {
+    var em = ((cand && cand.email) || '').trim().toLowerCase();
+    if (!em) return out;
+    var ds = getDeals().filter(function(d){
+      return d && !d._deleted && d.etat !== 'Annulé' &&
+        ((d.email_candidat_reel || d.email || '').trim().toLowerCase() === em);
+    });
+    if (!ds.length) return out;
+    var t0 = function(v){ if (!v) return 0; var t = new Date(v).getTime(); return isNaN(t) ? 0 : t; };
+    var startOf = function(d){ return t0(d.date_entree || d.date_deal) || t0(d.date_fin) || 0; };
+    // ── Sortie des effectifs : actualisée — s'il reste une mission/avenant en cours, il n'est pas sorti ──
+    var enCours = ds.some(function(d){ return d.etat !== 'Sorti des effectifs'; });
+    if (enCours) { out.sortie = 'En mission'; out.sortieColor = '#1D9E75'; }
+    else {
+      var maxS = 0;
+      ds.forEach(function(d){ var s = t0(d.date_sortie) || t0(d.date_fin); if (s > maxS) maxS = s; });
+      if (maxS) out.sortie = new Date(maxS).toLocaleDateString('fr-FR');
+    }
+    // ── Durée de la dernière mission : dernier client, tous placements/avenants chez ce client compris ──
+    var last = ds.slice().sort(function(a,b){ return startOf(b) - startOf(a); })[0];
+    var ent = (last.entreprise || '').trim().toLowerCase();
+    var sameCli = ds.filter(function(d){ return (d.entreprise || '').trim().toLowerCase() === ent; });
+    var minD = 0, maxF = 0, anyOpen = false;
+    sameCli.forEach(function(d){
+      var s = startOf(d); if (s && (!minD || s < minD)) minD = s;
+      var sorti = (d.etat === 'Sorti des effectifs');
+      var f = sorti ? (t0(d.date_sortie) || t0(d.date_fin)) : t0(d.date_fin);
+      if (!sorti) anyOpen = true;
+      if (f > maxF) maxF = f;
+    });
+    if (!maxF && anyOpen) maxF = Date.now();
+    if (minD && maxF && maxF > minD) {
+      var mois = Math.round(((maxF - minD) / 2629800000) * 10) / 10; // 30,4375 j / mois
+      out.duree = String(mois).replace('.', ',') + ' mois' + (last.entreprise ? ' \u00b7 ' + last.entreprise : '');
+    }
+  } catch(e){}
+  return out;
 }
 
 function _prolongEncartHTML(deal){
@@ -31549,7 +31684,7 @@ function _renderPlacementHistory(deal) {
       return '<div style="background:#FFFBF2;border:1px solid #F0DCAE;border-radius:7px;padding:8px 10px;margin-bottom:6px;">'
         + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px;">'
         +   '<span style="font-size:11px;font-weight:700;color:#8A5F00;">📑 Avenant</span>'
-        +   '<span style="font-size:10.5px;color:#9E94C4;">' + fmtDate(av.date) + '</span>'
+        +   '<span style="font-size:10.5px;color:#9E94C4;" title="Avenant enregistré le ' + fmtDate(av.date) + '">' + ((av.date_debut || av.date_fin) ? ('Du ' + (av.date_debut ? fmtDate(av.date_debut) : '—') + ' au ' + (av.date_fin ? fmtDate(av.date_fin) : '—')) : fmtDate(av.date)) + '</span>'
         +   simBtn
         +   delBtn
         + '</div>'
@@ -36668,13 +36803,10 @@ function commLockAdmin() {
 
 function toggleCommExclusion(dealId, excluded) {
   var ex = getCommExclusions();
-  if (excluded) {
-    ex[dealId] = ex[dealId] || {};
-    ex[dealId].excluded = true;
-    ex[dealId].comment = ex[dealId].comment || '';
-  } else {
-    delete ex[dealId];
-  }
+  ex[dealId] = ex[dealId] || {};
+  ex[dealId].excluded = !!excluded;
+  ex[dealId].comment = ex[dealId].comment || '';
+  ex[dealId].ts = Date.now(); // horodatage : la fusion sync garde l'action la plus récente (fini la case qui se décoche)
   saveCommExclusions(ex);
   renderCommCurrentView();
 }
@@ -36683,6 +36815,7 @@ function updateCommExclusionComment(dealId, comment) {
   var ex = getCommExclusions();
   if (ex[dealId] && ex[dealId].excluded) {
     ex[dealId].comment = comment;
+    ex[dealId].ts = Date.now();
     saveCommExclusions(ex);
   }
 }
