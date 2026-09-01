@@ -10820,6 +10820,9 @@ function renderDeals() {
   // commercial restait visible dans le tableau même après que sa tombstone soit
   // appliquée au localStorage. Cohérent avec ce qui se fait pour les candidats.
   deals = deals.filter(function(d) { return d && !d._deleted; });
+  // Tableau des deals = uniquement les deals créés via Deals. Les lignes de continuité (avenant nouveau client)
+  // vivent dans Prolongation / Avenants et sur les fiches candidat/client, pas ici.
+  deals = deals.filter(function(d) { return !d.prolongation_avenant; });
   // Filtres
   // FIX UI — "Masquer annulés" est appliqué AVANT le filtre État, MAIS ignoré si l'user
   // a explicitement sélectionné "État: Annulé" dans le dropdown (priorité au filtre explicite).
