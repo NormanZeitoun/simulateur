@@ -20526,23 +20526,56 @@ function confirmProlongationAvenant(dealId, mode) {
     created_at: Date.now()
   });
   // Mise à jour du deal
-  deal.date_fin = dateFin;
-  if (deal.dateFinPrevisionnelle !== undefined) deal.dateFinPrevisionnelle = dateFin;
-  deal.date_avenant = dateAvenant;
-  deal.sim_ts = simTs; // rattacher la nouvelle SIMU
+  var _emailDeal = deal;
   if (mode === 'nouveau_client') {
-    deal.entreprise = newEntreprise;
-    deal.manager = newManager;
-    deal.poste = newPoste;
+    // ══ CONTINUITÉ DE CONTRAT CHEZ UN NOUVEAU CLIENT ══
+    // Le deal d'origine reste l'historique (client, manager, poste, TJM, simulation, date de deal).
+    // Une NOUVELLE LIGNE porte la mission chez le nouveau client — ce n'est PAS un nouveau deal
+    // commissionnable (flag prolongation_avenant, exclu des commissions).
+    var _traceAv = deal.historique_prolongations[deal.historique_prolongations.length - 1];
+    var newDeal = JSON.parse(JSON.stringify(deal));
+    newDeal.id = Date.now() + Math.floor(Math.random() * 1000);
+    newDeal.entreprise = newEntreprise;
+    newDeal.manager = newManager;
+    newDeal.poste = newPoste;
+    if (newFrais.tjm) newDeal.tjm = newFrais.tjm;
+    newDeal.sim_ts = simTs;
+    newDeal.date_avenant = dateAvenant;
+    if (dateDebut) { newDeal.date_entree = dateDebut; newDeal.date_deal = dateDebut; }
+    newDeal.date_fin = dateFin;
+    if (newDeal.dateFinPrevisionnelle !== undefined) newDeal.dateFinPrevisionnelle = dateFin;
+    newDeal.etat = 'En cours';
+    newDeal.stand_by = false;
+    ['date_sortie','raison_sortie','commentaire_sortie','fin_mission_mail_sent_for','prolonge_par','date_deal_modified','_cancelled_at'].forEach(function(k){ delete newDeal[k]; });
+    newDeal.avenants_mission = [];
+    newDeal.historique_prolongations = _traceAv ? [ JSON.parse(JSON.stringify(_traceAv)) ] : [];
+    newDeal.prolongation_avenant = { deal_origine_id: deal.id, avenant_id: avenantId, ancien_client: deal.entreprise, date: dateAvenant };
+    newDeal.updated_at = Date.now();
+    // Deal d'origine : intact, clôturé à la veille du début de l'avenant + lien vers la suite
+    if (dateDebut) {
+      var _v = new Date(dateDebut);
+      if (!isNaN(_v.getTime())) { _v.setDate(_v.getDate() - 1); deal.date_fin = _v.toISOString().slice(0,10); if (deal.dateFinPrevisionnelle !== undefined) deal.dateFinPrevisionnelle = deal.date_fin; }
+    }
+    deal.prolonge_par = newDeal.id;
+    deal.updated_at = Date.now();
+    deals[idx] = deal;
+    deals.unshift(newDeal);
+    saveDeals(deals);
+    // Rattachement du nouveau client (fiche client / manager)
+    try { if (typeof saveClientFromDeal === 'function') saveClientFromDeal(newDeal); } catch(e){ console.warn('[Avenant nouveau client] rattachement client:', e); }
+    _emailDeal = newDeal;
+  } else {
+    deal.date_fin = dateFin;
+    if (deal.dateFinPrevisionnelle !== undefined) deal.dateFinPrevisionnelle = dateFin;
+    deal.date_avenant = dateAvenant;
+    deal.sim_ts = simTs; // rattacher la nouvelle SIMU
+    if (newFrais.tjm) deal.tjm = newFrais.tjm;
+    deals[idx] = deal;
+    saveDeals(deals);
   }
-  // TJM mis à jour
-  if (newFrais.tjm) deal.tjm = newFrais.tjm;
-
-  deals[idx] = deal;
-  saveDeals(deals);
 
   // ── Email à Clémence/Marie ──
-  sendProlongationAvenantEmail(deal, avenant, oldFrais, newFrais);
+  sendProlongationAvenantEmail(_emailDeal, avenant, oldFrais, newFrais);
 
   if (typeof showNotifToast === 'function') showNotifToast('✓ Avenant créé et email envoyé');
   modal.remove();
@@ -35791,31 +35824,10 @@ function getDealReferenceDate(deal) {
     var _dm = new Date(deal.date_deal);
     if (!isNaN(_dm.getTime())) return _dm;
   }
-  // Chercher le candidat lié par email
-  var email = (deal.email || '').trim().toLowerCase();
-  if (email && typeof getCandidats === 'function') {
-    var cands = getCandidats();
-    var cand = cands.find(function(c){ return (c.email || '').trim().toLowerCase() === email; });
-    if (cand && cand.documents) {
-      var dates = [];
-      Object.keys(cand.documents).forEach(function(k) {
-        var doc = cand.documents[k];
-        if (doc && doc.uploaded) {
-          // Format "DD/MM/YYYY" attendu → parser
-          var parts = (doc.uploaded || '').split('/');
-          if (parts.length === 3) {
-            var d = new Date(parseInt(parts[2]), parseInt(parts[1])-1, parseInt(parts[0]));
-            if (!isNaN(d.getTime())) dates.push(d);
-          }
-        }
-      });
-      if (dates.length) {
-        dates.sort(function(a,b){ return a - b; });
-        return dates[0];
-      }
-    }
-  }
-  // Fallback : date_deal (format "YYYY-MM-DD") ou date_created ("DD/MM/YYYY")
+  // OPTION A (décision 08/2026) : la DATE DU DEAL fait foi pour le mois de rattachement.
+  // (Ancienne règle supprimée : date du plus ancien document du candidat — elle rattachait
+  //  le 2e placement d'un candidat au mois du 1er, et un deal signé en août au mois du dossier.)
+  // Cascade : date_deal (modifiée ou non) → date_created.
   if (deal.date_deal) {
     var d = new Date(deal.date_deal);
     if (!isNaN(d.getTime())) return d;
@@ -35862,6 +35874,7 @@ function getCommDealsForPeriod(commercial, year, month /* 0-11, null = toute l'a
     var dealComm = (d.commercial || '').trim().toLowerCase();
     var wanted = (commercial || '').trim().toLowerCase();
     if (wanted && dealComm !== wanted) return false;
+    if (d.prolongation_avenant) return false; // continuité de contrat (avenant nouveau client) : pas un nouveau deal
     if (d.etat === 'Annulé') return false;
     // Frais de gestion ≥ seuil (override commission prioritaire)
     var fg = (fgOv[d.id] !== undefined) ? fgOv[d.id] : _dealFGEffectif(d);
@@ -35981,6 +35994,7 @@ function _dgParseDate(s) {
 function _dgDealDate(d) { return _dgParseDate(d.date_deal) || _dgParseDate(d.date_entree) || null; }
 function _dgIsActif(d) {
   if (!d || d.etat === 'Annulé') return false;
+  if (d.prolongation_avenant) return false; // continuité de contrat : pas un nouveau deal
   var today = new Date(); today.setHours(23,59,59,999);
   if (d.etat === 'Sorti des effectifs') { var ds = _dgParseDate(d.date_sortie); return !!(ds && ds > today); }
   if (d.etat === 'Signé' || d.etat === 'En cours' || d.etat === 'Nouveau placement') {
