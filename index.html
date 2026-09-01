@@ -29380,7 +29380,10 @@ function mergeDeals(remote) {
     var winner = (rTs >= lTs) ? d : existing;
     // On applique les traces fusionnées sur le gagnant
     if (mergedAvenants.length) winner.avenants_mission = mergedAvenants;
-    if (mergedHist.length)     winner.historique_prolongations = mergedHist;
+    // Règle : le deal d'origine d'une continuité (prolonge_par) reste intact — la trace « avenant nouveau client »
+    // vit sur la ligne de continuité. On l'exclut ici pour que l'union du merge ne la réintroduise pas.
+    if (winner.prolonge_par) mergedHist = mergedHist.filter(function(h){ return !(h && h.type === 'avenant_nouveau_client'); });
+    winner.historique_prolongations = mergedHist;
     idMap[d.id] = winner;
   });
   var merged = Object.values(idMap).sort(function(a,b){ return (b.id||0)-(a.id||0); });
@@ -31586,6 +31589,7 @@ function _pcKV(label, value, color) {
 // ── Historique chronologique d'un placement : original + prolongations + avenants ──
 function _renderPlacementHistory(deal) {
   var hist = Array.isArray(deal.historique_prolongations) ? deal.historique_prolongations : [];
+  if (deal.prolonge_par) hist = hist.filter(function(h){ return !(h && h.type === 'avenant_nouveau_client'); }); // origine d'une continuité : trace affichée sur la continuité seulement
   function _avStart(h){ try { if (h && h.avenant_id && typeof getAvenants === 'function') { var _a = getAvenants().find(function(x){ return x && x.id === h.avenant_id; }); if (_a && _a.date_debut) return _a.date_debut; } } catch(e){} return h ? h.ancienne_date_fin : ''; }
   var avMission = (Array.isArray(deal.avenants_mission) ? deal.avenants_mission : [])
     .filter(function(_av){ return !(_av && _av.avenant_id && typeof isTombstoned === 'function' && isTombstoned('avenants', _av.avenant_id)); });
