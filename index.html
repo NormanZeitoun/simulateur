@@ -2003,6 +2003,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="En cours">En cours</option>
           <option value="Signé">Signé</option>
           <option value="Annulé">Annulé</option>
+          <option value="Fin de mission">Fin de mission</option>
           <option value="Sorti des effectifs">Sorti des effectifs</option>
           <option value="__standby__">⏸ Stand by</option>
         </select>
@@ -8638,7 +8639,7 @@ function recomputeAllDealsEtat() {
   var deals = getDeals();
   var nbCorrected = 0, nbVraiSigne = 0, nbToujoursEnCours = 0;
   deals.forEach(function(d){
-    if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return;
+    if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs' || d.etat === 'Fin de mission') return;
     var _isPC = d.type_deal === 'portage_commercial';
     var sCdps = (d.signature_cdps || '').toString();
     var sCdt  = _isPC ? (d.contrat_client || '').toString() : (d.signature_contrat_travail || '').toString();
@@ -10053,7 +10054,7 @@ function savePlacement() {
   var _sendFinMission = false;
   if (idx >= 0 && deals[idx] && deals[idx].date_fin && deals[idx].date_fin !== _oldDateFin && deals[idx].date_fin !== deals[idx].fin_mission_mail_sent_for) {
     deals[idx].fin_mission_mail_sent_for = deals[idx].date_fin;
-    _sendFinMission = true;
+    _sendFinMission = false; // remplacé par le flux « Fin de mission » (bouton sur la carte), cf. mail sortant différencié
   }
   saveDeals(deals);
   // Visite médicale : créer (si nouveau placement) ou mettre à jour la ligne liée
@@ -10308,7 +10309,7 @@ function findSortantByDealId(dealId) {
   return getSortants().find(function(s){ return s.deal_id === dealId; }) || null;
 }
 
-function openSortiePopup(ts) {
+function openSortiePopup(ts, mode) {
   // Récupérer le deal depuis le timestamp simulation
   var deals = getDeals();
   var deal = deals.find(function(d){ return d.sim_ts === ts; });
@@ -10373,8 +10374,8 @@ function openSortiePopup(ts) {
   }
 
   // Champs éditables (pré-remplis si existant)
-  document.getElementById('sortie-fin-mission').value = existing ? (existing.fin_mission || '') : (deal && deal.date_sortie ? deal.date_sortie : '');
-  document.getElementById('sortie-fin-contrat-travail').value = existing ? (existing.fin_contrat_travail || '') : '';
+  document.getElementById('sortie-fin-mission').value = existing ? (existing.fin_mission || '') : (deal && deal.date_sortie ? deal.date_sortie : (deal && deal.date_fin ? deal.date_fin : ''));
+  document.getElementById('sortie-fin-contrat-travail').value = existing ? (existing.fin_contrat_travail || '') : (mode === 'fin_mission' ? 'Non' : (mode === 'sortie' ? 'Oui' : ''));
   document.getElementById('sortie-date-fin-contrat').value = existing ? (existing.date_fin_contrat || '') : '';
   document.getElementById('sortie-type-fin-contrat').value = existing ? (existing.type_fin_contrat || '') : '';
   document.getElementById('sortie-raison').value = existing ? (existing.raison || '') : '';
@@ -10430,8 +10431,19 @@ function saveSortie() {
   }
 
   // Mettre à jour le deal : état "Sorti des effectifs" + date_sortie = fin mission
-  deals[dealIdx].etat = 'Sorti des effectifs';
-  deals[dealIdx].date_sortie = finMission;
+  if (finContratTrav === 'Non') {
+    // FIN DE MISSION : la mission chez le client s'arrête, le consultant reste porté (intercontrat)
+    deals[dealIdx].etat = 'Fin de mission';
+    deals[dealIdx].date_fin = finMission;
+    if (deals[dealIdx].dateFinPrevisionnelle !== undefined) deals[dealIdx].dateFinPrevisionnelle = finMission;
+    delete deals[dealIdx].date_sortie;
+  } else {
+    // SORTIE DES EFFECTIFS : quitte Seven — la mission se termine aussi (si ce n'était pas déjà fait)
+    deals[dealIdx].etat = 'Sorti des effectifs';
+    deals[dealIdx].date_sortie = dateFinContrat || finMission;
+    deals[dealIdx].date_fin = finMission;
+    if (deals[dealIdx].dateFinPrevisionnelle !== undefined) deals[dealIdx].dateFinPrevisionnelle = finMission;
+  }
   deals[dealIdx].raison_sortie = raison;
   deals[dealIdx].commentaire_sortie = commentaire;
 
@@ -10543,7 +10555,8 @@ function sendSortantNotificationEmail(sortant, deal, isEdit) {
   var entreprise = deal.entreprise || '—';
   var finMissionFR = sortant.fin_mission ? new Date(sortant.fin_mission).toLocaleDateString('fr-FR') : '—';
   var dateFinContratFR = sortant.date_fin_contrat ? new Date(sortant.date_fin_contrat).toLocaleDateString('fr-FR') : '—';
-  var subject = (isEdit ? '[Modification] ' : '[Nouvelle sortie] ')
+  var _isFinMission = (sortant.fin_contrat_travail === 'Non');
+  var subject = (isEdit ? '[Modification] ' : (_isFinMission ? '[Fin de mission] ' : '[Nouvelle sortie] '))
     + name + ' — ' + entreprise + ' — Fin mission ' + finMissionFR;
 
   var appUrl = (typeof window !== 'undefined' && window.location && window.location.href)
@@ -10554,13 +10567,13 @@ function sendSortantNotificationEmail(sortant, deal, isEdit) {
   var html = ''
     + '<div style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#1a1a1a;max-width:640px;">'
     +   '<div style="background:linear-gradient(135deg,#A8322A,#E24B4A);color:#fff;padding:18px 22px;border-radius:8px 8px 0 0;">'
-    +     '<div style="font-size:18px;font-weight:800;">🚪 ' + (isEdit ? 'Modification d\'une sortie' : 'Nouvelle sortie consultant') + '</div>'
+    +     '<div style="font-size:18px;font-weight:800;">' + (isEdit ? '🚪 Modification d\'une sortie' : (_isFinMission ? '⏹ Fin de mission — consultant toujours porté' : '🚪 Nouvelle sortie consultant')) + '</div>'
     +     '<div style="font-size:12px;opacity:0.88;margin-top:4px;">' + name + (entreprise !== '—' ? ' · ' + entreprise : '') + '</div>'
     +   '</div>'
     +   '<div style="border:1px solid #E4E0FA;border-top:0;padding:20px 22px;border-radius:0 0 8px 8px;background:#fff;">'
     +     '<p style="margin:0 0 14px;">Bonjour,</p>'
     +     '<p style="margin:0 0 14px;">'
-    +       (isEdit ? 'La fiche de sortie du consultant ci-dessous a été <strong>modifiée</strong>.' : 'Une <strong>nouvelle sortie</strong> vient d\'être déclarée pour le consultant ci-dessous.')
+    +       (isEdit ? 'La fiche de sortie du consultant ci-dessous a été <strong>modifiée</strong>.' : (_isFinMission ? 'La <strong>mission chez le client se termine</strong> ; le consultant <strong>reste porté chez Seven</strong> (intercontrat). Merci de préparer les éléments de fin de mission.' : 'Une <strong>nouvelle sortie</strong> vient d\'être déclarée pour le consultant ci-dessous.'))
     +     '</p>'
     +     '<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:18px 0;border:1px solid #E4E0FA;border-radius:6px;overflow:hidden;">'
     +       '<tr style="background:#FAF8FF;"><td style="padding:10px 14px;font-weight:700;color:#6B5E9C;width:40%;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Date demande</td><td style="padding:10px 14px;color:#1a1a1a;">' + (sortant.date_demande || '—') + '</td></tr>'
@@ -10947,7 +10960,7 @@ function renderDeals() {
   }
 
   var etatColors = {
-    'Nouveau placement': '#0078D4', 'En cours': '#F0A500',
+    'Nouveau placement': '#0078D4', 'En cours': '#F0A500', 'Fin de mission': '#D46A00',
     'Sign\u00e9': '#1D9E75', 'Annul\u00e9': '#E24B4A', 'Sorti des effectifs': '#6B5E9C'
   };
 
@@ -12377,7 +12390,7 @@ function updateDealField(dealId, key, value) {
     : (key === 'signature_cdps' || key === 'signature_contrat_travail');
   if (_triggerKeys) {
     var currentEtat = deals[idx].etat || '';
-    if (currentEtat !== 'Annulé' && currentEtat !== 'Sorti des effectifs') {
+    if (currentEtat !== 'Annulé' && currentEtat !== 'Sorti des effectifs' && currentEtat !== 'Fin de mission') {
       var sCdps = (deals[idx].signature_cdps || '').toString();
       var sSecond = _isPC
         ? (deals[idx].contrat_client || '').toString()
@@ -12493,7 +12506,7 @@ function _candConnaitTjm(cand) {
     var cFullName = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim().toLowerCase();
     var candDeals = deals.filter(function(d){
       if (!d) return false;
-      if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return false;
+      if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs' || d.etat === 'Fin de mission') return false;
       var dEmail = (d.email || '').toLowerCase();
       var dFullName = ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase();
       if (cEmail && dEmail && dEmail === cEmail) return true;
@@ -13573,6 +13586,7 @@ function computeCandStatutAuto(cand) {
   var hasActive = false;  // au moins un deal en cours (date non échue)
   var hasPast = false;    // au moins un deal terminé
   var hasPorteSansMission = false;  // Porté sorti mais fin_contrat_travail = Non → encore Seven, plus de mission
+  var hasFinMission = false;        // Deal en « Fin de mission » (reste porté, intercontrat)
 
   // Récupérer les sortants pour détecter "Porté sans mission"
   var allSortants = (typeof getSortants === 'function') ? getSortants() : [];
@@ -13592,6 +13606,8 @@ function computeCandStatutAuto(cand) {
       } else {
         hasPast = true;
       }
+    } else if (d.etat === 'Fin de mission') {
+      hasFinMission = true; hasPast = true;
     } else if (d.etat === 'Signé' || d.etat === 'En cours' || d.etat === 'Nouveau placement') {
       // Deal en cours : tant que l'état du deal est Signé/En cours/Nouveau placement,
       // le candidat est considéré comme ACTIF (Porté), peu importe la date_fin théorique.
@@ -13609,7 +13625,7 @@ function computeCandStatutAuto(cand) {
   var hasSortantSansFinContrat = sortantsOfCand.some(function(s){
     return s.fin_contrat_travail === 'Non';
   });
-  if (hasSortantSansFinContrat && !hasActive) {
+  if ((hasSortantSansFinContrat || hasFinMission) && !hasActive) {
     return 'Porté sans mission';
   }
 
@@ -14237,7 +14253,7 @@ function _peFmtDate(v) {
 function _peBaseDeals() {
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
   return deals.filter(function(d) {
-    if (!d || d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return false;
+    if (!d || d.etat === 'Annulé' || d.etat === 'Sorti des effectifs' || d.etat === 'Fin de mission') return false;
     if (d.stand_by === true) return false;
     if (d.etat !== 'En cours' && d.etat !== 'Signé' && d.etat !== 'Nouveau placement') return false;
     if (!(d.date_entree || d.pe_date_debut)) return false;
@@ -15031,7 +15047,7 @@ function getProlongationDeals() {
   var curMonth = (window._prolongMonth != null) ? window._prolongMonth : today.getMonth(); // 0-11
 
   return deals.filter(function(d) {
-    if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return false;
+    if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs' || d.etat === 'Fin de mission') return false;
     if (d.stand_by === true) return false; // stand by : pas (encore) un deal actif → pas de relance prolongation
     if (!d.date_fin) return false;
     var df = new Date(d.date_fin);
@@ -20536,6 +20552,7 @@ function confirmProlongationAvenant(dealId, mode) {
     // Une NOUVELLE LIGNE porte la mission chez le nouveau client — ce n'est PAS un nouveau deal
     // commissionnable (flag prolongation_avenant, exclu des commissions).
     var _traceAv = deal.historique_prolongations[deal.historique_prolongations.length - 1];
+    deal.historique_prolongations.pop(); // la trace vit sur la ligne de continuité, l'historique d'origine reste intact
     var newDeal = JSON.parse(JSON.stringify(deal));
     newDeal.id = Date.now() + Math.floor(Math.random() * 1000);
     newDeal.entreprise = newEntreprise;
@@ -24990,7 +25007,7 @@ function getFinsDeMissionNonTraitees() {
 
   return deals.filter(function(d){
     if (!d) return false;
-    if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return false;
+    if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs' || d.etat === 'Fin de mission') return false;
     if (!d.date_fin) return false;
     var df = new Date(d.date_fin);
     if (isNaN(df.getTime())) return false;
@@ -30922,8 +30939,10 @@ function _candSortieDureeInfo(cand) {
     var t0 = function(v){ if (!v) return 0; var t = new Date(v).getTime(); return isNaN(t) ? 0 : t; };
     var startOf = function(d){ return t0(d.date_entree || d.date_deal) || t0(d.date_fin) || 0; };
     // ── Sortie des effectifs : actualisée — s'il reste une mission/avenant en cours, il n'est pas sorti ──
-    var enCours = ds.some(function(d){ return d.etat !== 'Sorti des effectifs'; });
+    var enCours = ds.some(function(d){ return d.etat !== 'Sorti des effectifs' && d.etat !== 'Fin de mission'; });
+    var enInter = !enCours && ds.some(function(d){ return d.etat === 'Fin de mission'; }) && !ds.some(function(d){ return d.etat === 'Sorti des effectifs' && d.date_sortie && new Date(d.date_sortie) <= new Date(); });
     if (enCours) { out.sortie = 'En mission'; out.sortieColor = '#1D9E75'; }
+    else if (enInter) { out.sortie = 'En intercontrat'; out.sortieColor = '#D46A00'; }
     else {
       var maxS = 0;
       ds.forEach(function(d){ var s = t0(d.date_sortie) || t0(d.date_fin); if (s > maxS) maxS = s; });
@@ -30936,8 +30955,8 @@ function _candSortieDureeInfo(cand) {
     var minD = 0, maxF = 0, anyOpen = false;
     sameCli.forEach(function(d){
       var s = startOf(d); if (s && (!minD || s < minD)) minD = s;
-      var sorti = (d.etat === 'Sorti des effectifs');
-      var f = sorti ? (t0(d.date_sortie) || t0(d.date_fin)) : t0(d.date_fin);
+      var sorti = (d.etat === 'Sorti des effectifs' || d.etat === 'Fin de mission');
+      var f = (d.etat === 'Sorti des effectifs') ? (t0(d.date_sortie) || t0(d.date_fin)) : t0(d.date_fin);
       if (!sorti) anyOpen = true;
       if (f > maxF) maxF = f;
     });
@@ -31390,7 +31409,12 @@ function buildCandPlacementsHTML(cand) {
       var sortantBg = existingSortant ? '#FFF8E1' : '#FDECEC';
       var sortantColor = existingSortant ? '#8A5F00' : '#C24141';
       var sortantBorder = existingSortant ? '#F0D98A' : '#F5B5B5';
-      actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'))},100);" title="' + (existingSortant ? 'Modifier la fiche sortant' : 'Déclencher une sortie') + '" style="padding:4px 10px;background:' + sortantBg + ';color:' + sortantColor + ';border:1.5px solid ' + sortantBorder + ';border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">' + sortantLabel + '</button>';
+      if (existingSortant) {
+        actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'))},100);" title="Modifier la fiche sortant" style="padding:4px 10px;background:' + sortantBg + ';color:' + sortantColor + ';border:1.5px solid ' + sortantBorder + ';border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">' + sortantLabel + '</button>';
+      } else {
+        if (d.etat !== 'Fin de mission') actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'), \'fin_mission\')},100);" title="Fin de mission chez le client — le consultant reste porté chez Seven (intercontrat)" style="padding:4px 10px;background:#FFF6E8;color:#B25E00;border:1.5px solid #F5C98A;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#9209; Fin de mission</button>';
+        actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'), \'sortie\')},100);" title="Sortie des effectifs — le consultant quitte Seven" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">🚪 Sortir des effectifs</button>';
+      }
 
       // Annuler le placement
       actionsHtml += '<button onclick="cancelDeal(' + d.id + ')" title="Annuler le placement" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#10060; Annuler</button>';
@@ -31562,6 +31586,7 @@ function _pcKV(label, value, color) {
 // ── Historique chronologique d'un placement : original + prolongations + avenants ──
 function _renderPlacementHistory(deal) {
   var hist = Array.isArray(deal.historique_prolongations) ? deal.historique_prolongations : [];
+  function _avStart(h){ try { if (h && h.avenant_id && typeof getAvenants === 'function') { var _a = getAvenants().find(function(x){ return x && x.id === h.avenant_id; }); if (_a && _a.date_debut) return _a.date_debut; } } catch(e){} return h ? h.ancienne_date_fin : ''; }
   var avMission = (Array.isArray(deal.avenants_mission) ? deal.avenants_mission : [])
     .filter(function(_av){ return !(_av && _av.avenant_id && typeof isTombstoned === 'function' && isTombstoned('avenants', _av.avenant_id)); });
   if (hist.length === 0 && avMission.length === 0) return '';
@@ -31621,7 +31646,7 @@ function _renderPlacementHistory(deal) {
       entry.color = '#8A5F00';
       entry.bg = '#FFF8E8';
       var clt = h.nouveau_client || h.ancien_client || '';
-      entry.detail = (h.type_avenant ? h.type_avenant + ' · ' : '') + (h.motif || '') + (clt ? ' → ' + clt : '') + ((h.ancienne_date_fin || h.nouvelle_date_fin) ? ' · Du ' + fmtDate(h.ancienne_date_fin) + ' au ' + fmtDate(h.nouvelle_date_fin) : '');
+      entry.detail = (h.type_avenant ? h.type_avenant + ' · ' : '') + (h.motif || '') + (clt ? ' → ' + clt : '') + ((h.ancienne_date_fin || h.nouvelle_date_fin) ? ' · Du ' + fmtDate(_avStart(h)) + ' au ' + fmtDate(h.nouvelle_date_fin) : '');
       entry.sim_ts = h.sim_ts || null;
     } else if (h.type === 'avenant_nouvelle_simu') {
       avenantCount++;
@@ -31630,7 +31655,7 @@ function _renderPlacementHistory(deal) {
       entry.icon = '📊';
       entry.color = '#1A4F96';
       entry.bg = '#EEF4FF';
-      entry.detail = (h.type_avenant ? h.type_avenant + ' · ' : '') + (h.motif || '') + ((h.ancienne_date_fin || h.nouvelle_date_fin) ? ' · Du ' + fmtDate(h.ancienne_date_fin) + ' au ' + fmtDate(h.nouvelle_date_fin) : '');
+      entry.detail = (h.type_avenant ? h.type_avenant + ' · ' : '') + (h.motif || '') + ((h.ancienne_date_fin || h.nouvelle_date_fin) ? ' · Du ' + fmtDate(_avStart(h)) + ' au ' + fmtDate(h.nouvelle_date_fin) : '');
       entry.sim_ts = h.sim_ts || null;
     } else {
       // Fallback type inconnu
@@ -35999,6 +36024,7 @@ function _dgIsActif(d) {
   if (!d || d.etat === 'Annulé') return false;
   if (d.prolongation_avenant) return false; // continuité de contrat : pas un nouveau deal
   var today = new Date(); today.setHours(23,59,59,999);
+  if (d.etat === 'Fin de mission') { var dfm = _dgParseDate(d.date_fin); return !!(dfm && dfm > today); }
   if (d.etat === 'Sorti des effectifs') { var ds = _dgParseDate(d.date_sortie); return !!(ds && ds > today); }
   if (d.etat === 'Signé' || d.etat === 'En cours' || d.etat === 'Nouveau placement') {
     var ds2 = _dgParseDate(d.date_sortie); if (ds2 && ds2 <= today) return false; return true;
