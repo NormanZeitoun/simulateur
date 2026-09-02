@@ -1948,7 +1948,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <div style="position:relative;flex:1;min-width:200px;">
-          <input id="clients-search" type="text" placeholder="Rechercher une entreprise..." oninput="_debounceSearch(&quot;clients&quot;, renderClients)" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
+          <input id="clients-search" type="text" placeholder="Rechercher une entreprise ou un manager..." oninput="_debounceSearch(&quot;clients&quot;, renderClients)" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
           <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>
         </div>
         <select id="clients-filter-commercial" onchange="renderClients()" style="padding:7px 10px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;background:#F5F3FF;cursor:pointer;color:#4B36EC;font-weight:600;min-width:150px;">
@@ -8733,7 +8733,7 @@ function openPlacementPopup(ts) {
   var parts = (sim.consultant || '').trim().split(' ');
   document.getElementById('pl-prenom').value = parts[0] || '';
   document.getElementById('pl-nom').value = parts.slice(1).join(' ') || '';
-  document.getElementById('pl-email').value = sim.email || '';
+  document.getElementById('pl-email').value = sim.email_candidat_reel || sim.email || ''; // email du CANDIDAT (jamais l'adresse d'envoi, qui peut être le client)
   // Tel candidat : top-level prioritaire, fallback sur snapshot (anciennes simus)
   document.getElementById('pl-tel').value = sim.tel || (sim.snapshot && sim.snapshot.tel) || '';
   document.getElementById('pl-poste').value = sim.poste || '';
@@ -10325,7 +10325,7 @@ function openSortiePopup(ts, mode) {
         prenom: parts[0] || '',
         nom: parts.slice(1).join(' ') || '',
         commercial: sim.commercial || '',
-        email: sim.email || '',
+        email: sim.email_candidat_reel || sim.email || '',
         entreprise: sim.entreprise || '',
         poste: sim.poste || '',
         tjm: sim.tjm || '',
@@ -10421,7 +10421,7 @@ function saveSortie() {
     deal = {
       id: Date.now(), sim_ts: ts,
       prenom: parts[0] || '', nom: parts.slice(1).join(' ') || '',
-      email: sim.email || '', poste: sim.poste || '',
+      email: sim.email_candidat_reel || sim.email || '', poste: sim.poste || '',
       entreprise: sim.entreprise || '', commercial: sim.commercial || '',
       tjm: sim.tjm || '', nb_jours: sim.nb_jours || '',
       date_created: new Date().toLocaleDateString('fr-FR')
@@ -30061,7 +30061,7 @@ function showClientsTab() {
       +   '</div>'
       +   '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">'
       +     '<div style="position:relative;flex:1;min-width:200px;">'
-      +       '<input id="clients-search" type="text" placeholder="Rechercher une entreprise..." oninput="_debounceSearch(&quot;clients&quot;, renderClients)" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">'
+      +       '<input id="clients-search" type="text" placeholder="Rechercher une entreprise ou un manager..." oninput="_debounceSearch(&quot;clients&quot;, renderClients)" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">'
       +       '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>'
       +     '</div>'
       +     '<select id="clients-filter-commercial" onchange="renderClients()" style="padding:7px 10px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;background:#F5F3FF;cursor:pointer;color:#4B36EC;font-weight:600;min-width:150px;">'
@@ -30129,7 +30129,15 @@ function renderClients() {
     clients = clients.filter(function(cl){ return matchesCommercial(cl, filtComm); });
   }
 
-  if (q) clients = clients.filter(function(cl){ return cl.name.toLowerCase().indexOf(q)>=0; });
+  if (q) clients = clients.filter(function(cl){
+    if ((cl.name || '').toLowerCase().indexOf(q) >= 0) return true;
+    // Recherche aussi dans les MANAGERS du client (nom, email, téléphone)
+    return (cl.managers || []).some(function(m){
+      return m && (((m.name || '').toLowerCase().indexOf(q) >= 0)
+        || ((m.email || '').toLowerCase().indexOf(q) >= 0)
+        || ((m.tel || '').replace(/[\s.\-]/g, '').indexOf(q.replace(/[\s.\-]/g, '')) >= 0 && q.replace(/[\s.\-]/g, '').length >= 4));
+    });
+  });
   // Filtre Mauvais payeur
   if (window._clientsFilterBadPayer) {
     clients = clients.filter(function(cl){ return typeof _clientIsBadPayer === 'function' && _clientIsBadPayer(cl); });
