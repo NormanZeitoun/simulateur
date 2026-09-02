@@ -7566,6 +7566,9 @@ var _SHARED_CONFIG_KEYS = [
   { ls: 'sp_custom_client_doc_types_v1', field: 'custom_client_doc_types' },
   { ls: 'sp_adv_letters_v1',         field: 'adv_letters' },
   { ls: 'sp_impayes_last_import_v1',  field: 'impayes_last_import' },
+  { ls: 'sp_vm_notif_sent_v1',        field: 'vm_notif_sent' },
+  { ls: 'sp_se_notif_sent_v1',        field: 'se_notif_sent' },
+  { ls: 'sp_se_alerte_sent_v1',       field: 'se_alerte_sent' },
   { ls: 'sp_tombstones_v1',          field: 'tombstones' }
 ];
 
@@ -7618,6 +7621,14 @@ function _mergeCommExclusions(localObj, remoteVal) {
       return;
     }
     // Date du dernier import impayés : on garde toujours la plus récente (max), partagée entre tous les postes
+    if (c.field === 'vm_notif_sent' || c.field === 'se_notif_sent' || c.field === 'se_alerte_sent') {
+      try {
+        var _rVm = String(shared[c.field] || '');
+        var _lVm = String(localStorage.getItem(c.ls) || '');
+        if (_rVm > _lVm) localStorage.setItem(c.ls, _rVm);
+      } catch(e){}
+      return;
+    }
     if (c.field === 'impayes_last_import') {
       try {
         var _rImp = +(shared.impayes_last_import || 0);
@@ -11321,6 +11332,8 @@ var DEAL_ALL_COLS = [
   // ── Salarié étranger ──
   {key:'salarie_etranger',         label:'Salarié étranger'},
   {key:'type_sejour',              label:'Type de séjour'},
+  {key:'sejour_date_delivrance',   label:'Délivrance titre'},
+  {key:'sejour_date_expiration',   label:'Expiration titre'},
   {key:'mail_verif_titre',         label:'Mail vérif. titre'},
   {key:'demande_autorisation',     label:'Demande autorisation'},
   {key:'decision_favorable',       label:'Décision favorable'},
@@ -11771,15 +11784,36 @@ function getCellValue(d, key){
     case 'email': return fmt(d.email);
     case 'tel': return fmt(d.tel);
     case 'poste': return fmt(d.poste);
-    case 'entreprise': return fmt(d.entreprise);
+    case 'entreprise':
+      if (!d.entreprise) return '\u2014';
+      var entCliId = null;
+      try {
+        var entCli = (typeof getClients === 'function') ? getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === (d.entreprise||'').trim().toLowerCase(); }) : null;
+        if (entCli) entCliId = entCli.id;
+      } catch(e) {}
+      if (entCliId != null) {
+        return '<span onclick="event.stopPropagation();mainNavTo(\'clients\');setTimeout(function(){openClientPage(' + entCliId + ');},120);" '
+          + 'style="color:#4B36EC;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" '
+          + 'title="Ouvrir la fiche client">' + String(d.entreprise).replace(/</g,'&lt;') + '</span>';
+      }
+      return fmt(d.entreprise);
     case 'manager':
       var mgrName = d.manager || '';
       if (!mgrName) return '\u2014';
-      var mgrClientId = null;
+      var mgrClientId = null, mgrIdx = -1;
       try {
         var mgrCli = (typeof getClients === 'function') ? getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === (d.entreprise||'').trim().toLowerCase(); }) : null;
-        if (mgrCli) mgrClientId = mgrCli.id;
+        if (mgrCli) {
+          mgrClientId = mgrCli.id;
+          mgrIdx = (mgrCli.managers || []).findIndex(function(m){ return m && (m.name||'').trim().toLowerCase() === mgrName.trim().toLowerCase(); });
+        }
       } catch(e) {}
+      if (mgrClientId != null && mgrIdx >= 0) {
+        // Ouvre UNIQUEMENT la fiche du manager (modale), comme signataire / service comptable
+        return '<span onclick="event.stopPropagation();openManagerFiche(' + mgrClientId + ',' + mgrIdx + ')" '
+          + 'style="color:#4B36EC;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" '
+          + 'title="Ouvrir la fiche manager">' + String(mgrName).replace(/</g,'&lt;') + '</span>';
+      }
       if (mgrClientId != null) {
         return '<span onclick="event.stopPropagation();mainNavTo(\'clients\');setTimeout(function(){openClientPage(' + mgrClientId + ');},120);" '
           + 'style="color:#4B36EC;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" '
@@ -11954,17 +11988,23 @@ function getCellValue(d, key){
 
         // Si frais_tt absent, tenter de le récupérer depuis le snapshot (SIMUs anciennes)
         // Le snapshot contient les valeurs brutes du formulaire au moment de la SIMU
+        // (à plat sur les snapshots récents, dans snapshot._state sur d'autres → on lit les deux)
         if (!fraisTTMois && simTT.snapshot) {
           var snap = simTT.snapshot;
-          if (!jTT) jTT = parseInt(snap.jours_tt) || 0;
-          // Recalcul depuis les charges du snapshot
-          var totalChgSnap = (parseFloat(snap.tt_loyer)||0) + (parseFloat(snap.tt_elec)||0)
-                           + (parseFloat(snap.tt_chauffage)||0) + (parseFloat(snap.tt_taxe)||0)
-                           + (parseFloat(snap.tt_assurance)||0) + (parseFloat(snap.tt_internet)||0)
-                           + (parseFloat(snap.tt_mobile)||0);
-          if (totalChgSnap > 0 && jTT > 0) {
-            // Formule officielle: total_charges × 15% × (jours_tt/5) / 21 × nb_jours
-            fraisTTMois = totalChgSnap * 0.15 * (jTT / 5) / 21 * nbJoursSim;
+          var _snapGet = function(fld){
+            var v = snap[fld];
+            if ((v === undefined || v === null || v === '') && snap._state) v = snap._state[fld];
+            return parseFloat(v) || 0;
+          };
+          if (!jTT) jTT = Math.round(_snapGet('jours_tt')) || 0;
+          var totalChgSnap = _snapGet('tt_loyer') + _snapGet('tt_elec')
+                           + _snapGet('tt_chauffage') + _snapGet('tt_taxe')
+                           + _snapGet('tt_assurance') + _snapGet('tt_internet')
+                           + _snapGet('tt_mobile');
+          if (totalChgSnap > 0) {
+            // Formule officielle (identique à calcTT du simulateur) : charges × 15% / 21 × nb_jours
+            // → linéaire en nb_jours, indépendante du nombre de jours de TT
+            fraisTTMois = totalChgSnap * 0.15 / 21 * nbJoursSim;
           }
         }
 
@@ -11972,13 +12012,13 @@ function getCellValue(d, key){
           var ttJour = fraisTTMois / nbJoursSim;
           return ttJour.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
         }
-        // Méthode 2 (fallback) : recalcul depuis charges + jours_tt si frais_tt non stocké
+        // Méthode 2 (fallback) : recalcul depuis les charges (champs plats) si frais_tt non stocké
         var totalChg = (parseFloat(simTT.tt_loyer)||0) + (parseFloat(simTT.tt_elec)||0)
                      + (parseFloat(simTT.tt_chauffage)||0) + (parseFloat(simTT.tt_taxe)||0)
                      + (parseFloat(simTT.tt_assurance)||0) + (parseFloat(simTT.tt_internet)||0)
                      + (parseFloat(simTT.tt_mobile)||0);
-        if (totalChg > 0 && jTT > 0) {
-          var indemTT = totalChg * 0.15 * (jTT / 5) / 21;  // €/j
+        if (totalChg > 0) {
+          var indemTT = totalChg * 0.15 / 21;  // €/j — formule identique à calcTT (linéaire)
           return indemTT.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
         }
         // Méthode 3 : que des jours TT, sans charges → afficher juste le nb de jours
@@ -12079,6 +12119,9 @@ function getCellValue(d, key){
     case 'demande_autorisation':
     case 'decision_favorable':
       return renderOnboardingSelect(d, key);
+    case 'sejour_date_delivrance':
+    case 'sejour_date_expiration':
+      return '<input type="date" value="' + String(d[key]||'').slice(0,10) + '" onchange="updateDealField(' + d.id + ',\'' + key + '\',this.value);event.stopPropagation();" onclick="event.stopPropagation();" style="padding:3px 5px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;font-family:inherit;">';
     case 'salarie_etranger':
       return '<input type="checkbox" ' + (d.salarie_etranger ? 'checked' : '') + ' onchange="updateDealField(' + d.id + ',\'salarie_etranger\',this.checked);event.stopPropagation();" onclick="event.stopPropagation();" style="accent-color:#F0A500;cursor:pointer;">';
     case 'vm_inscription': return _dealVMSelect(d, 'inscription');
@@ -14167,7 +14210,8 @@ var RH_SUBTABS = [
   { key: 'impayes',      label: 'Impayés',           icon: '\u{1F4B3}', ready: true  },
   { key: 'salaires_bloques', label: 'Salaires bloqu\u00e9s', icon: '\u{1F512}', ready: true  },
   { key: 'cooptation',   label: 'Cooptation',        icon: '\u{1F91D}', ready: true  },
-  { key: 'visite_medicale', label: 'Visite médicale', icon: '\u{1F3E5}', ready: true }
+  { key: 'visite_medicale', label: 'Visite médicale', icon: '\u{1F3E5}', ready: true },
+  { key: 'salarie_etranger', label: 'Salarié étranger', icon: '\u{1F30D}', ready: true }
 ];
 
 function showRHSection(subtab) {
@@ -14200,6 +14244,8 @@ function showRHSection(subtab) {
     showVisiteMedicaleView();
   } else if (subtab === 'periode_essai') {
     showPeriodeEssaiView();
+  } else if (subtab === 'salarie_etranger') {
+    showSalarieEtrangerView();
   } else {
     // Placeholder pour les sous-sections non encore implémentées
     showRHPlaceholder(subtab);
@@ -14481,18 +14527,321 @@ function maybeRunPeriodeEssaiScan() {
   try {
     var today = new Date().toISOString().slice(0, 10);
     if (localStorage.getItem(PE_SCAN_KEY) === today) return;   // 1 scan par jour max
-    localStorage.setItem(PE_SCAN_KEY, today);
-    runPeriodeEssaiScan();
+    // FIX : attendre la fin de la sync initiale ET le token Graph avant de scanner.
+    // Avant : le verrou du jour était posé à load+7s alors que le token n'était pas
+    // encore acquis → envoi échouait silencieusement et ne retentait que le lendemain
+    // (où le même scénario se reproduisait) → les mails ne partaient jamais.
+    var tries = 0;
+    (function _waitSyncPE(){
+      if (window._initialSyncDone === true && typeof odToken !== 'undefined' && odToken) {
+        if (localStorage.getItem(PE_SCAN_KEY) === today) return;  // re-check (autre onglet a pu scanner entre-temps)
+        localStorage.setItem(PE_SCAN_KEY, today);                 // verrou posé SEULEMENT quand on peut réellement envoyer
+        runPeriodeEssaiScan();
+      } else if (tries < 60) {
+        tries++;
+        setTimeout(_waitSyncPE, 1000);
+      } else {
+        console.warn('[PE scan] token Graph indisponible après 60 s — scan reporté à la prochaine ouverture (verrou non posé)');
+      }
+    })();
   } catch(e) {}
 }
 window.addEventListener('load', function(){ setTimeout(maybeRunPeriodeEssaiScan, 7000); });
+
+// ═══════════════════════════════════════════════════════════════════
+// SALARIÉ ÉTRANGER — suivi des titres de séjour (Suivi RH)
+// Données stockées SUR le deal (sejour_date_delivrance, sejour_date_expiration,
+// sejour_date_relance, sejour_titre_recu, sejour_commentaire) → même source que
+// le tableau des deals, sync inter-postes via saveDeals (updated_at auto).
+// ═══════════════════════════════════════════════════════════════════
+var SE_FILTER = { periode: 'all', search: '', sort: 'nom', dir: 'asc' };
+
+function _seDeals() {
+  var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  return deals.filter(function(d) {
+    if (!d || d.salarie_etranger !== true) return false;
+    if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return false;
+    return true;
+  });
+}
+// Jours restants avant expiration du titre (négatif = expiré), null si pas de date
+function _seJoursRestants(d) {
+  var exp = (d.sejour_date_expiration || '').slice(0, 10);
+  if (!exp) return null;
+  var e = new Date(exp); if (isNaN(e.getTime())) return null;
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  e.setHours(0, 0, 0, 0);
+  return Math.round((e.getTime() - today.getTime()) / 86400000);
+}
+function _seFmtDate(v) {
+  if (!v) return '—';
+  var s = String(v).slice(0, 10).split('-');
+  return s.length === 3 ? (s[2] + '/' + s[1] + '/' + s[0]) : String(v);
+}
+// Titres expirant dans les 30 jours calendaires (expirés inclus)
+function _seExpiring30() {
+  return _seDeals().filter(function(d) {
+    var j = _seJoursRestants(d);
+    return j !== null && j <= 30;
+  });
+}
+function _seUpdate(dealId, field, value) {
+  if (typeof updateDealField === 'function') updateDealField(dealId, field, value);
+  renderSalarieEtranger();
+}
+function _seSetSort(col) {
+  if (SE_FILTER.sort === col) SE_FILTER.dir = (SE_FILTER.dir === 'asc') ? 'desc' : 'asc';
+  else { SE_FILTER.sort = col; SE_FILTER.dir = 'asc'; }
+  renderSalarieEtranger();
+}
+function renderSalarieEtranger() {
+  var container = document.getElementById('rh-content-container');
+  if (!container) return;
+  var all = _seDeals();
+  var f = SE_FILTER;
+
+  var list = all.filter(function(d) {
+    var j = _seJoursRestants(d);
+    if (f.periode === 'expired' && !(j !== null && j < 0)) return false;
+    if (f.periode === '30' && !(j !== null && j <= 30)) return false;
+    if (f.periode === '60' && !(j !== null && j <= 60)) return false;
+    if (f.periode === '90' && !(j !== null && j <= 90)) return false;
+    if (f.periode === 'none' && (d.sejour_date_expiration || '')) return false;
+    if (f.search) {
+      var q = f.search.toLowerCase();
+      var hay = [(d.prenom||''), (d.nom||''), (d.entreprise||'')].join(' ').toLowerCase();
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+  // Tri nom/prénom alphabétique (asc/desc)
+  var dirMul = (f.dir === 'desc') ? -1 : 1;
+  list.sort(function(a, b) {
+    var ka = ((f.sort === 'prenom' ? a.prenom : a.nom) || '').trim();
+    var kb = ((f.sort === 'prenom' ? b.prenom : b.nom) || '').trim();
+    return ka.localeCompare(kb, 'fr', { sensitivity: 'base' }) * dirMul;
+  });
+
+  var nb30 = all.filter(function(d){ var j = _seJoursRestants(d); return j !== null && j <= 30; }).length;
+  var nbSansTitre = all.filter(function(d){ var j = _seJoursRestants(d); return j !== null && j <= 30 && d.sejour_titre_recu !== 'Oui'; }).length;
+
+  var arrow = function(col) {
+    if (f.sort !== col) return ' <span style="font-size:9px;color:#C4BCDC;opacity:0.6;">▲▼</span>';
+    return f.dir === 'asc' ? ' <span style="font-size:10px;color:#7343EE;">▲</span>' : ' <span style="font-size:10px;color:#7343EE;">▼</span>';
+  };
+  var dateInp = function(d, field) {
+    return '<input type="date" value="' + String(d[field]||'').slice(0,10) + '" onchange="_seUpdate(' + d.id + ',\'' + field + '\',this.value)" style="padding:4px 6px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;font-family:inherit;background:#fff;">';
+  };
+
+  var rows = list.map(function(d) {
+    var j = _seJoursRestants(d);
+    var badge = '';
+    if (j !== null) {
+      if (j < 0) badge = '<span style="display:inline-block;margin-left:6px;padding:1px 8px;background:#FDECEC;color:#A8322A;border-radius:10px;font-size:9.5px;font-weight:800;">Expiré depuis ' + (-j) + ' j</span>';
+      else if (j <= 30) badge = '<span style="display:inline-block;margin-left:6px;padding:1px 8px;background:#FFF3E0;color:#B26A00;border-radius:10px;font-size:9.5px;font-weight:800;">' + j + ' j restants</span>';
+      else if (j <= 90) badge = '<span style="display:inline-block;margin-left:6px;padding:1px 8px;background:#EEF4FF;color:#1A4F96;border-radius:10px;font-size:9.5px;font-weight:700;">' + j + ' j</span>';
+    }
+    var recu = d.sejour_titre_recu || '';
+    return '<tr style="border-bottom:1px solid #F0EDF9;' + (j !== null && j < 0 && recu !== 'Oui' ? 'background:#FFF8F8;' : '') + '">'
+      + '<td style="padding:9px 10px;font-weight:700;color:#1A1033;">' + String(d.nom||'—').toUpperCase().replace(/</g,'&lt;') + '</td>'
+      + '<td style="padding:9px 10px;">' + String(d.prenom||'—').replace(/</g,'&lt;') + '</td>'
+      + '<td style="padding:9px 10px;color:#6B5E9C;">' + String(d.entreprise||'—').replace(/</g,'&lt;') + '</td>'
+      + '<td style="padding:9px 10px;font-size:11.5px;color:#6B5E9C;">' + (d.type_sejour || '—') + '</td>'
+      + '<td style="padding:9px 10px;">' + dateInp(d, 'sejour_date_delivrance') + '</td>'
+      + '<td style="padding:9px 10px;white-space:nowrap;">' + dateInp(d, 'sejour_date_expiration') + badge + '</td>'
+      + '<td style="padding:9px 10px;">' + dateInp(d, 'sejour_date_relance') + '</td>'
+      + '<td style="padding:9px 10px;"><select onchange="_seUpdate(' + d.id + ',\'sejour_titre_recu\',this.value)" style="padding:5px 8px;border:1.5px solid ' + (recu === 'Oui' ? '#9FE1CB' : '#E4E0FA') + ';border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;background:' + (recu === 'Oui' ? '#F0FAF4' : (recu === 'Non' ? '#FFF8E8' : '#fff')) + ';color:' + (recu === 'Oui' ? '#0F5132' : (recu === 'Non' ? '#8A5F00' : '#9E94C4')) + ';">'
+      +   '<option value=""' + (!recu ? ' selected' : '') + '>—</option>'
+      +   '<option value="Oui"' + (recu === 'Oui' ? ' selected' : '') + '>Oui</option>'
+      +   '<option value="Non"' + (recu === 'Non' ? ' selected' : '') + '>Non</option>'
+      + '</select></td>'
+      + '<td style="padding:9px 10px;"><input type="text" value="' + String(d.sejour_commentaire||'').replace(/"/g,'&quot;').replace(/</g,'&lt;') + '" onchange="_seUpdate(' + d.id + ',\'sejour_commentaire\',this.value)" placeholder="—" style="width:190px;padding:4px 7px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;font-family:inherit;box-sizing:border-box;"></td>'
+      + '</tr>';
+  }).join('');
+
+  container.innerHTML = ''
+    + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'
+    +   '<div style="font-size:15px;font-weight:800;color:#1A1033;">\u{1F30D} Salariés étrangers — titres de séjour</div>'
+    +   '<span style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;background:#EEF9F3;color:#0F5132;border:1.5px solid #9FE1CB;">' + all.length + ' salarié' + (all.length>1?'s':'') + '</span>'
+    +   (nb30 > 0 ? '<span style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:700;background:#FFF3E0;color:#B26A00;border:1.5px solid #F0D98A;">\u23F3 ' + nb30 + ' expire' + (nb30>1?'nt':'') + ' sous 30 j</span>' : '')
+    +   (nbSansTitre > 0 ? '<span style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:700;background:#FDECEC;color:#A8322A;border:1.5px solid #F5B5B5;">\u26A0 ' + nbSansTitre + ' sans titre reçu</span>' : '')
+    + '</div>'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;background:#fff;border:1.5px solid #F0EDF9;border-radius:11px;padding:12px 14px;margin-bottom:12px;">'
+    +   '<div style="flex:2;min-width:220px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:4px;letter-spacing:0.06em;">Recherche</label>'
+    +     '<input id="se-search" type="text" placeholder="Nom, prénom, entreprise…" value="' + String(f.search||'').replace(/"/g,'&quot;') + '" oninput="SE_FILTER.search=this.value;_debounceSearchRefocus(\'se\', renderSalarieEtranger, \'se-search\');" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    +   '</div>'
+    +   '<div style="min-width:200px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:4px;letter-spacing:0.06em;">Date d\'expiration</label>'
+    +     '<select onchange="SE_FILTER.periode=this.value;renderSalarieEtranger();" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;background:#fff;cursor:pointer;font-family:inherit;">'
+    +       '<option value="all"' + (f.periode==='all'?' selected':'') + '>Toutes</option>'
+    +       '<option value="expired"' + (f.periode==='expired'?' selected':'') + '>\u26A0 Déjà expirés</option>'
+    +       '<option value="30"' + (f.periode==='30'?' selected':'') + '>Expire sous 30 jours</option>'
+    +       '<option value="60"' + (f.periode==='60'?' selected':'') + '>Expire sous 60 jours</option>'
+    +       '<option value="90"' + (f.periode==='90'?' selected':'') + '>Expire sous 90 jours</option>'
+    +       '<option value="none"' + (f.periode==='none'?' selected':'') + '>Sans date d\'expiration</option>'
+    +     '</select>'
+    +   '</div>'
+    +   ((f.periode !== 'all' || f.search)
+        ? '<button onclick="SE_FILTER={periode:\'all\',search:\'\',sort:SE_FILTER.sort,dir:SE_FILTER.dir};renderSalarieEtranger();" style="padding:8px 13px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:8px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;">\u2715 Réinitialiser</button>'
+        : '')
+    + '</div>'
+    + '<div style="font-size:11px;color:#9E94C4;margin-bottom:10px;">Les salariés listés sont les deals cochés \u00ab Salarié étranger \u00bb. Les dates de délivrance et d\'expiration sont <b>les mêmes champs que dans le tableau des deals</b> : toute modification ici ou là-bas est partagée. Notifications automatiques à Marie + Clémence : point mensuel à la 1\u02b3\u1d49 ouverture du mois, et alerte à 5 jours de la fin du mois si des titres expirant sous 30 jours n\'ont pas été reçus.</div>'
+    + '<div style="overflow-x:auto;background:#fff;border:1.5px solid #F0EDF9;border-radius:11px;">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1150px;">'
+    + '<thead><tr style="background:#F7F4FF;">'
+    +   '<th onclick="_seSetSort(\'nom\')" style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;cursor:pointer;user-select:none;white-space:nowrap;">Nom' + arrow('nom') + '</th>'
+    +   '<th onclick="_seSetSort(\'prenom\')" style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;cursor:pointer;user-select:none;white-space:nowrap;">Prénom' + arrow('prenom') + '</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;">Entreprise</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;">Type de séjour</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;">Date de délivrance</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;">Date d\'expiration</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;">Date relance</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;">Titre reçu</th>'
+    +   '<th style="padding:10px;text-align:left;color:#4B36EC;font-weight:700;">Commentaire</th>'
+    + '</tr></thead>'
+    + '<tbody>' + (rows || '<tr><td colspan="9" style="padding:36px;text-align:center;color:#9E9E9E;font-style:italic;">' + (all.length ? 'Aucune ligne ne correspond aux filtres.' : 'Aucun deal marqué \u00ab Salarié étranger \u00bb pour le moment.') + '</td></tr>') + '</tbody>'
+    + '</table></div>'
+    + '<div style="margin-top:8px;font-size:11px;color:#9E94C4;">' + list.length + ' ligne(s) affichée(s).</div>';
+}
+function showSalarieEtrangerView() {
+  document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+  ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  var tab = document.getElementById('tab-deals'); if (!tab) return;
+  tab.style.display = 'block';
+  var tabs = document.querySelector('.tabs'); if (tabs) tabs.style.display = 'none';
+  var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
+  var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
+  if (typeof setDealsOriginalVisible === 'function') setDealsOriginalVisible(false);
+  injectRHSubNav();
+  var container = document.getElementById('rh-content-container');
+  if (!container) { container = document.createElement('div'); container.id = 'rh-content-container'; tab.appendChild(container); }
+  container.style.display = 'block';
+  renderSalarieEtranger();
+}
+// ── Lien profond : #se-exp30 → ouvre l'onglet Salarié étranger filtré ≤ 30 jours ──
+window.addEventListener('load', function(){
+  try {
+    if ((location.hash || '').indexOf('se-exp30') < 0) return;
+    SE_FILTER.periode = '30';
+    setTimeout(function(){
+      try {
+        if (typeof mainNavTo === 'function') mainNavTo('deals');
+        if (typeof showRHSection === 'function') showRHSection('salarie_etranger');
+      } catch(e){}
+    }, 700);
+  } catch(e){}
+});
+// ── Notification mensuelle (1 envoi/mois, tous postes confondus) ──
+// Part à la première ouverture du CRM dans le mois (marqueur partagé sp_se_notif_sent_v1).
+function _seMonthlyNotifScan() {
+  try {
+    var now = new Date();
+    var mois = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    var sent = '';
+    try { sent = localStorage.getItem('sp_se_notif_sent_v1') || ''; } catch(e){}
+    if (sent >= mois) return;
+    var emails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+    var toList = [emails.clemence, emails.marie].filter(Boolean);
+    toList = toList.filter(function(e, i){ return toList.indexOf(e) === i; });
+    if (!toList.length) { console.warn('[SE notif] emails Marie/Clémence non configurés'); return; }
+    var exp30 = _seExpiring30();
+    var MOIS_FR = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+    var moisLabel = MOIS_FR[now.getMonth()] + ' ' + now.getFullYear();
+    var lien = location.origin + location.pathname + '#se-exp30';
+    var listeHtml = exp30.length
+      ? '<ul style="margin:10px 0;padding-left:20px;">' + exp30.map(function(d){
+          var j = _seJoursRestants(d);
+          return '<li style="margin-bottom:4px;"><b>' + ((d.prenom||'') + ' ' + (d.nom||'')).trim() + '</b> — expire le ' + _seFmtDate(d.sejour_date_expiration) + (j < 0 ? ' <span style="color:#A8322A;font-weight:700;">(expiré)</span>' : ' (' + j + ' j)') + (d.sejour_titre_recu === 'Oui' ? ' — titre reçu \u2713' : ' — <b style="color:#A8322A;">titre non reçu</b>') + '</li>';
+        }).join('') + '</ul>'
+      : '<p>Aucun titre de séjour n\'arrive à expiration dans les 30 prochains jours. \u2713</p>';
+    var html = '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;">'
+      + '<div style="background:#1A4F96;color:#ffffff;padding:18px 24px;border-radius:10px 10px 0 0;">'
+      +   '<div style="font-size:18px;font-weight:800;">\u{1F30D} Salariés étrangers — point de ' + moisLabel + '</div>'
+      + '</div>'
+      + '<div style="background:#ffffff;border:1px solid #E4E0FA;border-top:none;padding:22px 24px;border-radius:0 0 10px 10px;color:#1A1033;font-size:14px;">'
+      +   '<p>Bonjour,</p>'
+      +   '<p>Point mensuel des <strong>titres de séjour</strong> : ' + (exp30.length ? '<strong>' + exp30.length + ' titre' + (exp30.length>1?'s':'') + '</strong> arrive' + (exp30.length>1?'nt':'') + ' à expiration dans les 30 jours calendaires.' : 'rien à signaler ce mois-ci.') + '</p>'
+      +   listeHtml
+      +   '<p style="margin:22px 0;"><a href="' + lien + '" style="background:#1A4F96;color:#ffffff;padding:11px 22px;border-radius:8px;text-decoration:none;font-weight:700;">Ouvrir le suivi des titres de séjour</a></p>'
+      +   '<p style="font-size:12px;color:#6B5E9C;">Le lien ouvre le CRM directement sur l\'onglet Suivi RH \u203A Salarié étranger, filtré sur les titres expirant sous 30 jours.</p>'
+      +   '<p style="color:#9E94C4;font-size:12px;">Notification automatique mensuelle — CRM Seven Portage.</p>'
+      + '</div></div>';
+    sendMailViaGraph({
+      from: 'social@seven-portage.fr',
+      to: toList,
+      cc: emails.social ? [emails.social] : [],
+      subject: '[Titres de séjour] Point mensuel — ' + moisLabel + (exp30.length ? ' (' + exp30.length + ' expiration' + (exp30.length>1?'s':'') + ' sous 30 j)' : ''),
+      htmlBody: html
+    }, function(){
+      try { localStorage.setItem('sp_se_notif_sent_v1', mois); } catch(e){}
+      try { if (typeof _touchAppSettings === 'function') _touchAppSettings(); } catch(e){}
+      try { if (typeof odAutoSync === 'function') odAutoSync(); } catch(e){}
+      console.log('[SE notif] mensuelle envoyée pour ' + mois);
+    }, function(err){ console.warn('[SE notif] échec envoi (retentera au prochain chargement)', err); });
+  } catch(e){ console.warn('[SE notif]', e); }
+}
+// ── Alerte fin de mois (à 5 jours ou moins de la fin du mois) ──
+// Uniquement s'il reste des titres expirant sous 30 j SANS titre reçu.
+function _seEndOfMonthAlertScan() {
+  try {
+    var now = new Date();
+    var lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    if ((lastDay - now.getDate()) > 5) return;
+    var mois = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    var sent = '';
+    try { sent = localStorage.getItem('sp_se_alerte_sent_v1') || ''; } catch(e){}
+    if (sent >= mois) return;
+    var manquants = _seExpiring30().filter(function(d){ return d.sejour_titre_recu !== 'Oui'; });
+    if (!manquants.length) return;   // rien à alerter — pas de marqueur, on re-vérifie aux prochains chargements
+    var emails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+    var toList = [emails.clemence, emails.marie].filter(Boolean);
+    toList = toList.filter(function(e, i){ return toList.indexOf(e) === i; });
+    if (!toList.length) { console.warn('[SE alerte] emails Marie/Clémence non configurés'); return; }
+    var lien = location.origin + location.pathname + '#se-exp30';
+    var listeHtml = '<ul style="margin:10px 0;padding-left:20px;">' + manquants.map(function(d){
+        var j = _seJoursRestants(d);
+        return '<li style="margin-bottom:4px;"><b>' + ((d.prenom||'') + ' ' + (d.nom||'')).trim() + '</b> — expire le ' + _seFmtDate(d.sejour_date_expiration) + (j < 0 ? ' <span style="color:#A8322A;font-weight:700;">(déjà expiré)</span>' : ' (' + j + ' j)') + '</li>';
+      }).join('') + '</ul>';
+    var html = '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;">'
+      + '<div style="background:#A8322A;color:#ffffff;padding:18px 24px;border-radius:10px 10px 0 0;">'
+      +   '<div style="font-size:18px;font-weight:800;">\u26A0 Titres de séjour non reçus — fin de mois</div>'
+      + '</div>'
+      + '<div style="background:#ffffff;border:1px solid #E4E0FA;border-top:none;padding:22px 24px;border-radius:0 0 10px 10px;color:#1A1033;font-size:14px;">'
+      +   '<p>Bonjour,</p>'
+      +   '<p>À 5 jours de la fin du mois, <strong>' + manquants.length + ' titre' + (manquants.length>1?'s':'') + ' de séjour</strong> arrivant à expiration dans les 30 jours calendaires ' + (manquants.length>1?'ne sont':'n\'est') + ' toujours pas marqué' + (manquants.length>1?'s':'') + ' \u00ab Titre reçu \u00bb :</p>'
+      +   listeHtml
+      +   '<p style="margin:22px 0;"><a href="' + lien + '" style="background:#A8322A;color:#ffffff;padding:11px 22px;border-radius:8px;text-decoration:none;font-weight:700;">Ouvrir la vue filtrée (expiration \u2264 30 j)</a></p>'
+      +   '<p style="font-size:12px;color:#6B5E9C;">Passez \u00ab Titre reçu \u00bb à Oui dans le tableau dès réception pour stopper cette alerte.</p>'
+      +   '<p style="color:#9E94C4;font-size:12px;">Alerte automatique — CRM Seven Portage, envoyée à l\'approche de la fin du mois.</p>'
+      + '</div></div>';
+    sendMailViaGraph({
+      from: 'social@seven-portage.fr',
+      to: toList,
+      cc: emails.social ? [emails.social] : [],
+      subject: '\u26A0 [Titres de séjour] ' + manquants.length + ' titre' + (manquants.length>1?'s':'') + ' non reçu' + (manquants.length>1?'s':'') + ' — expiration sous 30 jours',
+      htmlBody: html
+    }, function(){
+      try { localStorage.setItem('sp_se_alerte_sent_v1', mois); } catch(e){}
+      try { if (typeof _touchAppSettings === 'function') _touchAppSettings(); } catch(e){}
+      try { if (typeof odAutoSync === 'function') odAutoSync(); } catch(e){}
+      console.log('[SE alerte] fin de mois envoyée pour ' + mois);
+    }, function(err){ console.warn('[SE alerte] échec envoi (retentera au prochain chargement)', err); });
+  } catch(e){ console.warn('[SE alerte]', e); }
+}
+(function _waitSyncSENotif(){
+  if (window._initialSyncDone === true) {
+    setTimeout(_seMonthlyNotifScan, 6000);
+    setTimeout(_seEndOfMonthAlertScan, 8000);
+  } else { setTimeout(_waitSyncSENotif, 500); }
+})();
 
 // ═══════════════════════════════════════════════════════════════════
 // VISITE MÉDICALE — suivi inscriptions / avis d'aptitude (Suivi RH)
 // Source initiale : import Excel. Auto-alimenté aux nouveaux placements (étape 2).
 // ═══════════════════════════════════════════════════════════════════
 var VM_KEY = 'sp_visites_medicales_v1';
-var VM_FILTER = { ville: 'all', annee: 'all', search: '', mois_entree: '', mois_inscription: '' };
+var VM_FILTER = { ville: 'all', annee: 'all', search: '', mois_entree: '', mois_inscription: '', traite_par: 'all' };
 var _VM_IDF_DEPTS = ['75','77','78','91','92','93','94','95'];
 function getVisitesMedicales() {
   try { return JSON.parse(localStorage.getItem(VM_KEY) || '[]'); } catch(e) { return []; }
@@ -14733,6 +15082,69 @@ function _vmUpdateAddressForCandidat(cand) {
   v.updated_at = Date.now();
   saveVisitesMedicales(arr);
 }
+// ═══ VISITES MÉDICALES — lien profond + notification mensuelle (le 5) ═══
+// Lien profond : #vm-mois=YYYY-MM → ouvre le tableau des visites médicales filtré
+// sur le mois (date d'inscription).
+window.addEventListener('load', function(){
+  try {
+    var _dlm = (location.hash || '').match(/vm-mois=(\d{4}-\d{2})/);
+    if (!_dlm) return;
+    VM_FILTER.mois_inscription = _dlm[1];
+    VM_FILTER.annee = 'all';
+    setTimeout(function(){
+      try {
+        if (typeof mainNavTo === 'function') mainNavTo('deals');
+        if (typeof showVisiteMedicaleView === 'function') showVisiteMedicaleView();
+      } catch(e){}
+    }, 700);
+  } catch(e){}
+});
+// Notification mensuelle : à partir du 5 du mois, un e-mail (unique, tous postes confondus)
+// est envoyé à l'ADV (Clémence + Marie, copie social@) avec le lien pré-filtré.
+function _vmMonthlyNotifScan() {
+  try {
+    var now = new Date();
+    if (now.getDate() < 5) return;
+    var mois = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    var sent = '';
+    try { sent = localStorage.getItem('sp_vm_notif_sent_v1') || ''; } catch(e){}
+    if (sent >= mois) return; // déjà envoyée ce mois-ci (marqueur partagé entre postes)
+    var emails = (typeof getInternalEmails === 'function') ? getInternalEmails() : {};
+    var toList = [emails.clemence, emails.marie].filter(Boolean);
+    if (!toList.length) { console.warn('[VM notif] emails ADV non configurés'); return; }
+    var MOIS_FR = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+    var moisLabel = MOIS_FR[now.getMonth()] + ' ' + now.getFullYear();
+    var lien = location.origin + location.pathname + '#vm-mois=' + mois;
+    var html = '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;">'
+      + '<div style="background:#4B36EC;color:#ffffff;padding:18px 24px;border-radius:10px 10px 0 0;">'
+      +   '<div style="font-size:18px;font-weight:800;">\ud83e\ude7a Visites m\u00e9dicales \u2014 suivi de ' + moisLabel + '</div>'
+      + '</div>'
+      + '<div style="background:#ffffff;border:1px solid #E4E0FA;border-top:none;padding:22px 24px;border-radius:0 0 10px 10px;color:#1A1033;font-size:14px;">'
+      +   '<p>Bonjour,</p>'
+      +   '<p>Voici le point mensuel des <strong>visites m\u00e9dicales</strong> : merci de v\u00e9rifier les inscriptions du mois de <strong>' + moisLabel + '</strong>.</p>'
+      +   '<p style="margin:22px 0;"><a href="' + lien + '" style="background:#4B36EC;color:#ffffff;padding:11px 22px;border-radius:8px;text-decoration:none;font-weight:700;">Ouvrir le tableau des visites m\u00e9dicales</a></p>'
+      +   '<p style="font-size:12px;color:#6B5E9C;">Le lien ouvre le CRM directement sur les visites m\u00e9dicales du mois en cours (date d\'inscription), filtre d\u00e9j\u00e0 appliqu\u00e9.</p>'
+      +   '<p style="color:#9E94C4;font-size:12px;">Notification automatique \u2014 CRM Seven Portage, envoy\u00e9e le 5 de chaque mois.</p>'
+      + '</div></div>';
+    sendMailViaGraph({
+      from: 'social@seven-portage.fr',
+      to: toList,
+      cc: emails.social ? [emails.social] : [],
+      subject: '[Visites m\u00e9dicales] Suivi du mois de ' + moisLabel,
+      htmlBody: html
+    }, function(){
+      try { localStorage.setItem('sp_vm_notif_sent_v1', mois); } catch(e){}
+      try { if (typeof _touchAppSettings === 'function') _touchAppSettings(); } catch(e){}
+      try { if (typeof odAutoSync === 'function') odAutoSync(); } catch(e){}
+      console.log('[VM notif] envoy\u00e9e pour ' + mois);
+    }, function(err){ console.warn('[VM notif] \u00e9chec envoi (retentera au prochain chargement)', err); });
+  } catch(e){ console.warn('[VM notif]', e); }
+}
+(function _waitSyncVMNotif(){
+  if (window._initialSyncDone === true) { setTimeout(_vmMonthlyNotifScan, 5000); }
+  else { setTimeout(_waitSyncVMNotif, 500); }
+})();
+
 function showVisiteMedicaleView() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
   ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
@@ -14754,6 +15166,7 @@ function showVisiteMedicaleView() {
 function _vmFilteredList() {
   var q = _vmNorm(VM_FILTER.search);
   return getVisitesMedicales().filter(function(v){
+    if (VM_FILTER.traite_par !== 'all' && (v.traite_par || '') !== VM_FILTER.traite_par) return false;
     if (VM_FILTER.ville !== 'all' && v.ville !== VM_FILTER.ville) return false;
     if (VM_FILTER.annee !== 'all' && (v.date_inscription||'').slice(0,4) !== VM_FILTER.annee) return false;
     if (VM_FILTER.mois_entree && (v.date_entree||'').slice(0,7) !== VM_FILTER.mois_entree) return false;
@@ -14798,6 +15211,7 @@ function renderVisiteMedicale() {
   var anneesList = Object.keys(annees).sort();
   var q = _vmNorm(VM_FILTER.search);
   var list = all.filter(function(v){
+    if (VM_FILTER.traite_par !== 'all' && (v.traite_par || '') !== VM_FILTER.traite_par) return false;
     if (VM_FILTER.ville !== 'all' && v.ville !== VM_FILTER.ville) return false;
     if (VM_FILTER.annee !== 'all' && (v.date_inscription||'').slice(0,4) !== VM_FILTER.annee) return false;
     if (VM_FILTER.mois_entree && (v.date_entree||'').slice(0,7) !== VM_FILTER.mois_entree) return false;
@@ -14819,6 +15233,11 @@ function renderVisiteMedicale() {
   h += '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Zone</label><div style="display:flex;gap:6px;">'
     + ['all|Toutes','IDF|IDF','Région|Région'].map(function(o){ var p=o.split('|'); var on=VM_FILTER.ville===p[0]; return '<button onclick="VM_FILTER.ville=\''+p[0]+'\';renderVisiteMedicale();" style="padding:7px 12px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid '+(on?'#7343EE':'#E4E0FA')+';background:'+(on?'#7343EE':'#fff')+';color:'+(on?'#fff':'#6B5E9C')+';">'+p[1]+'</button>'; }).join('')
     + '</div></div>';
+  h += '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Traité par</label>'
+    + '<select onchange="VM_FILTER.traite_par=this.value;renderVisiteMedicale();" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;">'
+    + '<option value="all"' + (VM_FILTER.traite_par==='all'?' selected':'') + '>Toutes</option>'
+    + ['Marie','Clémence','Erika'].map(function(t){ return '<option value="'+t+'"'+(VM_FILTER.traite_par===t?' selected':'')+'>'+t+'</option>'; }).join('')
+    + '</select></div>';
   h += '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:4px;">Année d\'inscription</label>'
     + '<select onchange="VM_FILTER.annee=this.value;renderVisiteMedicale();" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;">'
     + '<option value="all"' + (VM_FILTER.annee==='all'?' selected':'') + '>Toutes</option>'
@@ -14842,7 +15261,7 @@ function renderVisiteMedicale() {
   h += '<div style="overflow-x:auto;background:#fff;border:1px solid #E4E0FA;border-radius:10px;">';
   h += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
   h += '<thead><tr style="background:#F5F3FF;color:#6B5E9C;">'
-    + ['Nom','Prénom','Ville','Adresse','Date entrée','Date inscription','Inscription','Date VM','Avis aptitude','Prochaine VM'].map(function(col){ return '<th style="padding:9px 10px;text-align:left;font-size:11px;white-space:nowrap;">'+col+'</th>'; }).join('')
+    + ['Traité par','Civilité','Nom','Prénom','Email','Téléphone','Date entrée','Commercial','Client','Commentaire','Contrat signé','Mutuelle','SWILE','Forfait repas','Grand dépl.','CRA saisi LAYA','CRA validé','Mail confirmation client','Mail relance CRA','Ville','Adresse','Date inscription','Inscription','Date VM','Avis aptitude','Prochaine VM'].map(function(col){ return '<th style="padding:9px 10px;text-align:left;font-size:11px;white-space:nowrap;">'+col+'</th>'; }).join('')
     + '</tr></thead><tbody>';
   var ouiNon = function(id, field, val){
     return '<select onchange="updateVMField(\''+id+'\',\''+field+'\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11.5px;font-weight:700;color:'+(val==='Oui'?'#0F5132':'#8A5F00')+';background:'+(val==='Oui'?'#F0FAF4':'#FFF8E8')+';">'
@@ -14852,20 +15271,58 @@ function renderVisiteMedicale() {
   var dateInput = function(id, field, val){
     return '<input type="date" value="'+(String(val||'').slice(0,10))+'" onchange="updateVMField(\''+id+'\',\''+field+'\',this.value)" style="padding:3px 5px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;">';
   };
+  var selCell = function(id, field, val, options){
+    var s = '<select onchange="updateVMField(\''+id+'\',\''+field+'\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11.5px;font-weight:600;background:#fff;color:'+(val?'#1A1033':'#9E94C4')+';">';
+    s += '<option value=""'+(!val?' selected':'')+'>—</option>';
+    options.forEach(function(o){ s += '<option value="'+o+'"'+(val===o?' selected':'')+'>'+o+'</option>'; });
+    return s+'</select>';
+  };
+  var txtCell = function(id, field, val, w){
+    return '<input type="text" value="'+String(val||'').replace(/"/g,'&quot;').replace(/</g,'&lt;')+'" onchange="updateVMField(\''+id+'\',\''+field+'\',this.value)" style="width:'+(w||130)+'px;padding:3px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;box-sizing:border-box;">';
+  };
+  var _vmDealById = {}; try { getDeals().forEach(function(d){ if (d && d.id != null) _vmDealById[String(d.id)] = d; }); } catch(e){}
+  var _vmSimByTs = {}; try { getHistory().forEach(function(s){ if (s && s.timestamp != null) _vmSimByTs[String(s.timestamp)] = s; }); } catch(e){}
   var _sbLk = _standByLookup();
   list.forEach(function(v){
     var _sbLocked = _vmRowStandBy(v, _sbLk);
     h += '<tr title="' + (_sbLocked ? 'Deal en stand by \u2014 convertissez le placement pour d\u00e9bloquer' : '') + '" style="border-bottom:1px solid #F0EDF9;' + (_sbLocked ? 'opacity:.55;pointer-events:none;background:#F7F5FC;' : '') + '">'
-      + '<td style="padding:8px 10px;font-weight:600;color:#1A1033;">' + (v.nom||'') + (_sbLocked ? ' <span style="background:#7343EE;color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">\u23F8 STAND BY</span>' : '') + (_vmIsNew(v.date_entree) ? ' <span style="background:#1D9E75;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">NEW</span>' : '') + '</td>'
-      + '<td style="padding:8px 10px;">' + (v.prenom||'') + '</td>'
-      + '<td style="padding:8px 10px;"><select onchange="updateVMField(\''+v.id+'\',\'ville\',this.value)" style="padding:3px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;font-weight:700;background:'+(v.ville==='IDF'?'#EEF4FF':(v.ville==='Région'?'#FFF4EC':'#fff'))+';color:'+(v.ville==='IDF'?'#1A4F96':(v.ville==='Région'?'#9A5B00':'#9E94C4'))+';"><option value=""'+(!v.ville?' selected':'')+'>—</option><option value="IDF"'+(v.ville==='IDF'?' selected':'')+'>IDF</option><option value="Région"'+(v.ville==='Région'?' selected':'')+'>Région</option></select></td>'
-      + '<td style="padding:8px 10px;color:#6B5E9C;min-width:220px;">' + String(v.adresse||'—').replace(/</g,'&lt;') + '</td>'
-      + '<td style="padding:8px 10px;white-space:nowrap;">' + _vmFmtDate(v.date_entree) + '</td>'
-      + '<td style="padding:8px 10px;white-space:nowrap;">' + _vmFmtDate(v.date_inscription) + '</td>'
-      + '<td style="padding:8px 10px;">' + ouiNon(v.id,'inscription',v.inscription) + '</td>'
-      + '<td style="padding:8px 10px;">' + dateInput(v.id,'date_vm',v.date_vm) + '</td>'
-      + '<td style="padding:8px 10px;">' + ouiNon(v.id,'avis_aptitude',v.avis_aptitude) + '</td>'
-      + '<td style="padding:8px 10px;">' + dateInput(v.id,'date_prochaine_vm',v.date_prochaine_vm) + '</td>'
+      + (function(){
+          var _d = (v.deal_id != null) ? _vmDealById[String(v.deal_id)] : null;
+          var _s = (_d && _d.sim_ts != null) ? _vmSimByTs[String(_d.sim_ts)] : null;
+          var _frais = (_s && typeof _avExtractFraisFromSim === 'function') ? _avExtractFraisFromSim(_s) : {};
+          var _email = (_d && (_d.email_candidat_reel || _d.email)) || v.email || '';
+          var _tel = (_d && _d.tel) || v.tel || '';
+          var _client = String((_d && _d.entreprise) || v.client || '');
+          var _commVal = v.commercial || (_d && _d.commercial) || '';
+          var _forfait = (v.swile === 'Actif') ? '' : ((_frais && _frais.forfait_repas) || '');
+          var _gd = (_frais && _frais.grand_deplacement) ? 'Oui' : 'Non';
+          return '<td style="padding:8px 10px;">' + selCell(v.id,'traite_par',v.traite_par,['Marie','Clémence','Erika']) + '</td>'
+            + '<td style="padding:8px 10px;">' + selCell(v.id,'civilite',v.civilite,['Monsieur','Madame']) + '</td>'
+            + '<td style="padding:8px 10px;font-weight:600;color:#1A1033;white-space:nowrap;">' + String(v.nom||'').toUpperCase() + (_sbLocked ? ' <span style="background:#7343EE;color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">\u23F8 STAND BY</span>' : '') + (_vmIsNew(v.date_entree) ? ' <span style="background:#1D9E75;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">NEW</span>' : '') + '</td>'
+            + '<td style="padding:8px 10px;">' + (v.prenom||'') + '</td>'
+            + '<td style="padding:8px 10px;font-size:11px;color:#6B5E9C;">' + (_email ? String(_email).replace(/</g,'&lt;') : '—') + '</td>'
+            + '<td style="padding:8px 10px;white-space:nowrap;font-size:11px;color:#6B5E9C;">' + (_tel ? String(_tel).replace(/</g,'&lt;') : '—') + '</td>'
+            + '<td style="padding:8px 10px;white-space:nowrap;">' + _vmFmtDate(v.date_entree) + '</td>'
+            + '<td style="padding:8px 10px;">' + selCell(v.id,'commercial',_commVal,['Joanne','Farah','Esteban','Rayan','Sacha','David']) + '</td>'
+            + '<td style="padding:8px 10px;font-weight:600;white-space:nowrap;">' + (_client ? _client.toUpperCase().replace(/</g,'&lt;') : '—') + '</td>'
+            + '<td style="padding:8px 10px;">' + txtCell(v.id,'commentaire',v.commentaire,150) + '</td>'
+            + '<td style="padding:8px 10px;">' + ouiNon(v.id,'contrat_signe',v.contrat_signe) + '</td>'
+            + '<td style="padding:8px 10px;">' + selCell(v.id,'mutuelle',v.mutuelle,['Affilié','En Attente','Dispensé']) + '</td>'
+            + '<td style="padding:8px 10px;">' + selCell(v.id,'swile',v.swile,['Actif','En Attente']) + '</td>'
+            + '<td style="padding:8px 10px;text-align:right;">' + (_forfait ? (_forfait + ' €') : '—') + '</td>'
+            + '<td style="padding:8px 10px;"><span style="padding:2px 9px;border-radius:10px;font-size:10.5px;font-weight:700;background:'+(_gd==='Oui'?'#EEF4FF':'#F5F3FF')+';color:'+(_gd==='Oui'?'#1A4F96':'#9E94C4')+';">' + _gd + '</span></td>'
+            + '<td style="padding:8px 10px;">' + ouiNon(v.id,'cra_saisi',v.cra_saisi) + '</td>'
+            + '<td style="padding:8px 10px;">' + txtCell(v.id,'cra_valide',v.cra_valide,60) + '</td>'
+            + '<td style="padding:8px 10px;">' + ouiNon(v.id,'mail_confirmation',v.mail_confirmation) + '</td>'
+            + '<td style="padding:8px 10px;">' + (v.cra_saisi === 'Oui' ? '<span style="padding:2px 9px;border-radius:10px;font-size:10.5px;font-weight:700;background:#F5F3FF;color:#9E94C4;">N/A</span>' : ouiNon(v.id,'mail_relance',v.mail_relance)) + '</td>'
+            + '<td style="padding:8px 10px;"><select onchange="updateVMField(\''+v.id+'\',\'ville\',this.value)" style="padding:3px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;font-weight:700;background:'+(v.ville==='IDF'?'#EEF4FF':(v.ville==='Région'?'#FFF4EC':'#fff'))+';color:'+(v.ville==='IDF'?'#1A4F96':(v.ville==='Région'?'#9A5B00':'#9E94C4'))+';"><option value=""'+(!v.ville?' selected':'')+'>—</option><option value="IDF"'+(v.ville==='IDF'?' selected':'')+'>IDF</option><option value="Région"'+(v.ville==='Région'?' selected':'')+'>Région</option></select></td>'
+            + '<td style="padding:8px 10px;color:#6B5E9C;min-width:220px;">' + String(v.adresse||'—').replace(/</g,'&lt;') + '</td>'
+            + '<td style="padding:8px 10px;white-space:nowrap;">' + _vmFmtDate(v.date_inscription) + '</td>'
+            + '<td style="padding:8px 10px;">' + ouiNon(v.id,'inscription',v.inscription) + '</td>'
+            + '<td style="padding:8px 10px;">' + dateInput(v.id,'date_vm',v.date_vm) + '</td>'
+            + '<td style="padding:8px 10px;">' + ouiNon(v.id,'avis_aptitude',v.avis_aptitude) + '</td>'
+            + '<td style="padding:8px 10px;">' + dateInput(v.id,'date_prochaine_vm',v.date_prochaine_vm) + '</td>';
+        })()
       + '</tr>';
   });
   h += '</tbody></table></div>';
@@ -18164,7 +18621,7 @@ function buildAvenantsContent() {
       if ((a.etat_av_cdps || '') !== AVENANTS_FILTER.etat_cdps) return false;
     }
     if (AVENANTS_FILTER.month !== 'all' && AVENANTS_FILTER.month != null) {
-      var _dd = a.date_demande ? new Date(a.date_demande) : null;
+      var _dd = (a.date_debut || a.date_demande) ? new Date(a.date_debut || a.date_demande) : null; // filtre période sur « À partir du » (repli : date de demande)
       if (!_dd || isNaN(_dd.getTime())) return false;
       if (_dd.getMonth() !== AVENANTS_FILTER.month || _dd.getFullYear() !== AVENANTS_FILTER.year) return false;
     }
@@ -18262,6 +18719,7 @@ function buildAvenantsContent() {
     +   '<option value="all"' + (AVENANTS_FILTER.etat_cdt==='all'?' selected':'') + '>Tous</option>'
     +   '<option value="Envoyé"' + (AVENANTS_FILTER.etat_cdt==='Envoyé'?' selected':'') + '>Envoyé</option>'
     +   '<option value="En attente"' + (AVENANTS_FILTER.etat_cdt==='En attente'?' selected':'') + '>En attente</option>'
+    +   '<option value="N/A"' + (AVENANTS_FILTER.etat_cdt==='N/A'?' selected':'') + '>N/A</option>'
     + '</select></div>';
   html += '<div style="min-width:140px;">'
     + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">État CDPS</label>'
@@ -18270,6 +18728,7 @@ function buildAvenantsContent() {
     +   '<option value="Envoyé"' + (AVENANTS_FILTER.etat_cdps==='Envoyé'?' selected':'') + '>Envoyé</option>'
     +   '<option value="Reçu"' + (AVENANTS_FILTER.etat_cdps==='Reçu'?' selected':'') + '>Reçu</option>'
     +   '<option value="En attente"' + (AVENANTS_FILTER.etat_cdps==='En attente'?' selected':'') + '>En attente</option>'
+    +   '<option value="N/A"' + (AVENANTS_FILTER.etat_cdps==='N/A'?' selected':'') + '>N/A</option>'
     + '</select></div>';
   var _avMN = ['Janvier','F\u00e9vrier','Mars','Avril','Mai','Juin','Juillet','Ao\u00fbt','Septembre','Octobre','Novembre','D\u00e9cembre'];
   var _avCM = AVENANTS_FILTER.month, _avCY = AVENANTS_FILTER.year, _avNY = (new Date()).getFullYear();
@@ -18277,7 +18736,7 @@ function buildAvenantsContent() {
   _avMN.forEach(function(nm,i){ _avMonthOpts += '<option value="'+i+'"'+(_avCM===i?' selected':'')+'>'+nm+'</option>'; });
   var _avYearOpts=''; for(var _avyy=_avNY-2;_avyy<=_avNY+2;_avyy++){ _avYearOpts+='<option value="'+_avyy+'"'+(_avCY===_avyy?' selected':'')+'>'+_avyy+'</option>'; }
   html += '<div style="min-width:210px;">'
-    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">P\u00e9riode (date demande)</label>'
+    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">P\u00e9riode (\u00c0 partir du)</label>'
     + '<div style="display:flex;align-items:center;gap:2px;">'
     +   '<button onclick="avShiftMonth(-1)" title="Mois pr\u00e9c\u00e9dent" style="border:1.5px solid #E4E0FA;background:#fff;color:#5B2BCC;cursor:pointer;font-size:13px;padding:6px 8px;border-radius:7px;line-height:1;">&#9664;</button>'
     +   '<select onchange="avSetMonth(this.value)" style="flex:1;padding:8px 6px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;">' + _avMonthOpts + '</select>'
@@ -18309,15 +18768,17 @@ function buildAvenantsContent() {
   // Tableau
   html += '<div class="av-table-wrap"><div class="av-table-scroll"><table class="av-table">'
     + '<thead><tr>'
-    + '<th class="avfix avfix1">Date demande</th><th class="avfix avfix2">Commercial</th><th class="avfix avfix3">Porté</th><th>ADV</th><th>Type</th><th>Motif</th>'
+    + '<th class="avfix avfix1">Date demande</th><th class="avfix avfix2">Commercial</th><th class="avfix avfix3">Porté</th><th>ADV</th><th>Mission/Poste</th><th>Nom du client</th><th>Nom du manager</th><th>Lieu de mission</th><th>Type</th><th>Motif</th>'
     + '<th>CDPS</th><th>À partir du</th><th>Jusqu\'au</th><th>Contrat</th>'
-    + '<th>TJM</th><th>Ancien salaire</th><th>Nouveau salaire</th><th>Frais ↗</th>'
+    + '<th>TJM</th><th>Frais de gestion</th><th>Ancien salaire</th><th>Nouveau salaire</th><th>Frais ↗</th>'
     + '<th>Swile</th><th>Forfait repas</th><th>Km</th><th>TC</th><th>Télétravail</th>'
     + '<th>Tel/internet</th><th>Grand dépl.</th>'
-    + '<th>État CDT</th><th>État CDPS</th><th>CDT signé</th><th>CDPS signé</th><th>Modif LAYA</th>'
+    + '<th>État CDT</th><th>État CDPS</th><th>CDT signé</th><th>CDPS signé</th><th>Modif LAYA</th><th>Signataire</th><th>Comptable</th>'
     + '<th>Commentaires</th><th>Action</th>'
     + '</tr></thead><tbody>';
 
+  var _avDealById = {};
+  try { getDeals().forEach(function(d){ if (d && d.id != null) _avDealById[d.id] = d; }); } catch(_e){}
   filtered.forEach(function(a){
     // Pour les anciens avenants qui stockaient "Oui"/"Non", on re-extrait depuis la SIMU
     // pour afficher les vrais montants. Pour les nouveaux, on utilise les valeurs stockées.
@@ -18429,6 +18890,10 @@ function buildAvenantsContent() {
       + '<td class="avfix avfix2">' + (a.commercial || '—') + '</td>'
       + '<td class="avfix avfix3" style="font-weight:600;">' + nomComplet + '</td>'
       + '<td>' + _advCell + '</td>'
+      + '<td>' + ((a.poste || '').replace(/</g,'&lt;') || '—') + '</td>'
+      + '<td>' + ((a.client || '').replace(/</g,'&lt;') || '—') + '</td>'
+      + '<td>' + ((a.manager || '').replace(/</g,'&lt;') || '—') + '</td>'
+      + '<td>' + ((a.lieu_mission || '').replace(/</g,'&lt;') || '—') + '</td>'
       + '<td>' + (a.type_avenant || '—') + '</td>'
       + '<td>' + (a.motif || '—') + '</td>'
       + '<td>' + (a.cdps_seven_client || '—') + '</td>'
@@ -18436,6 +18901,7 @@ function buildAvenantsContent() {
       + '<td>' + _fmtAvDate(a.date_fin) + '</td>'
       + '<td>' + (a.type_contrat || '—') + '</td>'
       + '<td style="text-align:right;">' + val('tjm') + '</td>'
+      + '<td style="text-align:right;">' + (function(){ var _fd = _avDealById[a.deal_id]; var _f = a.fg || (_fd && (_fd.fg_reel || _fd.frais_gestion)) || ''; return _f ? (_f + ' %') : '—'; })() + '</td>'
       + '<td style="text-align:right;color:#9E94C4;">' + _fmtAvEur(a.ancien_salaire) + '</td>'
       + '<td style="text-align:right;font-weight:700;">' + valEur('new_salaire_annuel') + '</td>'
       + '<td>' + val('changement_frais') + '</td>'
@@ -18446,11 +18912,13 @@ function buildAvenantsContent() {
       + '<td style="text-align:right;">' + (fraisEur ? fraisEur.tt : val('teletravail')) + '</td>'
       + '<td style="text-align:right;">' + (fraisEur ? fraisEur.telnet : val('tel_internet')) + '</td>'
       + '<td style="text-align:right;">' + (fraisEur ? fraisEur.gd : val('grand_deplacement')) + '</td>'
-      + '<td>' + _avInlineSelect(a.id, 'etat_avenant_cdt', a.etat_avenant_cdt, ['Envoyé','En attente']) + '</td>'
-      + '<td>' + _avInlineSelect(a.id, 'etat_av_cdps', a.etat_av_cdps, ['Envoyé','Reçu','En attente']) + '</td>'
-      + '<td>' + _avInlineSelect(a.id, 'avenant_cdt_signe', a.avenant_cdt_signe, ['Oui','Non']) + '</td>'
-      + '<td>' + _avInlineSelect(a.id, 'avenant_cdps_signe', a.avenant_cdps_signe, ['Oui','Non']) + '</td>'
-      + '<td>' + _avInlineSelect(a.id, 'modif_laya', a.modif_laya, ['Oui','Non','À faire']) + '</td>'
+      + '<td>' + _avInlineSelect(a.id, 'etat_avenant_cdt', a.etat_avenant_cdt, ['Envoyé','En attente','N/A']) + '</td>'
+      + '<td>' + _avInlineSelect(a.id, 'etat_av_cdps', a.etat_av_cdps, ['Envoyé','Reçu','En attente','N/A']) + '</td>'
+      + '<td>' + _avInlineSelect(a.id, 'avenant_cdt_signe', a.avenant_cdt_signe, ['Oui','Non','N/A']) + '</td>'
+      + '<td>' + _avInlineSelect(a.id, 'avenant_cdps_signe', a.avenant_cdps_signe, ['Oui','Non','N/A']) + '</td>'
+      + '<td>' + _avInlineSelect(a.id, 'modif_laya', a.modif_laya, ['Oui','Non','À faire','N/A']) + '</td>'
+      + '<td>' + _avInlineSelect(a.id, 'signataire', a.signataire, ['Norman','David','Rayan','Esteban','Sacha','Farah','Joanne','N/A']) + '</td>'
+      + '<td>' + _avInlineSelect(a.id, 'comptable', a.comptable, ['Clémence','Marie','N/A']) + '</td>'
       + '<td style="max-width:220px;"><input type="text" value="' + (a.commentaires||'').replace(/"/g,'&quot;') + '" placeholder="—" oninput="updateAvenantField(\'' + a.id + '\',\'commentaires\',this.value);" style="width:100%;padding:4px 7px;border:1px solid #E4E0FA;border-radius:5px;font-size:10.5px;font-family:inherit;background:transparent;"></td>'
       + '<td><button class="av-edit-btn" onclick="openEditAvenantPopup(\'' + a.id + '\')" title="Édition complète + suppression">✎</button></td>'
       + '</tr>';
@@ -18987,15 +19455,20 @@ function openAvenantMissionPopup(dealId) {
     +     '<div style="background:#F5F3FF;border:1px solid #E4E0FA;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:12px;line-height:1.6;color:#1A1033;">'
     +       '<div><strong>Consultant :</strong> ' + nomComplet + '</div>'
     +       '<div><strong>Client :</strong> ' + (deal.entreprise || '—') + '</div>'
-    +       '<div><strong>Mission :</strong> ' + (deal.poste || '—') + '</div>'
     +       '<div><strong>TJM actuel :</strong> ' + (deal.tjm ? deal.tjm + ' €/j' : '—') + '</div>'
     +     '</div>'
 
+    +     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">'
+    +       '<div><label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Poste</label>'
+    +         '<input type="text" id="avm-poste" value="' + String(deal.poste || '').replace(/"/g,'&quot;') + '" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;"></div>'
+    +       '<div><label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Lieu de mission</label>'
+    +         '<input type="text" id="avm-lieu" value="' + String(deal.lieu_mission || '').replace(/"/g,'&quot;') + '" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;"></div>'
+    +     '</div>'
     +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Simulation de référence</label>'
     +     '<select id="avm-sim" onchange="_avmOnSimChange()" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;box-sizing:border-box;margin-bottom:4px;">' + simOptions + '</select>'
     +     '<div id="avm-sim-info" style="font-size:11px;color:#9E94C4;margin-bottom:16px;">Choisissez une simulation existante du candidat, ou laissez vide pour une saisie manuelle.</div>'
 
-    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:8px;">Type d\'avenant <span style="font-weight:500;text-transform:none;color:#9E94C4;">(plusieurs choix possibles)</span></label>'
+    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:8px;">Motif de l\'avenant <span style="font-weight:500;text-transform:none;color:#9E94C4;">(plusieurs choix possibles)</span></label>'
     +     '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">'
     +       _avmCheckRow('avm-type-tjm',      '📈 Augmentation de TJM')
     +       _avmCheckRow('avm-type-presta',   '📄 Nouveau contrat de prestation')
@@ -19003,14 +19476,14 @@ function openAvenantMissionPopup(dealId) {
     +       _avmCheckRow('avm-type-urssaf',   '🏛️ Nouveaux frais URSSAF')
     +     '</div>'
 
-    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Date de l\'avenant</label>'
+    +     '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Date de la demande</label>'
     +     '<input type="date" id="avm-date" value="' + new Date().toISOString().slice(0,10) + '" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box;margin-bottom:16px;">'
 
     +     '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;">'
     +       '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Motif</label>'
     +         '<select id="avm-motif" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;background:#fff;">'
     +           '<option value="">— Sélectionner —</option>'
-    +           '<option>CDT</option><option>CDPS</option><option>CDT + CDPS</option><option>New CDPS</option><option>CDT + New CDPS</option>'
+    +           '<option>CDT</option><option>CDT + CDPS</option><option>CDT + New CDPS</option>'
     +         '</select></div>'
     +       '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">CDPS Seven ou client</label>'
     +         '<select id="avm-cdps-seven-client" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;background:#fff;">'
@@ -19079,6 +19552,12 @@ function _avmOnSimChange() {
     if (s) {
       info.innerHTML = '✓ Simu attachée — TJM <strong>' + (s.tjm||'?') + ' €/j</strong>, brut <strong>' + (s.brut||'?') + ' €</strong>'
         + (s.entreprise ? ', client ' + s.entreprise.replace(/</g,'&lt;') : '');
+      // Auto-remplissage Poste / Lieu de mission depuis la nouvelle simulation
+      try {
+        var _pEl = document.getElementById('avm-poste'), _lEl = document.getElementById('avm-lieu');
+        if (_pEl && s.poste) _pEl.value = s.poste;
+        if (_lEl && (s.lieu_mission || s.gd_lieu)) _lEl.value = s.lieu_mission || s.gd_lieu;
+      } catch(_e){}
       info.style.color = '#1D9E75';
       // Autocomplete des salaires : nouveau = salaire annuel de la simu choisie,
       // ancien = salaire annuel actuel du contrat (deal). On prend bien le salaire ANNUEL pour les deux.
@@ -19117,6 +19596,8 @@ function confirmAvenantMission(dealId) {
   var fDateDebut   = (document.getElementById('avm-date-debut') || {}).value || '';
   var fDateFin     = (document.getElementById('avm-date-fin') || {}).value || '';
   var fTypeContrat = (document.getElementById('avm-type-contrat') || {}).value || '';
+  var fPoste       = ((document.getElementById('avm-poste') || {}).value || '').trim();
+  var fLieu        = ((document.getElementById('avm-lieu') || {}).value || '').trim();
   var fTjmManu     = (document.getElementById('avm-tjm') || {}).value || '';
   var fAncienSal   = (document.getElementById('avm-ancien-sal') || {}).value || '';
   var fNouveauSal  = (document.getElementById('avm-nouveau-sal') || {}).value || '';
@@ -19168,7 +19649,8 @@ function confirmAvenantMission(dealId) {
     types_coches: types,
     client: deal.entreprise || '',
     manager: deal.manager || '',
-    poste: deal.poste || '',
+    poste: fPoste || deal.poste || '',
+    lieu_mission: fLieu || deal.lieu_mission || '',
     // Valeurs de référence (figées — le deal n'est PAS modifié)
     tjm_actuel: deal.tjm || '',
     tjm: newFraisAvm ? (newFraisAvm.tjm || '') : (sim ? (sim.tjm || '') : (fTjmManu || '')),  // simu si attachée, sinon saisie manuelle
@@ -19209,6 +19691,8 @@ function confirmAvenantMission(dealId) {
 
   // (2) Ajouter à l'accordéon de la fiche candidat — stocké sur le deal
   //     dans un tableau dédié (sans toucher aux champs visibles du deal)
+  if (fPoste && fPoste !== deal.poste) deal.poste = fPoste;
+  if (fLieu && fLieu !== deal.lieu_mission) deal.lieu_mission = fLieu;
   if (!Array.isArray(deal.avenants_mission)) deal.avenants_mission = [];
   deal.avenants_mission.push({
     avenant_id: avenantId,
@@ -25147,12 +25631,14 @@ function renderSortants() {
   var all = getSortants();
 
   // Filtres (état local)
-  if (!window._sortantsFilter) window._sortantsFilter = { commercial: '__all__', raison: '__all__', type: '__all__', fin_contrat: '__all__', year: '__all__', month: '__all__', search: '' };
+  if (!window._sortantsFilter) window._sortantsFilter = { commercial: '__all__', raison: '__all__', type: '__all__', fin_contrat: '__all__', year: '__all__', month: '__all__', cdi_year: '__all__', cdi_month: '__all__', search: '' };
   var f = window._sortantsFilter;
   if (typeof f.month === 'undefined') f.month = '__all__';  // compat avec ancien state
+  if (typeof f.cdi_year === 'undefined') f.cdi_year = '__all__';
+  if (typeof f.cdi_month === 'undefined') f.cdi_month = '__all__';
 
   // Valeurs distinctes
-  var comms = {}, raisons = {}, types = {}, years = {};
+  var comms = {}, raisons = {}, types = {}, years = {}, cdiYears = {};
   all.forEach(function(s){
     if (s.commercial) comms[s.commercial] = 1;
     if (s.raison) raisons[s.raison] = 1;
@@ -25161,6 +25647,11 @@ function renderSortants() {
     if (s.fin_mission) {
       var y = (s.fin_mission + '').slice(0, 4);
       if (y) years[y] = 1;
+    }
+    // Années de fin de CDI (date_fin_contrat)
+    if (s.date_fin_contrat) {
+      var yc = (s.date_fin_contrat + '').slice(0, 4);
+      if (yc && /^\d{4}$/.test(yc)) cdiYears[yc] = 1;
     }
   });
   // FIX : la table Sortants est souvent vide → le select Année ne montrait que
@@ -25179,6 +25670,7 @@ function renderSortants() {
   } catch(e){}
   // Toujours inclure l'année courante au minimum
   years[String(new Date().getFullYear())] = 1;
+  cdiYears[String(new Date().getFullYear())] = 1;
 
   // Filtrage
   var filtered = all.filter(function(s){
@@ -25194,6 +25686,14 @@ function renderSortants() {
       // fin_mission au format YYYY-MM-DD → mois = caractères 5-6
       var mo = (s.fin_mission || '').slice(5, 7);
       if (mo !== f.month) return false;
+    }
+    if (f.cdi_year !== '__all__') {
+      var yrc = (s.date_fin_contrat || '').slice(0, 4);
+      if (yrc !== f.cdi_year) return false;
+    }
+    if (f.cdi_month !== '__all__') {
+      var moc = (s.date_fin_contrat || '').slice(5, 7);
+      if (moc !== f.cdi_month) return false;
     }
     if (f.search) {
       var q = f.search.toLowerCase();
@@ -25222,6 +25722,13 @@ function renderSortants() {
   var monthOpts = '<option value="__all__">Tous mois</option>' + monthLabels.map(function(lbl, i){
     var mm = (i < 9 ? '0' : '') + (i + 1);
     return '<option value="' + mm + '"' + (f.month===mm?' selected':'') + '>' + lbl + '</option>';
+  }).join('');
+  var cdiYearOpts = '<option value="__all__">Toutes années</option>' + Object.keys(cdiYears).sort().reverse().map(function(y){
+    return '<option value="' + y + '"' + (f.cdi_year===y?' selected':'') + '>' + y + '</option>';
+  }).join('');
+  var cdiMonthOpts = '<option value="__all__">Tous mois</option>' + monthLabels.map(function(lbl, i){
+    var mm = (i < 9 ? '0' : '') + (i + 1);
+    return '<option value="' + mm + '"' + (f.cdi_month===mm?' selected':'') + '>' + lbl + '</option>';
   }).join('');
 
   // Stats
@@ -25283,15 +25790,21 @@ function renderSortants() {
     +     '<option value="Non"' + (f.fin_contrat==='Non'?' selected':'') + '>⚠️ Non (encore sous contrat)</option>'
     +   '</select>'
     + '</div>'
-    + '<div style="min-width:110px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Année</label>'
+    + '<div style="min-width:110px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Fin mission · Année</label>'
     +   '<select class="comm-param-input" onchange="window._sortantsFilter.year=this.value;renderSortants();" style="cursor:pointer;">' + yearOpts + '</select>'
     + '</div>'
-    + '<div style="min-width:120px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Mois</label>'
+    + '<div style="min-width:120px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Fin mission · Mois</label>'
     +   '<select class="comm-param-input" onchange="window._sortantsFilter.month=this.value;renderSortants();" style="cursor:pointer;">' + monthOpts + '</select>'
+    + '</div>'
+    + '<div style="min-width:110px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Fin CDI · Année</label>'
+    +   '<select class="comm-param-input" onchange="window._sortantsFilter.cdi_year=this.value;renderSortants();" style="cursor:pointer;">' + cdiYearOpts + '</select>'
+    + '</div>'
+    + '<div style="min-width:120px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Fin CDI · Mois</label>'
+    +   '<select class="comm-param-input" onchange="window._sortantsFilter.cdi_month=this.value;renderSortants();" style="cursor:pointer;">' + cdiMonthOpts + '</select>'
     + '</div>'
     + '<div style="display:flex;gap:6px;">'
     +   '<button onclick="exportSortantsCSV()" style="padding:9px 14px;background:#1D9E75;color:#fff;border:none;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">⬇ CSV</button>'
-    +   '<button onclick="window._sortantsFilter={commercial:\'__all__\',raison:\'__all__\',type:\'__all__\',fin_contrat:\'__all__\',year:\'__all__\',month:\'__all__\',search:\'\'};renderSortants();" style="padding:9px 14px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">↻</button>'
+    +   '<button onclick="window._sortantsFilter={commercial:\'__all__\',raison:\'__all__\',type:\'__all__\',fin_contrat:\'__all__\',year:\'__all__\',month:\'__all__\',cdi_year:\'__all__\',cdi_month:\'__all__\',search:\'\'};renderSortants();" style="padding:9px 14px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">↻</button>'
     + '</div>'
     + '</div>';
 
@@ -25382,7 +25895,7 @@ function renderSortantYesNoSelect(sortantId, field, currentVal) {
 // Export CSV
 function exportSortantsCSV() {
   var all = getSortants();
-  var f = window._sortantsFilter || { commercial:'__all__', raison:'__all__', type:'__all__', year:'__all__', month:'__all__', search:'' };
+  var f = window._sortantsFilter || { commercial:'__all__', raison:'__all__', type:'__all__', year:'__all__', month:'__all__', cdi_year:'__all__', cdi_month:'__all__', search:'' };
   var filtered = all.filter(function(s){
     if (f.commercial !== '__all__' && (s.commercial || '') !== f.commercial) return false;
     if (f.raison !== '__all__' && (s.raison || '') !== f.raison) return false;
@@ -25394,6 +25907,14 @@ function exportSortantsCSV() {
     if (f.month && f.month !== '__all__') {
       var mo = (s.fin_mission || '').slice(5, 7);
       if (mo !== f.month) return false;
+    }
+    if (f.cdi_year && f.cdi_year !== '__all__') {
+      var yrc = (s.date_fin_contrat || '').slice(0, 4);
+      if (yrc !== f.cdi_year) return false;
+    }
+    if (f.cdi_month && f.cdi_month !== '__all__') {
+      var moc = (s.date_fin_contrat || '').slice(5, 7);
+      if (moc !== f.cdi_month) return false;
     }
     if (f.search) {
       var q = f.search.toLowerCase();
@@ -25467,13 +25988,15 @@ function findCooptationByDealId(dealId) {
 function getCooptationsConfig() {
   var defaults = {
     montant_defaut: 500,
-    delai_jours: 60,
+    delai_jours: 90, // paiements à 90 jours → rappel à J+90 du début de mission du coopté (décision 09/2026)
     mail_fixe: 'social@seven-portage.fr',
     mails_cc: []
   };
   try {
     var saved = JSON.parse(localStorage.getItem(COOPTATIONS_CONFIG_KEY) || '{}');
     var merged = Object.assign({}, defaults, saved);
+    // Migration douce : 60 était l'ancien défaut enregistré → on le porte à 90 (une seule fois)
+    if (merged.delai_jours === 60 && !merged._delai90_migre) { merged.delai_jours = 90; merged._delai90_migre = true; try { localStorage.setItem(COOPTATIONS_CONFIG_KEY, JSON.stringify(merged)); } catch(_e){} }
     if (!Array.isArray(merged.mails_cc)) merged.mails_cc = [];
     return merged;
   } catch(e) { return defaults; }
@@ -25543,7 +26066,7 @@ function buildCooptationsConfigCard(withCard, refreshCallback) {
     + '</div>'
     + '<div>'
     +   '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Délai de déclenchement (jours)</label>'
-    +   '<input type="number" step="1" min="1" value="' + (cfg.delai_jours||60) + '" onchange="updateCooptationsConfigField(\'delai_jours\', parseInt(this.value)||60);' + refreshFn + '();" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    +   '<input type="number" step="1" min="1" value="' + (cfg.delai_jours||90) + '" onchange="updateCooptationsConfigField(\'delai_jours\', parseInt(this.value)||90);' + refreshFn + '();" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
     + '</div>'
     + '</div>';
 
@@ -25676,7 +26199,7 @@ function toISODateInput(v) {
 // Retourne: { days_since_start, mission_abrégée, mission_ended, due, overdue, paid }
 function computeCooptationStatus(coop) {
   var cfg = getCooptationsConfig();
-  var delai = parseInt(cfg.delai_jours) || 60;
+  var delai = parseInt(cfg.delai_jours) || 90;
   var today = new Date();
   today.setHours(23,59,59,999);
   var startDate = coop.date_debut_mission ? new Date(coop.date_debut_mission) : null;
@@ -26207,7 +26730,7 @@ function sendCooptationReminderEmail(coop) {
     + '<div style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#1a1a1a;max-width:640px;">'
     +   '<div style="background:linear-gradient(135deg,#8B6508,#F0A500);color:#fff;padding:18px 22px;border-radius:8px 8px 0 0;">'
     +     '<div style="font-size:18px;font-weight:800;">🤝 Cooptation à verser</div>'
-    +     '<div style="font-size:12px;opacity:0.88;margin-top:4px;">Le délai de ' + (cfg.delai_jours||60) + ' jours est atteint</div>'
+    +     '<div style="font-size:12px;opacity:0.88;margin-top:4px;">Le délai de ' + (cfg.delai_jours||90) + ' jours est atteint</div>'
     +   '</div>'
     +   '<div style="border:1px solid #E4E0FA;border-top:0;padding:20px 22px;border-radius:0 0 8px 8px;background:#fff;">'
     +     '<p style="margin:0 0 14px;">Bonjour,</p>'
@@ -29674,8 +30197,35 @@ function mergeParams(remote) {
 
 function mergeClients(remote) {
   var local = getClients();
-  var nameMap = {};
-  local.forEach(function(cl) { nameMap[cl.name.toLowerCase()] = cl; });
+  // ── (0) Dédoublonnage réparateur : deux fiches partageant le MÊME id (doublons créés
+  //        par l'ancien matching par nom lors d'un renommage) → on garde la plus récente
+  //        et on y fusionne les managers + documents de l'autre.
+  var _byId = {}, _dedup = [];
+  local.forEach(function(cl){
+    if (!cl) return;
+    var k = (cl.id != null) ? String(cl.id) : null;
+    if (!k || !_byId[k]) { if (k) _byId[k] = cl; _dedup.push(cl); return; }
+    var keep = _byId[k], other = cl;
+    if ((other.updated_ts || 0) > (keep.updated_ts || 0)) {
+      var _ix = _dedup.indexOf(keep);
+      keep = other; other = _byId[k];
+      _byId[k] = keep;
+      if (_ix >= 0) _dedup[_ix] = keep;
+    }
+    var _mn = (keep.managers || []).map(function(m){ return (m.name || '').toLowerCase(); });
+    (other.managers || []).forEach(function(m){
+      if (m && _mn.indexOf((m.name || '').toLowerCase()) < 0) { keep.managers = keep.managers || []; keep.managers.push(m); _mn.push((m.name || '').toLowerCase()); }
+    });
+    var _kd = keep.documents || {};
+    Object.keys(other.documents || {}).forEach(function(dk){
+      var od = other.documents[dk];
+      if (!_kd[dk] || (((od && od.updated_ts) || 0) > (((_kd[dk] || {}).updated_ts) || 0))) _kd[dk] = od;
+    });
+    if (Object.keys(_kd).length) keep.documents = _kd;
+  });
+  local = _dedup;
+  var nameMap = {}, idMap = {};
+  local.forEach(function(cl) { if (!cl) return; nameMap[(cl.name || '').toLowerCase()] = cl; if (cl.id != null) idMap[String(cl.id)] = cl; });
   remote.forEach(function(rc) {
     var key = (rc.name||'').toLowerCase();
     if (!key) return;
@@ -29684,11 +30234,14 @@ function mergeClients(remote) {
       if (rc.id && isTombstoned('clients', rc.id)) return;
       if (isTombstoned('clients', key)) return;
     }
-    if (!nameMap[key]) {
+    // ── Matching par IDENTIFIANT d'abord (survit aux renommages) — nom en repli ──
+    var t = (rc.id != null && idMap[String(rc.id)]) ? idMap[String(rc.id)] : nameMap[key];
+    if (!t) {
       nameMap[key] = rc;
+      if (rc.id != null) idMap[String(rc.id)] = rc;
     } else {
       // Fusionner managers
-      var mgrs = nameMap[key].managers || [];
+      var mgrs = t.managers || [];
       var mgrNames = mgrs.map(function(m){ return m.name.toLowerCase(); });
       (rc.managers||[]).forEach(function(rm) {
         if (mgrNames.indexOf(rm.name.toLowerCase()) < 0) {
@@ -29705,61 +30258,60 @@ function mergeClients(remote) {
           mgrs[mIdx].deals = localDeals;
         }
       });
-      nameMap[key].managers = mgrs;
-      if (!nameMap[key].sp_id && rc.sp_id) nameMap[key].sp_id = rc.sp_id;
+      t.managers = mgrs;
+      if (!t.sp_id && rc.sp_id) t.sp_id = rc.sp_id;
 
       // ── Fusion documents client (last-write-wins par updated_ts puis uploaded) ──
-      // updated_ts (millis) est mis à jour à chaque modif (upload, changement de doc_date, suppression).
-      // Un marqueur {_deleted: true, updated_ts: ...} indique une suppression à propager.
-      // Fallback sur 'uploaded' (DD/MM/YYYY) pour compat anciens documents.
-      var localDocs = nameMap[key].documents || {};
+      var localDocs = t.documents || {};
       var remoteDocs = rc.documents || {};
       var mergedDocs = Object.assign({}, localDocs);
       Object.keys(remoteDocs).forEach(function(docKey){
         var localDoc = localDocs[docKey];
         var remoteDoc = remoteDocs[docKey];
-        if (!localDoc) {
-          // Si remote est une suppression et qu'on n'a rien, on prend la suppression
-          // (utile si on n'avait pas le doc à l'origine, on garde quand même le marqueur pour
-          // l'écho aux autres clients qui l'auraient encore)
-          mergedDocs[docKey] = remoteDoc;
-          return;
-        }
-        // Comparaison priorité 1 : updated_ts (millis) — valable même pour _deleted markers
+        if (!localDoc) { mergedDocs[docKey] = remoteDoc; return; }
         var lTs = localDoc.updated_ts || 0;
         var rTs = remoteDoc.updated_ts || 0;
         if (lTs || rTs) {
           if (rTs > lTs) mergedDocs[docKey] = remoteDoc;
           return;
         }
-        // Fallback : si pas d'updated_ts, on regarde od_path et la date d'upload
         if (!localDoc.od_path && remoteDoc.od_path) { mergedDocs[docKey] = remoteDoc; return; }
         if (localDoc.od_path && !remoteDoc.od_path) return;
         var lDate = (typeof _parseFRDate==='function') ? _parseFRDate(localDoc.uploaded) : 0;
         var rDate = (typeof _parseFRDate==='function') ? _parseFRDate(remoteDoc.uploaded) : 0;
         if (rDate > lDate) mergedDocs[docKey] = remoteDoc;
       });
-      if (Object.keys(mergedDocs).length > 0) nameMap[key].documents = mergedDocs;
+      if (Object.keys(mergedDocs).length > 0) t.documents = mergedDocs;
 
-      // ── Fusion last-write-wins pour les autres champs métier (signataire, compta, etc.) ──
-      var localUpdated = (typeof _parseFRDate==='function') ? _parseFRDate(nameMap[key].updated) : 0;
+      // ── Fusion last-write-wins pour le NOM + les autres champs métier ──
+      var localUpdated = (typeof _parseFRDate==='function') ? _parseFRDate(t.updated) : 0;
       var remoteUpdated = (typeof _parseFRDate==='function') ? _parseFRDate(rc.updated) : 0;
-      var _lTs = nameMap[key].updated_ts || 0;
+      var _lTs = t.updated_ts || 0;
       var _rTs = rc.updated_ts || 0;
       var _remoteWins = (_lTs || _rTs) ? (_rTs >= _lTs) : (remoteUpdated > localUpdated);
       if (_remoteWins) {
+        // PROPAGATION DU RENOMMAGE : grâce au matching par id, le nom suit la version la plus récente
+        if (rc.name && rc.name !== t.name) t.name = rc.name;
         var fields = ['tel','email','adresse','secteur','delai_paiement','banque','type_contrat_client',
                       'nom_signataire','tel_signataire','email_signataire',
                       'prenom_compta','nom_compta','email_compta',
                       'mauvais_payeur_manuel',
                       'commentaire','updated','updated_ts'];
         fields.forEach(function(f){
-          if (rc[f] !== undefined && rc[f] !== null && rc[f] !== '') nameMap[key][f] = rc[f];
+          if (rc[f] !== undefined && rc[f] !== null && rc[f] !== '') t[f] = rc[f];
         });
       }
     }
   });
-  saveClientsArr(Object.values(nameMap));
+  // Reconstruction dédupliquée (par référence et par identifiant)
+  var _final = [], _seenIds = {};
+  Object.keys(nameMap).forEach(function(k){
+    var cl = nameMap[k];
+    if (!cl || _final.indexOf(cl) >= 0) return;
+    if (cl.id != null) { if (_seenIds[String(cl.id)]) return; _seenIds[String(cl.id)] = 1; }
+    _final.push(cl);
+  });
+  saveClientsArr(_final);
   if (typeof renderClients === 'function') renderClients();
 }
 
@@ -34021,7 +34573,7 @@ function computeAutoAlerts(mine, currentCommercial) {
   // 2. Cooptations à payer : statut == 'due' (non payées + délai dépassé)
   if (typeof getCooptations === 'function' && typeof getCooptationsConfig === 'function') {
     var coopCfg = getCooptationsConfig();
-    var delaiJ = coopCfg.delai_jours || 60;
+    var delaiJ = coopCfg.delai_jours || 90;
     getCooptations().forEach(function(c){
       if (c.paid) return;
       if (c.mission_abregee) return;
