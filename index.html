@@ -1948,7 +1948,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <div style="position:relative;flex:1;min-width:200px;">
-          <input id="clients-search" type="text" placeholder="Rechercher une entreprise ou un manager..." oninput="_debounceSearch(&quot;clients&quot;, renderClients)" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">
+          <input id="clients-search" type="text" placeholder="Rechercher une entreprise ou un manager..." autocomplete="off" oninput="_debounceSearch(&quot;clients&quot;, renderClients);_clientsSearchSuggest()" onfocus="_clientsSearchSuggest()" onblur="setTimeout(_clientsHideSuggest,200)" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;"><div id="clients-search-dropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #E4E0FA;border-radius:10px;box-shadow:0 8px 28px rgba(75,54,236,0.14);z-index:600;max-height:320px;overflow-y:auto;"></div>
           <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>
         </div>
         <select id="clients-filter-commercial" onchange="renderClients()" style="padding:7px 10px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;background:#F5F3FF;cursor:pointer;color:#4B36EC;font-weight:600;min-width:150px;">
@@ -30040,6 +30040,52 @@ function saveClientFromDeal(deal) {
   saveClientsArr(clients);
 }
 
+function _clientsHideSuggest(){ var d = document.getElementById('clients-search-dropdown'); if (d) d.style.display = 'none'; }
+function _clientsSuggestOpen(clid, mgridx){
+  _clientsHideSuggest();
+  if (mgridx == null || mgridx < 0) { if (typeof openClientPage === 'function') openClientPage(clid); }
+  else { if (typeof openManagerFiche === 'function') openManagerFiche(clid, mgridx); }
+}
+function _clientsSearchSuggest(){
+  var inp = document.getElementById('clients-search'), drop = document.getElementById('clients-search-dropdown');
+  if (!inp || !drop) return;
+  var q = (inp.value || '').trim().toLowerCase();
+  if (!q) { drop.style.display = 'none'; return; }
+  var esc = function(s){ return String(s || '').replace(/</g, '&lt;'); };
+  var hl = function(name){ name = String(name || ''); var i = name.toLowerCase().indexOf(q); if (i < 0) return esc(name); return esc(name.substring(0, i)) + '<mark style="background:#FFF3A0;color:inherit;padding:0;">' + esc(name.substring(i, i + q.length)) + '</mark>' + esc(name.substring(i + q.length)); };
+  var clients = getClients();
+  var items = [];
+  clients.forEach(function(cl){ if (items.length >= 8 || !cl) return; if ((cl.name || '').toLowerCase().indexOf(q) >= 0) items.push({ t:'c', cl:cl }); });
+  clients.forEach(function(cl){ if (!cl) return; (cl.managers || []).forEach(function(m, mi){
+    if (items.length >= 8 || !m) return;
+    if ((m.name || '').toLowerCase().indexOf(q) >= 0 || (m.email || '').toLowerCase().indexOf(q) >= 0) items.push({ t:'m', cl:cl, m:m, mi:mi });
+  }); });
+  if (!items.length) { drop.style.display = 'none'; return; }
+  var html = '';
+  items.forEach(function(it){
+    if (it.t === 'c') {
+      var nbM = (it.cl.managers || []).length;
+      var nbD = (it.cl.managers || []).reduce(function(a, m){ return a + ((m.deals || []).length); }, 0);
+      var ini = (it.cl.name || '').trim().split(/\s+/).filter(Boolean).map(function(w){ return w[0] || ''; }).slice(0, 2).join('').toUpperCase() || '?';
+      html += '<div onmousedown="_clientsSuggestOpen(' + it.cl.id + ', null)" style="padding:9px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid #F5F3FF;" onmouseover="this.style.background=\'#F5F3FF\'" onmouseout="this.style.background=\'#fff\'">'
+        + '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;flex-shrink:0;">' + ini + '</div>'
+        + '<div style="flex:1;min-width:0;">'
+        +   '<div style="font-size:12.5px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + hl(it.cl.name) + '</div>'
+        +   '<div style="font-size:10.5px;color:#8378B8;">' + nbM + ' manager' + (nbM > 1 ? 's' : '') + ' · ' + nbD + ' placement' + (nbD > 1 ? 's' : '') + '</div>'
+        + '</div></div>';
+    } else {
+      html += '<div onmousedown="_clientsSuggestOpen(' + it.cl.id + ', ' + it.mi + ')" style="padding:9px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid #F5F3FF;" onmouseover="this.style.background=\'#F0FAF5\'" onmouseout="this.style.background=\'#fff\'">'
+        + '<div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#1D9E75,#27C08D);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">&#128100;</div>'
+        + '<div style="flex:1;min-width:0;">'
+        +   '<div style="font-size:12.5px;font-weight:700;color:#1A1033;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + hl(it.m.name) + '</div>'
+        +   '<div style="font-size:10.5px;color:#8378B8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Manager · ' + esc(it.cl.name) + (it.m.email ? ' · ' + hl(it.m.email) : '') + '</div>'
+        + '</div></div>';
+    }
+  });
+  drop.innerHTML = html;
+  drop.style.display = 'block';
+}
+
 function showClientsTab() {
   document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
   ['tab-mission','tab-frais','tab-cotisations','tab-params','tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard'].forEach(function(id){
@@ -30061,7 +30107,7 @@ function showClientsTab() {
       +   '</div>'
       +   '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">'
       +     '<div style="position:relative;flex:1;min-width:200px;">'
-      +       '<input id="clients-search" type="text" placeholder="Rechercher une entreprise ou un manager..." oninput="_debounceSearch(&quot;clients&quot;, renderClients)" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;">'
+      +       '<input id="clients-search" type="text" placeholder="Rechercher une entreprise ou un manager..." autocomplete="off" oninput="_debounceSearch(&quot;clients&quot;, renderClients);_clientsSearchSuggest()" onfocus="_clientsSearchSuggest()" onblur="setTimeout(_clientsHideSuggest,200)" style="width:100%;padding:8px 12px 8px 32px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;box-sizing:border-box;outline:none;"><div id="clients-search-dropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #E4E0FA;border-radius:10px;box-shadow:0 8px 28px rgba(75,54,236,0.14);z-index:600;max-height:320px;overflow-y:auto;"></div>'
       +       '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E9E9E;font-size:14px;">&#128269;</span>'
       +     '</div>'
       +     '<select id="clients-filter-commercial" onchange="renderClients()" style="padding:7px 10px;border:1.5px solid #7343EE;border-radius:9px;font-size:12px;background:#F5F3FF;cursor:pointer;color:#4B36EC;font-weight:600;min-width:150px;">'
