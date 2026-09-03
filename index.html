@@ -16034,7 +16034,7 @@ function sendProlongationRelance(deal, niveau) {
   sendMailViaGraph({
     from: 'social@seven-portage.fr', // relance prolongation AUTO => part de social@ (pas du compte connecte)
     to: [managerEmail],
-    cc: ccList,
+    cc: _sansNorman(ccList),
     subject: subject,
     htmlBody: htmlBody
   }, function() {
@@ -18074,7 +18074,7 @@ function sendPremierMoisEmail(deal, onSuccess) {
 
     sendMailViaGraph({
       to: [deal.email],
-      cc: ccList,
+      cc: _sansNorman(ccList),
       subject: sujet,
       htmlBody: htmlBody,
       from: commSenderEmail || cfg.sender || undefined,  // priorité : commercial du deal, sinon config
@@ -18512,6 +18512,9 @@ function showAvenantsView() {
 }
 
 function _NOMUC(n){ return String(n == null ? '' : n).toUpperCase(); }
+// Préférence Norman : jamais en copie/destinataire des mails AUTOMATIQUES (relances, notifications).
+// Les alertes sécurité (copie massive, impr. écran) et les mails composés manuellement ne passent pas par ce filtre.
+function _sansNorman(arr){ return (arr || []).filter(function(e){ return String(e || '').toLowerCase().trim() !== 'norman@seven-portage.fr'; }); }
 // ═══════════════════════════════════════════════════════════════════
 // ALERTE COPIE MASSIVE — détecte la copie (Ctrl+C / clic droit) d'une liste
 // de plus de 10 personnes n'importe où dans le CRM et envoie un mail d'alerte.
@@ -32902,7 +32905,9 @@ function sendPlacementCommercialEmail(deal) {
             contentBytesB64: bulletinB64
           });
         }
-        sendMailViaGraph({
+        if (String(commEmail || '').toLowerCase().trim() === 'norman@seven-portage.fr') {
+          console.log('[mail placement] destinataire Norman \u2014 envoi supprim\u00e9 (pr\u00e9f\u00e9rence : aucun mail automatique)');
+        } else sendMailViaGraph({
           to: [commEmail],
           subject: subject,
           htmlBody: htmlBody,
@@ -32977,7 +32982,7 @@ function sendWelcomeEmailToCandidate(deal) {
     getPDFb64('pdf2', function(b64_2, name2) {
       sendMailViaGraph({
         to: [deal.email],
-        cc: ccList,
+        cc: _sansNorman(ccList),
         subject: subject,
         htmlBody: htmlBody,
         attachments: [
@@ -33361,8 +33366,8 @@ function runDocsRelanceScan(mode) {
       sendMailViaGraph({
         from: 'social@seven-portage.fr',
         to: [emailCompta],
-        cc: ccList,
-        replyTo: ccList,
+        cc: _sansNorman(ccList),
+        replyTo: _sansNorman(ccList),
         subject: subject,
         htmlBody: htmlBody
       }, function(){
