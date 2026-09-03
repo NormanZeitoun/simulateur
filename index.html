@@ -11116,6 +11116,15 @@ function _isMgrDealTombstoned(d) {
 }
 
 function deleteDeal(id) {
+  // SÉCURITÉ : suppression protégée par mot de passe admin (incident du 28/05/2026 —
+  // un placement légitime supprimé lors d'un nettoyage). La suppression se propage
+  // ensuite sur tous les postes via tombstone : d'où la double protection mdp + confirm.
+  promptGenericAdminPassword({
+    title: 'Suppression d\'un deal',
+    subtitle: 'Action définitive, propagée sur tous les postes. Mot de passe administrateur requis.'
+  }, function(){ _deleteDealConfirmed(id); });
+}
+function _deleteDealConfirmed(id) {
   if (!confirm('Supprimer ce deal ?')) return;
   // FIX : comparaison tolérante au type (string ou number)
   var _delDeal = getDeals().find(function(d) { return String(d.id) === String(id); });
