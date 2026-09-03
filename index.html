@@ -7079,7 +7079,7 @@ function odInit() {
       if (accounts.length > 0) {
         odAccount = accounts[0];
         msalApp.acquireTokenSilent({
-          scopes: ['Files.ReadWrite', 'User.Read', 'Sites.ReadWrite.All', 'Mail.Send'],
+          scopes: ['Files.ReadWrite', 'User.Read', 'Sites.ReadWrite.All', 'Mail.Send', 'Mail.Send.Shared'],
           account: odAccount
         }).then(function(r) {
           odToken = r.accessToken;
@@ -7141,7 +7141,7 @@ function odConnect() {
     return;
   }
   msalApp.loginPopup({
-    scopes: ['Files.ReadWrite', 'User.Read', 'Sites.ReadWrite.All', 'Mail.Send']
+    scopes: ['Files.ReadWrite', 'User.Read', 'Sites.ReadWrite.All', 'Mail.Send', 'Mail.Send.Shared']
   }).then(function(res) {
     odToken = res.accessToken;
     odAccount = res.account;
@@ -7184,7 +7184,7 @@ function odWithToken(cb) {
   if (odToken) { cb(odToken); return; }
   if (!msalApp || !odAccount) { odSetStatus('Non connecté', true); return; }
   msalApp.acquireTokenSilent({
-    scopes: ['Files.ReadWrite', 'User.Read', 'Sites.ReadWrite.All', 'Mail.Send'],
+    scopes: ['Files.ReadWrite', 'User.Read', 'Sites.ReadWrite.All', 'Mail.Send', 'Mail.Send.Shared'],
     account: odAccount
   }).then(function(r) { odToken = r.accessToken; cb(odToken); })
   .catch(function() { odSetStatus('Session expirée, reconnectez-vous', true); });
@@ -7202,7 +7202,7 @@ function _odRefreshToken() {
       return Promise.reject(new Error('Pas de compte MSAL pour refresh'));
     }
     return msalApp.acquireTokenSilent({
-      scopes: ['Files.ReadWrite', 'User.Read', 'Sites.ReadWrite.All', 'Mail.Send'],
+      scopes: ['Files.ReadWrite', 'User.Read', 'Sites.ReadWrite.All', 'Mail.Send', 'Mail.Send.Shared'],
       account: odAccount
     }).then(function(r){
       odToken = r.accessToken;
