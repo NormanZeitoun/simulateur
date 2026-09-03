@@ -3050,7 +3050,7 @@ function filterSimCandidat() {
 
   var html = '';
   matches.forEach(function(c) {
-    var fullName = ((c.prenom||'') + ' ' + (c.nom||'')).trim() || '(sans nom)';
+    var fullName = ((c.prenom||'') + ' ' + _NOMUC(c.nom)).trim() || '(sans nom)';
     var initials = ((c.prenom||'')[0] || '?') + ((c.nom||'')[0] || '');
     var escId = String(c.id);
     html += '<div onmousedown="selectSimCandidat(\'' + escId + '\')" style="padding:9px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid #F5F3FF;transition:background .1s;" onmouseover="this.style.background=\'#F5F3FF\'" onmouseout="this.style.background=\'#fff\'">'
@@ -6584,7 +6584,7 @@ function msFilterCands(query) {
   }
   var html = '';
   filtered.forEach(function(c){
-    var nom = ((c.prenom||'') + ' ' + (c.nom||'')).trim() || '(sans nom)';
+    var nom = ((c.prenom||'') + ' ' + _NOMUC(c.nom)).trim() || '(sans nom)';
     var email = c.email || '';
     var entreprise = c.entreprise || '';
     html += '<div onclick="msSelectCand(' + c.id + ')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #EEE;font-size:12px;" onmouseover="this.style.background=\'#F0EDFF\'" onmouseout="this.style.background=\'transparent\'">'
@@ -11789,7 +11789,7 @@ function getCellValue(d, key){
   var fmt=function(v){ return (v===null||v===undefined||v==='') ? '—' : String(v); };
   switch(key){
     case 'etat': if (d.stand_by) return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:#7343EE;white-space:nowrap;">\u23f8 Stand by</span>'; var co=ETAT_COLORS[d.etat]||'#6B5E9C'; return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:'+co+';white-space:nowrap;">'+(d.etat||'—')+'</span>';
-    case 'candidat': return '<span onclick="event.stopPropagation();openCandidatByEmail(\''+(d.email||'')+'\')" style="font-weight:600;color:#7343EE;cursor:pointer;text-decoration:underline;" title="Voir la fiche candidat">'+(d.prenom||'')+' '+(d.nom||'')+'</span>';
+    case 'candidat': return '<span onclick="event.stopPropagation();openCandidatByEmail(\''+(d.email||'')+'\')" style="font-weight:600;color:#7343EE;cursor:pointer;text-decoration:underline;" title="Voir la fiche candidat">'+(d.prenom||'')+' '+_NOMUC(d.nom)+'</span>';
     case 'email': return fmt(d.email);
     case 'tel': return fmt(d.tel);
     case 'poste': return fmt(d.poste);
@@ -14385,7 +14385,7 @@ function renderPeriodeEssai() {
     var ancTxt = anc === null ? '\u2014' : (anc < 1 ? '&lt; 1 mois' : anc + ' mois');
     var ancColor = anc === null ? '#9E94C4' : (anc >= PE_ALERTE1_MOIS ? '#B26A00' : '#0F5132');
     return '<tr style="border-bottom:1px solid #F0EDF9;">'
-      + '<td style="padding:9px 10px;font-weight:600;color:#1A1033;">' + (((d.prenom||'')+' '+(d.nom||'')).trim() || '\u2014').replace(/</g,'&lt;') + '</td>'
+      + '<td style="padding:9px 10px;font-weight:600;color:#1A1033;">' + (((d.prenom||'')+' '+_NOMUC(d.nom)).trim() || '\u2014').replace(/</g,'&lt;') + '</td>'
       + '<td style="padding:9px 10px;color:#6B5E9C;">' + ((d.entreprise||'\u2014')).replace(/</g,'&lt;') + '</td>'
       + '<td style="padding:9px 10px;color:#6B5E9C;">' + ((d.commercial||'\u2014')).replace(/</g,'&lt;') + '</td>'
       + '<td style="padding:9px 10px;">' + _peFmtDate(d.date_entree) + '</td>'
@@ -14458,7 +14458,7 @@ function _peSendMail(d, kind, onOk, onErr) {
   var to = [em.marie, em.clemence].filter(Boolean);
   to = to.filter(function(e, i){ return to.indexOf(e) === i; });
   if (!to.length) { onErr && onErr('emails Marie/Clémence non configurés'); return; }
-  var nom = ((d.prenom||'')+' '+(d.nom||'')).trim() || '\u2014';
+  var nom = ((d.prenom||'')+' '+_NOMUC(d.nom)).trim() || '\u2014';
   var anc = _peAncienneteMois(d);
   var fin = _peFinDate(d);
   var sujet = (kind === '3m')
@@ -18511,6 +18511,169 @@ function showAvenantsView() {
   renderAvenants();
 }
 
+function _NOMUC(n){ return String(n == null ? '' : n).toUpperCase(); }
+// ═══════════════════════════════════════════════════════════════════
+// ALERTE COPIE MASSIVE — détecte la copie (Ctrl+C / clic droit) d'une liste
+// de plus de 10 personnes n'importe où dans le CRM et envoie un mail d'alerte.
+// Heuristique : > 10 lignes non vides OU > 10 emails distincts dans la sélection.
+// Anti-spam : 1 mail max par tranche de 10 minutes par poste (les copies
+// intermédiaires sont agrégées dans le mail suivant). Journal local : _copyLog().
+// ═══════════════════════════════════════════════════════════════════
+var _COPY_ALERT_SEUIL = 10;
+var _copyAlertPending = [];
+function _copyLog() {
+  try { return JSON.parse(localStorage.getItem('sp_copy_log_v1') || '[]'); } catch(e) { return []; }
+}
+function _copyAlertActiveTab() {
+  try {
+    var vis = ['tab-deals','tab-candidats','tab-clients','tab-historique','tab-taches','tab-commissions','tab-dashboard','tab-mission','tab-frais','tab-cotisations','tab-params'];
+    for (var i = 0; i < vis.length; i++) {
+      var el = document.getElementById(vis[i]);
+      if (el && el.style.display !== 'none' && el.offsetParent !== null) return vis[i].replace('tab-','');
+    }
+  } catch(e){}
+  return 'inconnu';
+}
+document.addEventListener('copy', function(){
+  try {
+    var txt = String((window.getSelection && window.getSelection().toString()) || '');
+    if (!txt) return;
+    var lignes = txt.split(/\n/).map(function(l){ return l.trim(); }).filter(Boolean);
+    var emails = (txt.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || []);
+    var emailsUniq = emails.filter(function(e, i){ return emails.indexOf(e) === i; });
+    if (lignes.length <= _COPY_ALERT_SEUIL && emailsUniq.length <= _COPY_ALERT_SEUIL) return;
+    var who = (typeof odAccount !== 'undefined' && odAccount && (odAccount.username || odAccount.name)) || 'non connecté';
+    var evt = {
+      ts: Date.now(),
+      type: 'copie',
+      qui: who,
+      onglet: _copyAlertActiveTab(),
+      nb_lignes: lignes.length,
+      nb_emails: emailsUniq.length,
+      apercu: lignes.slice(0, 3).map(function(l){ return l.slice(0, 90); })
+    };
+    // Journal local (200 derniers événements)
+    try {
+      var lg = _copyLog(); lg.unshift(evt);
+      localStorage.setItem('sp_copy_log_v1', JSON.stringify(lg.slice(0, 200)));
+    } catch(e){}
+    _copyAlertPending.push(evt);
+    _copyAlertFlush();
+  } catch(e){}
+});
+function _copyAlertFlush() {
+  try {
+    if (!_copyAlertPending.length) return;
+    var last = parseInt(localStorage.getItem('sp_copy_alert_last_v1') || '0');
+    if (Date.now() - last < 10 * 60 * 1000) return;   // throttle 10 min — les events restent en attente
+    if (typeof sendMailViaGraph !== 'function') return;
+    var dest = 'norman@seven-portage.fr';   // destinataire des alertes de sécurité
+    var evts = _copyAlertPending.splice(0, _copyAlertPending.length);
+    var rows = evts.map(function(e){
+      return '<tr>'
+        + '<td style="padding:6px 10px;border:1px solid #E4E0FA;white-space:nowrap;">' + new Date(e.ts).toLocaleString('fr-FR') + '</td>'
+        + '<td style="padding:6px 10px;border:1px solid #E4E0FA;">' + String(e.qui).replace(/</g,'&lt;') + '</td>'
+        + '<td style="padding:6px 10px;border:1px solid #E4E0FA;">' + e.onglet + '</td>'
+        + '<td style="padding:6px 10px;border:1px solid #E4E0FA;text-align:right;"><b>' + e.nb_lignes + '</b> lignes / ' + e.nb_emails + ' emails</td>'
+        + '<td style="padding:6px 10px;border:1px solid #E4E0FA;font-size:11px;color:#6B5E9C;">' + e.apercu.map(function(l){ return String(l).replace(/</g,'&lt;'); }).join('<br>') + '…</td>'
+        + '</tr>';
+    }).join('');
+    var html = '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:720px;margin:0 auto;">'
+      + '<div style="background:#B26A00;color:#ffffff;padding:16px 22px;border-radius:10px 10px 0 0;">'
+      +   '<div style="font-size:17px;font-weight:800;">\u26A0 Copie massive détectée dans le CRM</div>'
+      + '</div>'
+      + '<div style="background:#ffffff;border:1px solid #E4E0FA;border-top:none;padding:20px 22px;border-radius:0 0 10px 10px;color:#1A1033;font-size:13.5px;">'
+      +   '<p>Une ou plusieurs copies de plus de ' + _COPY_ALERT_SEUIL + ' lignes ont été détectées :</p>'
+      +   '<table style="border-collapse:collapse;width:100%;font-size:12.5px;">'
+      +     '<tr style="background:#F7F4FF;"><th style="padding:6px 10px;border:1px solid #E4E0FA;">Quand</th><th style="padding:6px 10px;border:1px solid #E4E0FA;">Compte connecté</th><th style="padding:6px 10px;border:1px solid #E4E0FA;">Onglet</th><th style="padding:6px 10px;border:1px solid #E4E0FA;">Volume</th><th style="padding:6px 10px;border:1px solid #E4E0FA;">Aperçu (3 premières lignes)</th></tr>'
+      +     rows
+      +   '</table>'
+      +   '<p style="color:#9E94C4;font-size:11.5px;margin-top:14px;">Alerte automatique CRM Seven Portage — seuil : ' + _COPY_ALERT_SEUIL + ' lignes ou emails. Journal complet : console \u2192 _copyLog(). Maximum une alerte toutes les 10 minutes par poste.</p>'
+      + '</div></div>';
+    sendMailViaGraph({
+      from: 'social@seven-portage.fr',
+      to: [dest],
+      cc: [],
+      subject: '\u26A0 [CRM] Copie massive — ' + evts[0].qui + ' (' + evts[0].nb_lignes + ' lignes, onglet ' + evts[0].onglet + ')',
+      htmlBody: html
+    }, function(){
+      try { localStorage.setItem('sp_copy_alert_last_v1', String(Date.now())); } catch(e){}
+      console.log('[copy-alert] alerte envoyée (' + evts.length + ' événement(s))');
+    }, function(err){
+      _copyAlertPending = evts.concat(_copyAlertPending);   // ré-empiler pour retenter plus tard
+      console.warn('[copy-alert] échec envoi, retentera', err);
+    });
+  } catch(e){}
+}
+setInterval(_copyAlertFlush, 60 * 1000);   // retente les events en attente (throttle/échec)
+// ═══════════════════════════════════════════════════════════════════
+// ALERTE IMPR. ÉCRAN + IMPRESSION — détecte l'appui sur la touche
+// "Impr. écran" (page au premier plan) et l'impression de la page (Ctrl+P/PDF).
+// LIMITE TECHNIQUE : Win+Shift+S, l'Outil Capture et une photo de l'écran
+// sont invisibles pour un navigateur — aucune page web ne peut les détecter.
+// Même mécanique que l'alerte copie : agrégation + 1 mail max / 10 min / poste.
+// ═══════════════════════════════════════════════════════════════════
+var _screenAlertPending = [];
+function _screenAlertPush(typeLbl) {
+  try {
+    var who = (typeof odAccount !== 'undefined' && odAccount && (odAccount.username || odAccount.name)) || 'non connecté';
+    var evt = { ts: Date.now(), type: typeLbl, qui: who, onglet: _copyAlertActiveTab() };
+    try {
+      var lg = _copyLog(); lg.unshift(evt);
+      localStorage.setItem('sp_copy_log_v1', JSON.stringify(lg.slice(0, 200)));
+    } catch(e){}
+    _screenAlertPending.push(evt);
+    _screenAlertFlush();
+  } catch(e){}
+}
+document.addEventListener('keyup', function(e){
+  try { if (e && (e.key === 'PrintScreen' || e.keyCode === 44)) _screenAlertPush('imprim_ecran'); } catch(_e){}
+});
+window.addEventListener('beforeprint', function(){ _screenAlertPush('impression_page'); });
+function _screenAlertFlush() {
+  try {
+    if (!_screenAlertPending.length) return;
+    var last = parseInt(localStorage.getItem('sp_screen_alert_last_v1') || '0');
+    if (Date.now() - last < 10 * 60 * 1000) return;
+    if (typeof sendMailViaGraph !== 'function') return;
+    var evts = _screenAlertPending.splice(0, _screenAlertPending.length);
+    var lbl = function(t){ return t === 'imprim_ecran' ? '\u{1F4F8} Impr. écran (touche)' : '\u{1F5A8} Impression de la page'; };
+    var rows = evts.map(function(e){
+      return '<tr>'
+        + '<td style="padding:6px 10px;border:1px solid #E4E0FA;white-space:nowrap;">' + new Date(e.ts).toLocaleString('fr-FR') + '</td>'
+        + '<td style="padding:6px 10px;border:1px solid #E4E0FA;">' + lbl(e.type) + '</td>'
+        + '<td style="padding:6px 10px;border:1px solid #E4E0FA;">' + String(e.qui).replace(/</g,'&lt;') + '</td>'
+        + '<td style="padding:6px 10px;border:1px solid #E4E0FA;">' + e.onglet + '</td>'
+        + '</tr>';
+    }).join('');
+    var html = '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;">'
+      + '<div style="background:#8A3FA0;color:#ffffff;padding:16px 22px;border-radius:10px 10px 0 0;">'
+      +   '<div style="font-size:17px;font-weight:800;">\u{1F4F8} Capture / impression détectée dans le CRM</div>'
+      + '</div>'
+      + '<div style="background:#ffffff;border:1px solid #E4E0FA;border-top:none;padding:20px 22px;border-radius:0 0 10px 10px;color:#1A1033;font-size:13.5px;">'
+      +   '<table style="border-collapse:collapse;width:100%;font-size:12.5px;">'
+      +     '<tr style="background:#F7F4FF;"><th style="padding:6px 10px;border:1px solid #E4E0FA;">Quand</th><th style="padding:6px 10px;border:1px solid #E4E0FA;">Type</th><th style="padding:6px 10px;border:1px solid #E4E0FA;">Compte connecté</th><th style="padding:6px 10px;border:1px solid #E4E0FA;">Onglet</th></tr>'
+      +     rows
+      +   '</table>'
+      +   '<p style="color:#9E94C4;font-size:11.5px;margin-top:14px;">Alerte automatique CRM Seven Portage. Détecte la touche Impr. écran (page au premier plan) et l\'impression de la page. Les captures via Win+Shift+S, l\'Outil Capture ou un téléphone ne sont techniquement pas détectables par un navigateur. Journal : console \u2192 _copyLog(). Max. une alerte / 10 min / poste.</p>'
+      + '</div></div>';
+    sendMailViaGraph({
+      from: 'social@seven-portage.fr',
+      to: ['norman@seven-portage.fr'],
+      cc: [],
+      subject: '\u{1F4F8} [CRM] ' + (evts[0].type === 'imprim_ecran' ? 'Impr. écran' : 'Impression page') + ' — ' + evts[0].qui + ' (onglet ' + evts[0].onglet + ')',
+      htmlBody: html
+    }, function(){
+      try { localStorage.setItem('sp_screen_alert_last_v1', String(Date.now())); } catch(e){}
+      console.log('[screen-alert] alerte envoyée (' + evts.length + ' événement(s))');
+    }, function(err){
+      _screenAlertPending = evts.concat(_screenAlertPending);
+      console.warn('[screen-alert] échec envoi, retentera', err);
+    });
+  } catch(e){}
+}
+setInterval(_screenAlertFlush, 60 * 1000);
+
 function renderAvenants() {
   var el = document.getElementById('rh-content-container');
   if (!el) return;
@@ -18777,17 +18940,21 @@ function buildAvenantsContent() {
   // Tableau
   html += '<div class="av-table-wrap"><div class="av-table-scroll"><table class="av-table">'
     + '<thead><tr>'
-    + '<th class="avfix avfix1">Date demande</th><th class="avfix avfix2">Commercial</th><th class="avfix avfix3">Porté</th><th>ADV</th><th>Mission/Poste</th><th>Nom du client</th><th>Nom du manager</th><th>Lieu de mission</th><th>Type</th><th>Motif</th>'
+    + '<th class="avfix avfix1">Date demande</th><th class="avfix avfix2">Commercial</th><th class="avfix avfix3">Porté</th><th>ADV</th><th>Mission/Poste</th><th>Nom du client</th><th>Nom du manager</th><th>Signataire</th><th>Comptable</th><th>Lieu de mission</th><th>Type</th><th>Motif</th>'
     + '<th>CDPS</th><th>À partir du</th><th>Jusqu\'au</th><th>Contrat</th>'
     + '<th>TJM</th><th>Frais de gestion</th><th>Ancien salaire</th><th>Nouveau salaire</th><th>Frais ↗</th>'
     + '<th>Swile</th><th>Forfait repas</th><th>Km</th><th>TC</th><th>Télétravail</th>'
     + '<th>Tel/internet</th><th>Grand dépl.</th>'
-    + '<th>État CDT</th><th>État CDPS</th><th>CDT signé</th><th>CDPS signé</th><th>Modif LAYA</th><th>Signataire</th><th>Comptable</th>'
+    + '<th>État CDT</th><th>État CDPS</th><th>CDT signé</th><th>CDPS signé</th><th>Modif LAYA</th>'
     + '<th>Commentaires</th><th>Action</th>'
     + '</tr></thead><tbody>';
 
   var _avDealById = {};
   try { getDeals().forEach(function(d){ if (d && d.id != null) _avDealById[d.id] = d; }); } catch(_e){}
+  var _avSimByTs = {};
+  try { getHistory().forEach(function(s){ if (s && s.timestamp != null) _avSimByTs[String(s.timestamp)] = s; }); } catch(_e){}
+  var _avClientByName = {};
+  try { getClients().forEach(function(cl){ if (cl && cl.name) _avClientByName[String(cl.name).trim().toLowerCase()] = cl; }); } catch(_e){}
   filtered.forEach(function(a){
     // Pour les anciens avenants qui stockaient "Oui"/"Non", on re-extrait depuis la SIMU
     // pour afficher les vrais montants. Pour les nouveaux, on utilise les valeurs stockées.
@@ -18887,7 +19054,10 @@ function buildAvenantsContent() {
       }
       return formatted;
     }
-    var nomComplet = ((a.prenom_porte||'') + ' ' + (a.nom_porte||'')).trim() || '—';
+    var nomComplet = ((a.prenom_porte||'') + ' ' + _NOMUC(a.nom_porte)).trim() || '—';
+    var _fd = _avDealById[a.deal_id] || null;
+    var _fs = _avSimByTs[String((a.sim_ts != null && a.sim_ts !== '') ? a.sim_ts : ((_fd && _fd.sim_ts) || ''))] || null;
+    var _fc = _avClientByName[String(a.client||'').trim().toLowerCase()] || null;
     // ADV en charge du dossier : Clémence (A-H) / Marie (I-Z) selon le nom du porté (règle config-aware)
     var _advKey = (typeof _getADVByLetter === 'function') ? _getADVByLetter((a.nom_porte||'').charAt(0)) : null;
     var _advLabel = _advKey === 'clemence' ? 'Clémence' : (_advKey === 'marie' ? 'Marie' : '—');
@@ -18902,7 +19072,19 @@ function buildAvenantsContent() {
       + '<td>' + ((a.poste || '').replace(/</g,'&lt;') || '—') + '</td>'
       + '<td>' + ((a.client || '').replace(/</g,'&lt;') || '—') + '</td>'
       + '<td>' + ((a.manager || '').replace(/</g,'&lt;') || '—') + '</td>'
-      + '<td>' + ((a.lieu_mission || '').replace(/</g,'&lt;') || '—') + '</td>'
+      + (function(){
+          var _sg = (_fd && _fd.nom_signataire) || (_fc && _fc.nom_signataire) || '';
+          var _cpN = ((_fd && ((_fd.prenom_compta||'') + ' ' + (_fd.nom_compta||'')).trim()) || (_fc && ((_fc.prenom_compta||'') + ' ' + (_fc.nom_compta||'')).trim()) || '');
+          if (!_cpN) _cpN = (_fd && _fd.email_compta) || (_fc && _fc.email_compta) || '';
+          var _lnk = function(txt){
+            if (!txt) return '<td>—</td>';
+            var safe = String(txt).replace(/</g,'&lt;');
+            if (_fc && _fc.id != null) return '<td><span onclick="openClientPage(' + _fc.id + ')" style="color:#7343EE;font-weight:600;cursor:pointer;text-decoration:underline;" title="Ouvrir la fiche client">' + safe + '</span></td>';
+            return '<td>' + safe + '</td>';
+          };
+          return _lnk(_sg) + _lnk(_cpN);
+        })()
+      + '<td>' + (String(a.lieu_mission || (_fd && _fd.lieu_mission) || (_fs && (_fs.lieu_mission || _fs.gd_lieu)) || '').replace(/</g,'&lt;') || '—') + '</td>'
       + '<td>' + (a.type_avenant || '—') + '</td>'
       + '<td>' + (a.motif || '—') + '</td>'
       + '<td>' + (a.cdps_seven_client || '—') + '</td>'
@@ -18910,7 +19092,7 @@ function buildAvenantsContent() {
       + '<td>' + _fmtAvDate(a.date_fin) + '</td>'
       + '<td>' + (a.type_contrat || '—') + '</td>'
       + '<td style="text-align:right;">' + val('tjm') + '</td>'
-      + '<td style="text-align:right;">' + (function(){ var _fd = _avDealById[a.deal_id]; var _f = a.fg || (_fd && (_fd.fg_reel || _fd.frais_gestion)) || ''; return _f ? (_f + ' %') : '—'; })() + '</td>'
+      + '<td style="text-align:right;">' + (function(){ var _f = a.fg || (_fd && (_fd.fg_reel || _fd.frais_gestion)) || (_fs && (_fs.fg_reel || _fs.marge)) || ''; return _f ? (_f + ' %') : '—'; })() + '</td>'
       + '<td style="text-align:right;color:#9E94C4;">' + _fmtAvEur(a.ancien_salaire) + '</td>'
       + '<td style="text-align:right;font-weight:700;">' + valEur('new_salaire_annuel') + '</td>'
       + '<td>' + val('changement_frais') + '</td>'
@@ -18926,8 +19108,6 @@ function buildAvenantsContent() {
       + '<td>' + _avInlineSelect(a.id, 'avenant_cdt_signe', a.avenant_cdt_signe, ['Oui','Non','N/A']) + '</td>'
       + '<td>' + _avInlineSelect(a.id, 'avenant_cdps_signe', a.avenant_cdps_signe, ['Oui','Non','N/A']) + '</td>'
       + '<td>' + _avInlineSelect(a.id, 'modif_laya', a.modif_laya, ['Oui','Non','À faire','N/A']) + '</td>'
-      + '<td>' + _avInlineSelect(a.id, 'signataire', a.signataire, ['Norman','David','Rayan','Esteban','Sacha','Farah','Joanne','N/A']) + '</td>'
-      + '<td>' + _avInlineSelect(a.id, 'comptable', a.comptable, ['Clémence','Marie','N/A']) + '</td>'
       + '<td style="max-width:220px;"><input type="text" value="' + (a.commentaires||'').replace(/"/g,'&quot;') + '" placeholder="—" oninput="updateAvenantField(\'' + a.id + '\',\'commentaires\',this.value);" style="width:100%;padding:4px 7px;border:1px solid #E4E0FA;border-radius:5px;font-size:10.5px;font-family:inherit;background:transparent;"></td>'
       + '<td><button class="av-edit-btn" onclick="openEditAvenantPopup(\'' + a.id + '\')" title="Édition complète + suppression">✎</button></td>'
       + '</tr>';
@@ -18956,7 +19136,7 @@ function openEditAvenantPopup(avenantId) {
   var modal = document.createElement('div');
   modal.id = 'av-edit-modal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(20,10,60,0.55);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;';
-  var nomComplet = ((a.prenom_porte||'') + ' ' + (a.nom_porte||'')).trim() || '—';
+  var nomComplet = ((a.prenom_porte||'') + ' ' + _NOMUC(a.nom_porte)).trim() || '—';
 
   modal.innerHTML = ''
     + '<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(20,10,60,0.4);padding:22px 24px;width:94%;max-width:540px;max-height:90vh;overflow-y:auto;">'
@@ -25855,7 +26035,7 @@ function renderSortants() {
         + '<td>' + (s.date_demande || '—') + '</td>'
         + '<td>' + (s.commercial || '—') + '</td>'
         + '<td style="font-weight:600;">' + (s.prenom || '—') + '</td>'
-        + '<td style="font-weight:600;">' + (s.nom || '—') + '</td>'
+        + '<td style="font-weight:600;">' + (_NOMUC(s.nom) || '—') + '</td>'
         + '<td>' + (s.entreprise || '—') + '</td>'
         + '<td>' + finMissionDisplay + '</td>'
         + '<td>' + renderSortantBadge(s.fin_contrat_travail) + '</td>'
@@ -34595,7 +34775,7 @@ function computeAutoAlerts(mine, currentCommercial) {
       var cid = 'coop_' + c.id;
       if (closed[cid]) return;
       if (mine && !_sameCommercial(c.commercial, currentCommercial)) return;
-      var cooptName = ((c.coopteur_prenom||'') + ' ' + (c.coopteur_nom||'')).trim() || '—';
+      var cooptName = ((c.coopteur_prenom||'') + ' ' + _NOMUC(c.coopteur_nom)).trim() || '—';
       var portName = ((c.porte_prenom||'') + ' ' + (c.porte_nom||'')).trim() || '—';
       alerts.cooptations.push({
         id: cid, type: 'cooptation', ref: c,
