@@ -3920,12 +3920,28 @@ window.addEventListener('DOMContentLoaded', () => {
   // Sauvegarde ATOMIQUE d'un seul input (pas une boucle sur tous les inputs).
   // Plus rapide et plus sûr : on lit le localStorage existant, on met à jour
   // SEULEMENT le champ qui vient d'être modifié, on réécrit.
+  // Champs PERSONNELS par poste (jamais écrasés par la sync — chaque commercial garde les siens)
+  var _PARAMS_PERSO = ['p_commercial_nom','p_commercial_tel','p_commercial_email','p_commercial_homepage','od-commercial-select'];
+  // Horodatage par champ des barèmes PARTAGÉS (frais pro, barèmes km, plafonds, taux…)
+  // → permet un last-write-wins propre entre postes dans mergeParams.
+  function _stampSharedParam(id) {
+    if (!id || _PARAMS_PERSO.indexOf(id) >= 0) return;
+    try {
+      var ts = JSON.parse(localStorage.getItem('sp_params_shared_ts_v1') || '{}') || {};
+      ts[id] = Date.now();
+      localStorage.setItem('sp_params_shared_ts_v1', JSON.stringify(ts));
+    } catch(e){}
+    try { if (typeof _touchAppSettings === 'function') _touchAppSettings(); } catch(e){}
+    try { if (typeof odAutoSync === 'function') odAutoSync(); } catch(e){}
+  }
   function _saveOneParam(el) {
     if (!el || !el.id) return;
     var existing = {};
     try { existing = JSON.parse(localStorage.getItem('sp_params_v2') || '{}') || {}; } catch(e){}
+    var _prev = existing[el.id];
     existing[el.id] = el.value;
     try { localStorage.setItem('sp_params_v2', JSON.stringify(existing)); } catch(e) { console.warn('[params save]', e); }
+    if (String(_prev) !== String(el.value)) _stampSharedParam(el.id);
   }
 
   // Debounce pour l'event 'input' (frappe en cours) — 400ms évite de spammer
@@ -30109,6 +30125,7 @@ function mergeDeals(remote) {
 function getAllParams() {
   return {
     commercial: JSON.parse(localStorage.getItem('sp_params_v2') || '{}'),
+    params_shared_ts: JSON.parse(localStorage.getItem('sp_params_shared_ts_v1') || '{}'),
     custom_lists: JSON.parse(localStorage.getItem('sp_custom_lists_v1') || 'null'),
     deal_views: JSON.parse(localStorage.getItem('sp_deal_views_v1') || '[]'),
     deal_cols: JSON.parse(localStorage.getItem('sp_deal_cols') || 'null'),
@@ -30135,11 +30152,45 @@ function mergeParams(remote) {
   if (!remote) return;
   if (remote.commercial) {
     var local = JSON.parse(localStorage.getItem('sp_params_v2') || '{}');
+    // Champs personnels par poste : on ne fait que remplir les trous (comportement historique)
+    var _perso = ['p_commercial_nom','p_commercial_tel','p_commercial_email','p_commercial_homepage','od-commercial-select'];
+    var rTs = remote.params_shared_ts || {};
+    var lTs = {};
+    try { lTs = JSON.parse(localStorage.getItem('sp_params_shared_ts_v1') || '{}') || {}; } catch(e){}
+    var changedIds = [];
     Object.keys(remote.commercial).forEach(function(k) {
-      if (!local[k] || local[k] === '') local[k] = remote.commercial[k];
+      var rv = remote.commercial[k];
+      if (_perso.indexOf(k) >= 0) {
+        if (!local[k] || local[k] === '') local[k] = rv;
+        return;
+      }
+      var rk = rTs[k] || 0, lk = lTs[k] || 0;
+      // Champ vide/absent localement : on prend la valeur distante (comportement historique)
+      if (!Object.prototype.hasOwnProperty.call(local, k) || local[k] === '' || local[k] == null) {
+        if (rv !== '' && rv != null) { local[k] = rv; if (rk > lk) lTs[k] = rk; changedIds.push(k); }
+        return;
+      }
+      // Barème PARTAGÉ : le poste qui a modifié le plus récemment gagne (fix : avant, un
+      // barème mis à jour sur un poste ne se propageait JAMAIS aux postes ayant déjà une valeur
+      // → calculs différents d'un utilisateur à l'autre pour la même simulation)
+      if (rk > lk && rv !== '' && rv != null) {
+        if (String(local[k]) !== String(rv)) { local[k] = rv; changedIds.push(k); }
+        lTs[k] = rk;
+      }
     });
     localStorage.setItem('sp_params_v2', JSON.stringify(local));
+    try { localStorage.setItem('sp_params_shared_ts_v1', JSON.stringify(lTs)); } catch(e){}
     if (typeof loadParamsCommercial === 'function') loadParamsCommercial();
+    // Répercuter les barèmes reçus dans le formulaire affiché + recalculer la simulation en cours
+    if (changedIds.length) {
+      var _domTouched = false;
+      changedIds.forEach(function(id){
+        var el = document.getElementById(id);
+        if (el && String(el.value) !== String(local[id])) { el.value = local[id]; _domTouched = true; }
+      });
+      console.log('[params sync] barèmes mis à jour depuis un autre poste : ' + changedIds.join(', '));
+      if (_domTouched) { try { if (typeof calc === 'function') calc(); } catch(e){} }
+    }
   }
   if (remote.custom_lists && !localStorage.getItem('sp_custom_lists_v1')) {
     localStorage.setItem('sp_custom_lists_v1', JSON.stringify(remote.custom_lists));
