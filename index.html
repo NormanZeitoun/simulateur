@@ -10336,10 +10336,18 @@ function findSortantByDealId(dealId) {
   return getSortants().find(function(s){ return s.deal_id === dealId; }) || null;
 }
 
-function openSortiePopup(ts, mode) {
-  // Récupérer le deal depuis le timestamp simulation
+function openSortiePopup(ts, mode, dealId) {
+  // Récupérer le deal. Priorité à l'ID exact : depuis la continuité de contrat, le deal
+  // d'origine et la ligne de continuité peuvent PARTAGER le même sim_ts, et le premier
+  // trouvé n'est pas forcément celui que l'utilisateur a cliqué.
   var deals = getDeals();
-  var deal = deals.find(function(d){ return d.sim_ts === ts; });
+  var deal = null;
+  if (dealId != null && dealId !== '') deal = deals.find(function(d){ return String(d.id) === String(dealId); });
+  if (!deal) {
+    var _cands = deals.filter(function(d){ return d.sim_ts === ts; });
+    // À sim_ts partagé, préférer la ligne ACTIVE (celle qui n'a pas été clôturée par une continuité)
+    deal = _cands.find(function(d){ return !d.prolonge_par; }) || _cands[0] || null;
+  }
   // Si pas de deal encore, tenter via l'historique (rare)
   var fallback = null;
   if (!deal) {
@@ -11145,14 +11153,30 @@ function _deleteDealConfirmed(id) {
   // FIX : comparaison tolérante au type (string ou number)
   var _delDeal = getDeals().find(function(d) { return String(d.id) === String(id); });
   var deals = getDeals().filter(function(d) { return String(d.id) !== String(id); });
+  // Continuité de contrat : la suppression de la ligne de continuité rend au deal d'origine
+  // sa date de fin et retire le lien prolonge_par.
+  if (_delDeal && _delDeal.prolongation_avenant) {
+    var _o = deals.find(function(d){ return String(d.id) === String(_delDeal.prolongation_avenant.deal_origine_id); });
+    if (_o) {
+      var _t = (_delDeal.historique_prolongations || []).find(function(h){ return h && h.avenant_id === _delDeal.prolongation_avenant.avenant_id; });
+      if (_t && _t.ancienne_date_fin) { _o.date_fin = _t.ancienne_date_fin; if (_o.dateFinPrevisionnelle !== undefined) _o.dateFinPrevisionnelle = _t.ancienne_date_fin; }
+      if (String(_o.prolonge_par) === String(_delDeal.id)) delete _o.prolonge_par;
+      _o.updated_at = Date.now(); _o.updated_ts = Date.now();
+    }
+  }
   saveDeals(deals);
   if (typeof addTombstone === 'function') addTombstone('deals', id);
   // Nettoyage côté CLIENT : retirer le rattachement manager + tombstone dédié (sinon l'union du merge le réintroduit)
+  // Si un AUTRE deal porte encore ce sim_ts (continuité de contrat), on ne tombstone pas le
+  // sim_ts et on ne retire le rattachement que chez le client du deal supprimé.
+  var _simEncorePorte = !!(_delDeal && deals.some(function(d){ return d && d.sim_ts === _delDeal.sim_ts; }));
   if (_delDeal && _delDeal.sim_ts != null && _delDeal.sim_ts !== '') {
     try {
-      if (typeof addTombstone === 'function') addTombstone('mgr_deals', 'sim:' + _delDeal.sim_ts);
+      if (!_simEncorePorte && typeof addTombstone === 'function') addTombstone('mgr_deals', 'sim:' + _delDeal.sim_ts);
       var _cls = getClients(); var _clsChanged = false;
-      _cls.forEach(function(cc){ ((cc && cc.managers) || []).forEach(function(m){
+      _cls.forEach(function(cc){
+        if (_simEncorePorte && (cc.name||'').trim().toLowerCase() !== (_delDeal.entreprise||'').trim().toLowerCase()) return;
+        ((cc && cc.managers) || []).forEach(function(m){
         if (m && Array.isArray(m.deals)) {
           var _b = m.deals.length;
           m.deals = m.deals.filter(function(dd){ return !dd || dd.sim_ts !== _delDeal.sim_ts; });
@@ -19327,11 +19351,77 @@ function saveEditAvenant(avenantId) {
   renderAvenants();
 }
 
+// Retire d'un deal toute trace d'un avenant et restaure l'état antérieur (date de fin, simulation).
+// Retourne true si le deal a été modifié.
+function _dealRemoveAvenantTrace(deal, avenantId) {
+  if (!deal) return false;
+  var changed = false;
+  if (Array.isArray(deal.avenants_mission)) {
+    var b1 = deal.avenants_mission.length;
+    deal.avenants_mission = deal.avenants_mission.filter(function(a){ return !a || a.avenant_id !== avenantId; });
+    if (deal.avenants_mission.length !== b1) changed = true;
+  }
+  if (Array.isArray(deal.historique_prolongations)) {
+    var trace = deal.historique_prolongations.find(function(h){ return h && h.avenant_id === avenantId; });
+    if (trace) {
+      // Restauration de l'état d'avant l'avenant
+      if (trace.ancienne_date_fin !== undefined && trace.ancienne_date_fin !== '') {
+        deal.date_fin = trace.ancienne_date_fin;
+        if (deal.dateFinPrevisionnelle !== undefined) deal.dateFinPrevisionnelle = trace.ancienne_date_fin;
+      }
+      if (trace.ancien_sim_ts && trace.sim_ts && deal.sim_ts === trace.sim_ts) deal.sim_ts = trace.ancien_sim_ts;
+      deal.historique_prolongations = deal.historique_prolongations.filter(function(h){ return !h || h.avenant_id !== avenantId; });
+      if (deal.date_avenant) delete deal.date_avenant;
+      changed = true;
+    }
+  }
+  if (changed) { deal.updated_at = Date.now(); deal.updated_ts = Date.now(); }
+  return changed;
+}
+
 function confirmDeleteAvenant(avenantId) {
   if (!confirm('Supprimer définitivement cet avenant ?\n\nLa suppression sera propagée à toute l\'équipe.')) return;
   var all = getAvenants().filter(function(x){ return x.id !== avenantId; });
   saveAvenants(all);
   if (typeof addTombstone === 'function') addTombstone('avenants', avenantId);
+
+  // ── Nettoyage côté DEALS ──────────────────────────────────────────────
+  // (a) Avenant « nouveau client » : la ligne de continuité est supprimée et le deal
+  //     d'origine retrouve sa date de fin et perd son lien prolonge_par.
+  // (b) Autres avenants : retrait de la trace + restauration date de fin / simulation.
+  try {
+    var _dls = getDeals(); var _dlsChanged = false;
+    var _cont = _dls.find(function(d){ return d && d.prolongation_avenant && d.prolongation_avenant.avenant_id === avenantId; });
+    if (_cont) {
+      var _orig = _dls.find(function(d){ return d && String(d.id) === String(_cont.prolongation_avenant.deal_origine_id); });
+      if (_orig) {
+        var _tr = (_cont.historique_prolongations || []).find(function(h){ return h && h.avenant_id === avenantId; });
+        if (_tr && _tr.ancienne_date_fin) {
+          _orig.date_fin = _tr.ancienne_date_fin;
+          if (_orig.dateFinPrevisionnelle !== undefined) _orig.dateFinPrevisionnelle = _tr.ancienne_date_fin;
+        }
+        if (String(_orig.prolonge_par) === String(_cont.id)) delete _orig.prolonge_par;
+        _orig.updated_at = Date.now(); _orig.updated_ts = Date.now();
+      }
+      _dls = _dls.filter(function(d){ return String(d.id) !== String(_cont.id); });
+      if (typeof addTombstone === 'function') addTombstone('deals', _cont.id);
+      try { if (typeof _vmRemoveForDeal === 'function') _vmRemoveForDeal(_cont.id); } catch(e){}
+      // Rattachement manager chez le NOUVEAU client uniquement (le sim_ts est partagé avec l'origine)
+      try {
+        var _clsC = getClients(); var _chC = false;
+        _clsC.forEach(function(cc){
+          if (!cc || (cc.name||'').trim().toLowerCase() !== (_cont.entreprise||'').trim().toLowerCase()) return;
+          (cc.managers||[]).forEach(function(m){
+            if (m && Array.isArray(m.deals)) { var _bC = m.deals.length; m.deals = m.deals.filter(function(dd){ return !dd || dd.sim_ts !== _cont.sim_ts; }); if (m.deals.length !== _bC) _chC = true; }
+          });
+        });
+        if (_chC) saveClientsArr(_clsC);
+      } catch(e){}
+      _dlsChanged = true;
+    }
+    _dls.forEach(function(d){ if (_dealRemoveAvenantTrace(d, avenantId)) _dlsChanged = true; });
+    if (_dlsChanged) saveDeals(_dls);
+  } catch(e){ console.warn('[delAvenant] nettoyage deals:', e); }
   // Nettoyage côté CLIENT (rattachement mission // éventuel) + tombstone dédié anti-réintroduction
   if (typeof addTombstone === 'function') addTombstone('mgr_deals', 'av:' + avenantId);
   try {
@@ -19345,6 +19435,8 @@ function confirmDeleteAvenant(avenantId) {
   if (modal) modal.remove();
   if (typeof showNotifToast === 'function') showNotifToast('🗑 Avenant supprimé');
   renderAvenants();
+  try { if (typeof renderDeals === 'function') renderDeals(); } catch(e){}
+  try { if (typeof refreshCandidatFiche === 'function') refreshCandidatFiche(); } catch(e){}
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -30738,7 +30830,19 @@ function saveClientFromDeal(deal) {
   // un AUTRE nom, et que le nouveau nom n'existe pas déjà comme fiche distincte,
   // on RENOMME la fiche client existante au lieu d'en créer une nouvelle.
   // Évite les doublons : "OMSCo" corrigé en "OMS&Co" renomme la fiche, pas de doublon.
-  if (deal.sim_ts) {
+  // GARDE — continuité de contrat : le deal d'origine et la ligne de continuité partagent
+  // souvent le même sim_ts mais sont chez DEUX clients différents. Sans cette garde, le
+  // rattachement de la continuité RENOMMAIT la fiche de l'ancien client au nom du nouveau
+  // (et propageait ce nom à tous les autres deals de l'ancien client).
+  var _simPartage = false;
+  try {
+    var _isContinuite = !!(deal.prolongation_avenant || deal.prolonge_par);
+    _simPartage = _isContinuite || (deal.sim_ts != null && getDeals().some(function(d){
+      return d && d.sim_ts === deal.sim_ts && String(d.id) !== String(deal.id)
+          && (d.entreprise||'').trim().toLowerCase() !== name.toLowerCase();
+    }));
+  } catch(e){}
+  if (deal.sim_ts && !_simPartage) {
     var ownerIdx = clients.findIndex(function(cl){
       return (cl.managers||[]).some(function(m){
         return (m.deals||[]).some(function(d){ return d.sim_ts === deal.sim_ts; });
@@ -32290,10 +32394,10 @@ function buildCandPlacementsHTML(cand) {
       var sortantColor = existingSortant ? '#8A5F00' : '#C24141';
       var sortantBorder = existingSortant ? '#F0D98A' : '#F5B5B5';
       if (existingSortant) {
-        actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'))},100);" title="Modifier la fiche sortant" style="padding:4px 10px;background:' + sortantBg + ';color:' + sortantColor + ';border:1.5px solid ' + sortantBorder + ';border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">' + sortantLabel + '</button>';
+        actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'), undefined, \''+d.id+'\')},100);" title="Modifier la fiche sortant" style="padding:4px 10px;background:' + sortantBg + ';color:' + sortantColor + ';border:1.5px solid ' + sortantBorder + ';border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">' + sortantLabel + '</button>';
       } else {
-        if (d.etat !== 'Fin de mission') actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'), \'fin_mission\')},100);" title="Fin de mission chez le client — le consultant reste porté chez Seven (intercontrat)" style="padding:4px 10px;background:#FFF6E8;color:#B25E00;border:1.5px solid #F5C98A;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#9209; Fin de mission</button>';
-        actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'), \'sortie\')},100);" title="Sortie des effectifs — le consultant quitte Seven" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">🚪 Sortir des effectifs</button>';
+        if (d.etat !== 'Fin de mission') actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'), \'fin_mission\', \''+d.id+'\')},100);" title="Fin de mission chez le client — le consultant reste porté chez Seven (intercontrat)" style="padding:4px 10px;background:#FFF6E8;color:#B25E00;border:1.5px solid #F5C98A;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#9209; Fin de mission</button>';
+        actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'), \'sortie\', \''+d.id+'\')},100);" title="Sortie des effectifs — le consultant quitte Seven" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">🚪 Sortir des effectifs</button>';
       }
 
       // Annuler le placement
