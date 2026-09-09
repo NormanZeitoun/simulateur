@@ -30438,6 +30438,25 @@ function mergeParams(remote) {
   } catch(e) { console.warn('[mergeParams] refresh error', e); }
 }
 
+// ── Drapeaux de relance documentaire : valeurs MONOTONES ────────────────
+// relance_j7_sent / relance_j0_sent ne doivent JAMAIS être effacés par une fusion
+// entre postes, quel que soit l'horodatage du document : un mail déjà parti ne se
+// "dé-envoie" pas. On reporte donc le max des deux côtés sur le document gagnant,
+// à condition qu'il s'agisse bien du même fichier (od_path + doc_date identiques).
+// Si le document a été remplacé (nouveau KBIS), les drapeaux du gagnant s'appliquent.
+function _mergeRelanceFlags(winner, other) {
+  if (!winner || !other || winner === other) return winner;
+  var sameFile = (winner.od_path || '') === (other.od_path || '')
+              && (winner.doc_date || '') === (other.doc_date || '');
+  if (!sameFile) return winner;
+  ['relance_j7_sent', 'relance_j0_sent'].forEach(function(k){
+    var a = winner[k] || 0, b = other[k] || 0;
+    var m = Math.max(a, b);
+    if (m && m !== a) winner[k] = m;
+  });
+  return winner;
+}
+
 function mergeClients(remote) {
   var local = getClients();
   // ── (0) Dédoublonnage réparateur : deux fiches partageant le MÊME id (doublons créés
@@ -30462,7 +30481,13 @@ function mergeClients(remote) {
     var _kd = keep.documents || {};
     Object.keys(other.documents || {}).forEach(function(dk){
       var od = other.documents[dk];
-      if (!_kd[dk] || (((od && od.updated_ts) || 0) > (((_kd[dk] || {}).updated_ts) || 0))) _kd[dk] = od;
+      if (!_kd[dk] || (((od && od.updated_ts) || 0) > (((_kd[dk] || {}).updated_ts) || 0))) {
+        var _prev = _kd[dk];
+        _kd[dk] = od;
+        _kd[dk] = _mergeRelanceFlags(_kd[dk], _prev);
+      } else {
+        _kd[dk] = _mergeRelanceFlags(_kd[dk], od);
+      }
     });
     if (Object.keys(_kd).length) keep.documents = _kd;
   });
@@ -30516,6 +30541,8 @@ function mergeClients(remote) {
         var rTs = remoteDoc.updated_ts || 0;
         if (lTs || rTs) {
           if (rTs > lTs) mergedDocs[docKey] = remoteDoc;
+          // Drapeaux de relance : monotones, indépendants du gagnant (cf. _mergeRelanceFlags)
+          mergedDocs[docKey] = _mergeRelanceFlags(mergedDocs[docKey], mergedDocs[docKey] === remoteDoc ? localDoc : remoteDoc);
           return;
         }
         if (!localDoc.od_path && remoteDoc.od_path) { mergedDocs[docKey] = remoteDoc; return; }
@@ -30523,6 +30550,7 @@ function mergeClients(remote) {
         var lDate = (typeof _parseFRDate==='function') ? _parseFRDate(localDoc.uploaded) : 0;
         var rDate = (typeof _parseFRDate==='function') ? _parseFRDate(remoteDoc.uploaded) : 0;
         if (rDate > lDate) mergedDocs[docKey] = remoteDoc;
+        mergedDocs[docKey] = _mergeRelanceFlags(mergedDocs[docKey], mergedDocs[docKey] === remoteDoc ? localDoc : remoteDoc);
       });
       if (Object.keys(mergedDocs).length > 0) t.documents = mergedDocs;
 
@@ -33402,10 +33430,14 @@ function runDocsRelanceScan(mode) {
       var clientsNow = getClients();
       var idxNow = clientsNow.findIndex(function(c){ return c.id === cl.id; });
       if (idxNow >= 0 && clientsNow[idxNow].documents && clientsNow[idxNow].documents[dt.key]) {
-        if (relanceType === 'j7') clientsNow[idxNow].documents[dt.key].relance_j7_sent = Date.now();
-        if (relanceType === 'j0') clientsNow[idxNow].documents[dt.key].relance_j0_sent = Date.now();
+        var _nowTs = Date.now();
+        if (relanceType === 'j7') clientsNow[idxNow].documents[dt.key].relance_j7_sent = _nowTs;
+        if (relanceType === 'j0') clientsNow[idxNow].documents[dt.key].relance_j0_sent = _nowTs;
+        // Le merge inter-postes compare les documents sur LEUR updated_ts : sans ce bump,
+        // le drapeau ne quittait jamais le poste émetteur → relance renvoyée par chaque poste.
+        clientsNow[idxNow].documents[dt.key].updated_ts = _nowTs;
         clientsNow[idxNow].updated = new Date().toLocaleDateString('fr-FR');
-        clientsNow[idxNow].updated_ts = Date.now();
+        clientsNow[idxNow].updated_ts = _nowTs;
         saveClientsArr(clientsNow);
         if (typeof odAutoSync === 'function') odAutoSync();
       }
@@ -33431,6 +33463,7 @@ function runDocsRelanceScan(mode) {
         if (ix >= 0 && cr[ix].documents && cr[ix].documents[dt.key]) {
           if (relanceType === 'j7') cr[ix].documents[dt.key].relance_j7_sent = null;
           if (relanceType === 'j0') cr[ix].documents[dt.key].relance_j0_sent = null;
+          cr[ix].documents[dt.key].updated_ts = Date.now();
           saveClientsArr(cr);
           if (typeof odAutoSync === 'function') odAutoSync();
         }
