@@ -29356,7 +29356,10 @@ function buildCandSimsHTML(cand) {
 
   return sims.map(function(s) {
     // Trouve le deal lié à cette simulation (via sim_ts / timestamp)
-    var linkedDeal = dealsOfCand.find(function(d){ return d.sim_ts === s.timestamp; });
+    // À sim_ts partagé (continuité de contrat), la simulation appartient au deal d'ORIGINE :
+    // c'est lui qui porte l'état à afficher, pas la ligne de continuité.
+    var _linked = dealsOfCand.filter(function(d){ return d.sim_ts === s.timestamp; });
+    var linkedDeal = _linked.find(function(d){ return !d.prolongation_avenant; }) || _linked[0];
     var isCancelled = linkedDeal && linkedDeal.etat === 'Annulé';
     var isPlaced = linkedDeal && !isCancelled;
 
@@ -32402,6 +32405,11 @@ function buildCandPlacementsHTML(cand) {
 
       // Annuler le placement
       actionsHtml += '<button onclick="cancelDeal(' + d.id + ')" title="Annuler le placement" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#10060; Annuler</button>';
+    }
+    // Ligne de continuité (avenant nouveau client) : absente du tableau des deals, donc
+    // sans accès au bouton de suppression. On l'expose ici (mot de passe admin via deleteDeal).
+    if (d.prolongation_avenant) {
+      actionsHtml += '<button onclick="closeCandFiche();setTimeout(function(){deleteDeal(' + d.id + ')},100);" title="Supprimer cette ligne de continuité — le placement d\'origine retrouve sa date de fin" style="padding:4px 10px;background:#fff;color:#9E9E9E;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">🗑 Supprimer</button>';
     }
 
     // Badge sortant additionnel si une fiche existe
