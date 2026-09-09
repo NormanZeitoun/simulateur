@@ -33375,7 +33375,18 @@ function _buildRelanceMailHtml(cl, dt, doc, status) {
 
 // Scanne tous les clients et envoie les relances nécessaires (J-7 et J0)
 // Mode : 'auto' = silencieux, 'manual' = avec popup résumant le résultat
+// ── DÉSACTIVATION TEMPORAIRE DES RELANCES AUTOMATIQUES (09/09/2026) ─────────
+// Les relances documents client (KBIS / TVA / URSSAF) partaient en double entre postes.
+// Le scan AUTOMATIQUE au chargement est coupé jusqu'à validation du correctif de fusion.
+// Le bouton manuel de l'onglet Relances reste opérationnel.
+// Pour réactiver : passer DOCS_RELANCE_AUTO_ENABLED à true.
+var DOCS_RELANCE_AUTO_ENABLED = false;
+
 function runDocsRelanceScan(mode) {
+  if (mode !== 'manual' && !DOCS_RELANCE_AUTO_ENABLED) {
+    console.log('[Relance] Scan automatique désactivé (DOCS_RELANCE_AUTO_ENABLED = false).');
+    return;
+  }
   if (!odToken) {
     if (mode === 'manual') alert('⚠ Connectez-vous OneDrive d\'abord (envoi des mails impossible).');
     return;
