@@ -19719,9 +19719,14 @@ function openAvenantMissionPopup(dealId) {
   var sims = [];
   try {
     var allSims = (typeof getHistory === 'function') ? getHistory() : [];
-    var candEmail = (deal.email || '').trim().toLowerCase();
+    // Rattachement par l'e-mail DU CANDIDAT (email_candidat_reel), jamais par l'adresse
+    // d'envoi : une simulation envoyée au client porte l'e-mail du client dans s.email
+    // et n'apparaissait donc pas ici.
+    var candEmail = (deal.email_candidat_reel || deal.email || '').trim().toLowerCase();
     sims = allSims.filter(function(s){
-      return candEmail && (s.email || '').trim().toLowerCase() === candEmail;
+      var se = (s.email_candidat_reel || s.email || '').trim().toLowerCase();
+      var se2 = (s.email || '').trim().toLowerCase();
+      return candEmail && (se === candEmail || se2 === candEmail);
     }).sort(function(a,b){ return (b.timestamp||0) - (a.timestamp||0); });
   } catch(e) { console.warn('[Avenant] simulations:', e); }
 
@@ -20130,9 +20135,14 @@ function openMissionParallelePopup(dealId) {
   var sims = [];
   try {
     var allSims = (typeof getHistory === 'function') ? getHistory() : [];
-    var candEmail = (deal.email || '').trim().toLowerCase();
+    // Rattachement par l'e-mail DU CANDIDAT (email_candidat_reel), jamais par l'adresse
+    // d'envoi : une simulation envoyée au client porte l'e-mail du client dans s.email
+    // et n'apparaissait donc pas ici.
+    var candEmail = (deal.email_candidat_reel || deal.email || '').trim().toLowerCase();
     sims = allSims.filter(function(s){
-      return candEmail && (s.email || '').trim().toLowerCase() === candEmail;
+      var se = (s.email_candidat_reel || s.email || '').trim().toLowerCase();
+      var se2 = (s.email || '').trim().toLowerCase();
+      return candEmail && (se === candEmail || se2 === candEmail);
     }).sort(function(a,b){ return (b.timestamp||0) - (a.timestamp||0); });
   } catch(e) { console.warn('[Mission //] simulations:', e); }
 
