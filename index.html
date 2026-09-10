@@ -5657,6 +5657,8 @@ function renderDashboardKPIs() {
     if (d.stand_by === true) return false; // un placement en stand by n'est pas un deal actif
     return d.etat === 'En cours' || d.etat === 'Signé' || d.etat === 'Nouveau placement';
   });
+  // Une continuité de contrat concerne la MÊME personne que son deal d'origine : dédoublonnage par e-mail
+  (function(){ var seen = {}; portesActifs = portesActifs.filter(function(d){ var k = (d.email_candidat_reel || d.email || '').trim().toLowerCase() || ('id:' + d.id); if (seen[k]) return false; seen[k] = 1; return true; }); })();
   // Compteur affiché = nombre de CANDIDATS au statut "Porté" pour ce commercial,
   // calculé avec la MÊME fonction que la page Candidats (computeCandStatutAuto)
   // → garantit que le Dashboard et l'onglet Candidats affichent le même nombre.
@@ -11025,11 +11027,12 @@ function renderDeals() {
       if (d.etat === 'Annulé') classList.push('row-cancelled');
       var rowClass = classList.length ? ' class="' + classList.join(' ') + '"' : '';
       html += '<tr' + rowClass + ' data-deal-id="' + (d.id != null ? d.id : '') + '" style="border-left:3px solid '+color+';">';
+      var _dV = (typeof _dealEnVigueur === 'function') ? _dealEnVigueur(d) : d;   // conditions en vigueur (dernier avenant)
       visColDefs.forEach(function(col){
         var fc = col.freeze==='f1' ? ' class="col-freeze"' : col.freeze==='f2' ? ' class="col-freeze2"' : '';
         var cellHtml;
         try {
-          cellHtml = getCellValue(d, col.key);
+          cellHtml = getCellValue(_dV, col.key);
         } catch(cellErr) {
           // Une cellule défaillante ne doit JAMAIS vider tout le tableau :
           // on affiche un placeholder et on log le problème.
@@ -11824,6 +11827,84 @@ function openSimFromDeal(ts){
   if (typeof reopenSim==='function') reopenSim(ts);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// CONDITIONS EN VIGUEUR D'UN PLACEMENT
+// Un « Avenant Nouvelle Simulation » (mode nouvelle_simu, ou avenant_mission
+// pour les anciens) ne modifie PAS le deal : ses conditions vivent dans
+// l'avenant. Les tableaux RH doivent pourtant afficher les conditions
+// réellement en vigueur → dernier avenant applicable, sinon le deal.
+// ═══════════════════════════════════════════════════════════════════════
+var _AV_MODES_CONDITIONS = { nouvelle_simu: 1, avenant_mission: 1 };
+
+function _dealAvenantEnVigueur(deal) {
+  if (!deal || deal.id == null || typeof getAvenants !== 'function') return null;
+  var today = new Date().toISOString().slice(0,10);
+  var cands = getAvenants().filter(function(a){
+    if (!a || String(a.deal_id) !== String(deal.id)) return false;
+    if (!_AV_MODES_CONDITIONS[a.mode]) return false;
+    if (typeof isTombstoned === 'function' && isTombstoned('avenants', a.id)) return false;
+    // Applicable dès sa date de début (ou de création) ; jamais avant.
+    var start = a.date_debut || a.date_avenant || a.date_demande || '';
+    return !start || start <= today;
+  });
+  if (!cands.length) return null;
+  cands.sort(function(x, y){
+    var sx = x.date_debut || x.date_avenant || x.date_demande || '';
+    var sy = y.date_debut || y.date_avenant || y.date_demande || '';
+    if (sx !== sy) return sx < sy ? 1 : -1;
+    return (y.created_at || 0) - (x.created_at || 0);
+  });
+  return cands[0];
+}
+
+// Simulation de référence en vigueur (celle de l'avenant s'il existe, sinon celle du deal)
+function _dealSimEnVigueur(deal) {
+  if (!deal || typeof getHistory !== 'function') return null;
+  var av = _dealAvenantEnVigueur(deal);
+  var ts = (av && av.sim_ts) ? av.sim_ts : deal.sim_ts;
+  if (ts == null || ts === '') return null;
+  return getHistory().find(function(s){ return s && s.timestamp === ts; }) || null;
+}
+
+// Copie du deal avec les CONDITIONS (TJM, salaire, frais, CP/RTT, mutuelle, FG)
+// remplacées par celles de l'avenant en vigueur. L'identité, l'état, les dates et
+// le sim_ts du deal ne sont PAS touchés. `_av_vigueur` porte l'avenant appliqué.
+function _dealEnVigueur(deal) {
+  if (!deal) return deal;
+  var av = _dealAvenantEnVigueur(deal);
+  if (!av) return deal;
+  var d = Object.assign({}, deal);
+  d._av_vigueur = av;
+  var sim = (av.sim_ts && typeof getHistory === 'function') ? getHistory().find(function(s){ return s && s.timestamp === av.sim_ts; }) : null;
+  if (sim) {
+    var st = (sim.snapshot && sim.snapshot._state) ? sim.snapshot._state : {};
+    var g = function(f){ var v = sim[f]; if (v === undefined || v === '' || v === null) v = st[f]; return v; };
+    var brutMens = parseFloat(String(sim.brut||'').replace(/[^0-9.,]/g,'').replace(',','.')) || 0;
+    if (sim.tjm) d.tjm = sim.tjm;
+    if (sim.nb_jours) d.nb_jours = sim.nb_jours;
+    if (sim.brut) d.brut = sim.brut;
+    if (brutMens > 0) d.salaire_annuel = Math.round(brutMens * 12);
+    if (sim.net_payer) d.net_payer = sim.net_payer;
+    if (sim.net_avant) d.net_avant = sim.net_avant;
+    if (g('marge') !== undefined) d.frais_gestion = g('marge') || d.frais_gestion;
+    if (g('fg_reel') !== undefined) d.fg_reel = g('fg_reel') || '';
+    if (g('mutuelle') !== undefined) d.mutuelle = g('mutuelle') || '';
+    if (g('cp') !== undefined) d.cp = g('cp') || '';
+    if (g('rtt') !== undefined) d.rtt = g('rtt') || 0;
+    if (g('repas') !== undefined) d.repas = g('repas') || '';
+    if (g('tt') !== undefined) d.tt = g('tt') ? 'Oui' : 'Non';
+    ['jours_tt','jours_presentiels','gd_lieu','ik_1ere','km_aller','abo_transport','abo_tel','abo_internet','frais_formation','frais_materiel','taux_impot','frais_jour']
+      .forEach(function(f){ var v = g(f); if (v !== undefined) d[f] = (f === 'ik_1ere') ? (v ? 'Oui' : 'Non') : (v || ''); });
+    if (g('gd_perso_montant') !== undefined) d.gd_perso_montant = parseFloat(g('gd_perso_montant')) || 0;
+    if (g('puissance') !== undefined) d.puissance_fiscale = g('puissance') || '';
+  } else {
+    // Avenant sans simulation (saisie manuelle) : on n'a que le TJM et le salaire
+    if (av.tjm) d.tjm = av.tjm;
+    if (av.new_salaire_annuel) d.salaire_annuel = av.new_salaire_annuel;
+  }
+  return d;
+}
+
 function getCellValue(d, key){
   var ETAT_COLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
   var fmt=function(v){ return (v===null||v===undefined||v==='') ? '—' : String(v); };
@@ -11869,7 +11950,10 @@ function getCellValue(d, key){
           + 'title="Ouvrir la fiche client (managers)">' + String(mgrName).replace(/</g,'&lt;') + '</span>';
       }
       return fmt(mgrName);
-    case 'tjm': return d.tjm ? '<span style="font-weight:600;color:#7343EE;">'+d.tjm+' €</span>' : '—';
+    case 'tjm':
+      if (!d.tjm) return '—';
+      if (d._av_vigueur) return '<span style="font-weight:600;color:#8A5F00;" title="Conditions issues de l\'avenant du ' + _fmtDateJMA(d._av_vigueur.date_debut || d._av_vigueur.date_demande) + ' — le placement d\'origine est inchangé">📑 '+d.tjm+' €</span>';
+      return '<span style="font-weight:600;color:#7343EE;">'+d.tjm+' €</span>';
     case 'nb_jours': return fmt(d.nb_jours);
     case 'salaire_annuel':
       // FIX ARRONDI — On RECALCULE à partir du brut mensuel et nb_jours stockés dans
@@ -12530,6 +12614,8 @@ function updateDealField(dealId, key, value) {
 function exportDealsExcel() {
   var deals = getDeals();
   if (deals.length === 0) { alert('Aucun deal à exporter.'); return; }
+  // Export = mêmes conditions en vigueur que le tableau (dernier avenant applicable)
+  if (typeof _dealEnVigueur === 'function') deals = deals.map(function(d){ return _dealEnVigueur(d); });
   var headers = ['Date deal','Commercial','Origine','État','Prénom','Nom','Email','Téléphone','Poste','Entreprise','Email client','Manager','TJM','Nb jours','Salaire annuel','Frais gestion %','Mutuelle','Swile/TR','Forfait repas','IK (km)','Transport','Télétravail','Tél/Internet','Grand déplacement','Connait TJM','Date entrée','Date sortie','Raison sortie','Commentaire'];
   var rows = deals.map(function(d) {
     var telnet = ((d.abo_tel && parseFloat(d.abo_tel)>0)||(d.abo_internet && parseFloat(d.abo_internet)>0)) ? 'Oui' : '';
@@ -14349,6 +14435,7 @@ function _peBaseDeals() {
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
   return deals.filter(function(d) {
     if (!d || d.etat === 'Annulé' || d.etat === 'Sorti des effectifs' || d.etat === 'Fin de mission') return false;
+    if (d.prolongation_avenant) return false; // continuité de contrat : la période d'essai est celle du deal d'origine
     if (d.stand_by === true) return false;
     if (d.etat !== 'En cours' && d.etat !== 'Signé' && d.etat !== 'Nouveau placement') return false;
     if (!(d.date_entree || d.pe_date_debut)) return false;
@@ -14609,6 +14696,7 @@ function _seDeals() {
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
   return deals.filter(function(d) {
     if (!d || d.salarie_etranger !== true) return false;
+    if (d.prolongation_avenant) return false; // continuité de contrat : le titre de séjour est suivi sur le deal d'origine
     if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return false;
     return true;
   });
@@ -15337,14 +15425,14 @@ function renderVisiteMedicale() {
     h += '<tr title="' + (_sbLocked ? 'Deal en stand by \u2014 convertissez le placement pour d\u00e9bloquer' : '') + '" style="border-bottom:1px solid #F0EDF9;' + (_sbLocked ? 'opacity:.55;pointer-events:none;background:#F7F5FC;' : '') + '">'
       + (function(){
           var _d = (v.deal_id != null) ? _vmDealById[String(v.deal_id)] : null;
-          var _s = (_d && _d.sim_ts != null) ? _vmSimByTs[String(_d.sim_ts)] : null;
+          var _s = (_d && typeof _dealSimEnVigueur === 'function') ? _dealSimEnVigueur(_d) : ((_d && _d.sim_ts != null) ? _vmSimByTs[String(_d.sim_ts)] : null);
           var _frais = (_s && typeof _avExtractFraisFromSim === 'function') ? _avExtractFraisFromSim(_s) : {};
           var _email = (_d && (_d.email_candidat_reel || _d.email)) || v.email || '';
           var _tel = (_d && _d.tel) || v.tel || '';
           var _client = String((_d && _d.entreprise) || v.client || '');
           var _commVal = v.commercial || (_d && _d.commercial) || '';
           var _forfait = (v.swile === 'Actif') ? '' : ((_frais && _frais.forfait_repas) || '');
-          var _gd = (_frais && _frais.grand_deplacement) ? 'Oui' : 'Non';
+          var _gd = (_frais && _frais.grand_deplacement && _frais.grand_deplacement !== 'Non') ? 'Oui' : 'Non';
           return '<td style="padding:8px 10px;">' + selCell(v.id,'traite_par',v.traite_par,['Marie','Clémence','Erika']) + '</td>'
             + '<td style="padding:8px 10px;">' + selCell(v.id,'civilite',v.civilite,['Monsieur','Madame']) + '</td>'
             + '<td style="padding:8px 10px;font-weight:600;color:#1A1033;white-space:nowrap;">' + String(v.nom||'').toUpperCase() + (_sbLocked ? ' <span style="background:#7343EE;color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">\u23F8 STAND BY</span>' : '') + (_vmIsNew(v.date_entree) ? ' <span style="background:#1D9E75;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">NEW</span>' : '') + '</td>'
@@ -18983,7 +19071,7 @@ function buildAvenantsContent() {
   // Tableau
   html += '<div class="av-table-wrap"><div class="av-table-scroll"><table class="av-table">'
     + '<thead><tr>'
-    + '<th class="avfix avfix1">Date demande</th><th class="avfix avfix2">Commercial</th><th class="avfix avfix3">Porté</th><th>ADV</th><th>Mission/Poste</th><th>Nom du client</th><th>Nom du manager</th><th>Signataire</th><th>Comptable</th><th>Lieu de mission</th><th>Type</th><th>Motif</th>'
+    + '<th class="avfix avfix1">Créé le</th><th class="avfix avfix2">Commercial</th><th class="avfix avfix3">Porté</th><th>ADV</th><th>Nature</th><th>Mission/Poste</th><th>Nom du client</th><th>Nom du manager</th><th>Signataire</th><th>Comptable</th><th>Banque</th><th>Délai paiement</th><th>Lieu de mission</th><th>Type</th><th>Motif</th>'
     + '<th>CDPS</th><th>À partir du</th><th>Jusqu\'au</th><th>Contrat</th>'
     + '<th>TJM</th><th>Frais de gestion</th><th>Ancien salaire</th><th>Nouveau salaire</th><th>Frais ↗</th>'
     + '<th>Swile</th><th>Forfait repas</th><th>Km</th><th>TC</th><th>Télétravail</th>'
@@ -19112,6 +19200,13 @@ function buildAvenantsContent() {
       + '<td class="avfix avfix2">' + (a.commercial || '—') + '</td>'
       + '<td class="avfix avfix3" style="font-weight:600;">' + nomComplet + '</td>'
       + '<td>' + _advCell + '</td>'
+      + '<td>' + (function(){
+          var _mm = { prolongation: ['Prolongation','#0F5132','#F0FAF4'], nouveau_client: ['Nouveau client','#8A5F00','#FFF8E8'],
+                      nouvelle_simu: ['Nouvelle simulation','#1A4F96','#EEF4FF'], avenant_mission: ['Avenant mission (ancien)','#6B5E9C','#F5F3FF'],
+                      mission_parallele: ['Mission parallèle','#5B37C4','#F3F0FE'] };
+          var _x = _mm[a.mode] || ['—','#6B5E9C','#F5F3FF'];
+          return '<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10.5px;font-weight:700;white-space:nowrap;background:' + _x[2] + ';color:' + _x[1] + ';">' + _x[0] + '</span>';
+        })() + '</td>'
       + '<td>' + ((a.poste || '').replace(/</g,'&lt;') || '—') + '</td>'
       + '<td>' + ((a.client || '').replace(/</g,'&lt;') || '—') + '</td>'
       + '<td>' + ((a.manager || '').replace(/</g,'&lt;') || '—') + '</td>'
@@ -19125,7 +19220,9 @@ function buildAvenantsContent() {
             if (_fc && _fc.id != null) return '<td><span onclick="openClientPage(' + _fc.id + ')" style="color:#7343EE;font-weight:600;cursor:pointer;text-decoration:underline;" title="Ouvrir la fiche client">' + safe + '</span></td>';
             return '<td>' + safe + '</td>';
           };
-          return _lnk(_sg) + _lnk(_cpN);
+          var _bq = a.banque || (_fc && _fc.banque) || '';
+          var _dl = a.delai_paiement || (_fc && _fc.delai_paiement) || '';
+          return _lnk(_sg) + _lnk(_cpN) + '<td>' + (String(_bq).replace(/</g,'&lt;') || '—') + '</td><td>' + (String(_dl).replace(/</g,'&lt;') || '—') + '</td>';
         })()
       + '<td>' + (String(a.lieu_mission || (_fd && _fd.lieu_mission) || (_fs && (_fs.lieu_mission || _fs.gd_lieu)) || '').replace(/</g,'&lt;') || '—') + '</td>'
       + '<td>' + (a.type_avenant || '—') + '</td>'
@@ -19157,7 +19254,7 @@ function buildAvenantsContent() {
   });
 
   if (filtered.length === 0) {
-    html += '<tr><td colspan="27" style="text-align:center;padding:40px;color:#9E94C4;">Aucun résultat.</td></tr>';
+    html += '<tr><td colspan="38" style="text-align:center;padding:40px;color:#9E94C4;">Aucun résultat.</td></tr>';
   }
 
   html += '</tbody></table></div></div>';
@@ -19462,7 +19559,7 @@ function openProlongationChoicePopup(dealId) {
   modal.innerHTML = ''
     + '<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(20,10,60,0.4);padding:22px 26px;width:94%;max-width:580px;">'
     +   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'
-    +     '<div style="font-size:16px;font-weight:800;color:#1A1033;">⏳ Prolongation</div>'
+    +     '<div style="font-size:16px;font-weight:800;color:#1A1033;">📑 Avenant</div>'
     +     '<button onclick="document.getElementById(\'prolong-choice-modal\').remove()" style="background:none;border:none;color:#9E94C4;font-size:22px;cursor:pointer;line-height:1;">×</button>'
     +   '</div>'
     +   '<div style="font-size:12px;color:#6B5E9C;margin-bottom:18px;">'
@@ -19474,8 +19571,8 @@ function openProlongationChoicePopup(dealId) {
     +       '<div style="display:flex;align-items:center;gap:12px;">'
     +         '<div style="font-size:24px;">📅</div>'
     +         '<div style="flex:1;">'
-    +           '<div style="font-size:13.5px;font-weight:800;color:#0F5132;margin-bottom:3px;">1. Prolongation simple</div>'
-    +           '<div style="font-size:11.5px;color:#0F5132;line-height:1.4;">Même client, même contrat. Seule la <strong>date de fin</strong> change.<br>📧 Notification automatique à Clémence ou Marie selon le nom.</div>'
+    +           '<div style="font-size:13.5px;font-weight:800;color:#0F5132;margin-bottom:3px;">1. Avenant de Prolongation</div>'
+    +           '<div style="font-size:11.5px;color:#0F5132;line-height:1.4;">Même client, mêmes conditions. Seule la <strong>date de fin</strong> change.<br>📧 Notification automatique à Clémence ou Marie selon le nom.</div>'
     +         '</div>'
     +       '</div>'
     +     '</button>'
@@ -19484,8 +19581,8 @@ function openProlongationChoicePopup(dealId) {
     +       '<div style="display:flex;align-items:center;gap:12px;">'
     +         '<div style="font-size:24px;">🏢</div>'
     +         '<div style="flex:1;">'
-    +           '<div style="font-size:13.5px;font-weight:800;color:#8A5F00;margin-bottom:3px;">2. Prolongation nouveau client</div>'
-    +           '<div style="font-size:11.5px;color:#8A5F00;line-height:1.4;">Changement de mission/client. Choisir une <strong>SIMU</strong> existante du candidat puis remplir le contrat.<br>📝 Crée une ligne dans le tableau Avenants.</div>'
+    +           '<div style="font-size:13.5px;font-weight:800;color:#8A5F00;margin-bottom:3px;">2. Avenant Nouveau Client</div>'
+    +           '<div style="font-size:11.5px;color:#8A5F00;line-height:1.4;">Le consultant change de client, le contrat de travail continue. Choisir la <strong>simulation</strong> puis renseigner le nouveau client.<br>📝 Crée une ligne dans le tableau Avenants.</div>'
     +         '</div>'
     +       '</div>'
     +     '</button>'
@@ -19494,8 +19591,8 @@ function openProlongationChoicePopup(dealId) {
     +       '<div style="display:flex;align-items:center;gap:12px;">'
     +         '<div style="font-size:24px;">📊</div>'
     +         '<div style="flex:1;">'
-    +           '<div style="font-size:13.5px;font-weight:800;color:#1A4F96;margin-bottom:3px;">3. Prolongation nouvelle SIMU</div>'
-    +           '<div style="font-size:11.5px;color:#1A4F96;line-height:1.4;">Renégociation TJM/salaire/frais. Choisir la nouvelle <strong>SIMU</strong> et l\'attacher au placement.<br>📝 Crée une ligne dans le tableau Avenants.</div>'
+    +           '<div style="font-size:13.5px;font-weight:800;color:#1A4F96;margin-bottom:3px;">3. Avenant Nouvelle Simulation</div>'
+    +           '<div style="font-size:11.5px;color:#1A4F96;line-height:1.4;">Même client, nouvelles conditions (TJM, frais, CP/RTT…). Le placement d\'origine reste inchangé, les nouvelles conditions vivent dans l\'avenant.<br>📝 Crée une ligne dans le tableau Avenants.</div>'
     +         '</div>'
     +       '</div>'
     +     '</button>'
@@ -19532,7 +19629,7 @@ function openProlongationSimplePopup(dealId) {
   modal.innerHTML = ''
     + '<div style="background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(20,10,60,0.4);padding:22px 26px;width:94%;max-width:520px;">'
     +   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
-    +     '<div style="font-size:16px;font-weight:800;color:#1A1033;">📅 Prolongation simple</div>'
+    +     '<div style="font-size:16px;font-weight:800;color:#1A1033;">📑 Avenant de Prolongation</div>'
     +     '<button onclick="document.getElementById(\'prolong-simple-modal\').remove()" style="background:none;border:none;color:#9E94C4;font-size:22px;cursor:pointer;line-height:1;">×</button>'
     +   '</div>'
 
@@ -19546,8 +19643,8 @@ function openProlongationSimplePopup(dealId) {
     +   '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;">Nouvelle date de fin</label>'
     +   '<input type="date" id="prolong-simple-date" value="' + (ancienneDateFin || '') + '" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box;">'
 
-    +   '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;margin-top:14px;">Date de l\'avenant <span style="font-weight:500;text-transform:none;color:#9E94C4;">(optionnel)</span></label>'
-    +   '<input type="date" id="prolong-simple-date-avenant" value="' + new Date().toISOString().slice(0,10) + '" style="width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box;">'
+    +   '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;margin-top:14px;">Créé le</label>'
+    +   '<input type="date" id="prolong-simple-date-avenant" value="' + new Date().toISOString().slice(0,10) + '" readonly style="background:#F5F3FF;color:#6B5E9C;"width:100%;padding:9px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;font-family:inherit;box-sizing:border-box;">'
 
     +   '<label style="font-size:11px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px;margin-top:14px;">Commentaire <span style="font-weight:500;text-transform:none;color:#9E94C4;">(optionnel)</span></label>'
     +   '<textarea id="prolong-simple-comment" rows="3" placeholder="Ex : Prolongation accordée, accord oral du 15/04, à confirmer par mail" style="width:100%;padding:10px 12px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;font-family:inherit;resize:vertical;box-sizing:border-box;"></textarea>'
@@ -19581,9 +19678,35 @@ function confirmProlongationSimple(dealId) {
 
   // ── Ajout d'une entrée "prolongation" dans l'historique du placement ──
   if (!Array.isArray(deal.historique_prolongations)) deal.historique_prolongations = [];
+  // ── Enregistrement dans l'onglet Avenants (mode 'prolongation') ──────────
+  var _prAvId = 'av_' + Date.now() + '_' + Math.floor(Math.random()*9999);
+  var _prToday = new Date().toISOString().slice(0,10);
+  try {
+    var _prAv = {
+      id: _prAvId, deal_id: deal.id, sim_ts: deal.sim_ts || null, mode: 'prolongation',
+      date_demande: _prToday, date_avenant: _prToday,
+      commercial: deal.commercial || '', prenom_porte: deal.prenom || '', nom_porte: deal.nom || '',
+      type_avenant: 'Prolongation', motif: 'Prolongation',
+      cdps_seven_client: deal.type_contrat_client || '',
+      date_debut: ancienneDateFin || _prToday, date_fin: newDate,
+      type_contrat: deal.type_contrat || (deal.cp === 'CP' ? (parseInt(deal.rtt)>0 ? 'CDI CP RTT' : 'CDI CP') : 'CDI'),
+      client: deal.entreprise || '', manager: deal.manager || '', poste: deal.poste || '',
+      lieu_mission: deal.lieu_mission || deal.adresse_exec || '',
+      tjm: deal.tjm || '', tjm_actuel: deal.tjm || '',
+      ancien_salaire: deal.salaire_annuel || '', new_salaire_annuel: deal.salaire_annuel || '',
+      changement_frais: 'Non', _changed: {}, _old: {},
+      etat_avenant_cdt: '', etat_av_cdps: '', avenant_cdt_signe: '', avenant_cdps_signe: '', modif_laya: '',
+      commentaires: comment,
+      created_at: Date.now(), created_by: (typeof _getCurrentUserName === 'function') ? _getCurrentUserName() : 'inconnu',
+      updated_at: Date.now()
+    };
+    var _prAll = getAvenants(); _prAll.push(_prAv); saveAvenants(_prAll);
+  } catch(e) { console.warn('[Prolongation] enregistrement avenant :', e); }
+
   deal.historique_prolongations.push({
     type: 'prolongation_simple',
-    date: dateAvenant || new Date().toISOString().slice(0,10),
+    avenant_id: _prAvId,
+    date: dateAvenant || _prToday,
     sim_ts: deal.sim_ts || null,  // SIMU active au moment de la prolongation simple
     ancienne_date_fin: ancienneDateFin,
     nouvelle_date_fin: newDate,
@@ -19607,7 +19730,8 @@ function confirmProlongationSimple(dealId) {
   // ── Mise à jour du tableau Prolongation existant ──
   // (Le module prolongation existant lit directement les deals, donc juste sauvegarder suffit)
 
-  if (typeof showNotifToast === 'function') showNotifToast('✓ Prolongation enregistrée et email envoyé');
+  if (typeof showNotifToast === 'function') showNotifToast('✅ Avenant de prolongation enregistré et email envoyé');
+  if (typeof renderAvenants === 'function') { try { renderAvenants(); } catch(e){} }
   var modal = document.getElementById('prolong-simple-modal');
   if (modal) modal.remove();
 
@@ -19722,11 +19846,19 @@ function openAvenantMissionPopup(dealId) {
     // Rattachement par l'e-mail DU CANDIDAT (email_candidat_reel), jamais par l'adresse
     // d'envoi : une simulation envoyée au client porte l'e-mail du client dans s.email
     // et n'apparaissait donc pas ici.
+    // Même règle que la fiche candidat (buildCandSimsHTML) : e-mail du candidat OU nom/prénom.
+    // Le nom rattrape les simulations dont l'e-mail a été saisi avec une coquille.
     var candEmail = (deal.email_candidat_reel || deal.email || '').trim().toLowerCase();
+    var candKey = (typeof _personKey === 'function') ? _personKey(deal.prenom, deal.nom) : '';
     sims = allSims.filter(function(s){
       var se = (s.email_candidat_reel || s.email || '').trim().toLowerCase();
       var se2 = (s.email || '').trim().toLowerCase();
-      return candEmail && (se === candEmail || se2 === candEmail);
+      if (candEmail && (se === candEmail || se2 === candEmail)) return true;
+      if (candKey && typeof _splitFullName === 'function') {
+        var np = _splitFullName(s.consultant || '');
+        if (_personKey(np.prenom, np.nom) === candKey) return true;
+      }
+      return false;
     }).sort(function(a,b){ return (b.timestamp||0) - (a.timestamp||0); });
   } catch(e) { console.warn('[Avenant] simulations:', e); }
 
@@ -20138,11 +20270,19 @@ function openMissionParallelePopup(dealId) {
     // Rattachement par l'e-mail DU CANDIDAT (email_candidat_reel), jamais par l'adresse
     // d'envoi : une simulation envoyée au client porte l'e-mail du client dans s.email
     // et n'apparaissait donc pas ici.
+    // Même règle que la fiche candidat (buildCandSimsHTML) : e-mail du candidat OU nom/prénom.
+    // Le nom rattrape les simulations dont l'e-mail a été saisi avec une coquille.
     var candEmail = (deal.email_candidat_reel || deal.email || '').trim().toLowerCase();
+    var candKey = (typeof _personKey === 'function') ? _personKey(deal.prenom, deal.nom) : '';
     sims = allSims.filter(function(s){
       var se = (s.email_candidat_reel || s.email || '').trim().toLowerCase();
       var se2 = (s.email || '').trim().toLowerCase();
-      return candEmail && (se === candEmail || se2 === candEmail);
+      if (candEmail && (se === candEmail || se2 === candEmail)) return true;
+      if (candKey && typeof _splitFullName === 'function') {
+        var np = _splitFullName(s.consultant || '');
+        if (_personKey(np.prenom, np.nom) === candKey) return true;
+      }
+      return false;
     }).sort(function(a,b){ return (b.timestamp||0) - (a.timestamp||0); });
   } catch(e) { console.warn('[Mission //] simulations:', e); }
 
@@ -20948,9 +21088,23 @@ function _avExtractFraisFromSim(sim) {
     : (gdLieu || '');
   var gdLbl = (repasUp === 'GD') ? ('Oui' + (_gdReadable ? ' (' + _gdReadable + ')' : '')) : 'Non';
 
+  // CP / RTT / mutuelle / frais de gestion (rubriques ajoutées à la comparaison)
+  var _cpRaw = (_resolve('cp') || '').toString();
+  var _rttRaw = parseInt(_resolve('rtt')) || 0;
+  var _mutRaw = (_resolve('mutuelle') || '').toString();
+  var _fgRaw = _resolve('fg_reel') || _resolve('marge') || '';
+  var cpLbl = (_cpRaw === 'CP') ? 'Provisionnés' : (_cpRaw ? 'Non provisionnés' : '—');
+  var rttLbl = _rttRaw > 0 ? (_rttRaw + ' j/an') : 'Non';
+  var mutLbl = _mutRaw ? _mutRaw : '—';
+  var fgLbl = _fgRaw ? (String(_fgRaw) + ' %') : '—';
+
   return {
     tjm: sim.tjm ? String(sim.tjm) : '',
     new_salaire_annuel: brutMens > 0 ? Math.round(brutMens * 12) : null,
+    cp: cpLbl,
+    rtt: rttLbl,
+    mutuelle: mutLbl,
+    frais_gestion: fgLbl,
     swile_tr: swileLbl,
     forfait_repas: forfaitLbl,
     ind_km: kmLbl,
@@ -20972,7 +21126,8 @@ function _avExtractFraisFromSim(sim) {
       net: net,
       gd_actif: (repasUp === 'GD'),
       gd_lieu: gdLieu,
-      gd_perso_montant: gdPersoMontant  // FIX FRAIS : pour diff fin entre simu d'origine et nouvelle simu
+      gd_perso_montant: gdPersoMontant,  // FIX FRAIS : pour diff fin entre simu d'origine et nouvelle simu
+      cp: _cpRaw, rtt: _rttRaw, mutuelle: _mutRaw, fg: _fgRaw
     }
   };
 }
@@ -20988,7 +21143,7 @@ function _avCompareWithPlacement(newFrais, deal) {
   var oldFrais = _avExtractFraisFromSim(oldSim);
   var changed = {};
   var oldValues = {};
-  ['tjm','new_salaire_annuel','swile_tr','forfait_repas','ind_km','transport_commun','teletravail','tel_internet','grand_deplacement'].forEach(function(field){
+  ['tjm','new_salaire_annuel','cp','rtt','mutuelle','frais_gestion','swile_tr','forfait_repas','ind_km','transport_commun','teletravail','tel_internet','grand_deplacement'].forEach(function(field){
     var oldV = oldFrais[field];
     var newV = newFrais[field];
     // Comparaison stricte mais tolérante (string vs number)
@@ -21011,6 +21166,45 @@ function _avUpdateManagerDatalist() {
   dl.innerHTML = (cl && Array.isArray(cl.managers)) ? cl.managers.map(function(_m){ return '<option value="' + String(_m.name||'').replace(/"/g,'&quot;') + '">'; }).join('') : '';
 }
 
+// Auto-complétion « Nouveau client » : si l'entreprise saisie existe, on remplit les champs
+// client depuis sa fiche ; idem pour le manager. Rien n'est écrasé si l'utilisateur a déjà saisi.
+function _avNcSet(id, val, force) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  if (force || !el.value) el.value = val || '';
+}
+function _avNcAutofillClient() {
+  var inp = document.getElementById('av-new-entreprise');
+  if (!inp) return;
+  var q = (inp.value || '').trim().toLowerCase();
+  var cl = q ? getClients().find(function(_c){ return _c && String(_c.name||'').trim().toLowerCase() === q; }) : null;
+  if (!cl) return;
+  _avNcSet('av-nc-adresse-siege', cl.adresse);
+  _avNcSet('av-nc-sig-nom', cl.nom_signataire);
+  _avNcSet('av-nc-sig-email', cl.email_signataire);
+  _avNcSet('av-nc-sig-tel', cl.tel_signataire);
+  _avNcSet('av-nc-cpt-prenom', cl.prenom_compta);
+  _avNcSet('av-nc-cpt-nom', cl.nom_compta);
+  _avNcSet('av-nc-cpt-email', cl.email_compta);
+  _avNcSet('av-nc-banque', cl.banque);
+  var _d = document.getElementById('av-nc-delai'); if (_d && !_d.value && cl.delai_paiement) { _d.value = cl.delai_paiement; if (_d.value !== cl.delai_paiement) { var _o = document.createElement('option'); _o.textContent = cl.delai_paiement; _o.value = cl.delai_paiement; _d.appendChild(_o); _d.value = cl.delai_paiement; } }
+  var _cs = document.getElementById('av-cdps-seven-client'); if (_cs && !_cs.value && cl.type_contrat_client) _cs.value = cl.type_contrat_client;
+  _avNcAutofillManager();
+}
+function _avNcAutofillManager() {
+  var inpE = document.getElementById('av-new-entreprise');
+  var inpM = document.getElementById('av-new-manager');
+  if (!inpE || !inpM) return;
+  var qE = (inpE.value || '').trim().toLowerCase();
+  var qM = (inpM.value || '').trim().toLowerCase();
+  var cl = qE ? getClients().find(function(_c){ return _c && String(_c.name||'').trim().toLowerCase() === qE; }) : null;
+  if (!cl || !qM) return;
+  var m = (cl.managers || []).find(function(_m){ return _m && String(_m.name||'').trim().toLowerCase() === qM; });
+  if (!m) return;
+  _avNcSet('av-nc-mgr-tel', m.tel);
+  _avNcSet('av-nc-mgr-email', m.email);
+}
+
 function openProlongationAvenantPopup(dealId, mode) {
   var existing = document.getElementById('av-popup-modal');
   if (existing) existing.remove();
@@ -21021,8 +21215,16 @@ function openProlongationAvenantPopup(dealId, mode) {
 
   // Récupérer les SIMUs du candidat (par email)
   var hist = (typeof getHistory === 'function') ? getHistory() : [];
-  var candidatEmail = (deal.email || '').toLowerCase().trim();
-  var simsCandidat = hist.filter(function(s){ return (s.email||'').toLowerCase().trim() === candidatEmail; });
+  // Même règle que la fiche candidat : e-mail du candidat (email_candidat_reel) OU nom/prénom.
+  var candidatEmail = (deal.email_candidat_reel || deal.email || '').toLowerCase().trim();
+  var _candKeyP = (typeof _personKey === 'function') ? _personKey(deal.prenom, deal.nom) : '';
+  var simsCandidat = hist.filter(function(s){
+    var se = (s.email_candidat_reel || s.email || '').toLowerCase().trim();
+    var se2 = (s.email || '').toLowerCase().trim();
+    if (candidatEmail && (se === candidatEmail || se2 === candidatEmail)) return true;
+    if (_candKeyP && typeof _splitFullName === 'function') { var np = _splitFullName(s.consultant || ''); if (_personKey(np.prenom, np.nom) === _candKeyP) return true; }
+    return false;
+  });
   // Tri : plus récente en premier
   simsCandidat.sort(function(a,b){ return (b.timestamp||0) - (a.timestamp||0); });
 
@@ -21031,7 +21233,7 @@ function openProlongationAvenantPopup(dealId, mode) {
     return;
   }
 
-  var modeLabel = (mode === 'nouveau_client') ? '🏢 Prolongation nouveau client' : '📊 Prolongation nouvelle SIMU';
+  var modeLabel = (mode === 'nouveau_client') ? '🏢 Avenant Nouveau Client' : '📊 Avenant Nouvelle Simulation';
   var modeColor = (mode === 'nouveau_client') ? '#8A5F00' : '#1A4F96';
   var modeBg = (mode === 'nouveau_client') ? '#FFF8E8' : '#EEF4FF';
 
@@ -21129,6 +21331,10 @@ function renderAvenantPopupBody(simTimestamp) {
   html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">'
     + fieldVal('tjm', 'TJM (€/j)')
     + fieldVal('new_salaire_annuel', 'Salaire annuel')
+    + fieldVal('frais_gestion', 'Frais de gestion')
+    + fieldVal('cp', 'Congés payés')
+    + fieldVal('rtt', 'RTT')
+    + fieldVal('mutuelle', 'Mutuelle')
     + fieldVal('swile_tr', 'Swile / TR')
     + fieldVal('forfait_repas', 'Forfait repas')
     + fieldVal('ind_km', 'Indemnité km')
@@ -21140,17 +21346,51 @@ function renderAvenantPopupBody(simTimestamp) {
 
   // ── 3. Données client (cas 2 = modifiables, cas 3 = en lecture) ──
   if (mode === 'nouveau_client') {
-    html += '<div style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;">🏢 Nouveau client (à renseigner)</div>';
-    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">'
-      + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Nouvelle entreprise</label><input id="av-new-entreprise" type="text" list="av-clients-dl" autocomplete="off" oninput="_avUpdateManagerDatalist()" placeholder="Ex: Société XYZ" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
-      + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Manager / Contact</label><input id="av-new-manager" type="text" list="av-managers-dl" autocomplete="off" onfocus="_avUpdateManagerDatalist()" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
+    var _inp = 'style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"';
+    var _lbl = 'style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;"';
+    function _fld(id, label, value, extra) {
+      return '<div><label ' + _lbl + '>' + label + '</label><input id="' + id + '" type="text" ' + (extra||'') + ' value="' + String(value||'').replace(/"/g,'&quot;') + '" ' + _inp + '></div>';
+    }
+    html += '<div style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;">🏢 Nouveau client — à renseigner <span style="font-weight:500;text-transform:none;color:#9E94C4;">(saisie assistée : si l\'entreprise ou le manager existe, les champs se remplissent)</span></div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px;">'
+      + '<div><label ' + _lbl + '>Nouvelle entreprise <span style="color:#A8322A;">*</span></label><input id="av-new-entreprise" type="text" list="av-clients-dl" autocomplete="off" placeholder="Ex: Société XYZ" value="' + (sim.entreprise || '').replace(/"/g,'&quot;') + '" oninput="_avUpdateManagerDatalist();_avNcAutofillClient()" onchange="_avNcAutofillClient()" ' + _inp + '></div>'
+      + '<div><label ' + _lbl + '>Manager / Contact</label><input id="av-new-manager" type="text" list="av-managers-dl" autocomplete="off" value="' + (sim.manager || sim.contact_client || '').replace(/"/g,'&quot;') + '" oninput="_avNcAutofillManager()" onchange="_avNcAutofillManager()" ' + _inp + '></div>'
       + '<datalist id="av-clients-dl">' + getClients().map(function(_cl){ return '<option value="' + String(_cl.name||'').replace(/"/g,'&quot;') + '">'; }).join('') + '</datalist>'
       + '<datalist id="av-managers-dl"></datalist>'
-      + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Mission / Poste</label><input id="av-new-poste" type="text" value="' + (sim.poste || '').replace(/"/g,'&quot;') + '" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
+      + _fld('av-new-poste', 'Mission / Poste', sim.poste || '')
+      + _fld('av-nc-mgr-tel', 'Téléphone manager', '')
+      + _fld('av-nc-mgr-email', 'Email manager', sim.email_client || '')
+      + _fld('av-nc-adresse-siege', 'Adresse siège social', '')
+      + '</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px;">'
+      + _fld('av-nc-sig-nom', 'Signataire — Nom', '')
+      + _fld('av-nc-sig-email', 'Signataire — Email', '')
+      + _fld('av-nc-sig-tel', 'Signataire — Téléphone', '')
+      + _fld('av-nc-cpt-prenom', 'Service comptable — Prénom', '')
+      + _fld('av-nc-cpt-nom', 'Service comptable — Nom', '')
+      + _fld('av-nc-cpt-email', 'Service comptable — Email', '')
+      + '</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">'
+      + '<div><label ' + _lbl + '>Délai de paiement</label><select id="av-nc-delai" ' + _inp.replace('style="','style="background:#fff;') + '>'
+      +   '<option value="">--</option><option>30 jours</option><option>45 jours</option><option>60 jours</option><option>30 jours fin de mois</option><option>45 jours fin de mois</option><option>60 jours fin de mois</option>'
+      + '</select></div>'
+      + _fld('av-nc-banque', 'Banque', '')
+      + _fld('av-nc-adresse-exec', 'Adresse d\'exécution', sim.gd_lieu || '')
+      + '</div>';
+    // Commercial du nouveau deal (par défaut : celui du placement d'origine)
+    var _commList = (function(){ try { var l = getCustomLists(); return (l && l.commerciaux) || []; } catch(e){ return []; } })();
+    if (!_commList.length) _commList = ['Norman','David','Rayan','Esteban','Sacha','Farah','Joanne'];
+    if (deal.commercial && _commList.indexOf(deal.commercial) < 0) _commList = [deal.commercial].concat(_commList);
+    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">'
+      + '<div><label ' + _lbl + '>Commercial du nouveau deal <span style="color:#A8322A;">*</span></label>'
+      +   '<select id="av-nc-commercial" ' + _inp.replace('style="','style="background:#fff;') + '>'
+      +     _commList.map(function(cm){ return '<option value="' + String(cm).replace(/"/g,'&quot;') + '"' + (cm === deal.commercial ? ' selected' : '') + '>' + cm + '</option>'; }).join('')
+      +   '</select></div>'
+      + '<div style="grid-column:2/-1;align-self:end;font-size:10.5px;color:#8A5F00;background:#FFF8E8;border:1px solid #F0CE8A;border-radius:7px;padding:8px 10px;">💡 La continuité est un <strong>nouveau deal</strong> : commissionnée dans le mois de sa création, comptée dans le dashboard et les stats. Elle n\'apparaît pas dans le tableau des deals mais dans l\'onglet Avenants.</div>'
       + '</div>';
   } else {
     // Cas 3 : nouvelle simu, même client
-    html += '<div style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;">🏢 Client (inchangé)</div>';
+    html += '<div style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;">🏢 Client (inchangé) — le placement d\'origine n\'est pas modifié</div>';
     html += '<div style="background:#F5F3FF;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:12px;color:#1A1033;line-height:1.6;">'
       + '<strong>Entreprise :</strong> ' + (deal.entreprise || '—') + '<br>'
       + '<strong>Manager :</strong> ' + (deal.manager || '—') + '<br>'
@@ -21163,33 +21403,33 @@ function renderAvenantPopupBody(simTimestamp) {
   var ancienneDateFin = deal.date_fin || deal.dateFinPrevisionnelle || '';
   html += '<div style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;">📅 Dates de l\'avenant</div>';
   html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">'
-    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Date du nouvel avenant</label><input id="av-date-avenant" type="date" value="' + aujourd + '" style="width:100%;padding:8px 11px;border:1.5px solid #7343EE;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;font-weight:700;"></div>'
-    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">À partir du</label><input id="av-date-debut" type="date" value="' + aujourd + '" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
+    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Créé le</label><input id="av-date-avenant" type="date" value="' + aujourd + '" readonly style="background:#F5F3FF;color:#6B5E9C;width:100%;padding:8px 11px;border:1.5px solid #7343EE;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;font-weight:700;"></div>'
+    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">À partir du' + (mode === 'nouvelle_simu' ? ' <span style="font-weight:500;color:#9E94C4;">(optionnel)</span>' : '') + '</label><input id="av-date-debut" type="date" value="' + aujourd + '" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
     + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Jusqu\'au</label><input id="av-date-fin" type="date" value="' + ancienneDateFin + '" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
     + '</div>';
 
   // ── 5. Type d'avenant + motif + CDPS + contrat ──
   html += '<div style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;">📝 Caractéristiques avenant</div>';
   html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px;">'
-    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Type d\'avenant</label>'
+    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Type d\'avenant <span style="color:#A8322A;">*</span></label>'
     +   '<select id="av-type" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;background:#fff;">'
-    +     '<option value="">— Sélectionner —</option>'
-    +     '<option>CDT</option><option>CDPS</option><option>CDT + CDPS</option><option>New CDPS</option><option>CDT + New CDPS</option>'
+    +     '<option value="">-- Sélectionner --</option>'
+    +     '<option>CDT</option><option>CDPS</option><option>CDT + CDPS</option>'
     +   '</select></div>'
-    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Motif</label>'
-    +   '<select id="av-motif" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;background:#fff;">'
-    +     '<option value="">— Sélectionner —</option>'
-    +     '<option>Hausse TJM</option><option>New CDPS</option><option>New Frais</option><option>Frais URSSAF</option><option>Autre</option>'
-    +   '</select></div>'
+    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Motif <span style="color:#A8322A;">*</span> <span style="font-weight:500;color:#9E94C4;">(plusieurs choix possibles)</span></label>'
+    +   '<div id="av-motif-wrap" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 8px;border:1.5px solid #E4E0FA;border-radius:7px;background:#fff;">'
+    +     ['New TJM','New Frais','New URSSAF','Modif CP','Modif CP et RTT'].map(function(m){ return '<label style="display:flex;align-items:center;gap:4px;font-size:11.5px;cursor:pointer;"><input type="checkbox" class="av-motif-cb" value="' + m + '"> ' + m + '</label>'; }).join('')
+    +   '</div></div>'
     + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">CDPS Seven ou client <span style="color:#9E94C4;font-weight:500;">(auto)</span></label>'
     +   '<select id="av-cdps-seven-client" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;background:#fff;">'
     +     '<option value=""' + (!deal.type_contrat_client?' selected':'') + '>—</option>'
     +     '<option value="Seven"' + (deal.type_contrat_client==='Seven'?' selected':'') + '>Seven</option>'
     +     '<option value="Client"' + (deal.type_contrat_client==='Client'?' selected':'') + '>Client</option>'
     +   '</select></div>'
-    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Type contrat</label>'
+    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Type de contrat <span style="font-weight:500;color:#9E94C4;">(pré-rempli depuis la simulation)</span></label>'
     +   '<select id="av-type-contrat" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;background:#fff;">'
-    +     '<option value="">—</option><option>CDI</option><option>CDD</option>'
+    +     (function(){ var _r = newFrais && newFrais._raw ? newFrais._raw : {}; var _sug = (_r.cp === 'CP') ? ((parseInt(_r.rtt)||0) > 0 ? 'CDI CP RTT' : 'CDI CP') : 'CDI';
+             return ['','CDI','CDI CP','CDI CP RTT'].map(function(o){ return '<option value="' + o + '"' + (o === _sug ? ' selected' : '') + '>' + (o || '--') + '</option>'; }).join(''); })()
     +   '</select></div>'
     + '<div style="grid-column:1/-1;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Commentaires <span style="font-weight:500;color:#9E94C4;">(optionnel)</span></label>'
     +   '<textarea id="av-commentaires" rows="3" placeholder="Ex : Renégociation TJM accordée, signature prévue mi-mai" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;resize:vertical;line-height:1.5;"></textarea></div>'
@@ -21221,14 +21461,17 @@ function confirmProlongationAvenant(dealId, mode) {
   var dateDebut = document.getElementById('av-date-debut').value;
   var dateFin = document.getElementById('av-date-fin').value;
   var typeAvenant = document.getElementById('av-type').value;
-  var motif = document.getElementById('av-motif').value;
+  var _motifs = Array.prototype.slice.call(document.querySelectorAll('.av-motif-cb:checked')).map(function(cb){ return cb.value; });
+  var motif = _motifs.join(' + ');
   var cdpsSevenClient = document.getElementById('av-cdps-seven-client').value;
   var typeContrat = document.getElementById('av-type-contrat').value;
   var commentaires = document.getElementById('av-commentaires').value || '';
 
-  if (!dateAvenant) { alert('⚠ La date du nouvel avenant est obligatoire.'); return; }
-  if (!typeAvenant) { alert('⚠ Sélectionnez le type d\'avenant (CDT, CDPS…).'); return; }
-  if (!motif) { alert('⚠ Sélectionnez le motif.'); return; }
+  if (!dateAvenant) dateAvenant = new Date().toISOString().slice(0,10);
+  if (!typeAvenant) { alert('⚠ Sélectionnez le type d\'avenant (CDT, CDPS, CDT + CDPS).'); return; }
+  if (!motif) { alert('⚠ Cochez au moins un motif.'); return; }
+  // Nouveau client : dates obligatoires (elles bornent la ligne de continuité)
+  if (mode === 'nouveau_client' && !dateDebut) { alert('⚠ Indiquez la date de début chez le nouveau client.'); return; }
 
   var deals = getDeals();
   var idx = deals.findIndex(function(d){ return d.id == dealId; });
@@ -21257,6 +21500,15 @@ function confirmProlongationAvenant(dealId, mode) {
     newManager = (elM && elM.value.trim()) || deal.manager;
     newPoste = (elP && elP.value.trim()) || deal.poste;
     if (!newEntreprise) { alert('⚠ Renseignez la nouvelle entreprise cliente.'); return; }
+    var _g = function(id){ var el = document.getElementById(id); return el ? (el.value || '').trim() : ''; };
+    var ncInfos = {
+      tel_client: _g('av-nc-mgr-tel'), email_client: _g('av-nc-mgr-email'),
+      adresse_siege: _g('av-nc-adresse-siege'), adresse_exec: _g('av-nc-adresse-exec'),
+      nom_signataire: _g('av-nc-sig-nom'), email_signataire: _g('av-nc-sig-email'), tel_signataire: _g('av-nc-sig-tel'),
+      prenom_compta: _g('av-nc-cpt-prenom'), nom_compta: _g('av-nc-cpt-nom'), email_compta: _g('av-nc-cpt-email'),
+      delai_paiement: _g('av-nc-delai'), banque: _g('av-nc-banque'),
+      commercial: _g('av-nc-commercial') || deal.commercial || ''
+    };
     // Marquer aussi entreprise/manager/poste comme changés
     if (newEntreprise !== deal.entreprise) { changed.entreprise = true; oldValues.entreprise = deal.entreprise; }
     if (newManager !== deal.manager) { changed.manager = true; oldValues.manager = deal.manager; }
@@ -21274,7 +21526,7 @@ function confirmProlongationAvenant(dealId, mode) {
     mode: mode,
     date_demande: new Date().toISOString().slice(0,10),
     date_avenant: dateAvenant,
-    commercial: deal.commercial || '',
+    commercial: (mode === 'nouveau_client' && typeof ncInfos !== 'undefined' && ncInfos.commercial) ? ncInfos.commercial : (deal.commercial || ''),
     prenom_porte: deal.prenom || '',
     nom_porte: deal.nom || '',
     type_avenant: typeAvenant,
@@ -21286,6 +21538,13 @@ function confirmProlongationAvenant(dealId, mode) {
     client: newEntreprise,
     manager: newManager,
     poste: newPoste,
+    lieu_mission: (mode === 'nouveau_client' && typeof ncInfos !== 'undefined') ? (ncInfos.adresse_exec || '') : (deal.lieu_mission || ''),
+    // Coordonnées du nouveau client (renseignées dans le formulaire)
+    manager_tel: (mode === 'nouveau_client' && typeof ncInfos !== 'undefined') ? ncInfos.tel_client : '',
+    manager_email: (mode === 'nouveau_client' && typeof ncInfos !== 'undefined') ? ncInfos.email_client : '',
+    banque: (mode === 'nouveau_client' && typeof ncInfos !== 'undefined') ? ncInfos.banque : '',
+    delai_paiement: (mode === 'nouveau_client' && typeof ncInfos !== 'undefined') ? ncInfos.delai_paiement : '',
+    tjm_actuel: deal.tjm || '',
 
     // Champs de la SIMU (avec marquage des changements)
     tjm: newFrais.tjm,
@@ -21353,9 +21612,37 @@ function confirmProlongationAvenant(dealId, mode) {
     newDeal.manager = newManager;
     newDeal.poste = newPoste;
     if (newFrais.tjm) newDeal.tjm = newFrais.tjm;
+    // Conditions du NOUVEAU deal = celles de la simulation choisie (même mapping que savePlacement),
+    // notamment les frais de gestion qui servent au seuil de commission.
+    try {
+      var _ns = newSim, _st = (_ns.snapshot && _ns.snapshot._state) ? _ns.snapshot._state : {};
+      var _gv = function(f){ var v = _ns[f]; if (v === undefined || v === '' || v === null) v = _st[f]; return v; };
+      var _bm = parseFloat(String(_ns.brut||'').replace(/[^0-9.,]/g,'').replace(',','.')) || 0;
+      Object.assign(newDeal, {
+        nb_jours: _ns.nb_jours || newDeal.nb_jours, brut: _ns.brut || newDeal.brut,
+        salaire_annuel: _bm > 0 ? Math.round(_bm * 12) : newDeal.salaire_annuel,
+        net_payer: _ns.net_payer || newDeal.net_payer, net_avant: _ns.net_avant || newDeal.net_avant,
+        frais_gestion: _gv('marge') || newDeal.frais_gestion, fg_reel: _gv('fg_reel') || '',
+        mutuelle: _gv('mutuelle') || '', cp: _gv('cp') || '', rtt: _gv('rtt') || 0, repas: _gv('repas') || '',
+        tt: _gv('tt') ? 'Oui' : 'Non', gd_lieu: _gv('gd_lieu') || '', gd_perso_montant: parseFloat(_gv('gd_perso_montant')) || 0,
+        ik_1ere: _gv('ik_1ere') ? 'Oui' : 'Non', km_aller: _gv('km_aller') || '', puissance_fiscale: _gv('puissance') || '',
+        abo_transport: _gv('abo_transport') || '', abo_tel: _gv('abo_tel') || '', abo_internet: _gv('abo_internet') || ''
+      });
+    } catch(e) { console.warn('[Avenant nouveau client] conditions simu :', e); }
     newDeal.sim_ts = simTs;
     newDeal.date_avenant = dateAvenant;
-    if (dateDebut) { newDeal.date_entree = dateDebut; newDeal.date_deal = dateDebut; }
+    if (dateDebut) newDeal.date_entree = dateDebut;
+    // NOUVEAU DEAL : la date de deal est la date de CRÉATION de l'avenant (commissions,
+    // dashboard et stats le comptent dans ce mois-là). Le commercial est celui choisi.
+    newDeal.date_deal = dateAvenant;
+    if (typeof ncInfos !== 'undefined' && ncInfos.commercial) newDeal.commercial = ncInfos.commercial;
+    // Jamais de cooptation re-payée ni de période d'essai / onboarding rejoués sur une continuité
+    ['cooptation','coopteur','coopteur_nom','coopteur_type','coopt_type','cooptation_montant','cooptation_payee',
+     'pe_date_debut','pe_validee','pe_validee_le','pe_alert_sent','pe_relance_sent',
+     'date_signature','creation_laya','creation_silae','dpae','mail_bienvenue','my_silae','mutuelle_envoi_lien','envoi_carte_swile',
+     'mail_verif_titre','demande_autorisation','decision_favorable']
+      .forEach(function(k){ delete newDeal[k]; });
+    newDeal.origine = 'Avenant nouveau client';
     newDeal.date_fin = dateFin;
     if (newDeal.dateFinPrevisionnelle !== undefined) newDeal.dateFinPrevisionnelle = dateFin;
     newDeal.etat = 'En cours';
@@ -21364,11 +21651,36 @@ function confirmProlongationAvenant(dealId, mode) {
     newDeal.avenants_mission = [];
     newDeal.historique_prolongations = _traceAv ? [ JSON.parse(JSON.stringify(_traceAv)) ] : [];
     newDeal.prolongation_avenant = { deal_origine_id: deal.id, avenant_id: avenantId, ancien_client: deal.entreprise, date: dateAvenant };
+    // ── Contacts client : JAMAIS hérités de l'ancien client ─────────────────
+    // La ligne de continuité porte les coordonnées saisies pour le NOUVEAU client,
+    // et rien d'autre (sinon la fiche du nouveau client récupérait tel/e-mail/adresse/
+    // signataire/comptable de l'ancien).
+    ['tel_client','email_client','adresse_siege','adresse_exec','lieu_mission','nom_signataire','email_signataire','tel_signataire',
+     'prenom_compta','nom_compta','email_compta','delai_paiement','delai_paiement_client','banque','banque_client','type_contrat_client']
+      .forEach(function(k){ delete newDeal[k]; });
+    if (typeof ncInfos !== 'undefined') {
+      newDeal.tel_client = ncInfos.tel_client; newDeal.email_client = ncInfos.email_client;
+      newDeal.adresse_siege = ncInfos.adresse_siege; newDeal.adresse_exec = ncInfos.adresse_exec; newDeal.lieu_mission = ncInfos.adresse_exec;
+      newDeal.nom_signataire = ncInfos.nom_signataire; newDeal.email_signataire = ncInfos.email_signataire; newDeal.tel_signataire = ncInfos.tel_signataire;
+      newDeal.prenom_compta = ncInfos.prenom_compta; newDeal.nom_compta = ncInfos.nom_compta; newDeal.email_compta = ncInfos.email_compta;
+      newDeal.delai_paiement = ncInfos.delai_paiement; newDeal.delai_paiement_client = ncInfos.delai_paiement;
+      newDeal.banque = ncInfos.banque; newDeal.banque_client = ncInfos.banque;
+    }
+    if (cdpsSevenClient) newDeal.type_contrat_client = cdpsSevenClient;
     newDeal.updated_at = Date.now();
     // Deal d'origine : intact, clôturé à la veille du début de l'avenant + lien vers la suite
     if (dateDebut) {
       var _v = new Date(dateDebut);
-      if (!isNaN(_v.getTime())) { _v.setDate(_v.getDate() - 1); deal.date_fin = _v.toISOString().slice(0,10); if (deal.dateFinPrevisionnelle !== undefined) deal.dateFinPrevisionnelle = deal.date_fin; }
+      if (!isNaN(_v.getTime())) {
+        _v.setDate(_v.getDate() - 1);
+        var _veille = _v.toISOString().slice(0,10);
+        // On ne clôture à la veille QUE si l'origine n'a pas déjà une fin plus tôt
+        // (ex. fin de mission déjà saisie au 31/08 : on la respecte).
+        if (!deal.date_fin || deal.date_fin > _veille) {
+          deal.date_fin = _veille;
+          if (deal.dateFinPrevisionnelle !== undefined) deal.dateFinPrevisionnelle = _veille;
+        }
+      }
     }
     deal.prolonge_par = newDeal.id;
     deal.updated_at = Date.now();
@@ -21379,11 +21691,10 @@ function confirmProlongationAvenant(dealId, mode) {
     try { if (typeof saveClientFromDeal === 'function') saveClientFromDeal(newDeal); } catch(e){ console.warn('[Avenant nouveau client] rattachement client:', e); }
     _emailDeal = newDeal;
   } else {
-    deal.date_fin = dateFin;
-    if (deal.dateFinPrevisionnelle !== undefined) deal.dateFinPrevisionnelle = dateFin;
+    // ── Nouvelle simulation : le placement d'ORIGINE reste INTACT ──────────
+    // Les nouvelles conditions vivent dans l'avenant ; les tableaux RH les lisent
+    // via _dealEnVigueur() (dernier avenant en vigueur, sinon le deal).
     deal.date_avenant = dateAvenant;
-    deal.sim_ts = simTs; // rattacher la nouvelle SIMU
-    if (newFrais.tjm) deal.tjm = newFrais.tjm;
     deals[idx] = deal;
     saveDeals(deals);
   }
@@ -21429,7 +21740,7 @@ function sendProlongationAvenantEmail(deal, avenant, oldFrais, newFrais) {
   }
 
   var nomComplet = ((deal.prenom||'') + ' ' + (deal.nom||'')).trim();
-  var modeLbl = avenant.mode === 'nouveau_client' ? 'Nouveau client' : 'Nouvelle SIMU';
+  var modeLbl = avenant.mode === 'nouveau_client' ? 'Nouveau client' : (avenant.mode === 'prolongation' ? 'Prolongation' : 'Nouvelle simulation');
   var subject = '[Avenant ' + modeLbl + '] ' + nomComplet + ' — ' + avenant.client + ' — ' + avenant.type_avenant;
 
   function compareLine(label, oldV, newV, isChanged) {
@@ -32388,12 +32699,11 @@ function buildCandPlacementsHTML(cand) {
     } else if (!isSorti) {
       // ── Bouton Prolongation (avant Sortant) ──
       // Cas 1 : prolongation simple (date fin) | Cas 2 : nouveau client | Cas 3 : nouvelle SIMU
-      actionsHtml += '<button onclick="closeCandFiche();setTimeout(function(){openProlongationChoicePopup(' + d.id + ')},100);" title="Prolonger le placement (3 options : simple / nouveau client / nouvelle SIMU)" style="padding:4px 10px;background:#F0FAF4;color:#0F5132;border:1.5px solid #9FE1CB;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">⏳ Prolongation</button>';
+      actionsHtml += '<button onclick="closeCandFiche();setTimeout(function(){openProlongationChoicePopup(' + d.id + ')},100);" title="Créer un avenant (Prolongation / Nouveau client / Nouvelle simulation)" style="padding:4px 10px;background:#FFF6E8;color:#8A5F00;border:1.5px solid #F0CE8A;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">📑 Avenant</button>';
 
       // ── Bouton Avenant mission (changement en cours de mission) ──
       // Ne modifie PAS le deal ni le tableau de suivi. Crée juste une ligne dans le
       // tableau Avenants + une entrée dans l'accordéon Avenants de la fiche candidat.
-      actionsHtml += '<button onclick="closeCandFiche();setTimeout(function(){openAvenantMissionPopup(' + d.id + ')},100);" title="Avenant en cours de mission (TJM, frais, contrat presta...) — n\'impacte pas le placement d\'origine" style="padding:4px 10px;background:#FFF6E8;color:#8A5F00;border:1.5px solid #F0CE8A;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">📑 Avenant</button>';
 
       // ── Bouton Mission parallèle (2ème mission simultanée) ──
       // Le consultant démarre une 2ème mission EN PARALLÈLE de celle-ci.
@@ -32627,14 +32937,13 @@ function _renderPlacementHistory(deal) {
   });
 
   // Entrées suivantes : prolongations + avenants (numérotation séparée)
-  var prolongCount = 0;
   var avenantCount = 0;
   hist.forEach(function(h) {
     var entry = { date: h.date || '', _raw: h };
     if (h.type === 'prolongation_simple') {
-      prolongCount++;
+      avenantCount++;
       entry.type = 'prolongation_simple';
-      entry.label = 'Prolongation ' + prolongCount;
+      entry.label = 'Avenant ' + avenantCount + ' — Prolongation';
       entry.icon = '⏳';
       entry.color = '#0F5132';
       entry.bg = '#F0FAF4';
@@ -32654,7 +32963,7 @@ function _renderPlacementHistory(deal) {
     } else if (h.type === 'avenant_nouvelle_simu') {
       avenantCount++;
       entry.type = 'avenant_nouvelle_simu';
-      entry.label = 'Avenant ' + avenantCount + ' — Nouvelle SIMU';
+      entry.label = 'Avenant ' + avenantCount + ' — Nouvelle simulation';
       entry.icon = '📊';
       entry.color = '#1A4F96';
       entry.bg = '#EEF4FF';
@@ -36923,7 +37232,8 @@ function getCommDealsForPeriod(commercial, year, month /* 0-11, null = toute l'a
     var dealComm = (d.commercial || '').trim().toLowerCase();
     var wanted = (commercial || '').trim().toLowerCase();
     if (wanted && dealComm !== wanted) return false;
-    if (d.prolongation_avenant) return false; // continuité de contrat (avenant nouveau client) : pas un nouveau deal
+    // Continuité de contrat (avenant nouveau client) : c'est un NOUVEAU deal, commissionné
+    // dans le mois de sa création (date_deal = date de l'avenant).
     if (d.etat === 'Annulé') return false;
     // Frais de gestion ≥ seuil (override commission prioritaire)
     var fg = (fgOv[d.id] !== undefined) ? fgOv[d.id] : _dealFGEffectif(d);
@@ -37043,7 +37353,7 @@ function _dgParseDate(s) {
 function _dgDealDate(d) { return _dgParseDate(d.date_deal) || _dgParseDate(d.date_entree) || null; }
 function _dgIsActif(d) {
   if (!d || d.etat === 'Annulé') return false;
-  if (d.prolongation_avenant) return false; // continuité de contrat : pas un nouveau deal
+  // (la continuité de contrat compte comme un deal actif)
   var today = new Date(); today.setHours(23,59,59,999);
   if (d.etat === 'Fin de mission') { var dfm = _dgParseDate(d.date_fin); return !!(dfm && dfm > today); }
   if (d.etat === 'Sorti des effectifs') { var ds = _dgParseDate(d.date_sortie); return !!(ds && ds > today); }
