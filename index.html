@@ -19288,8 +19288,9 @@ function buildAvenantsContent() {
       + '<td>' + _avInlineSelect(a.id, 'avenant_cdt_signe', a.avenant_cdt_signe, ['Oui','Non','N/A']) + '</td>'
       + '<td>' + _avInlineSelect(a.id, 'avenant_cdps_signe', a.avenant_cdps_signe, ['Oui','Non','N/A']) + '</td>'
       + '<td>' + _avInlineSelect(a.id, 'modif_laya', a.modif_laya, ['Oui','Non','À faire','N/A']) + '</td>'
-      + '<td style="max-width:220px;"><input type="text" value="' + (a.commentaires||'').replace(/"/g,'&quot;') + '" placeholder="—" oninput="updateAvenantField(\'' + a.id + '\',\'commentaires\',this.value);" style="width:100%;padding:4px 7px;border:1px solid #E4E0FA;border-radius:5px;font-size:10.5px;font-family:inherit;background:transparent;"></td>'
-      + '<td><button class="av-edit-btn" onclick="openEditAvenantPopup(\'' + a.id + '\')" title="Édition complète + suppression">✎</button></td>'
+      + '<td style="max-width:220px;"><input type="text" value="' + (a.commentaires||'').replace(/"/g,'&quot;') + '" title="' + (a.commentaires||'').replace(/"/g,'&quot;').replace(/</g,'&lt;') + '" placeholder="—" oninput="updateAvenantField(\'' + a.id + '\',\'commentaires\',this.value);this.title=this.value;" style="width:100%;padding:4px 7px;border:1px solid #E4E0FA;border-radius:5px;font-size:10.5px;font-family:inherit;background:transparent;"></td>'
+      + '<td style="white-space:nowrap;"><button class="av-edit-btn" onclick="openEditAvenantPopup(\'' + a.id + '\')" title="Édition complète">✎</button> '
+      +   '<button class="av-edit-btn" onclick="confirmDeleteAvenant(\'' + a.id + '\')" title="Supprimer (mot de passe administrateur)" style="color:#A8322A;">🗑</button></td>'
       + '</tr>';
   });
 
@@ -19517,6 +19518,15 @@ function _dealRemoveAvenantTrace(deal, avenantId) {
 }
 
 function confirmDeleteAvenant(avenantId) {
+  // Suppression protégée par le mot de passe administrateur (même protection que la suppression d'un deal)
+  if (typeof promptGenericAdminPassword === 'function') {
+    promptGenericAdminPassword({ title: 'Suppression d\'un avenant', subtitle: 'Cette action est définitive et sera propagée à toute l\'équipe. Saisissez le mot de passe administrateur.' },
+      function(){ _deleteAvenantConfirmed(avenantId); });
+    return;
+  }
+  _deleteAvenantConfirmed(avenantId);
+}
+function _deleteAvenantConfirmed(avenantId) {
   if (!confirm('Supprimer définitivement cet avenant ?\n\nLa suppression sera propagée à toute l\'équipe.')) return;
   var all = getAvenants().filter(function(x){ return x.id !== avenantId; });
   saveAvenants(all);
@@ -30569,7 +30579,8 @@ function mergeDeals(remote) {
     // l'autre poste avait modifié le deal (le merge écrasait le deal entier).
     var mergedAvenants = _mergeTraces(existing.avenants_mission, d.avenants_mission, 'avenant_id')
       .filter(function(_av){ return !(_av && _av.avenant_id && typeof isTombstoned === 'function' && isTombstoned('avenants', _av.avenant_id)); });
-    var mergedHist     = _mergeTraces(existing.historique_prolongations, d.historique_prolongations, 'id');
+    var mergedHist     = _mergeTraces(existing.historique_prolongations, d.historique_prolongations, 'id')
+      .filter(function(_h){ return !(_h && _h.avenant_id && typeof isTombstoned === 'function' && isTombstoned('avenants', _h.avenant_id)); });
 
     // FIX SYNC : on utilise >= (pas > strict) pour gérer le cas où deux commerciaux
     // se retrouvent avec des updated_at identiques après un import/restauration.
@@ -32950,6 +32961,7 @@ function _pcKV(label, value, color) {
 // ── Historique chronologique d'un placement : original + prolongations + avenants ──
 function _renderPlacementHistory(deal) {
   var hist = Array.isArray(deal.historique_prolongations) ? deal.historique_prolongations : [];
+  hist = hist.filter(function(h){ return !(h && h.avenant_id && typeof isTombstoned === 'function' && isTombstoned('avenants', h.avenant_id)); });
   if (deal.prolonge_par) hist = hist.filter(function(h){ return !(h && h.type === 'avenant_nouveau_client'); }); // origine d'une continuité : trace affichée sur la continuité seulement
   function _avStart(h){ try { if (h && h.avenant_id && typeof getAvenants === 'function') { var _a = getAvenants().find(function(x){ return x && x.id === h.avenant_id; }); if (_a && _a.date_debut) return _a.date_debut; } } catch(e){} return h ? h.ancienne_date_fin : ''; }
   var avMission = (Array.isArray(deal.avenants_mission) ? deal.avenants_mission : [])
@@ -39233,7 +39245,7 @@ function exportCommHistCSV() {
         </div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Commercial</label><select id="pl-commercial" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option value="">-- Sélectionner --</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Origine deal</label><select id="pl-origine" onchange="onPlCoopTypeChange()" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>Réseau</option><option>LinkedIn</option><option>Job board</option><option>Recommandation</option><option>Cooptation Client</option><option>Cooptation Candidat</option><option>Autre</option></select></div>
-        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">État dossier <span style="font-weight:500;text-transform:none;color:#9E94C4;">(« Signé » est calculé auto)</span></label><select id="pl-etat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Nouveau placement</option><option>En cours</option><option>Signé</option><option>Annulé</option><option>Sorti des effectifs</option></select></div>
+        <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">État dossier <span style="font-weight:500;text-transform:none;color:#9E94C4;">(« Signé » est calculé auto)</span></label><select id="pl-etat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>Nouveau placement</option><option>En cours</option><option>Signé</option><option>Fin de mission</option><option>Sorti des effectifs</option><option>Annulé</option></select></div>
         <div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Type de contrat</label><select id="pl-contrat" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"><option>-- Sélectionner --</option><option>CDI</option><option>CDD</option><option>Portage</option><option>Portage Commercial</option></select></div>
         <!-- Adresse d'exécution : champ DEAL (lieu spécifique de la mission, peut différer du siège du client) -->
         <div style="grid-column:1/-1;"><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;">Adresse d'exécution <span style="font-weight:500;text-transform:none;color:#9E94C4;">(lieu de la mission)</span></label><input id="pl-adresse-exec" type="text" placeholder="Adresse de réalisation de la mission" style="width:100%;padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;"></div>
