@@ -5359,6 +5359,46 @@ function filterByPeriod(all, period) {
 }
 
 // Helper navigation depuis le dashboard vers la liste Candidats avec filtre statut
+// Navigation depuis une vignette du dashboard vers la liste correspondante, en reportant
+// les filtres actifs (commercial + mois/année) pour retrouver EXACTEMENT les éléments comptés.
+function _dashGo(kind) {
+  var comm = dashFilters.commercial;                      // nom ou '__all__'
+  var y = dashFilters.year, m = dashFilters.month;        // 'YYYY' | '__all__' ; '1'..'12' | '__all__'
+  var ym = (y !== '__all__' && m !== '__all__') ? (y + '-' + ('0' + m).slice(-2)) : '';
+  var mm = (m !== '__all__') ? ('0' + m).slice(-2) : '__all__';
+  function setSel(id, val){ var el = document.getElementById(id); if (el) el.value = val; }
+  if (typeof mainNavTo === 'function') mainNavTo(kind === 'portes' ? 'candidats' : (kind === 'clients' ? 'clients' : 'rh'));
+  setTimeout(function(){
+    try {
+      if (kind === 'placements') {
+        dealFilterComm = comm; dealFilterMonthDeal = ym; dealFilterMonthEntree = ''; dealFilterEtat = '__all__';
+        if (typeof showRHSection === 'function') showRHSection('deals');
+        setSel('deal-filter-comm', comm); setSel('deal-filter-month-deal', ym); setSel('deal-filter-month-entree', '');
+        if (typeof renderDeals === 'function') renderDeals();
+      } else if (kind === 'starters') {
+        if (ym) entreesCurrentMois = ym;
+        entreesFilters.commercial = (comm === '__all__') ? '' : comm;
+        if (typeof showRHSection === 'function') showRHSection('entrees');
+        if (typeof renderEntrees === 'function') renderEntrees();
+      } else if (kind === 'sortants') {
+        window._sortantsFilter = window._sortantsFilter || {};
+        Object.assign(window._sortantsFilter, { commercial: comm, year: y, month: mm, cdi_year: '__all__', cdi_month: '__all__' });
+        if (typeof showRHSection === 'function') showRHSection('sortants');
+        if (typeof renderSortants === 'function') renderSortants();
+      } else if (kind === 'avenants') {
+        // « À traiter » est un état instantané : on ne filtre pas sur la période
+        AVENANTS_FILTER.statut = 'a_traiter'; AVENANTS_FILTER.commercial = (comm === '__all__') ? 'all' : comm;
+        AVENANTS_FILTER.month = 'all'; AVENANTS_FILTER.search = '';
+        if (typeof showRHSection === 'function') showRHSection('avenants');
+        if (typeof renderAvenants === 'function') renderAvenants();
+      } else if (kind === 'portes') {
+        setSel('cand-filter-statut', 'Porté'); setSel('cand-filter-commercial', comm === '__all__' ? '' : comm);
+        if (typeof renderCandidats === 'function') renderCandidats();
+      }
+    } catch(e) { console.warn('[dashboard → liste]', e); }
+  }, 150);
+}
+
 function _dashGoToCandidats(statut) {
   if (typeof mainNavTo === 'function') mainNavTo('candidats');
   setTimeout(function(){
@@ -5874,23 +5914,23 @@ function renderDashboardKPIs() {
 
     + '<div class="dash-section-title">📊 Volumes du mois</div>'
     + '<div class="dash-grid cols-4">'
-    +   kpi('kpi-violet', '📋', nbPlacements, '', 'Placements', 'créés dans la période', 'mainNavTo(\'rh\');setTimeout(function(){showRHSection(\'deals\');},120);')
-    +   kpi('kpi-green',  '🚀', nbStarters,   '', 'Starters',   'entrées effectives', 'mainNavTo(\'rh\');setTimeout(function(){showRHSection(\'entrees\');},120);')
-    +   kpi('kpi-red',    '🚪', nbSortants,   '', 'Sortants',   'sorties enregistrées', 'mainNavTo(\'rh\');setTimeout(function(){showRHSection(\'sortants\');},120);')
+    +   kpi('kpi-violet', '📋', nbPlacements, '', 'Placements', 'créés dans la période', '_dashGo(\'placements\');')
+    +   kpi('kpi-green',  '🚀', nbStarters,   '', 'Starters',   'entrées effectives', '_dashGo(\'starters\');')
+    +   kpi('kpi-red',    '🚪', nbSortants,   '', 'Sortants',   'sorties enregistrées', '_dashGo(\'sortants\');')
     +   kpi('kpi-gold',   '📈', nbSimulations,'', 'Simulations','créées dans la période', 'mainNavTo(\'historique\');')
     + '</div>'
 
     + '<div class="dash-section-title">👥 Portefeuille actif (instant T)</div>'
     + '<div class="dash-grid cols-4">'
-    +   kpi('kpi-violet', '👤', nbPortesActifs,  '', 'Portés actifs',    'Statut \u00ab Porté \u00bb (comme l\'onglet Candidats)', '_dashGoToCandidats(\'Porté\');')
-    +   kpi('kpi-purple', '🏢', nbClientsActifs, '', 'Clients actifs',   '≥1 porté actif', 'mainNavTo(\'clients\');')
+    +   kpi('kpi-violet', '👤', nbPortesActifs,  '', 'Portés actifs',    'Statut \u00ab Porté \u00bb (comme l\'onglet Candidats)', '_dashGo(\'portes\');')
+    +   kpi('kpi-purple', '🏢', nbClientsActifs, '', 'Clients actifs',   '≥1 porté actif', '_dashGo(\'clients\');')
     +   kpi('kpi-blue',   '🌍', pctEtrangers,    '%', 'Étrangers',       '% portés avec titre de séjour')
     +   kpi('kpi-gold',   '🧳', pctGD,           '%', 'Grand déplacement','% portés GD')
     + '</div>'
 
     + '<div class="dash-section-title">📝 Suivi RH &amp; délais</div>'
     + '<div class="dash-grid cols-3">'
-    +   kpi(nbAvenantsATraiter > 0 ? 'kpi-orange' : 'kpi-green', '📝', nbAvenantsATraiter, '', 'Avenants à traiter', nbAvenantsATraiter > 0 ? 'CDT, CDPS ou LAYA non finalisés' : 'Tous les avenants sont finalisés', 'AVENANTS_FILTER.statut=\'a_traiter\';mainNavTo(\'rh\');setTimeout(function(){showRHSection(\'avenants\');},100);')
+    +   kpi(nbAvenantsATraiter > 0 ? 'kpi-orange' : 'kpi-green', '📝', nbAvenantsATraiter, '', 'Avenants à traiter', nbAvenantsATraiter > 0 ? 'CDT, CDPS ou LAYA non finalisés' : 'Tous les avenants sont finalisés', '_dashGo(\'avenants\');')
     +   kpi('kpi-gold',  '⏳', fmt(avgDaysSimToDeal), avgDaysSimToDeal === null ? '' : ' j', 'Simu → Placement', 'temps moyen de conversion')
     +   kpi('kpi-green', '⏳', fmt(avgDaysDealToSig), avgDaysDealToSig === null ? '' : ' j', 'Placement → Signé','délai contractualisation')
     + '</div>'
@@ -18924,7 +18964,7 @@ function buildAvenantsContent() {
       if ((a.etat_av_cdps || '') !== AVENANTS_FILTER.etat_cdps) return false;
     }
     if (AVENANTS_FILTER.month !== 'all' && AVENANTS_FILTER.month != null) {
-      var _dd = (a.date_debut || a.date_demande) ? new Date(a.date_debut || a.date_demande) : null; // filtre période sur « À partir du » (repli : date de demande)
+      var _dd = (a.date_demande || a.date_debut) ? new Date(a.date_demande || a.date_debut) : null; // filtre période sur « Créé le » (repli : date de début)
       if (!_dd || isNaN(_dd.getTime())) return false;
       if (_dd.getMonth() !== AVENANTS_FILTER.month || _dd.getFullYear() !== AVENANTS_FILTER.year) return false;
     }
@@ -19039,7 +19079,7 @@ function buildAvenantsContent() {
   _avMN.forEach(function(nm,i){ _avMonthOpts += '<option value="'+i+'"'+(_avCM===i?' selected':'')+'>'+nm+'</option>'; });
   var _avYearOpts=''; for(var _avyy=_avNY-2;_avyy<=_avNY+2;_avyy++){ _avYearOpts+='<option value="'+_avyy+'"'+(_avCY===_avyy?' selected':'')+'>'+_avyy+'</option>'; }
   html += '<div style="min-width:210px;">'
-    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">P\u00e9riode (\u00c0 partir du)</label>'
+    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">P\u00e9riode (Cr\u00e9\u00e9 le)</label>'
     + '<div style="display:flex;align-items:center;gap:2px;">'
     +   '<button onclick="avShiftMonth(-1)" title="Mois pr\u00e9c\u00e9dent" style="border:1.5px solid #E4E0FA;background:#fff;color:#5B2BCC;cursor:pointer;font-size:13px;padding:6px 8px;border-radius:7px;line-height:1;">&#9664;</button>'
     +   '<select onchange="avSetMonth(this.value)" style="flex:1;padding:8px 6px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;">' + _avMonthOpts + '</select>'
@@ -21186,7 +21226,7 @@ function _avNcAutofillClient() {
   _avNcSet('av-nc-cpt-prenom', cl.prenom_compta);
   _avNcSet('av-nc-cpt-nom', cl.nom_compta);
   _avNcSet('av-nc-cpt-email', cl.email_compta);
-  _avNcSet('av-nc-banque', cl.banque);
+  var _bq = document.getElementById('av-nc-banque'); if (_bq && !_bq.value && cl.banque) { _bq.value = cl.banque; if (_bq.value !== cl.banque) { var _ob = document.createElement('option'); _ob.textContent = cl.banque; _ob.value = cl.banque; _bq.appendChild(_ob); _bq.value = cl.banque; } }
   var _d = document.getElementById('av-nc-delai'); if (_d && !_d.value && cl.delai_paiement) { _d.value = cl.delai_paiement; if (_d.value !== cl.delai_paiement) { var _o = document.createElement('option'); _o.textContent = cl.delai_paiement; _o.value = cl.delai_paiement; _d.appendChild(_o); _d.value = cl.delai_paiement; } }
   var _cs = document.getElementById('av-cdps-seven-client'); if (_cs && !_cs.value && cl.type_contrat_client) _cs.value = cl.type_contrat_client;
   _avNcAutofillManager();
@@ -21362,19 +21402,29 @@ function renderAvenantPopupBody(simTimestamp) {
       + _fld('av-nc-mgr-email', 'Email manager', sim.email_client || '')
       + _fld('av-nc-adresse-siege', 'Adresse siège social', '')
       + '</div>';
-    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px;">'
-      + _fld('av-nc-sig-nom', 'Signataire — Nom', '')
-      + _fld('av-nc-sig-email', 'Signataire — Email', '')
-      + _fld('av-nc-sig-tel', 'Signataire — Téléphone', '')
-      + _fld('av-nc-cpt-prenom', 'Service comptable — Prénom', '')
-      + _fld('av-nc-cpt-nom', 'Service comptable — Nom', '')
-      + _fld('av-nc-cpt-email', 'Service comptable — Email', '')
+    // Signataire (jaune) et service comptable (vert) — mêmes codes couleur que la fiche client
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
+      + '<div style="background:#FFFBF0;border:1.5px solid #F0D98A;border-radius:8px;padding:10px 12px;">'
+      +   '<div style="font-size:10px;font-weight:800;color:#A07700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">✍ Signataire des contrats</div>'
+      +   '<div style="display:grid;grid-template-columns:1fr;gap:8px;">'
+      +     _fld('av-nc-sig-nom', 'Nom', '') + _fld('av-nc-sig-email', 'Email', '') + _fld('av-nc-sig-tel', 'Téléphone', '')
+      +   '</div></div>'
+      + '<div style="background:#F0FAF4;border:1.5px solid #9FE1CB;border-radius:8px;padding:10px 12px;">'
+      +   '<div style="font-size:10px;font-weight:800;color:#0F5132;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">📊 Service comptable</div>'
+      +   '<div style="display:grid;grid-template-columns:1fr;gap:8px;">'
+      +     _fld('av-nc-cpt-prenom', 'Prénom', '') + _fld('av-nc-cpt-nom', 'Nom', '') + _fld('av-nc-cpt-email', 'Email', '')
+      +   '</div></div>'
       + '</div>';
+    var _lists = (function(){ try { return getCustomLists() || {}; } catch(e){ return {}; } })();
+    var _banques = (_lists.banques && _lists.banques.length) ? _lists.banques : ['CIC','CIC F','BRED','ABN'];
+    var _delais = (_lists.delais_paiement && _lists.delais_paiement.length) ? _lists.delais_paiement : ['30 jours','45 jours','60 jours','30 jours fin de mois','45 jours fin de mois','60 jours fin de mois'];
     html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">'
       + '<div><label ' + _lbl + '>Délai de paiement</label><select id="av-nc-delai" ' + _inp.replace('style="','style="background:#fff;') + '>'
-      +   '<option value="">--</option><option>30 jours</option><option>45 jours</option><option>60 jours</option><option>30 jours fin de mois</option><option>45 jours fin de mois</option><option>60 jours fin de mois</option>'
+      +   '<option value="">--</option>' + _delais.map(function(x){ return '<option value="' + String(x).replace(/"/g,'&quot;') + '">' + x + '</option>'; }).join('')
       + '</select></div>'
-      + _fld('av-nc-banque', 'Banque', '')
+      + '<div><label ' + _lbl + '>Banque</label><select id="av-nc-banque" ' + _inp.replace('style="','style="background:#fff;') + '>'
+      +   '<option value="">--</option>' + _banques.map(function(x){ return '<option value="' + String(x).replace(/"/g,'&quot;') + '">' + x + '</option>'; }).join('')
+      + '</select></div>'
       + _fld('av-nc-adresse-exec', 'Adresse d\'exécution', sim.gd_lieu || '')
       + '</div>';
     // Commercial du nouveau deal (par défaut : celui du placement d'origine)
@@ -21400,11 +21450,13 @@ function renderAvenantPopupBody(simTimestamp) {
 
   // ── 4. Période + dates de l'avenant ──
   var aujourd = new Date().toISOString().slice(0,10);
-  var ancienneDateFin = deal.date_fin || deal.dateFinPrevisionnelle || '';
+  // Par défaut : « Jusqu'au » = « À partir du » + 6 mois (recalculé si l'utilisateur change le début)
+  var _plus6 = (function(){ var d = new Date(aujourd); d.setMonth(d.getMonth() + 6); return d.toISOString().slice(0,10); })();
+  var ancienneDateFin = _plus6;
   html += '<div style="font-size:11px;font-weight:800;color:#1A1033;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #E4E0FA;">📅 Dates de l\'avenant</div>';
   html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">'
     + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Créé le</label><input id="av-date-avenant" type="date" value="' + aujourd + '" readonly style="background:#F5F3FF;color:#6B5E9C;width:100%;padding:8px 11px;border:1.5px solid #7343EE;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;font-weight:700;"></div>'
-    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">À partir du' + (mode === 'nouvelle_simu' ? ' <span style="font-weight:500;color:#9E94C4;">(optionnel)</span>' : '') + '</label><input id="av-date-debut" type="date" value="' + aujourd + '" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
+    + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">À partir du' + (mode === 'nouvelle_simu' ? ' <span style="font-weight:500;color:#9E94C4;">(optionnel)</span>' : '') + '</label><input id="av-date-debut" type="date" value="' + aujourd + '" onchange="(function(v){ var f=document.getElementById(\'av-date-fin\'); if(!f||!v) return; var d=new Date(v); d.setMonth(d.getMonth()+6); f.value=d.toISOString().slice(0,10); })(this.value)" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
     + '<div><label style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;">Jusqu\'au</label><input id="av-date-fin" type="date" value="' + ancienneDateFin + '" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"></div>'
     + '</div>';
 
@@ -32924,16 +32976,23 @@ function _renderPlacementHistory(deal) {
   if (simChangeEvent && simChangeEvent.ancien_sim_ts) {
     firstSimTs = simChangeEvent.ancien_sim_ts;
   }
-  var dateEntreeOriginale = deal.date_entree || deal.date_deal || '';
+  // Ligne de continuité (avenant nouveau client) : le « placement d'origine » est le deal
+  // d'origine chez l'ANCIEN client, pas la continuité elle-même.
+  var _origRef = null;
+  if (deal.prolongation_avenant && deal.prolongation_avenant.deal_origine_id != null) {
+    try { _origRef = getDeals().find(function(x){ return x && String(x.id) === String(deal.prolongation_avenant.deal_origine_id); }) || null; } catch(e){}
+  }
+  var _src = _origRef || deal;
+  var dateEntreeOriginale = _src.date_entree || _src.date_deal || '';
   timeline.push({
     type: 'placement_original',
     date: dateEntreeOriginale,
-    label: 'Placement original',
+    label: _origRef ? 'Placement d\'origine (' + (_origRef.entreprise || '—') + ')' : 'Placement original',
     icon: '📍',
     color: '#7343EE',
     bg: '#F5F3FF',
-    detail: (deal.tjm ? deal.tjm + '€/j' : '') + (deal.entreprise ? ' · ' + deal.entreprise : ''),
-    sim_ts: firstSimTs || null
+    detail: (_src.tjm ? _src.tjm + '€/j' : '') + (_src.entreprise ? ' · ' + _src.entreprise : '') + (_origRef && _src.date_fin ? ' · jusqu\'au ' + fmtDate(_src.date_fin) : ''),
+    sim_ts: (_origRef ? (_origRef.sim_ts || null) : (firstSimTs || null))
   });
 
   // Entrées suivantes : prolongations + avenants (numérotation séparée)
