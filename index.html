@@ -5133,6 +5133,7 @@ function getHistory() {
   try { var v = _lzGet(HIST_KEY); return Array.isArray(v) ? v : []; } catch(e) { return []; }
 }
 function saveHistoryArr(arr) {
+  try { if (typeof _invalidateIdx === 'function') _invalidateIdx(); } catch(e){}
   _lzSet(HIST_KEY, arr || []);
 }
 
@@ -11876,11 +11877,19 @@ function openSimFromDeal(ts){
 // ═══════════════════════════════════════════════════════════════════════
 var _AV_MODES_CONDITIONS = { nouvelle_simu: 1, avenant_mission: 1 };
 
+var _avByDealCache = null, _avByDealTs = 0;
+function _avenantsByDeal() {
+  if (_avByDealCache && Date.now() - _avByDealTs < 3000) return _avByDealCache;
+  var m = {};
+  try { getAvenants().forEach(function(a){ if (a && a.deal_id != null) (m[String(a.deal_id)] = m[String(a.deal_id)] || []).push(a); }); } catch(e){}
+  _avByDealCache = m; _avByDealTs = Date.now();
+  return m;
+}
 function _dealAvenantEnVigueur(deal) {
   if (!deal || deal.id == null || typeof getAvenants !== 'function') return null;
   var today = new Date().toISOString().slice(0,10);
-  var cands = getAvenants().filter(function(a){
-    if (!a || String(a.deal_id) !== String(deal.id)) return false;
+  var cands = (_avenantsByDeal()[String(deal.id)] || []).filter(function(a){
+    if (!a) return false;
     if (!_AV_MODES_CONDITIONS[a.mode]) return false;
     if (typeof isTombstoned === 'function' && isTombstoned('avenants', a.id)) return false;
     // Applicable dès sa date de début (ou de création) ; jamais avant.
@@ -11903,7 +11912,7 @@ function _dealSimEnVigueur(deal) {
   var av = _dealAvenantEnVigueur(deal);
   var ts = (av && av.sim_ts) ? av.sim_ts : deal.sim_ts;
   if (ts == null || ts === '') return null;
-  return getHistory().find(function(s){ return s && s.timestamp === ts; }) || null;
+  return (typeof _simIndex === 'function' ? _simIndex().byTs[String(ts)] : null) || null;
 }
 
 // Copie du deal avec les CONDITIONS (TJM, salaire, frais, CP/RTT, mutuelle, FG)
@@ -11915,7 +11924,7 @@ function _dealEnVigueur(deal) {
   if (!av) return deal;
   var d = Object.assign({}, deal);
   d._av_vigueur = av;
-  var sim = (av.sim_ts && typeof getHistory === 'function') ? getHistory().find(function(s){ return s && s.timestamp === av.sim_ts; }) : null;
+  var sim = (av.sim_ts && typeof _simIndex === 'function') ? (_simIndex().byTs[String(av.sim_ts)] || null) : null;
   if (sim) {
     var st = (sim.snapshot && sim.snapshot._state) ? sim.snapshot._state : {};
     var g = function(f){ var v = sim[f]; if (v === undefined || v === '' || v === null) v = st[f]; return v; };
@@ -14026,8 +14035,15 @@ function renderCandidats() {
   }
 
   if (q) {
+    // Recherche tolérante : sans accents, chaque mot tapé doit se retrouver (dans n'importe quel ordre)
+    // → « souebou », « Yan Bassio », « bassio yann » trouvent bien Souaïbou DIAKHO et Yane BASSIO.
+    var _nq = (typeof _normName === 'function') ? _normName(q) : q;
+    var _tokens = _nq.split(' ').filter(Boolean);
     cands = cands.filter(function(cand) {
-      return [(cand.prenom||''),(cand.nom||''),(cand.email||''),((cand.tags||[]).join(' ')),((cand.simulations||[]).map(function(s){return s.entreprise||'';}).join(' '))].join(' ').toLowerCase().indexOf(q) >= 0;
+      var hay = [(cand.prenom||''),(cand.nom||''),(cand.email||''),(cand.tel||''),((cand.tags||[]).join(' ')),((cand.simulations||[]).map(function(s){return s.entreprise||'';}).join(' '))].join(' ');
+      var _nh = (typeof _normName === 'function') ? _normName(hay) : hay.toLowerCase();
+      var _raw = hay.toLowerCase();
+      return _tokens.every(function(t){ return _nh.indexOf(t) >= 0; }) || _raw.indexOf(q) >= 0;
     });
   }
   if (filtStatut === '__standby__') {
@@ -18640,8 +18656,10 @@ function getAvenants() {
   catch(e) { return []; }
 }
 
+function _invalidateIdx(){ _avByDealCache = null; _simIdxCache = null; }
 function saveAvenants(arr) {
   localStorage.setItem(AVENANTS_KEY, JSON.stringify(arr || []));
+  try { _invalidateIdx(); } catch(e){}
   if (typeof odAutoSync === 'function') odAutoSync();
 }
 
@@ -32808,31 +32826,50 @@ function _isClientEmail(e) {
   } catch(err){ return false; }
   return !!_clientEmailsCache[e];
 }
+// Index des simulations : e-mail réel → [timestamps] et clé nom/prénom → [timestamps].
+// Construit UNE fois (TTL 3 s) et partagé par tous les candidats d'un même rendu :
+// sans cela, chaque candidat relisait et re-parcourait tout l'historique (769 × N).
+var _simIdxCache = null, _simIdxTs = 0;
+function _simIndex() {
+  if (_simIdxCache && Date.now() - _simIdxTs < 3000) return _simIdxCache;
+  var byEmail = {}, byKey = {}, byTs = {};
+  var _all = []; try { _all = getHistory() || []; } catch(e){}
+  _all.forEach(function(s){
+    try {   // une simulation mal formée ne doit jamais faire perdre les suivantes
+      if (!s || s.timestamp == null) return;
+      var ts = String(s.timestamp);
+      byTs[ts] = s;
+      // E-mail RÉEL du candidat uniquement — jamais l'adresse d'envoi (peut être celle d'un client)
+      var se = (s.email_candidat_reel || '').trim().toLowerCase();
+      if (se) (byEmail[se] = byEmail[se] || []).push(ts);
+      if (typeof _splitFullName === 'function' && typeof _personKey === 'function') {
+        var np = _splitFullName(s.consultant || ''); var k = _personKey(np.prenom, np.nom);
+        if (k) (byKey[k] = byKey[k] || []).push(ts);
+      }
+    } catch(e){}
+  });
+  _simIdxCache = { byEmail: byEmail, byKey: byKey, byTs: byTs }; _simIdxTs = Date.now();
+  return _simIdxCache;
+}
 function _candMatchCtx(cand) {
   var email = ((cand && cand.email) || '').trim().toLowerCase();
   if (email && _isClientEmail(email)) email = '';   // fiche portant un e-mail client : pas de rattachement par e-mail
   var key = (cand && typeof _personKey === 'function') ? _personKey(cand.prenom, cand.nom) : '';
   var tel = ((cand && cand.tel) || '').toString().replace(/[\s.\-+()]/g, '');
-  var simTs = {};
-  try {
-    getHistory().forEach(function(s){
-      if (!s) return;
-      // E-mail RÉEL du candidat uniquement — jamais l'adresse d'envoi (s.email peut être celle
-      // d'un manager client, et certaines fiches candidat portent à tort un e-mail client :
-      // elles capteraient les deals d'autres consultants).
-      var se = (s.email_candidat_reel || '').trim().toLowerCase();
-      var ok = !!(email && se && se === email);
-      if (!ok && key && typeof _splitFullName === 'function') { var np = _splitFullName(s.consultant || ''); ok = (_personKey(np.prenom, np.nom) === key); }
-      if (ok && s.timestamp != null) simTs[String(s.timestamp)] = 1;
-    });
-  } catch(e){}
+  var simTs = {}, idx = _simIndex();
+  if (email && idx.byEmail[email]) idx.byEmail[email].forEach(function(ts){ simTs[ts] = 1; });
+  if (key && idx.byKey[key]) idx.byKey[key].forEach(function(ts){ simTs[ts] = 1; });
   return { email: email, key: key, tel: tel, simTs: simTs };
 }
 function _dealBelongsToCand(d, ctx) {
   if (!d || !ctx) return false;
   var de = (d.email || '').trim().toLowerCase(), der = (d.email_candidat_reel || '').trim().toLowerCase();
   if (ctx.email && (de === ctx.email || der === ctx.email)) return true;
-  if (ctx.key && typeof _personKey === 'function' && _personKey(d.prenom, d.nom) === ctx.key) return true;
+  if (ctx.key && typeof _personKey === 'function') {
+    var _sig = (d.prenom || '') + '|' + (d.nom || '');
+    if (d._pkSig !== _sig) { d._pkSig = _sig; d._pk = _personKey(d.prenom, d.nom); }
+    if (d._pk === ctx.key) return true;
+  }
   if (ctx.tel.length >= 8) { var dt = (d.tel || '').toString().replace(/[\s.\-+()]/g, ''); if (dt === ctx.tel) return true; }
   if (d.sim_ts != null && ctx.simTs[String(d.sim_ts)]) return true;
   return false;
