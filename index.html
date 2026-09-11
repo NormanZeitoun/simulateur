@@ -10352,6 +10352,7 @@ function getSortants() {
   catch(e) { return []; }
 }
 function saveSortants(arr) {
+  try { _sortantsCache = null; } catch(e){}
   localStorage.setItem(SORTANTS_KEY, JSON.stringify(arr));
 }
 
@@ -13810,6 +13811,11 @@ window.addEventListener('load', function(){
   })(0);
 });
 
+// Lectures mises en cache pour les rendus en boucle (769 fiches) — TTL court, invalidé à l'écriture
+var _sortantsCache = null, _sortantsCacheTs = 0, _sbCache = null, _sbCacheTs = 0;
+function _sortantsCached() { if (!_sortantsCache || Date.now() - _sortantsCacheTs > 3000) { _sortantsCache = (typeof getSortants === 'function') ? getSortants() : []; _sortantsCacheTs = Date.now(); } return _sortantsCache; }
+function _sbCached() { if (!_sbCache || Date.now() - _sbCacheTs > 3000) { _sbCache = (typeof getSalairesBloques === 'function') ? getSalairesBloques() : []; _sbCacheTs = Date.now(); } return _sbCache; }
+
 function computeCandStatutAuto(cand) {
   if (!cand) return 'Prospect';
   var manualStatut = cand.statut_portage || 'Prospect';
@@ -13856,7 +13862,7 @@ function computeCandStatutAuto(cand) {
   var hasFinMission = false;        // Deal en « Fin de mission » (reste porté, intercontrat)
 
   // Récupérer les sortants pour détecter "Porté sans mission"
-  var allSortants = (typeof getSortants === 'function') ? getSortants() : [];
+  var allSortants = (typeof _sortantsCached === 'function') ? _sortantsCached() : ((typeof getSortants === 'function') ? getSortants() : []);
   // Rattachement par deal_id (la fiche sortant ne porte pas d'e-mail), puis par nom/prénom, puis par e-mail
   var _dealIds = {}; dealsOfCand.forEach(function(d){ if (d && d.id != null) _dealIds[String(d.id)] = 1; });
   var sortantsOfCand = allSortants.filter(function(s){
@@ -14113,21 +14119,15 @@ function renderCandidats() {
     // sans email faites avant que l'email du candidat ne soit renseigné).
     var _cEmail = (cand.email||'').trim().toLowerCase();
     var _candSims = [];
-    if (typeof getHistory === 'function') {
-      var _h = getHistory();
+    if (typeof _simIndex === 'function') {
+      // Même règle qu'avant (e-mail d'envoi OU nom/prénom), mais via l'index construit une fois
+      // pour tout le rendu — l'ancien code re-parsait l'historique complet POUR CHAQUE fiche.
+      var _ix = _simIndex();
       var _ck = (typeof _personKey === 'function') ? _personKey(cand.prenom, cand.nom) : '';
       var _seen = {};
-      _h.forEach(function(s){
-        if (!s) return;
-        var _se = (s.email||'').trim().toLowerCase();
-        var _m = false;
-        if (_cEmail && _se && _se === _cEmail) _m = true;
-        if (!_m && _ck && typeof _splitFullName === 'function') {
-          var _np = _splitFullName(s.consultant);
-          if (_personKey(_np.prenom, _np.nom) === _ck) _m = true;
-        }
-        if (_m && !_seen[s.timestamp]) { _seen[s.timestamp] = 1; _candSims.push(s); }
-      });
+      var _push = function(ts){ if (!_seen[ts] && _ix.byTs[ts]) { _seen[ts] = 1; _candSims.push(_ix.byTs[ts]); } };
+      if (_cEmail && _ix.byDest[_cEmail]) _ix.byDest[_cEmail].forEach(_push);
+      if (_ck && _ix.byKey[_ck]) _ix.byKey[_ck].forEach(_push);
       if (!_candSims.length && (cand.simulations||[]).length) _candSims = (cand.simulations||[]).slice();
       _candSims.sort(function(a,b){ return (b.timestamp||0)-(a.timestamp||0); });
     } else {
@@ -22029,6 +22029,7 @@ function getSalairesBloques() {
 }
 
 function saveSalairesBloques(arr) {
+  try { _sbCache = null; } catch(e){}
   _sbCapAllComments(arr || []);
   localStorage.setItem(SALAIRES_BLOQUES_KEY, JSON.stringify(arr || []));
   if (typeof odAutoSync === 'function') odAutoSync();
@@ -22597,7 +22598,7 @@ function _sbUpdateField(id, field, value) {
 // Entrée Salaires Bloqués correspondant à un candidat (par candidat_id, sinon par email)
 function _sbCandEntry(cand) {
   if (!cand) return null;
-  var arr = getSalairesBloques();
+  var arr = (typeof _sbCached === 'function') ? _sbCached() : getSalairesBloques();
   var hit = arr.filter(function(e){ return e.candidat_id === cand.id; });
   if (!hit.length) {
     var em = _sbNormEmail(cand.email);
@@ -32832,7 +32833,7 @@ function _isClientEmail(e) {
 var _simIdxCache = null, _simIdxTs = 0;
 function _simIndex() {
   if (_simIdxCache && Date.now() - _simIdxTs < 3000) return _simIdxCache;
-  var byEmail = {}, byKey = {}, byTs = {};
+  var byEmail = {}, byKey = {}, byTs = {}, byDest = {};
   var _all = []; try { _all = getHistory() || []; } catch(e){}
   _all.forEach(function(s){
     try {   // une simulation mal formée ne doit jamais faire perdre les suivantes
@@ -32842,13 +32843,15 @@ function _simIndex() {
       // E-mail RÉEL du candidat uniquement — jamais l'adresse d'envoi (peut être celle d'un client)
       var se = (s.email_candidat_reel || '').trim().toLowerCase();
       if (se) (byEmail[se] = byEmail[se] || []).push(ts);
+      var sd = (s.email || '').trim().toLowerCase();
+      if (sd) (byDest[sd] = byDest[sd] || []).push(ts);
       if (typeof _splitFullName === 'function' && typeof _personKey === 'function') {
         var np = _splitFullName(s.consultant || ''); var k = _personKey(np.prenom, np.nom);
         if (k) (byKey[k] = byKey[k] || []).push(ts);
       }
     } catch(e){}
   });
-  _simIdxCache = { byEmail: byEmail, byKey: byKey, byTs: byTs }; _simIdxTs = Date.now();
+  _simIdxCache = { byEmail: byEmail, byKey: byKey, byTs: byTs, byDest: byDest }; _simIdxTs = Date.now();
   return _simIdxCache;
 }
 function _candMatchCtx(cand) {
