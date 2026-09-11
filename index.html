@@ -13763,6 +13763,44 @@ function showCandidatsTab() {
 // 2. Si le candidat a été Porté (au moins un deal avec état Sorti des effectifs OU
 //    deal avec date_sortie ≤ aujourd'hui) mais plus aucun deal actif → "Ancien porté"
 // 3. Sinon → statut manuel saisi (Prospect, Prospect chaud) ou "Prospect" par défaut
+// ═══ Réconciliation deals ↔ fiches sortant ═══════════════════════════════
+// Une fiche sortant existe mais le deal est resté « Signé / En cours » (l'état n'a pas suivi,
+// ou a été écrasé par une fusion). On réaligne l'état du deal sur la fiche sortant.
+// Idempotent. Appelable depuis la console : reconcilierEtatsSortants()
+function reconcilierEtatsSortants(silent) {
+  var deals = getDeals(), sortants = (typeof getSortants === 'function') ? getSortants() : [];
+  var byDeal = {}; sortants.forEach(function(s){ if (s && s.deal_id != null) byDeal[String(s.deal_id)] = s; });
+  var today = new Date(); today.setHours(23,59,59,999);
+  var fixed = [];
+  deals.forEach(function(d){
+    if (!d || !(d.etat === 'Signé' || d.etat === 'En cours' || d.etat === 'Nouveau placement')) return;
+    var s = byDeal[String(d.id)]; if (!s) return;
+    var dfc = s.date_fin_contrat ? new Date(s.date_fin_contrat) : null, dfm = s.date_fin_mission ? new Date(s.date_fin_mission) : null;
+    if (dfc && isNaN(dfc.getTime())) dfc = null; if (dfm && isNaN(dfm.getTime())) dfm = null;
+    var before = d.etat;
+    if (s.fin_contrat_travail === 'Oui') {
+      var ds = dfc || dfm; if (!ds || ds > today) return;
+      d.etat = 'Sorti des effectifs'; d.date_sortie = s.date_fin_contrat || s.date_fin_mission || d.date_sortie;
+      if (s.date_fin_mission) d.date_fin = s.date_fin_mission;
+    } else {
+      if (!dfm || dfm > today) return;
+      d.etat = 'Fin de mission'; if (s.date_fin_mission) d.date_fin = s.date_fin_mission; delete d.date_sortie;
+    }
+    d.raison_sortie = d.raison_sortie || s.raison || ''; d.updated_at = Date.now(); d.updated_ts = Date.now();
+    fixed.push((d.prenom||'') + ' ' + (d.nom||'') + ' @' + (d.entreprise||'') + ' : ' + before + ' → ' + d.etat);
+  });
+  if (fixed.length) { saveDeals(deals); try { if (typeof odAutoSync === 'function') odAutoSync(); } catch(e){} }
+  if (!silent) { console.log('%c[Réconciliation sortants] ' + fixed.length + ' deal(s) réaligné(s)', 'background:#7343EE;color:#fff;padding:2px 8px;font-weight:700'); fixed.forEach(function(x){ console.log('  • ' + x); }); }
+  return fixed;
+}
+// Exécution automatique une fois par poste, après la synchro initiale
+window.addEventListener('load', function(){
+  (function _waitRec(n){
+    if (window._initialSyncDone || n > 60) { try { if (!localStorage.getItem('sp_reconcile_sortants_v1')) { var r = reconcilierEtatsSortants(true); localStorage.setItem('sp_reconcile_sortants_v1', String(Date.now())); if (r.length && typeof renderCandidats === 'function') renderCandidats(); } } catch(e){} return; }
+    setTimeout(function(){ _waitRec(n+1); }, 500);
+  })(0);
+});
+
 function computeCandStatutAuto(cand) {
   if (!cand) return 'Prospect';
   var manualStatut = cand.statut_portage || 'Prospect';
@@ -13808,9 +13846,16 @@ function computeCandStatutAuto(cand) {
 
   // Récupérer les sortants pour détecter "Porté sans mission"
   var allSortants = (typeof getSortants === 'function') ? getSortants() : [];
+  // Rattachement par deal_id (la fiche sortant ne porte pas d'e-mail), puis par nom/prénom, puis par e-mail
+  var _dealIds = {}; dealsOfCand.forEach(function(d){ if (d && d.id != null) _dealIds[String(d.id)] = 1; });
   var sortantsOfCand = allSortants.filter(function(s){
-    return (s.email || '').trim().toLowerCase() === email;
+    if (!s) return false;
+    if (s.deal_id != null && _dealIds[String(s.deal_id)]) return true;
+    if (candKey && typeof _personKey === 'function' && _personKey(s.prenom, s.nom) === candKey) return true;
+    return !!email && (s.email || '').trim().toLowerCase() === email;
   });
+  var _sortantByDeal = {}; sortantsOfCand.forEach(function(s){ if (s.deal_id != null) _sortantByDeal[String(s.deal_id)] = s; });
+  function _dateOk(v){ if (!v) return null; var d = new Date(v); return isNaN(d.getTime()) ? null : d; }
 
   dealsOfCand.forEach(function(d){
     var dateSortie = d.date_sortie ? new Date(d.date_sortie) : null;
@@ -13827,13 +13872,21 @@ function computeCandStatutAuto(cand) {
     } else if (d.etat === 'Fin de mission') {
       hasFinMission = true; hasPast = true;
     } else if (d.etat === 'Signé' || d.etat === 'En cours' || d.etat === 'Nouveau placement') {
-      // Deal en cours : tant que l'état du deal est Signé/En cours/Nouveau placement,
-      // le candidat est considéré comme ACTIF (Porté), peu importe la date_fin théorique.
-      // → date_fin n'est qu'une indication ; les missions sont souvent renouvelées
-      // sans mise à jour systématique de cette date dans le CRM.
-      // Pour passer en "Ancien porté", il faut explicitement basculer le deal
-      // à l'état "Sorti des effectifs".
-      hasActive = true;
+      // Deal en cours : la date_fin seule n'est qu'une indication (missions souvent renouvelées
+      // sans mise à jour). MAIS si une FICHE SORTANT existe pour ce deal, c'est elle qui fait foi,
+      // même si l'état du deal n'a pas suivi (désynchronisation observée en production).
+      var _so = _sortantByDeal[String(d.id)];
+      if (_so) {
+        var _dfc = _dateOk(_so.date_fin_contrat), _dfm = _dateOk(_so.date_fin_mission);
+        if (_so.fin_contrat_travail === 'Oui') {
+          var _dSortie = _dfc || _dfm;
+          if (_dSortie && _dSortie > today) hasActive = true; else hasPast = true;
+        } else {
+          if (_dfm && _dfm > today) hasActive = true; else { hasFinMission = true; hasPast = true; }
+        }
+      } else {
+        hasActive = true;
+      }
     }
   });
 
