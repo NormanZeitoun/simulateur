@@ -13820,9 +13820,11 @@ function computeCandStatutAuto(cand) {
   var candTel = (cand.tel || '').toString().replace(/[\s.\-+()]/g, '');
   if (!email && !candKey && candTel.length < 8) return manualStatut;
   var allDeals = (typeof getDeals === 'function') ? getDeals() : [];
+  var _ctxS = (typeof _candMatchCtx === 'function') ? _candMatchCtx(cand) : null;
   var dealsOfCand = allDeals.filter(function(d){
     if (d.etat === 'Annulé') return false;
     if (d.stand_by === true) return false; // un placement en stand by n'est pas (encore) un deal
+    if (_ctxS) return _dealBelongsToCand(d, _ctxS);
     var de = (d.email || '').trim().toLowerCase();
     if (email && de && de === email) return true;
     if (candKey && (typeof _personKey === 'function') && _personKey(d.prenom, d.nom) === candKey) return true;
@@ -29311,7 +29313,7 @@ function buildCandFicheHTML(cand) {
     + '<div style="flex:1;min-width:0;border-right:2px solid #F0EDF9;">'
     + '<div style="display:flex;align-items:center;flex-wrap:wrap;border-bottom:2px solid #E4E0FA;padding:0 20px;background:#fff;">'
     + '<button data-tab="simulations" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-simulations" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#7343EE;border-bottom:2px solid #7343EE;margin-bottom:-2px;cursor:pointer;">&#128200; Simulations (' + (function(){ var e=(cand.email||'').trim().toLowerCase(); var h=(typeof getHistory==='function'?getHistory():[]); var ck=(typeof _personKey==='function')?_personKey(cand.prenom,cand.nom):''; var seen={}; var n=0; h.forEach(function(s){ if(!s)return; var se=(s.email||'').trim().toLowerCase(); var m=false; if(e&&se&&se===e)m=true; if(!m&&ck&&typeof _splitFullName==='function'){ var np=_splitFullName(s.consultant); if(_personKey(np.prenom,np.nom)===ck)m=true; } if(m&&!seen[s.timestamp]){seen[s.timestamp]=1;n++;} }); if(!n&&(cand.simulations||[]).length)n=(cand.simulations||[]).length; return n; })() + ')</button>'
-    + '<button data-tab="placements" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-placements" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128203; Placements (' + (function(){ var e=(cand.email||'').toLowerCase(); var fn=((cand.prenom||'')+' '+(cand.nom||'')).trim().toLowerCase(); return (typeof getDeals==='function' ? getDeals() : []).filter(function(d){ return d.type_deal!=='portage_commercial' && ((d.email||'').toLowerCase()===e || ((d.prenom||'')+' '+(d.nom||'')).trim().toLowerCase()===fn); }).length; })() + ')</button>'
+    + '<button data-tab="placements" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-placements" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128203; Placements (' + (function(){ var _cx=_candMatchCtx(cand); return (typeof getDeals==='function' ? getDeals() : []).filter(function(d){ return d.type_deal!=='portage_commercial' && _dealBelongsToCand(d,_cx); }).length; })() + ')</button>'
     + '<button data-tab="portage_co" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-portage_co" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#129309; Portage Co. (' + (function(){ var e=(cand.email||'').toLowerCase(); var fn=((cand.prenom||'')+' '+(cand.nom||'')).trim().toLowerCase(); return (typeof getDeals==='function' ? getDeals() : []).filter(function(d){ return d.type_deal==='portage_commercial' && ((d.email||'').toLowerCase()===e || ((d.prenom||'')+' '+(d.nom||'')).trim().toLowerCase()===fn); }).length; })() + ')</button>'
     + '<button data-tab="avances" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-avances" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128182; Avances (' + (typeof getAvances==='function' ? getAvances().filter(function(a){ return a.candidat_id === cand.id; }).length : 0) + ')</button>'
     + '<button data-tab="documents" data-cid="' + cand.id + '" onclick="switchCandTab(parseInt(this.dataset.cid),this.dataset.tab)" id="ct-btn-documents" style="padding:9px 14px;border:none;background:none;font-size:12px;font-weight:600;color:#6B5E9C;cursor:pointer;">&#128196; Documents</button>'
@@ -32782,14 +32784,43 @@ function openCandidatByEmail(email) {
 // PLACEMENTS CANDIDAT + LISTES PERSONNALISABLES
 // ═══════════════════════════════════════════════════════════
 
+// ═══ Rattachement deal ↔ candidat — RÈGLE UNIQUE ═══════════════════════
+// Un deal appartient au candidat si : e-mail candidat (email ou email_candidat_reel),
+// OU nom/prénom normalisés (_personKey : accents, casse, espaces), OU téléphone,
+// OU sa simulation fait partie des simulations du candidat (un deal créé depuis une
+// simulation de X est un deal de X, même si le nom a été saisi avec une coquille).
+function _candMatchCtx(cand) {
+  var email = ((cand && cand.email) || '').trim().toLowerCase();
+  var key = (cand && typeof _personKey === 'function') ? _personKey(cand.prenom, cand.nom) : '';
+  var tel = ((cand && cand.tel) || '').toString().replace(/[\s.\-+()]/g, '');
+  var simTs = {};
+  try {
+    getHistory().forEach(function(s){
+      if (!s) return;
+      var se = (s.email_candidat_reel || '').trim().toLowerCase(), se2 = (s.email || '').trim().toLowerCase();
+      var ok = (email && (se === email || se2 === email));
+      if (!ok && key && typeof _splitFullName === 'function') { var np = _splitFullName(s.consultant || ''); ok = (_personKey(np.prenom, np.nom) === key); }
+      if (ok && s.timestamp != null) simTs[String(s.timestamp)] = 1;
+    });
+  } catch(e){}
+  return { email: email, key: key, tel: tel, simTs: simTs };
+}
+function _dealBelongsToCand(d, ctx) {
+  if (!d || !ctx) return false;
+  var de = (d.email || '').trim().toLowerCase(), der = (d.email_candidat_reel || '').trim().toLowerCase();
+  if (ctx.email && (de === ctx.email || der === ctx.email)) return true;
+  if (ctx.key && typeof _personKey === 'function' && _personKey(d.prenom, d.nom) === ctx.key) return true;
+  if (ctx.tel.length >= 8) { var dt = (d.tel || '').toString().replace(/[\s.\-+()]/g, ''); if (dt === ctx.tel) return true; }
+  if (d.sim_ts != null && ctx.simTs[String(d.sim_ts)]) return true;
+  return false;
+}
+
 function buildCandPlacementsHTML(cand) {
   var deals = getDeals();
-  var email = (cand.email||'').toLowerCase();
-  var fullName = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim().toLowerCase();
+  var _ctx = _candMatchCtx(cand);
   var candDeals = deals.filter(function(d) {
     if (d.type_deal === 'portage_commercial') return false; // les PC ont leur propre onglet "Portage Co."
-    return (d.email||'').toLowerCase() === email ||
-           ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase() === fullName;
+    return _dealBelongsToCand(d, _ctx);
   });
   if (!candDeals.length) return '<div style="color:#C0B8E0;font-size:12px;padding:20px 0;">Aucun placement.</div>';
   var ECOLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
@@ -32923,12 +32954,10 @@ function _candIsStandBy(cand) {
 
 function buildCandPortageCoHTML(cand) {
   var deals = getDeals();
-  var email = (cand.email||'').toLowerCase();
-  var fullName = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim().toLowerCase();
+  var _ctxPC = _candMatchCtx(cand);
   var pcDeals = deals.filter(function(d) {
     if (!_isPCDeal(d)) return false;
-    return (d.email||'').toLowerCase() === email ||
-           ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase() === fullName;
+    return _dealBelongsToCand(d, _ctxPC);
   });
 
   // Bouton Deal en tête (toujours visible)
