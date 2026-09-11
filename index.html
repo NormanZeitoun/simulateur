@@ -32789,16 +32789,39 @@ function openCandidatByEmail(email) {
 // OU nom/prénom normalisés (_personKey : accents, casse, espaces), OU téléphone,
 // OU sa simulation fait partie des simulations du candidat (un deal créé depuis une
 // simulation de X est un deal de X, même si le nom a été saisi avec une coquille).
+// E-mails connus comme étant ceux de CLIENTS / managers : une fiche candidat qui porte
+// une telle adresse (créée à tort depuis une simulation envoyée au client) ne doit jamais
+// se voir rattacher des deals par e-mail — seulement par nom ou e-mail réel.
+var _clientEmailsCache = null, _clientEmailsCacheTs = 0;
+function _isClientEmail(e) {
+  e = (e || '').trim().toLowerCase(); if (!e) return false;
+  try {
+    if (!_clientEmailsCache || Date.now() - _clientEmailsCacheTs > 5000) {
+      _clientEmailsCache = {};
+      getClients().forEach(function(cl){
+        if (!cl) return;
+        [cl.email, cl.email_signataire, cl.email_compta].forEach(function(x){ if (x) _clientEmailsCache[String(x).trim().toLowerCase()] = 1; });
+        (cl.managers || []).forEach(function(m){ if (m && m.email) _clientEmailsCache[String(m.email).trim().toLowerCase()] = 1; });
+      });
+      _clientEmailsCacheTs = Date.now();
+    }
+  } catch(err){ return false; }
+  return !!_clientEmailsCache[e];
+}
 function _candMatchCtx(cand) {
   var email = ((cand && cand.email) || '').trim().toLowerCase();
+  if (email && _isClientEmail(email)) email = '';   // fiche portant un e-mail client : pas de rattachement par e-mail
   var key = (cand && typeof _personKey === 'function') ? _personKey(cand.prenom, cand.nom) : '';
   var tel = ((cand && cand.tel) || '').toString().replace(/[\s.\-+()]/g, '');
   var simTs = {};
   try {
     getHistory().forEach(function(s){
       if (!s) return;
-      var se = (s.email_candidat_reel || '').trim().toLowerCase(), se2 = (s.email || '').trim().toLowerCase();
-      var ok = (email && (se === email || se2 === email));
+      // E-mail RÉEL du candidat uniquement — jamais l'adresse d'envoi (s.email peut être celle
+      // d'un manager client, et certaines fiches candidat portent à tort un e-mail client :
+      // elles capteraient les deals d'autres consultants).
+      var se = (s.email_candidat_reel || '').trim().toLowerCase();
+      var ok = !!(email && se && se === email);
       if (!ok && key && typeof _splitFullName === 'function') { var np = _splitFullName(s.consultant || ''); ok = (_personKey(np.prenom, np.nom) === key); }
       if (ok && s.timestamp != null) simTs[String(s.timestamp)] = 1;
     });
