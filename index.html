@@ -4171,7 +4171,9 @@ function openEnvoiModal() {
   var consultant  = (prenom + ' ' + nom).trim();
   document.getElementById('envoi-consultant').value = consultant;
   var emailPrefill = currentDest === 'client' ? emailClient : emailCand;
-  if (emailPrefill) document.getElementById('envoi-email').value = emailPrefill;
+  // Toujours réinitialiser le champ, même vide : le popup est réutilisé d'un envoi à l'autre et
+  // gardait sinon l'adresse du candidat PRÉCÉDENT quand la simulation n'en avait pas.
+  document.getElementById('envoi-email').value = emailPrefill || '';
   // Afficher/masquer champ email client si les_deux
   var emailClientRow = document.getElementById('envoi-email-client-row');
   if (emailClientRow) {
@@ -10105,6 +10107,8 @@ function savePlacement() {
       if (!confirm(_msgMiss)) return;
     }
     deal.stand_by = _miss.length > 0;
+    if (deal.stand_by) { if (!(idx >= 0 && deals[idx] && deals[idx].stand_by_since)) deal.stand_by_since = Date.now(); }
+    else deal.stand_by_since = null;
   }
   if (idx >= 0) deals[idx] = Object.assign({}, deals[idx], deal); else deals.unshift(deal);
   // Si la DATE DU DEAL a été MODIFIÉE manuellement (édition), elle devient prioritaire dans
@@ -10470,6 +10474,38 @@ function toggleSortieContratFields() {
   // toujours visibles, indépendamment du choix Oui/Non sur "Fin de contrat travail".
 }
 
+// Chaîne de continuité de contrat : un deal, ses continuités (prolonge_par) et ses origines
+// (prolongation_avenant.deal_origine_id). Une sortie des effectifs ou une fin de mission saisie sur
+// n'importe quel maillon doit se refléter sur toute la chaîne : c'est la même personne, le même
+// contrat de travail — et seul le maillon d'origine est visible dans le tableau des deals.
+// Sens de propagation : de la continuité (mission en cours, carte du haut) VERS ses origines
+// (placement initial, carte du bas) — jamais l'inverse : une sortie saisie sur une origine ne
+// doit pas fermer une continuité encore active.
+function _dealOrigins(deal, deals) {
+  var byId = {}; deals.forEach(function(d){ if (d && d.id != null) byId[String(d.id)] = d; });
+  var out = [], seen = {}, cur = deal, guard = 0;
+  while (cur && cur.prolongation_avenant && cur.prolongation_avenant.deal_origine_id != null && guard++ < 10) {
+    var o = byId[String(cur.prolongation_avenant.deal_origine_id)];
+    if (!o || seen[String(o.id)]) break;
+    seen[String(o.id)] = 1; out.push(o); cur = o;
+  }
+  return out;
+}
+// (conservé pour compatibilité : chaîne complète, utilisée pour l'affichage uniquement)
+function _dealChain(deal, deals) {
+  var byId = {}; deals.forEach(function(d){ if (d && d.id != null) byId[String(d.id)] = d; });
+  var seen = {}, out = [];
+  function walk(d){
+    if (!d || d.id == null || seen[String(d.id)]) return;
+    seen[String(d.id)] = 1; out.push(d);
+    if (d.prolongation_avenant && d.prolongation_avenant.deal_origine_id != null) walk(byId[String(d.prolongation_avenant.deal_origine_id)]);
+    if (d.prolonge_par != null) walk(byId[String(d.prolonge_par)]);
+    deals.forEach(function(x){ if (x && x.prolongation_avenant && String(x.prolongation_avenant.deal_origine_id) === String(d.id)) walk(x); });
+  }
+  walk(deal);
+  return out;
+}
+
 function saveSortie() {
   var ts = parseInt(document.getElementById('sortie-sim-ts').value);
   var dealId = parseInt(document.getElementById('sortie-deal-id').value) || null;
@@ -10525,6 +10561,22 @@ function saveSortie() {
   }
   deals[dealIdx].raison_sortie = raison;
   deals[dealIdx].commentaire_sortie = commentaire;
+
+  // ── Propagation vers les ORIGINES de la continuité (haut → bas), jamais vers les continuités ──
+  try {
+    _dealOrigins(deals[dealIdx], deals).forEach(function(x){
+      if (!x || String(x.id) === String(deals[dealIdx].id)) return;
+      if (x.etat === 'Annulé') return;
+      if (finContratTrav === 'Non') {
+        // Fin de mission : les maillons antérieurs (origines) sont déjà clôturés → même état
+        x.etat = 'Fin de mission'; delete x.date_sortie;
+      } else {
+        x.etat = 'Sorti des effectifs'; x.date_sortie = dateFinContrat || finMission;
+      }
+      x.raison_sortie = x.raison_sortie || raison;
+      x.updated_at = Date.now(); x.updated_ts = Date.now();
+    });
+  } catch(e) { console.warn('[sortie] propagation chaîne :', e); }
 
   // Si l'utilisateur a corrigé/complété l'entreprise dans le popup, on l'enregistre sur le deal aussi
   var fixInput = document.getElementById('sortie-entreprise-input');
@@ -11971,12 +12023,22 @@ function getCellValue(d, key){
         var entCli = (typeof getClients === 'function') ? getClients().find(function(c){ return (c.name||'').trim().toLowerCase() === (d.entreprise||'').trim().toLowerCase(); }) : null;
         if (entCli) entCliId = entCli.id;
       } catch(e) {}
+      // Chip « continuité » : le deal d'origine est le seul visible dans le tableau ; on indique
+      // chez quel client la personne a continué (dernier maillon de la chaîne).
+      var _contChip = '';
+      try {
+        if (d.prolonge_par != null && typeof getDeals === 'function') {
+          var _all = getDeals(), _last = null, _cur = d, _guard = 0;
+          while (_cur && _cur.prolonge_par != null && _guard++ < 10) { var _nx = _all.find(function(x){ return x && String(x.id) === String(_cur.prolonge_par); }); if (!_nx) break; _last = _nx; _cur = _nx; }
+          if (_last) _contChip = ' <span style="display:inline-block;margin-left:4px;padding:1px 6px;border-radius:5px;font-size:10px;font-weight:700;background:#FFF8E8;color:#8A5F00;white-space:nowrap;" title="Continuité de contrat : le consultant a poursuivi chez ' + String(_last.entreprise||'').replace(/"/g,'&quot;') + ' (' + (_last.etat||'') + ')">↳ ' + String(_last.entreprise||'').replace(/</g,'&lt;') + '</span>';
+        }
+      } catch(e) {}
       if (entCliId != null) {
         return '<span onclick="event.stopPropagation();mainNavTo(\'clients\');setTimeout(function(){openClientPage(' + entCliId + ');},120);" '
           + 'style="color:#4B36EC;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" '
-          + 'title="Ouvrir la fiche client">' + String(d.entreprise).replace(/</g,'&lt;') + '</span>';
+          + 'title="Ouvrir la fiche client">' + String(d.entreprise).replace(/</g,'&lt;') + '</span>' + _contChip;
       }
-      return fmt(d.entreprise);
+      return fmt(d.entreprise) + _contChip;
     case 'manager':
       var mgrName = d.manager || '';
       if (!mgrName) return '\u2014';
@@ -13798,6 +13860,19 @@ function reconcilierEtatsSortants(silent) {
     }
     d.raison_sortie = d.raison_sortie || s.raison || ''; d.updated_at = Date.now(); d.updated_ts = Date.now();
     fixed.push((d.prenom||'') + ' ' + (d.nom||'') + ' @' + (d.entreprise||'') + ' : ' + before + ' → ' + d.etat);
+  });
+  // Chaînes de continuité : une continuité terminale (Sorti / Fin de mission) entraîne ses ORIGINES
+  deals.forEach(function(d){
+    if (!d || !(d.etat === 'Sorti des effectifs' || d.etat === 'Fin de mission')) return;
+    if (!d.prolongation_avenant) return;
+    _dealOrigins(d, deals).forEach(function(x){
+      if (!x || String(x.id) === String(d.id) || x.etat === 'Annulé') return;
+      if (x.etat === 'Signé' || x.etat === 'En cours' || x.etat === 'Nouveau placement') {
+        var b = x.etat; x.etat = d.etat; if (d.etat === 'Sorti des effectifs') x.date_sortie = d.date_sortie || x.date_sortie; else delete x.date_sortie;
+        x.updated_at = Date.now(); x.updated_ts = Date.now();
+        fixed.push((x.prenom||'') + ' ' + (x.nom||'') + ' @' + (x.entreprise||'') + ' : ' + b + ' → ' + x.etat + ' (chaîne de continuité)');
+      }
+    });
   });
   if (fixed.length) { saveDeals(deals); try { if (typeof odAutoSync === 'function') odAutoSync(); } catch(e){} }
   if (!silent) { console.log('%c[Réconciliation sortants] ' + fixed.length + ' deal(s) réaligné(s)', 'background:#7343EE;color:#fff;padding:2px 8px;font-weight:700'); fixed.forEach(function(x){ console.log('  • ' + x); }); }
@@ -32929,8 +33004,10 @@ function buildCandPlacementsHTML(cand) {
       if (existingSortant) {
         actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'), undefined, \''+d.id+'\')},100);" title="Modifier la fiche sortant" style="padding:4px 10px;background:' + sortantBg + ';color:' + sortantColor + ';border:1.5px solid ' + sortantBorder + ';border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">' + sortantLabel + '</button>';
       } else {
-        if (d.etat !== 'Fin de mission') actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'), \'fin_mission\', \''+d.id+'\')},100);" title="Fin de mission chez le client — le consultant reste porté chez Seven (intercontrat)" style="padding:4px 10px;background:#FFF6E8;color:#B25E00;border:1.5px solid #F5C98A;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#9209; Fin de mission</button>';
-        actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'), \'sortie\', \''+d.id+'\')},100);" title="Sortie des effectifs — le consultant quitte Seven" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">🚪 Sortir des effectifs</button>';
+        var _hasCont = (d.prolonge_par != null);
+        if (_hasCont) actionsHtml += '<span style="padding:4px 10px;background:#FFF8E8;color:#8A5F00;border:1.5px dashed #F0CE8A;border-radius:6px;font-size:11px;font-weight:600;" title="Ce placement a été poursuivi chez un autre client : la fin de mission ou la sortie se saisit sur la carte de continuité (au-dessus), elle redescendra automatiquement ici.">↑ Sortie à saisir sur la continuité</span>';
+        if (!_hasCont && d.etat !== 'Fin de mission') actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'), \'fin_mission\', \''+d.id+'\')},100);" title="Fin de mission chez le client — le consultant reste porté chez Seven (intercontrat)" style="padding:4px 10px;background:#FFF6E8;color:#B25E00;border:1.5px solid #F5C98A;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">&#9209; Fin de mission</button>';
+        if (!_hasCont) actionsHtml += '<button data-ts="' + d.sim_ts + '" onclick="closeCandFiche();setTimeout(function(){openSortiePopup(parseInt(\''+d.sim_ts+'\'), \'sortie\', \''+d.id+'\')},100);" title="Sortie des effectifs — le consultant quitte Seven" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">🚪 Sortir des effectifs</button>';
       }
 
       // Annuler le placement
@@ -35457,6 +35534,91 @@ function rolloverOpenTasks() {
 }
 
 // Récupère le commercial actif depuis Paramètres → Commercial Seven Portage
+// ═══════════════════════════════════════════════════════════════════════
+// RAPPEL — PLACEMENTS EN STAND BY
+// Un placement en stand by non converti 3 jours après sa création déclenche un
+// popup au commercial concerné (et à lui seul), puis tous les 2 jours tant que
+// le statut n'a pas changé. Le suivi des rappels est local au poste.
+// ═══════════════════════════════════════════════════════════════════════
+var STANDBY_REMINDER_KEY = 'sp_standby_reminder_v1';
+var STANDBY_FIRST_DAYS = 3, STANDBY_REPEAT_DAYS = 2;
+
+function _standByStartTs(d) {
+  if (d.stand_by_since) return Number(d.stand_by_since) || 0;
+  if (d.created_at) return Number(d.created_at) || 0;
+  if (d.date_created && typeof _parseFRDate === 'function') { var t = _parseFRDate(d.date_created); if (t) return t; }
+  if (d.date_deal) { var t2 = new Date(d.date_deal).getTime(); if (!isNaN(t2)) return t2; }
+  return Number(d.id) || 0;   // l'id est un timestamp de création
+}
+function _standByRemindersDue() {
+  var me = getCurrentUserCommercial(); if (!me) return [];
+  var now = Date.now(), dayMs = 86400000;
+  var seen = {}; try { seen = JSON.parse(localStorage.getItem(STANDBY_REMINDER_KEY) || '{}') || {}; } catch(e){}
+  var due = [];
+  getDeals().forEach(function(d){
+    if (!d || d.stand_by !== true || d.etat === 'Annulé') return;
+    if (!_sameCommercial(d.commercial, me)) return;
+    var start = _standByStartTs(d); if (!start) return;
+    var ageDays = (now - start) / dayMs;
+    if (ageDays < STANDBY_FIRST_DAYS) return;
+    var last = Number(seen[String(d.id)]) || 0;
+    if (last && (now - last) / dayMs < STANDBY_REPEAT_DAYS) return;
+    due.push({ deal: d, jours: Math.floor(ageDays), manquants: (typeof _placementMissing === 'function') ? _placementMissing(d) : [] });
+  });
+  due.sort(function(a,b){ return b.jours - a.jours; });
+  return due;
+}
+function _standByMarkShown(ids) {
+  var seen = {}; try { seen = JSON.parse(localStorage.getItem(STANDBY_REMINDER_KEY) || '{}') || {}; } catch(e){}
+  var now = Date.now(); ids.forEach(function(id){ seen[String(id)] = now; });
+  // purge des deals qui ne sont plus en stand by
+  try { var alive = {}; getDeals().forEach(function(d){ if (d && d.stand_by === true) alive[String(d.id)] = 1; }); Object.keys(seen).forEach(function(k){ if (!alive[k]) delete seen[k]; }); } catch(e){}
+  try { localStorage.setItem(STANDBY_REMINDER_KEY, JSON.stringify(seen)); } catch(e){}
+}
+function _standByCandIdFor(d) {
+  try { var ctx = null; var cands = getCandidats().filter(function(c){ return c && !c._deleted; });
+    for (var i = 0; i < cands.length; i++) { ctx = _candMatchCtx(cands[i]); if (_dealBelongsToCand(d, ctx)) return cands[i].id; } } catch(e){}
+  return null;
+}
+function showStandByReminderPopup(force) {
+  var due = _standByRemindersDue();
+  if (!due.length && !force) return false;
+  if (!due.length) { showNotifToast('Aucun placement en stand by à rappeler'); return false; }
+  var old = document.getElementById('standby-reminder-modal'); if (old) old.remove();
+  var esc = function(s){ return String(s == null ? '' : s).replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
+  var rows = due.map(function(x){
+    var d = x.deal, cid = _standByCandIdFor(d);
+    var who = esc((d.prenom||'') + ' ' + (d.nom||'')), cli = esc(d.entreprise || '—');
+    var miss = x.manquants.length ? '<div style="font-size:11px;color:#8A5F00;margin-top:4px;">Manque : ' + esc(x.manquants.slice(0,5).join(', ')) + (x.manquants.length > 5 ? '…' : '') + '</div>' : '<div style="font-size:11px;color:#1D9E75;margin-top:4px;">Dossier complet — convertible</div>';
+    var btnEdit = d.sim_ts ? '<button onclick="document.getElementById(\'standby-reminder-modal\').remove();openPlacementPopup(' + d.sim_ts + ');" style="padding:6px 10px;background:#F5F3FF;color:#7343EE;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">✎ Compléter</button>' : '';
+    var btnFiche = cid != null ? '<button onclick="document.getElementById(\'standby-reminder-modal\').remove();openCandidatFiche(' + cid + ');" style="padding:6px 10px;background:#fff;color:#4B36EC;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">👤 Fiche</button>' : '';
+    var btnConv = !x.manquants.length ? '<button onclick="document.getElementById(\'standby-reminder-modal\').remove();convertStandByToPlacement(' + d.id + ');" style="padding:6px 10px;background:#1D9E75;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">✓ Convertir</button>' : '';
+    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:1.5px solid #E4E0FA;border-radius:8px;background:#fff;">'
+      + '<div style="flex:1;min-width:0;"><div style="font-weight:700;color:#1A1033;">' + who + ' <span style="color:#6B5E9C;font-weight:500;">· ' + cli + '</span></div>' + miss + '</div>'
+      + '<div style="white-space:nowrap;font-size:12px;font-weight:800;color:' + (x.jours >= 7 ? '#A8322A' : '#B26A00') + ';">' + x.jours + ' j</div>'
+      + '<div style="display:flex;gap:6px;">' + btnEdit + btnFiche + btnConv + '</div></div>';
+  }).join('');
+  var m = document.createElement('div'); m.id = 'standby-reminder-modal';
+  m.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(26,16,51,0.45);display:flex;align-items:center;justify-content:center;padding:20px;';
+  m.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:720px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">'
+    + '<div style="padding:16px 20px;background:linear-gradient(135deg,#7343EE,#5B37C4);color:#fff;"><div style="font-size:16px;font-weight:800;">⏸ Placements en stand by à traiter</div>'
+    + '<div style="font-size:12px;opacity:0.9;margin-top:3px;">' + due.length + ' placement(s) en attente depuis plus de ' + STANDBY_FIRST_DAYS + ' jours — rappel tous les ' + STANDBY_REPEAT_DAYS + ' jours tant que le statut ne change pas.</div></div>'
+    + '<div style="padding:14px 20px;overflow:auto;display:flex;flex-direction:column;gap:8px;">' + rows + '</div>'
+    + '<div style="padding:12px 20px;border-top:1px solid #E4E0FA;display:flex;justify-content:flex-end;gap:8px;background:#FAF8FF;">'
+    + '<button onclick="document.getElementById(\'standby-reminder-modal\').remove();" style="padding:8px 16px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">Plus tard</button>'
+    + '</div></div>';
+  document.body.appendChild(m);
+  _standByMarkShown(due.map(function(x){ return x.deal.id; }));
+  return true;
+}
+// Déclenchement au chargement, une fois la synchro initiale terminée (données à jour)
+window.addEventListener('load', function(){
+  (function _waitSB(n){
+    if (window._initialSyncDone || n > 60) { setTimeout(function(){ try { showStandByReminderPopup(false); } catch(e){ console.warn('[stand by rappel]', e); } }, 1500); return; }
+    setTimeout(function(){ _waitSB(n + 1); }, 500);
+  })(0);
+});
+
 function getCurrentUserCommercial() {
   if (typeof getCommercialData === 'function') {
     var c = getCommercialData();
