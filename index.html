@@ -6257,6 +6257,9 @@ function saveHistorique(data, dest, email, consultantName) {
       entry.timestamp = _placedEditOld.timestamp;   // même timestamp → le placement reste rattaché
       entry.version = _placedEditOld.version;
       entry.modified_at = Date.now();
+      entry.updated_at = Date.now();                 // ← indispensable : mergeHistorique fusionne sur updated_at.
+                                                     //   Sans lui, la simu modifiée ne quittait jamais ce poste
+                                                     //   alors que le deal (updated_at bumpé) se propageait → divergence.
       hist[_eidx] = entry;                           // remplace en place, pas de nouvelle entrée
     } else { hist.unshift(entry); }
   } else {
@@ -30265,8 +30268,20 @@ function runFullSync(btn) {
 }
 
 // ── Fonctions de fusion ──
+// Auto-réparation : les simulations modifiées en place avant le correctif du 15/09 portent un
+// modified_at sans updated_at → elles ne se propageaient pas. On aligne updated_at pour que la
+// fusion LWW les fasse voyager. Idempotent, exécuté avant chaque fusion.
+function _healHistoryUpdatedAt(arr) {
+  var changed = false;
+  (arr || []).forEach(function(s){
+    if (s && s.modified_at && (!s.updated_at || s.modified_at > s.updated_at)) { s.updated_at = s.modified_at; changed = true; }
+  });
+  return changed;
+}
 function mergeHistorique(remote) {
   var local = getHistory();
+  try { if (_healHistoryUpdatedAt(local)) saveHistoryArr(local); } catch(e){}
+  try { _healHistoryUpdatedAt(remote); } catch(e){}
   var tsMap = {};
   local.forEach(function(s) { tsMap[s.timestamp] = s; });
   // Filtrer les tombstones : ne pas réimporter les simus supprimées
