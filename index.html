@@ -15869,7 +15869,10 @@ function showProlongationView() {
   });
 
   // Déclenchement des relances auto (1 fois par jour, même si plusieurs ouvertures)
-  checkAndSendProlongationRelances();
+  // ── DÉSACTIVÉ le 17/09/2026 à la demande de Norman : les relances de prolongation ne partent
+  //    plus automatiquement. Le bouton « Vérifier maintenant » (force=true) reste opérationnel.
+  //    Pour réactiver : PROLONG_RELANCE_AUTO_ENABLED = true.
+  if (typeof PROLONG_RELANCE_AUTO_ENABLED !== 'undefined' && PROLONG_RELANCE_AUTO_ENABLED) checkAndSendProlongationRelances();
 
   renderProlongation();
 }
@@ -16166,6 +16169,7 @@ function testSendProlongationRelance(dealId, niveau) {
 // Si on est le jour exact (ou après, au cas où on n'aurait pas ouvert la page),
 // ET que la relance n'a pas encore été envoyée ce mois-ci, on envoie.
 // Un flag LocalStorage "last_run_YYYY-MM" évite les doubles envois par jour.
+var PROLONG_RELANCE_AUTO_ENABLED = false;
 function checkAndSendProlongationRelances(force) {
   if (!odToken) {
     return;
@@ -27115,6 +27119,95 @@ function searchCoopteurs(type, query) {
 // ── Création d'une cooptation au moment du save du deal ──
 // Appelée depuis saveSortie et savePlacement. deal = deal sauvé (avec id et entreprise),
 // coopData = { type, coopteur_key, coopteur_snapshot... } venant du popup
+// ═══ Cooptation MANUELLE (hors flux simulateur) ═══════════════════════════════
+// Pour une cooptation connue après coup, ou un placement saisi sans passer par l'origine
+// « Cooptation » du simulateur. Même structure que celles créées automatiquement → même
+// suivi de paiement, mêmes rappels.
+function openManualCooptationPopup() {
+  var old = document.getElementById('manual-coop-modal'); if (old) old.remove();
+  var cfg = getCooptationsConfig();
+  var inp = 'style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;box-sizing:border-box;font-family:inherit;"';
+  var lbl = 'style="font-size:10px;color:#6B5E9C;font-weight:700;display:block;margin-bottom:3px;"';
+  var cands = getCandidats().filter(function(x){ return x && !x._deleted; }).sort(function(a,b){ return ((a.nom||'')+(a.prenom||'')).localeCompare((b.nom||'')+(b.prenom||'')); });
+  var dl = '<datalist id="mc-porte-dl">' + cands.map(function(x){ return '<option value="' + String((x.prenom||'') + ' ' + (x.nom||'')).trim().replace(/"/g,'&quot;') + '">' + String(x.email||'').replace(/</g,'&lt;') + '</option>'; }).join('') + '</datalist>';
+  var m = document.createElement('div'); m.id = 'manual-coop-modal';
+  m.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(26,16,51,0.45);display:flex;align-items:center;justify-content:center;padding:20px;';
+  m.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:640px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">'
+    + '<div style="padding:16px 20px;background:linear-gradient(135deg,#8B6508,#F0A500);color:#fff;border-radius:14px 14px 0 0;"><div style="font-size:16px;font-weight:800;">🤝 Nouvelle cooptation</div><div style="font-size:12px;opacity:0.9;margin-top:3px;">Saisie manuelle — même suivi que les cooptations issues du simulateur</div></div>'
+    + '<div style="padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    +   '<div style="grid-column:1/-1;"><label ' + lbl + '>Porté <span style="color:#A8322A;">*</span></label><input id="mc-porte" list="mc-porte-dl" autocomplete="off" placeholder="Prénom Nom (recherche parmi les candidats)" oninput="_mcOnPorteChange()" ' + inp + '>' + dl + '</div>'
+    +   '<div style="grid-column:1/-1;"><label ' + lbl + '>Placement concerné <span style="color:#A8322A;">*</span></label><select id="mc-deal" ' + inp.replace('style="','style="background:#fff;') + '><option value="">— choisir d\'abord le porté —</option></select></div>'
+    +   '<div><label ' + lbl + '>Type de coopteur <span style="color:#A8322A;">*</span></label><select id="mc-type" onchange="_mcRenderCoopteurs()" ' + inp.replace('style="','style="background:#fff;') + '><option value="client">Client (manager)</option><option value="candidat">Candidat / consultant</option></select></div>'
+    +   '<div><label ' + lbl + '>Montant (€)</label><input id="mc-montant" type="number" value="' + (cfg.montant_defaut || 500) + '" ' + inp + '></div>'
+    +   '<div style="grid-column:1/-1;"><label ' + lbl + '>Coopteur <span style="color:#A8322A;">*</span></label><input id="mc-coopteur-q" autocomplete="off" placeholder="Rechercher…" oninput="_mcRenderCoopteurs()" ' + inp + '><div id="mc-coopteur-list" style="max-height:160px;overflow:auto;border:1.5px solid #E4E0FA;border-top:none;border-radius:0 0 7px 7px;"></div><input type="hidden" id="mc-coopteur-json"></div>'
+    +   '<div style="grid-column:1/-1;" id="mc-coopteur-chosen"></div>'
+    + '</div>'
+    + '<div style="padding:12px 20px;border-top:1px solid #E4E0FA;display:flex;justify-content:flex-end;gap:8px;background:#FAF8FF;border-radius:0 0 14px 14px;">'
+    +   '<button onclick="document.getElementById(\'manual-coop-modal\').remove();" style="padding:8px 16px;background:#fff;color:#6B5E9C;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">Annuler</button>'
+    +   '<button onclick="saveManualCooptation()" style="padding:8px 18px;background:#8B6508;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;">Enregistrer</button>'
+    + '</div></div>';
+  document.body.appendChild(m);
+  _mcRenderCoopteurs();
+}
+function _mcCand() {
+  var q = ((document.getElementById('mc-porte') || {}).value || '').trim();
+  if (!q) return null;
+  var key = _personKey.apply(null, (function(){ var np = _splitFullName(q); return [np.prenom, np.nom]; })());
+  return getCandidats().find(function(x){ return x && !x._deleted && _personKey(x.prenom, x.nom) === key; }) || null;
+}
+function _mcOnPorteChange() {
+  var sel = document.getElementById('mc-deal'); if (!sel) return;
+  var cand = _mcCand();
+  if (!cand) { sel.innerHTML = '<option value="">— choisir d\'abord le porté —</option>'; return; }
+  var ctx = _candMatchCtx(cand);
+  var ds = getDeals().filter(function(d){ return d && d.etat !== 'Annulé' && !d.prolongation_avenant && _dealBelongsToCand(d, ctx); })
+    .sort(function(a,b){ return String(b.date_deal||'').localeCompare(String(a.date_deal||'')); });
+  sel.innerHTML = ds.length ? ds.map(function(d){ return '<option value="' + d.id + '">' + String(d.entreprise||'—').replace(/</g,'&lt;') + ' · ' + (d.etat||'') + (d.date_entree ? ' · entrée ' + d.date_entree : '') + '</option>'; }).join('')
+                            : '<option value="">— aucun placement pour ce porté —</option>';
+}
+function _mcRenderCoopteurs() {
+  var type = (document.getElementById('mc-type') || {}).value || 'client';
+  var q = (document.getElementById('mc-coopteur-q') || {}).value || '';
+  var list = document.getElementById('mc-coopteur-list'); if (!list) return;
+  var items = searchCoopteurs(type, q);
+  list.innerHTML = items.map(function(it, i){
+    return '<div onclick="_mcPickCoopteur(' + i + ')" style="padding:7px 10px;border-bottom:1px solid #F0EEFA;cursor:pointer;font-size:12px;" onmouseover="this.style.background=\'#F5F3FF\'" onmouseout="this.style.background=\'\'"><b>' + String(it.label||'').replace(/</g,'&lt;') + '</b><span style="color:#9E94C4;margin-left:6px;">' + String(it.sub||'').replace(/</g,'&lt;') + '</span></div>';
+  }).join('') || '<div style="padding:8px 10px;font-size:11px;color:#9E94C4;">Aucun résultat</div>';
+  window._mcItems = items;
+}
+function _mcPickCoopteur(i) {
+  var it = (window._mcItems || [])[i]; if (!it) return;
+  document.getElementById('mc-coopteur-json').value = JSON.stringify(it);
+  document.getElementById('mc-coopteur-chosen').innerHTML = '<div style="padding:8px 12px;background:#FFF8E8;border:1.5px solid #F0CE8A;border-radius:7px;font-size:12px;">Coopteur : <b>' + String(it.label||'').replace(/</g,'&lt;') + '</b> ' + String(it.sub||'').replace(/</g,'&lt;') + '</div>';
+}
+function saveManualCooptation() {
+  var cand = _mcCand(); if (!cand) { alert('Sélectionnez un porté dans la liste.'); return; }
+  var dealId = (document.getElementById('mc-deal') || {}).value; if (!dealId) { alert('Sélectionnez le placement concerné.'); return; }
+  var deal = getDeals().find(function(d){ return String(d.id) === String(dealId); }); if (!deal) { alert('Placement introuvable.'); return; }
+  var it = null; try { it = JSON.parse(document.getElementById('mc-coopteur-json').value || 'null'); } catch(e){}
+  if (!it) { alert('Sélectionnez le coopteur dans la liste.'); return; }
+  var type = document.getElementById('mc-type').value;
+  var montant = parseFloat(document.getElementById('mc-montant').value) || (getCooptationsConfig().montant_defaut || 500);
+  var cs = getCooptations();
+  if (cs.some(function(x){ return String(x.deal_id) === String(deal.id); })) { if (!confirm('Une cooptation existe déjà pour ce placement. La remplacer ?')) return; }
+  // Même mapping que le popup du simulateur (payload coop_data)
+  var coopData = { type: type, coopteur_key: it.key || '' };
+  if (type === 'client') {
+    coopData.coopteur_nom = it.mgr_name || it.label || ''; coopData.coopteur_email = it.mgr_email || '';
+    coopData.coopteur_entreprise = it.client_name || ''; coopData.coopteur_ref_id = it.client_id || ''; coopData.coopteur_mgr_idx = (it.mgr_idx !== undefined) ? it.mgr_idx : null;
+  } else {
+    coopData.coopteur_nom = it.label || ''; coopData.coopteur_email = it.cand_email || '';
+    coopData.coopteur_entreprise = ''; coopData.coopteur_ref_id = it.cand_id || ''; coopData.coopteur_mgr_idx = null;
+  }
+  upsertCooptationFromDeal(deal, coopData);
+  // Montant saisi + marquage manuel
+  var cs2 = getCooptations(); var k = cs2.findIndex(function(x){ return String(x.deal_id) === String(deal.id); });
+  if (k >= 0) { cs2[k].montant = montant; cs2[k].saisie_manuelle = true; cs2[k].updated_ts = Date.now(); saveCooptations(cs2); }
+  var mm = document.getElementById('manual-coop-modal'); if (mm) mm.remove();
+  if (typeof showNotifToast === 'function') showNotifToast('🤝 Cooptation enregistrée');
+  renderCooptations();
+}
+
 function upsertCooptationFromDeal(deal, coopData) {
   if (!deal || !deal.id) return;
   if (!coopData || !coopData.type || coopData.type === 'none') {
@@ -27292,6 +27385,7 @@ function renderCooptations() {
     +   '<div><div class="comm-stat-label">Missions abrégées</div><div class="comm-stat-val">' + nbAbregee + '</div><div class="comm-stat-sub">non dues</div></div>'
     +   '<div><div class="comm-stat-label">Montant par défaut</div><div class="comm-stat-val">' + (cfg.montant_defaut||500) + ' €</div><div class="comm-stat-sub">modifiable / coop.</div></div>'
     + '</div>'
+    + '<div style="margin-top:12px;"><button onclick="openManualCooptationPopup()" style="padding:9px 16px;background:#fff;color:#8B6508;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.15);">+ Ajouter une cooptation</button></div>'
     + '</div>';
 
   // Bandeau alerte paiements à effectuer
