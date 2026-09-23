@@ -11124,7 +11124,10 @@ function renderDeals() {
       if (d.etat === 'Annulé') classList.push('row-cancelled');
       var rowClass = classList.length ? ' class="' + classList.join(' ') + '"' : '';
       html += '<tr' + rowClass + ' data-deal-id="' + (d.id != null ? d.id : '') + '" style="border-left:3px solid '+color+';">';
-      var _dV = (typeof _dealEnVigueur === 'function') ? _dealEnVigueur(d) : d;   // conditions en vigueur (dernier avenant)
+      // Le tableau des deals affiche le PLACEMENT, pas les avenants : les conditions
+      // d'un avenant se consultent dans l'onglet Avenants. (Retrait de la superposition
+      // _dealEnVigueur() — décision du 23/09/2026.)
+      var _dV = d;
       visColDefs.forEach(function(col){
         var fc = col.freeze==='f1' ? ' class="col-freeze"' : col.freeze==='f2' ? ' class="col-freeze2"' : '';
         var cellHtml;
@@ -12729,8 +12732,7 @@ function updateDealField(dealId, key, value) {
 function exportDealsExcel() {
   var deals = getDeals();
   if (deals.length === 0) { alert('Aucun deal à exporter.'); return; }
-  // Export = mêmes conditions en vigueur que le tableau (dernier avenant applicable)
-  if (typeof _dealEnVigueur === 'function') deals = deals.map(function(d){ return _dealEnVigueur(d); });
+  // Export = conditions du PLACEMENT, comme le tableau des deals (pas d'avenant superposé).
   var headers = ['Date deal','Commercial','Origine','État','Prénom','Nom','Email','Téléphone','Poste','Entreprise','Email client','Manager','TJM','Nb jours','Salaire annuel','Frais gestion %','Mutuelle','Swile/TR','Forfait repas','IK (km)','Transport','Télétravail','Tél/Internet','Grand déplacement','Connait TJM','Date entrée','Date sortie','Raison sortie','Commentaire'];
   var rows = deals.map(function(d) {
     var telnet = ((d.abo_tel && parseFloat(d.abo_tel)>0)||(d.abo_internet && parseFloat(d.abo_internet)>0)) ? 'Oui' : '';
@@ -16884,10 +16886,12 @@ function buildFraisAvantagesContent() {
     return buildAvantageRow(it.deal, it.data, cfg, it.isExceptionnel, it.prenomNom);
   }).join('');
 
-  // Dropdown mois (12 derniers mois + 3 mois à venir)
+  // Dropdown mois (12 derniers mois + mois courant + 3 mois à venir)
   var monthOptions = '';
   var now = new Date();
-  for (var i = 3; i >= -12; i--) {
+  // FIX 23/09/2026 : la boucle était inversée (3 mois en arrière, 12 mois en avant) —
+  // impossible de remonter au-delà de 3 mois. Désormais : 12 mois en arrière, 3 en avant.
+  for (var i = 12; i >= -3; i--) {
     var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     var v = d.getFullYear() + '-' + ('0' + (d.getMonth()+1)).slice(-2);
     var lbl = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
@@ -17505,7 +17509,9 @@ function buildFraisProContent() {
   // Dropdown mois
   var monthOptions = '';
   var now = new Date();
-  for (var i = 3; i >= -12; i--) {
+  // FIX 23/09/2026 : la boucle était inversée (3 mois en arrière, 12 mois en avant) —
+  // impossible de remonter au-delà de 3 mois. Désormais : 12 mois en arrière, 3 en avant.
+  for (var i = 12; i >= -3; i--) {
     var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     var v = d.getFullYear() + '-' + ('0' + (d.getMonth()+1)).slice(-2);
     var lbl = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
@@ -18017,7 +18023,9 @@ function buildEntreesContent() {
   // Dropdown mois
   var monthOptions = '';
   var now = new Date();
-  for (var i = 3; i >= -12; i--) {
+  // FIX 23/09/2026 : la boucle était inversée (3 mois en arrière, 12 mois en avant) —
+  // impossible de remonter au-delà de 3 mois. Désormais : 12 mois en arrière, 3 en avant.
+  for (var i = 12; i >= -3; i--) {
     var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     var v = d.getFullYear() + '-' + ('0' + (d.getMonth()+1)).slice(-2);
     var lbl = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
@@ -19119,7 +19127,11 @@ function buildAvenantsContent() {
       if ((a.etat_av_cdps || '') !== AVENANTS_FILTER.etat_cdps) return false;
     }
     if (AVENANTS_FILTER.month !== 'all' && AVENANTS_FILTER.month != null) {
-      var _dd = (a.date_demande || a.date_debut) ? new Date(a.date_demande || a.date_debut) : null; // filtre période sur « Créé le » (repli : date de début)
+      // Filtre période sur « À partir du » (date_debut), c'est-à-dire la date d'effet
+      // de l'avenant — et non sa date de saisie. Repli sur la date de l'avenant puis
+      // sur la date de demande pour les enregistrements anciens sans date de début.
+      var _ddSrc = a.date_debut || a.date_avenant || a.date_demande || '';
+      var _dd = _ddSrc ? new Date(_ddSrc) : null;
       if (!_dd || isNaN(_dd.getTime())) return false;
       if (_dd.getMonth() !== AVENANTS_FILTER.month || _dd.getFullYear() !== AVENANTS_FILTER.year) return false;
     }
@@ -19234,7 +19246,7 @@ function buildAvenantsContent() {
   _avMN.forEach(function(nm,i){ _avMonthOpts += '<option value="'+i+'"'+(_avCM===i?' selected':'')+'>'+nm+'</option>'; });
   var _avYearOpts=''; for(var _avyy=_avNY-2;_avyy<=_avNY+2;_avyy++){ _avYearOpts+='<option value="'+_avyy+'"'+(_avCY===_avyy?' selected':'')+'>'+_avyy+'</option>'; }
   html += '<div style="min-width:210px;">'
-    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">P\u00e9riode (Cr\u00e9\u00e9 le)</label>'
+    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">P\u00e9riode (\u00c0 partir du)</label>'
     + '<div style="display:flex;align-items:center;gap:2px;">'
     +   '<button onclick="avShiftMonth(-1)" title="Mois pr\u00e9c\u00e9dent" style="border:1.5px solid #E4E0FA;background:#fff;color:#5B2BCC;cursor:pointer;font-size:13px;padding:6px 8px;border-radius:7px;line-height:1;">&#9664;</button>'
     +   '<select onchange="avSetMonth(this.value)" style="flex:1;padding:8px 6px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;">' + _avMonthOpts + '</select>'
@@ -30846,6 +30858,29 @@ function mergeDeals(remote) {
     // → "Signé") ne se propage jamais aux autres si leurs updated_at locaux sont
     // identiques au sien. Cohérent avec le fix appliqué à mergeCandidats.
     var winner = (rTs >= lTs) ? d : existing;
+
+    // ── ANTI-EFFACEMENT (23/09/2026) ────────────────────────────────────────────
+    // Le last-write-wins remplaçait l'objet ENTIER : quand une copie distante gagnait
+    // (autre poste ayant touché le même deal, ou l'ayant simplement re-tamponné au
+    // démarrage), tous les champs renseignés localement mais vides côté distant
+    // disparaissaient — une ligne complétée dans le tableau revenait « à zéro ».
+    // Règle : un champ NON VIDE en local n'est jamais remplacé par un champ VIDE ou
+    // ABSENT venant du distant. Les valeurs non vides du gagnant restent prioritaires.
+    if (winner === d && existing !== d) {
+      var _preserves = [];
+      Object.keys(existing).forEach(function(k){
+        if (k === 'updated_at' || k === 'updated' || k === 'avenants_mission' || k === 'historique_prolongations') return;
+        var lv = existing[k], rv = d[k];
+        var lVide = (lv === undefined || lv === null || lv === '' || lv === false);
+        var rVide = (rv === undefined || rv === null || rv === '');
+        if (!lVide && rVide) { d[k] = lv; _preserves.push(k); }
+      });
+      if (_preserves.length) {
+        console.warn('[mergeDeals] deal ' + d.id + ' (' + ((d.prenom||'') + ' ' + (d.nom||'')).trim() + ') : '
+          + _preserves.length + ' champ(s) local(aux) préservé(s) face à une copie distante vide — '
+          + _preserves.join(', ') + ' | distant updated_at=' + rTs + ' / local=' + lTs);
+      }
+    }
     // On applique les traces fusionnées sur le gagnant
     if (mergedAvenants.length) winner.avenants_mission = mergedAvenants;
     // Règle : le deal d'origine d'une continuité (prolonge_par) reste intact — la trace « avenant nouveau client »
