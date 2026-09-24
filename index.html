@@ -4490,8 +4490,16 @@ function doEnvoi() {
         // SI LE BUG html2pdf 'outputPdf' EST RÉSOLU UN JOUR :
         // → Réactiver le code commenté ci-dessous et supprimer ce bloc.
         // ═══════════════════════════════════════════════════════════
-        downloadBulletinPaiePDFSeparate(data, function() {
-          finalizeEml();
+        // 24/09/2026 — bulletin PDF vectoriel (jsPDF) : joint au .eml ET téléchargé.
+        buildBulletinPaiePDFb64(data, function(pdfB64, filename, errMsg) {
+          if (pdfB64) {
+            attachments.push({ name: filename, b64: pdfB64 });
+            try { if (window._lastBulletinPdfDoc) window._lastBulletinPdfDoc.save(filename); } catch(e) { console.warn('[Bulletin] téléchargement :', e); }
+            finalizeEml();
+          } else {
+            console.warn('[Bulletin PDF] jsPDF indisponible (' + errMsg + ') — repli impression native, sans pièce jointe.');
+            downloadBulletinPaiePDFSeparate(data, function() { finalizeEml(); });
+          }
         });
 
         /* ANCIEN CODE (désactivé — PDF blanc) :
@@ -4620,7 +4628,7 @@ function _bpEsc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function buildBulletinPaieHTML(data) {
+function buildBulletinPaieModel(data) {
   var bd = window._lastBulletinData;
   if (!bd) {
     throw new Error('Données du bulletin non disponibles — relancez le calcul (modifiez un champ pour rafraîchir).');
@@ -4634,6 +4642,7 @@ function buildBulletinPaieHTML(data) {
   // Mois/période en cours
   var now = new Date();
   var moisNom = now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  moisNom = moisNom.charAt(0).toUpperCase() + moisNom.slice(1);
   var premierJour = new Date(now.getFullYear(), now.getMonth(), 1);
   var dernierJour = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   var periodeDebut = premierJour.toLocaleDateString('fr-FR');
@@ -4654,270 +4663,342 @@ function buildBulletinPaieHTML(data) {
   var transportJour = bd.NB_JOURS > 0 ? bd.frais_transport / bd.NB_JOURS : 0;
   var telnetJour = bd.NB_JOURS > 0 ? bd.frais_telnet / bd.NB_JOURS : 0;
 
-  // Calculs Salaire brut — décomposé selon mockup : salaire_base + prime (5%) + indemnité CP (10%)
-  // La base "brut" est le BRUT mensuel standard. On suit la formule Excel du mockup :
-  // SALAIRE DE BASE + PRIME (5%) + INDEMNITÉ CP (10%) = SALAIRE BRUT
-  var salaire_base = bd.BRUT * (1 - 0.05 - 0.10);  // = 0.85 * BRUT
+  // Salaire brut décomposé : salaire_base + prime (5%) + indemnité CP (10%) = BRUT
+  var salaire_base = bd.BRUT * (1 - 0.05 - 0.10);
   var prime_apport = bd.BRUT * 0.05;
   var indem_cp = bd.BRUT * 0.10;
 
-  // Total "retenues avec mutuelle" vs "sans mutuelle"
   var mut_pat_montant = bd.mut_pat || 0;
   var mut_sal_montant = bd.mut_sal || 0;
   var totalPatSansMut = bd.TOTAL_PAT - mut_pat_montant;
   var totalSalSansMut = bd.TOTAL_SAL - mut_sal_montant;
-  var tauxPatSansMut = bd.BRUT > 0 ? totalPatSansMut / bd.BRUT : 0;
-  var tauxSalSansMut = bd.BRUT > 0 ? totalSalSansMut / bd.BRUT : 0;
-  var tauxPatAvecMut = bd.BRUT > 0 ? bd.TOTAL_PAT / bd.BRUT : 0;
-  var tauxSalAvecMut = bd.BRUT > 0 ? bd.TOTAL_SAL / bd.BRUT : 0;
 
-  // Total retraite (Sécu plafonnée + déplafonnée + Complémentaire T1 + T2)
-  var retraite_pat = bd.vieux_plaf_pat + bd.vieux_dep_pat + bd.ret1_pat + bd.ceg1_pat + bd.cet1_pat + bd.ret2_pat + bd.ceg2_pat + bd.cet2_pat;
-  var retraite_sal = bd.vieux_plaf_sal + bd.vieux_dep_sal + bd.ret1_sal + bd.ceg1_sal + bd.cet1_sal + bd.ret2_sal + bd.ceg2_sal + bd.cet2_sal;
-
-  // Autres contributions employeur (regroupé)
   var autres_pat = (bd.mobilite_pat||0) + (bd.fnal_pat||0) + (bd.med_pat||0) + (bd.csa_pat||0)
     + (bd.formation_pat||0) + (bd.synd_pat||0) + (bd.ags_pat||0);
-  // Paritarisme (petite cotisation convention collective)
   var paritarisme_pat = bd.parit_pat || 0;
-
-  // Nombre de jours facturés (17 ou 21 etc)
   var nb_jours = bd.NB_JOURS;
 
-  // Helpers
+  // ── Lignes du tableau (modèle neutre, rendu HTML ou jsPDF) ──
+  var rows = [];
   function row(label, base, tauxPat, mtPat, tauxSal, mtSal, sousTotal, opts) {
     opts = opts || {};
-    var bold = opts.bold ? 'font-weight:700;' : '';
-    var bg = opts.bg ? ('background:' + opts.bg + ';') : '';
-    var borderTop = opts.topBorder ? 'border-top:1.5px solid #5844d3;' : '';
-    var borderBot = opts.bottomBorder ? 'border-bottom:1.5px solid #5844d3;' : 'border-bottom:0.5px solid #f0f0f0;';
-    return '<tr style="' + bold + bg + borderTop + '">'
-      + '<td style="padding:3px 6px;' + borderBot + '">' + _bpEsc(label) + '</td>'
-      + '<td style="text-align:right;padding:3px 6px;' + borderBot + '">' + (base !== null && base !== undefined && base !== '' ? _bpFmt(base, 2) + ' €' : '') + '</td>'
-      + '<td style="text-align:right;padding:3px 6px;' + borderBot + '">' + (tauxPat !== null && tauxPat !== undefined ? _bpPct(tauxPat) : '') + '</td>'
-      + '<td style="text-align:right;padding:3px 6px;' + borderBot + '">' + (mtPat !== null && mtPat !== undefined ? _bpFmt(mtPat, 2) + ' €' : '') + '</td>'
-      + '<td style="text-align:right;padding:3px 6px;' + borderBot + '">' + (tauxSal !== null && tauxSal !== undefined ? _bpPct(tauxSal) : '') + '</td>'
-      + '<td style="text-align:right;padding:3px 6px;' + borderBot + '">' + (mtSal !== null && mtSal !== undefined ? _bpFmt(mtSal, 2) + ' €' : '') + '</td>'
-      + '<td style="text-align:right;padding:3px 6px;' + borderBot + 'font-weight:' + (opts.bold ? '700' : '400') + ';">' + (sousTotal !== null && sousTotal !== undefined ? _bpFmt(sousTotal, 2) + ' €' : '') + '</td>'
-      + '</tr>';
+    rows.push({ t: 'row', label: label, base: base, tp: tauxPat, mp: mtPat, ts: tauxSal, ms: mtSal, st: sousTotal, bold: !!opts.bold, net: !!opts.net });
   }
-  function sectionRow(label) {
-    return '<tr><td colspan="7" style="padding:7px 6px 1px;font-weight:700;color:#5844d3;">' + _bpEsc(label) + '</td></tr>';
-  }
+  function sectionRow(label) { rows.push({ t: 'sec', label: label }); }
+  function fraisRow(label, perJour, montant) { rows.push({ t: 'frais', label: label, perJour: perJour, nbJours: nb_jours, montant: montant }); }
 
-  var tableRows = '';
+  row('Salaire de base', null, null, null, null, null, salaire_base);
+  row('Prime apport d’affaires', bd.BRUT, null, null, 0.05, prime_apport, null);
+  row('Indemnité de congés payés', bd.BRUT, null, null, 0.10, indem_cp, null);
+  row('SALAIRE BRUT', null, null, null, null, null, bd.BRUT, {bold:true});
 
-  // === SALAIRE ===
-  tableRows += row('SALAIRE DE BASE', null, null, null, null, null, salaire_base);
-  tableRows += row('PRIME APPORT AFFAIRES', bd.BRUT, null, null, 0.05, prime_apport, null);
-  tableRows += row('INDEMNITÉ DE CONGES PAYÉS', bd.BRUT, null, null, 0.10, indem_cp, null);
-  tableRows += row('SALAIRE BRUT', null, null, null, null, null, bd.BRUT, {bold:true});
-
-  // === SANTE ===
-  tableRows += sectionRow('SANTE');
-  // Maladie (mal_pat contient maladie + complément maladie déjà additionnés)
+  sectionRow('Santé');
   var mal_taux = bd.BRUT > 0 ? bd.mal_pat / bd.BRUT : 0;
-  tableRows += row('SECURITE SOCIALE - MAL. MAT. INVAL DECES', bd.BRUT, mal_taux, bd.mal_pat, null, null, null);
-  tableRows += row('COMPLEMENTAIRE INCAP. INVAL. DECES (TRCH A)', bd.T_A, bd.p_prev_ta/100, bd.prev_ta_pat, bd.p_prev_ta/100, bd.prev_ta_sal, null);
-  tableRows += row('COMPLEMENTAIRE INCAP. INVAL. DECES (TRCH B/C)', bd.T_B, bd.p_prev_tb/100, bd.prev_tb_pat, bd.p_prev_tb/100, bd.prev_tb_sal, null);
+  row('Sécurité sociale – maladie, maternité, invalidité, décès', bd.BRUT, mal_taux, bd.mal_pat, null, null, null);
+  row('Complémentaire incapacité, invalidité, décès (tranche A)', bd.T_A, bd.p_prev_ta/100, bd.prev_ta_pat, bd.p_prev_ta/100, bd.prev_ta_sal, null);
+  row('Complémentaire incapacité, invalidité, décès (tranche B/C)', bd.T_B, bd.p_prev_tb/100, bd.prev_tb_pat, bd.p_prev_tb/100, bd.prev_tb_sal, null);
   if (mut_pat_montant > 0 || mut_sal_montant > 0) {
     var tauxMutPat = bd.PMSS > 0 ? mut_pat_montant / bd.PMSS : 0;
     var tauxMutSal = bd.PMSS > 0 ? mut_sal_montant / bd.PMSS : 0;
-    tableRows += row('COMPLEMENTAIRE SANTE (MUTUELLE)', bd.PMSS, tauxMutPat, mut_pat_montant, tauxMutSal, mut_sal_montant, null);
+    row('Complémentaire santé (mutuelle)', bd.PMSS, tauxMutPat, mut_pat_montant, tauxMutSal, mut_sal_montant, null);
   }
+  row('Accidents du travail – maladies professionnelles', bd.BRUT, bd.p_at/100, bd.at_pat, null, null, null);
 
-  // === ACCIDENTS DU TRAVAIL ===
-  tableRows += row('ACCIDENTS DU TRAVAIL - MAL. PROFESSIONNELLES', bd.BRUT, bd.p_at/100, bd.at_pat, null, null, null);
-
-  // === RETRAITE ===
-  tableRows += sectionRow('RETRAITE');
-  tableRows += row('SECURITE SOCIALE PLAFONNEE', bd.T_A, bd.p_vieux_plaf/100, bd.vieux_plaf_pat, bd.p_vieux_sal/100, bd.vieux_plaf_sal, null);
-  tableRows += row('SECURITE SOCIALE DEPLAFONNEE', bd.BRUT, bd.p_vieux_dep/100, bd.vieux_dep_pat, bd.p_vieux_dep_sal/100, bd.vieux_dep_sal, null);
+  sectionRow('Retraite');
+  row('Sécurité sociale plafonnée', bd.T_A, bd.p_vieux_plaf/100, bd.vieux_plaf_pat, bd.p_vieux_sal/100, bd.vieux_plaf_sal, null);
+  row('Sécurité sociale déplafonnée', bd.BRUT, bd.p_vieux_dep/100, bd.vieux_dep_pat, bd.p_vieux_dep_sal/100, bd.vieux_dep_sal, null);
   var t1_pat_tot = bd.ret1_pat + bd.ceg1_pat + bd.cet1_pat;
   var t1_sal_tot = bd.ret1_sal + bd.ceg1_sal + bd.cet1_sal;
-  var t1_pat_pct = bd.T_A > 0 ? t1_pat_tot / bd.T_A : 0;
-  var t1_sal_pct = bd.T_A > 0 ? t1_sal_tot / bd.T_A : 0;
-  tableRows += row('COMPLEMENTAIRE TRANCHE 1', bd.T_A, t1_pat_pct, t1_pat_tot, t1_sal_pct, t1_sal_tot, null);
+  row('Complémentaire tranche 1', bd.T_A, bd.T_A > 0 ? t1_pat_tot / bd.T_A : 0, t1_pat_tot, bd.T_A > 0 ? t1_sal_tot / bd.T_A : 0, t1_sal_tot, null);
   var t2_pat_tot = bd.ret2_pat + bd.ceg2_pat + bd.cet2_pat;
   var t2_sal_tot = bd.ret2_sal + bd.ceg2_sal + bd.cet2_sal;
-  var t2_pat_pct = bd.T_B > 0 ? t2_pat_tot / bd.T_B : 0;
-  var t2_sal_pct = bd.T_B > 0 ? t2_sal_tot / bd.T_B : 0;
-  tableRows += row('COMPLEMENTAIRE TRANCHE 2', bd.T_B, t2_pat_pct, t2_pat_tot, t2_sal_pct, t2_sal_tot, null);
-
-  // === FAMILLE ===
+  row('Complémentaire tranche 2', bd.T_B, bd.T_B > 0 ? t2_pat_tot / bd.T_B : 0, t2_pat_tot, bd.T_B > 0 ? t2_sal_tot / bd.T_B : 0, t2_sal_tot, null);
   var famille_tot_pat = (bd.af_pat||0) + (bd.af_compl_pat||0);
-  var famille_tot_pct = bd.BRUT > 0 ? famille_tot_pat / bd.BRUT : 0;
-  tableRows += row('FAMILLE', bd.BRUT, famille_tot_pct, famille_tot_pat, null, null, null);
+  row('Famille', bd.BRUT, bd.BRUT > 0 ? famille_tot_pat / bd.BRUT : 0, famille_tot_pat, null, null, null);
 
-  // === ASSURANCE CHOMAGE ===
-  tableRows += sectionRow('ASSURANCE CHOMAGE');
+  sectionRow('Assurance chômage');
   var chom_pat_tot = (bd.chom_ta_pat||0) + (bd.chom_tb_pat||0);
-  var chom_pct = bd.BRUT > 0 ? chom_pat_tot / bd.BRUT : 0;
-  tableRows += row('CHOMAGE', bd.BRUT, chom_pct, chom_pat_tot, null, null, null);
-  tableRows += row('APEC', bd.BRUT, bd.p_apec_pat/100, bd.apec_pat, bd.p_apec_sal/100, bd.apec_sal, null);
+  row('Chômage', bd.BRUT, bd.BRUT > 0 ? chom_pat_tot / bd.BRUT : 0, chom_pat_tot, null, null, null);
+  row('APEC', bd.BRUT, bd.p_apec_pat/100, bd.apec_pat, bd.p_apec_sal/100, bd.apec_sal, null);
+  row('Cotisations prévues par la convention collective', bd.BRUT, bd.BRUT > 0 ? paritarisme_pat / bd.BRUT : 0, paritarisme_pat, null, null, null);
+  row('Autres contributions dues par l’employeur', null, null, autres_pat, null, null, null);
+  row('CSG déductible de l’impôt sur le revenu', bd.csg_base, null, null, bd.p_csg_ded, bd.csg_ded, null);
+  row('CSG / CRDS non déductible de l’impôt sur le revenu', bd.csg_base, null, null, bd.p_crds, bd.crds, null);
+  row('Exonérations de cotisations employeur (réduction Fillon)', 0, 0, 0, null, null, null);
+  row('TOTAL RETENUES (sans mutuelle)', null, null, totalPatSansMut, null, totalSalSansMut, null, {bold:true});
+  row('TOTAL RETENUES (avec mutuelle)', null, null, bd.TOTAL_PAT, null, bd.TOTAL_SAL, -bd.TOTAL_SAL, {bold:true});
 
-  // === COT. PREVUES PAR LA CONVENTION COLLECTIVE ===
-  var parit_pct = bd.BRUT > 0 ? paritarisme_pat / bd.BRUT : 0;
-  tableRows += row('COT. PREVUES PAR LA CONVENTION COLLECTIVE', bd.BRUT, parit_pct, paritarisme_pat, null, null, null);
-
-  // === AUTRES CONTRIBUTIONS EMPLOYEUR (regroupé, 1 ligne) ===
-  tableRows += row('AUTRES CONTRIBUTIONS DUES PAR L\'EMPLOYEUR', null, null, autres_pat, null, null, null);
-
-  // === CSG ===
-  tableRows += row('CSG DEDUCTIBLE DE L\'IMPOT SUR LE REVENU', bd.csg_base, null, null, bd.p_csg_ded, bd.csg_ded, null);
-  tableRows += row('CSG/CRDS NON DEDUCTIBLE DE L\'IMPOT SUR LE REVENU', bd.csg_base, null, null, bd.p_crds, bd.crds, null);
-
-  // === EXONERATIONS FILLON ===
-  tableRows += row('EXONERATIONS DE COTISATIONS EMPLOYEUR (réduction fillon)', 0, 0, 0, null, null, null);
-
-  // === TOTAUX ===
-  // Les colonnes "Taux Pat." et "Taux Sal." sont volontairement masquées
-  // sur les lignes TOTAL RETENUES (pas pertinent en cumul global)
-  tableRows += row('TOTAL RETENUES (SANS MUTUELLE)', null, null, totalPatSansMut, null, totalSalSansMut, null, {bold:true, topBorder:true});
-  tableRows += row('TOTAL RETENUES (AVEC MUTUELLE)', null, null, bd.TOTAL_PAT, null, bd.TOTAL_SAL, -bd.TOTAL_SAL, {bold:true});
-
-  // === FRAIS avec 3 colonnes (montant/jour | jours | montant total) ===
-  // Structure spéciale : label | ../jour | NB_JOURS | total
-  function fraisRow(label, perJour, montant) {
-    return '<tr>'
-      + '<td style="padding:3px 6px;border-bottom:0.5px solid #f0f0f0;">' + _bpEsc(label) + '</td>'
-      + '<td style="text-align:right;padding:3px 6px;border-bottom:0.5px solid #f0f0f0;">' + (perJour > 0.01 ? _bpFmt(perJour, 2) + ' €' : '') + '</td>'
-      + '<td style="text-align:right;padding:3px 6px;border-bottom:0.5px solid #f0f0f0;" colspan="2">' + (perJour > 0.01 ? _bpFmt(nb_jours, 2) : '') + '</td>'
-      + '<td colspan="2" style="border-bottom:0.5px solid #f0f0f0;"></td>'
-      + '<td style="text-align:right;padding:3px 6px;border-bottom:0.5px solid #f0f0f0;">' + (montant > 0.01 ? _bpFmt(montant, 2) + ' €' : '') + '</td>'
-      + '</tr>';
-  }
+  sectionRow('Frais professionnels exonérés');
   if (bd.frais_repas > 0) {
-    var _repasLbl = (bd.repas_mode === 'Swile') ? 'TITRE RESTAURANT (Swile)'
-                  : (bd.repas_mode === 'Forfait') ? 'FORFAIT REPAS (BS)'
-                  : (bd.repas_mode === 'GD') ? 'GRAND DEPLACEMENT'
-                  : 'FORFAIT REPAS (BS) / TITRE RESTAURANT (Swile)';
-    tableRows += fraisRow(_repasLbl, repasJour, bd.frais_repas);
+    var _repasLbl = (bd.repas_mode === 'Swile') ? 'Titre restaurant (Swile)'
+                  : (bd.repas_mode === 'Forfait') ? 'Forfait repas'
+                  : (bd.repas_mode === 'GD') ? 'Grand déplacement'
+                  : 'Forfait repas / titre restaurant';
+    fraisRow(_repasLbl, repasJour, bd.frais_repas);
   }
-  if (bd.frais_ik > 0) tableRows += fraisRow('INDEMNITE KM', ikJour, bd.frais_ik);
-  if (bd.frais_tt > 0) tableRows += fraisRow('TELETRAVAIL', ttJour, bd.frais_tt);
-  if (bd.frais_transport > 0) tableRows += fraisRow('REMBOURSEMENT TRANSPORT (75%)', transportJour, bd.frais_transport);
-  if (bd.frais_telnet > 0) tableRows += fraisRow('ABONNEMENT TEL INTERNET SI PAS DE TELETRAVAIL', telnetJour, bd.frais_telnet);
-  if (bd.frais_formation > 0) tableRows += fraisRow('FORMATION', 0, bd.frais_formation);
-  if (bd.frais_materiel > 0) tableRows += fraisRow('MATERIEL PROFESSIONNEL', 0, bd.frais_materiel);
-  // Frais réel : toujours affiché à 0 comme dans le mockup (placeholder justificatifs)
-  tableRows += '<tr>'
-    + '<td style="padding:3px 6px;border-bottom:0.5px solid #f0f0f0;">FRAIS REEL (sur justificatifs)</td>'
-    + '<td colspan="5" style="border-bottom:0.5px solid #f0f0f0;"></td>'
-    + '<td style="text-align:right;padding:3px 6px;border-bottom:0.5px solid #f0f0f0;">0,00 €</td>'
-    + '</tr>';
+  if (bd.frais_ik > 0) fraisRow('Indemnité kilométrique', ikJour, bd.frais_ik);
+  if (bd.frais_tt > 0) fraisRow('Télétravail', ttJour, bd.frais_tt);
+  if (bd.frais_transport > 0) fraisRow('Remboursement transport (75 %)', transportJour, bd.frais_transport);
+  if (bd.frais_telnet > 0) fraisRow('Abonnement téléphone / internet', telnetJour, bd.frais_telnet);
+  if (bd.frais_formation > 0) fraisRow('Formation', 0, bd.frais_formation);
+  if (bd.frais_materiel > 0) fraisRow('Matériel professionnel', 0, bd.frais_materiel);
+  fraisRow('Frais réels (sur justificatifs)', 0, 0);
 
-  // CSS
-  var css = ''
-    + '@page { size: A4; margin: 8mm; }'
-    + 'body { font-family: Calibri, Arial, sans-serif; font-size: 10px; color: #1a1a1a; margin: 0; padding: 0; background: #fff; }'
-    + '.bp-container { max-width: 195mm; margin: 0 auto; padding: 5mm; }'
-    + '.bp-header { background: #5844d3; color: #fff; padding: 8px 14px; display: flex; align-items: center; font-size: 12px; font-weight: 700; margin: 0 0 10px; letter-spacing: 0.02em; }'
-    + '.bp-header .month { flex: 1; }'
-    + '.bp-header .period { font-weight: 400; font-size: 11px; }'
-    + '.bp-header .period span { margin: 0 12px; }'
-    + '.bp-top { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 14px; font-size: 10px; }'
-    + '.bp-top .sec-title { color: #5844d3; font-style: italic; font-weight: 700; margin-bottom: 3px; font-size: 10px; }'
-    + '.bp-top .bp-logo-box { text-align: center; }'
-    + '.bp-top .info-line { display: flex; justify-content: space-between; gap: 6px; }'
-    + '.bp-top .info-line .lbl { color: #1a1a1a; }'
-    + '.bp-top .info-line .val { text-align: right; min-width: 60px; }'
-    + 'table.bp-main { width: 100%; border-collapse: collapse; font-size: 9.5px; }'
-    + 'table.bp-main thead th { background: #5844d3; color: #fff; padding: 5px 6px; border: 0.5px solid #5844d3; text-align: center; font-weight: 700; font-size: 10px; }'
-    + 'table.bp-main thead th.libl { text-align: center; font-weight: 700; letter-spacing: 0.04em; }'
-    + 'table.bp-main thead tr.sub th { background: #5844d3; font-size: 9px; padding: 3px; font-weight: 600; }'
-    + '.bp-bandeau-net { background: #5844d3; color: #fff; padding: 6px 10px; font-weight: 700; font-size: 14px; display: flex; justify-content: space-between; align-items: center; margin: 4px 0; letter-spacing: 0.02em; }'
-    + '.bp-impot-row { background: #5844d3; color: #fff; padding: 4px 10px; font-weight: 700; font-size: 11px; margin: 2px 0 0; display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 8px; }'
-    + '.bp-impot-row.white { background: #fff; color: #1a1a1a; border-bottom: 0.5px solid #ddd; }'
-    + '.bp-final-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; align-items: stretch; }'
-    + '.bp-final-left { padding: 7px 10px; border: 1px solid #5844d3; border-radius: 4px; }'
-    + '.bp-final-left .label { font-weight: 700; font-size: 11px; color: #5844d3; }'
-    + '.bp-final-left .total-val { font-size: 13px; font-weight: 700; text-align: right; }'
-    + '.bp-final-right .block { padding: 5px 10px; margin-bottom: 3px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px; }'
-    + '.bp-final-right .after-impot { background: #F5F3FF; color: #5844d3; font-weight: 700; }'
-    + '.bp-final-right .a-payer { background: #E24B4A; color: #fff; font-weight: 700; font-size: 14px; }'
-    + '.bp-print-btn { position: fixed; top: 14px; right: 14px; padding: 10px 20px; background: #7343EE; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgba(115,67,238,0.35); z-index: 9999; }'
-    + '.bp-print-btn:hover { background: #5844d3; }'
-    + '@media print { .bp-print-btn { display: none; } }';
+  row('NET À PAYER AVANT IMPÔT SUR LE REVENU', null, null, null, null, null, bd.net_avant_impot, {bold:true, net:true});
 
-  // HTML complet
-  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Bulletin de paie - ' + _bpEsc(consultant) + '</title><style>' + css + '</style></head><body>'
+  sectionRow('Impôt sur le revenu');
+  var tauxImpot = (bd.taux_impot || 0) / 100;
+  var impot = bd.net_avant_impot * tauxImpot;
+  row('Impôt sur le revenu prélevé à la source', bd.net_avant_impot, null, null, tauxImpot, null, impot);
+
+  var model = {
+    consultant: consultant, email: email, poste: poste, entreprise: entreprise, mutuelle: mutuelleTxt,
+    moisNom: moisNom, periodeDebut: periodeDebut, periodeFin: periodeFin,
+    joursOuvres: joursOuvres, joursCalendaires: joursCalendaires, nbJours: nb_jours,
+    ikJour: ikJour, ttJour: ttJour, repasJour: repasJour, transportJour: transportJour,
+    rows: rows,
+    totalFrais: bd.TOTAL_FRAIS, netAvantImpot: bd.net_avant_impot, netApresImpot: bd.net_apres_impot,
+    netAPayer: bd.net_apres_impot + bd.TOTAL_FRAIS,
+    genereLe: now.toLocaleDateString('fr-FR')
+  };
+  window._lastBulletinModel = model;
+  return model;
+}
+
+function buildBulletinPaieHTML(data) {
+  var m = buildBulletinPaieModel(data);
+  var eur = function (v) { return (v === null || v === undefined || v === '' || isNaN(v)) ? '' : _bpFmt(v, 2) + ' €'; };
+  var pct = function (v) { return (v === null || v === undefined) ? '' : _bpPct(v); };
+  var logo = (typeof SEVEN_LOGO_MAIL_B64 !== 'undefined' && SEVEN_LOGO_MAIL_B64) ? SEVEN_LOGO_MAIL_B64 : SEVEN_LOGO_B64;
+
+  var tr = '';
+  m.rows.forEach(function (r) {
+    if (r.t === 'sec') { tr += '<tr class="sec"><td colspan="7">' + _bpEsc(r.label) + '</td></tr>'; return; }
+    if (r.t === 'frais') {
+      tr += '<tr><td class="lib">' + _bpEsc(r.label) + '</td><td>' + (r.perJour > 0.01 ? eur(r.perJour) : '') + '</td><td>' + (r.perJour > 0.01 ? _bpFmt(r.nbJours, 2) + ' j' : '') + '</td><td></td><td></td><td></td><td class="st">' + eur(r.montant) + '</td></tr>';
+      return;
+    }
+    var cls = (r.bold ? 'tot' : '') + (r.net ? ' net' : '');
+    tr += '<tr class="' + cls + '"><td class="lib">' + _bpEsc(r.label) + '</td><td>' + eur(r.base) + '</td><td>' + pct(r.tp) + '</td><td>' + eur(r.mp) + '</td><td>' + pct(r.ts) + '</td><td>' + eur(r.ms) + '</td><td class="st">' + eur(r.st) + '</td></tr>';
+  });
+
+  var css = '@page{size:A4;margin:12mm 12mm 14mm}*{box-sizing:border-box}'
+    + 'body{margin:0;font-family:"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#1A1033;font-size:10.5px;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    + '.page{width:210mm;min-height:297mm;padding:12mm 12mm 14mm;margin:0 auto;position:relative}'
+    + '.top{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:10px;border-bottom:2px solid #7343EE}'
+    + '.brand img{width:150px;height:auto;display:block}.brand .addr{margin-top:6px;font-size:9.5px;color:#6B5E9C;line-height:1.35}'
+    + '.title{text-align:right}.title h1{margin:0;font-size:20px;letter-spacing:.08em;font-weight:800;color:#7343EE}'
+    + '.title .per{display:inline-block;margin-top:6px;padding:4px 12px;border-radius:999px;background:#F5F3FF;color:#4B36EC;font-weight:700;font-size:11px}'
+    + '.title .dates{margin-top:6px;font-size:9.5px;color:#6B5E9C}'
+    + '.cards{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:8px;margin:12px 0 12px}'
+    + '.card{border:1px solid #E4E0FA;border-radius:10px;padding:8px 11px;background:#FBFAFF}'
+    + '.card h3{margin:0 0 5px;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#7343EE;font-weight:800}.card .n{font-size:13px;font-weight:800;margin-bottom:3px}'
+    + '.kv{display:flex;justify-content:space-between;gap:8px;line-height:1.6}.kv span:first-child{color:#6B5E9C}.kv span:last-child{font-weight:600;text-align:right}'
+    + 'table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}'
+    + 'thead th{background:#7343EE;color:#fff;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;padding:6px 6px;text-align:right;font-weight:700}'
+    + 'thead th.lib{text-align:left}thead tr.sub th{background:#5B2BCC;font-size:8px;padding:3px 6px}'
+    + 'thead th:first-child{border-top-left-radius:8px}thead th:last-child{border-top-right-radius:8px}'
+    + 'tbody td{padding:3.5px 6px;text-align:right;border-bottom:1px solid #F0EDF9;white-space:nowrap}tbody td.lib{text-align:left;white-space:normal}'
+    + 'tbody tr:nth-child(even) td{background:#FCFBFF}'
+    + 'tr.sec td{background:#F5F3FF !important;color:#7343EE;font-weight:800;font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:6px 6px 4px;text-align:left;border-bottom:1px solid #E4E0FA}'
+    + 'tr.tot td{font-weight:800;background:#F7F6FF !important;border-top:1.5px solid #C9BFF7;border-bottom:1.5px solid #C9BFF7}'
+    + 'tr.tot.net td{background:#EFEBFF !important;color:#4B36EC;font-size:11px}td.st{font-weight:700}'
+    + '.totals{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:8px;margin-top:12px}'
+    + '.tot{border:1px solid #E4E0FA;border-radius:10px;padding:9px 12px}.tot .l{font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:#6B5E9C;font-weight:700}'
+    + '.tot .v{font-size:16px;font-weight:800;margin-top:3px}.tot.net{background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;border:none}.tot.net .l{color:#E4E0FA}.tot.net .v{font-size:22px}'
+    + '.foot{position:absolute;left:12mm;right:12mm;bottom:8mm;display:flex;justify-content:space-between;font-size:8.5px;color:#9E94C4;border-top:1px solid #E4E0FA;padding-top:5px}'
+    + '.bp-print-btn{position:fixed;top:14px;right:14px;padding:10px 20px;background:#7343EE;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(115,67,238,.3);z-index:10}'
+    + '@media print{.bp-print-btn{display:none}}';
+
+  var dash = '—';
+  var html = '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Bulletin de paie - ' + _bpEsc(m.consultant) + '</title><style>' + css + '</style></head><body>'
     + '<button class="bp-print-btn" onclick="window.print()">🖨 Imprimer / Enregistrer en PDF</button>'
-    + '<div class="bp-container">'
-
-    // ═══ Header violet ═══
-    + '<div class="bp-header">'
-    +   '<span class="month">' + _bpEsc(moisNom) + '</span>'
-    +   '<span class="period">du<span></span>' + periodeDebut + '<span></span>au<span></span>' + periodeFin + '</span>'
+    + '<div class="page">'
+    + '<div class="top"><div class="brand"><img src="' + logo + '" alt="Seven Portage"><div class="addr">Seven Portage · 6 rue d’Armaillé · 75017 Paris<br>Convention collective des salariés en portage salarial</div></div>'
+    + '<div class="title"><h1>BULLETIN DE PAIE</h1><div class="per">' + _bpEsc(m.moisNom) + '</div><div class="dates">Période du ' + m.periodeDebut + ' au ' + m.periodeFin + ' · Simulation</div></div></div>'
+    + '<div class="cards">'
+    + '<div class="card"><h3>Salarié</h3><div class="n">' + _bpEsc(m.consultant) + '</div>'
+    + '<div class="kv"><span>Email</span><span>' + (_bpEsc(m.email) || dash) + '</span></div>'
+    + '<div class="kv"><span>Emploi</span><span>' + (_bpEsc(m.poste) || dash) + '</span></div>'
+    + '<div class="kv"><span>Mutuelle</span><span>' + (_bpEsc(m.mutuelle) || dash) + '</span></div>'
+    + '<div class="kv"><span>Lieu de mission</span><span>' + (_bpEsc(m.entreprise) || dash) + '</span></div></div>'
+    + '<div class="card"><h3>Temps de travail</h3>'
+    + '<div class="kv"><span>Jours ouvrés</span><span>' + m.joursOuvres + '</span></div>'
+    + '<div class="kv"><span>Jours calendaires</span><span>' + m.joursCalendaires + '</span></div>'
+    + '<div class="kv"><span>Jours facturés</span><span>' + _bpFmt(m.nbJours, 0) + '</span></div>'
+    + '<div class="kv"><span>Absences cumulées</span><span>0</span></div></div>'
+    + '<div class="card"><h3>Indemnités / jour</h3>'
+    + '<div class="kv"><span>Kilométrique</span><span>' + (m.ikJour > 0.01 ? eur(m.ikJour) : dash) + '</span></div>'
+    + '<div class="kv"><span>Télétravail</span><span>' + (m.ttJour > 0.01 ? eur(m.ttJour) : dash) + '</span></div>'
+    + '<div class="kv"><span>Repas / grand dépl.</span><span>' + (m.repasJour > 0.01 ? eur(m.repasJour) : dash) + '</span></div>'
+    + '<div class="kv"><span>Transport</span><span>' + (m.transportJour > 0.01 ? eur(m.transportJour) : dash) + '</span></div></div>'
     + '</div>'
-
-    // ═══ 3 colonnes d'en-tête ═══
-    + '<div class="bp-top">'
-
-    // Col 1 : Convention + Salarié
-    + '  <div>'
-    + '    <div class="sec-title">Convention collective</div>'
-    + '    <div>Salariés en portage salarial</div>'
-    + '    <div style="margin-top:6px;font-weight:700;font-style:italic;text-align:center;">Salarié</div>'
-    + '    <div style="margin-top:5px;"><b>Prénom Nom :</b> ' + _bpEsc(consultant) + '</div>'
-    + '    <div><b>Email :</b> ' + _bpEsc(email) + '</div>'
-    + '    <div><b>Emploi</b></div>'
-    + '    <div><b>Mutuelle :</b> ' + _bpEsc(mutuelleTxt) + '</div>'
-    + '  </div>'
-
-    // Col 2 : Logo + adresse
-    + '  <div class="bp-logo-box">'
-    + '    <img src="' + SEVEN_LOGO_B64 + '" alt="Seven Portage" style="width:120px;height:auto;display:inline-block;" />'
-    + '    <div style="font-size:10px;">6 Rue d\'Armaillé</div>'
-    + '    <div style="font-size:10px;">75017 PARIS</div>'
-    + '  </div>'
-
-    // Col 3 : Lieu mission + indemnités + jours
-    + '  <div>'
-    + '    <div class="info-line"><span class="lbl"><b>Lieu de mission :</b></span><span class="val">' + _bpEsc(entreprise) + '</span></div>'
-    + '    <div class="info-line"><span class="lbl">Ind. Kilométrique :</span><span class="val">€ ' + _bpFmt(ikJour, 2) + '</span></div>'
-    + '    <div class="info-line"><span class="lbl">Ind Teletravail :</span><span class="val">€ ' + (ttJour > 0.01 ? _bpFmt(ttJour, 2) : '-') + '</span></div>'
-    + '    <div class="info-line"><span class="lbl">Repas :</span><span class="val">€ ' + _bpFmt(repasJour, 2) + '</span></div>'
-    + '    <div class="info-line"><span class="lbl">Transport :</span><span class="val">€ ' + (transportJour > 0.01 ? _bpFmt(transportJour, 2) : '-') + '</span></div>'
-    + '    <div style="margin-top:4px;"><b>Jours ouvrés :</b> ' + joursOuvres + '</div>'
-    + '    <div><b>Jours calenda :</b> ' + joursCalendaires + '</div>'
-    + '    <div><b>J abs cumu cal :</b> 0</div>'
-    + '  </div>'
-    + '</div>'
-
-    // ═══ Tableau principal ═══
-    + '<table class="bp-main">'
-    + '  <thead>'
-    + '    <tr><th class="libl" rowspan="2">LIBELLÉ</th><th rowspan="2">BASE</th><th colspan="2">EMPLOYEUR</th><th colspan="2">SALARIÉ</th><th rowspan="2">S/TOTAL</th></tr>'
-    + '    <tr class="sub"><th>TAUX</th><th>MONTANT</th><th>TAUX</th><th>MONTANT</th></tr>'
-    + '  </thead>'
-    + '  <tbody>'
-    +       tableRows
-    + '  </tbody>'
-    + '</table>'
-
-    // ═══ Bandeau NET À PAYER AVANT IMPÔT ═══
-    + '<div class="bp-bandeau-net"><span>NET A PAYER AVANT IMPÔT SUR LE REVENU</span><span>' + _bpFmt(bd.net_avant_impot, 2) + ' €</span></div>'
-
-    // ═══ Impôt sur le revenu ═══
-    // bd.taux_impot est stocké en pourcentage brut (ex: 5 pour 5%) donc on divise par 100 pour le calcul
-    + '<div class="bp-impot-row"><span>IMPOT SUR LE REVENU</span><span>BASE</span><span>TAUX</span><span>MONTANT</span></div>'
-    + '<div class="bp-impot-row white" style="color:#1a1a1a;"><span>IMPOT SUR LE REVENU PRELEVE A LA SOURCE</span><span style="text-align:right;">' + _bpFmt(bd.net_avant_impot, 2) + ' €</span><span style="text-align:right;">' + _bpPct((bd.taux_impot || 0) / 100) + '</span><span style="text-align:right;">' + _bpFmt(bd.net_avant_impot * ((bd.taux_impot || 0) / 100), 2) + ' €</span></div>'
-
-    // ═══ Bloc final : TOTAL FRAIS / NET APRES IMPOT / NET A PAYER ═══
-    + '<div class="bp-final-grid">'
-    + '  <div class="bp-final-left">'
-    + '    <div style="display:flex;justify-content:space-between;align-items:center;"><span class="label">TOTAL FRAIS (exonéré de l\'impôt et des cotisations):</span><span class="total-val">€ ' + _bpFmt(bd.TOTAL_FRAIS, 2) + '</span></div>'
-    + '  </div>'
-    + '  <div class="bp-final-right">'
-    + '    <div class="block after-impot"><span>NET APRES IMPÔT</span><span>' + _bpFmt(bd.net_apres_impot, 2) + ' €</span></div>'
-    + '    <div class="block a-payer"><span>NET A PAYER</span><span>' + _bpFmt(bd.net_apres_impot + bd.TOTAL_FRAIS, 2) + ' €</span></div>'
-    + '  </div>'
-    + '</div>'
-
+    + '<table><thead><tr><th class="lib" rowspan="2">Libellé</th><th rowspan="2">Base</th><th colspan="2">Employeur</th><th colspan="2">Salarié</th><th rowspan="2">Sous-total</th></tr>'
+    + '<tr class="sub"><th>Taux</th><th>Montant</th><th>Taux</th><th>Montant</th></tr></thead><tbody>' + tr + '</tbody></table>'
+    + '<div class="totals"><div class="tot"><div class="l">Total frais exonérés</div><div class="v">' + eur(m.totalFrais) + '</div></div>'
+    + '<div class="tot"><div class="l">Net après impôt</div><div class="v">' + eur(m.netApresImpot) + '</div></div>'
+    + '<div class="tot net"><div class="l">Net à payer</div><div class="v">' + eur(m.netAPayer) + '</div></div></div>'
+    + '<div class="foot"><span>Seven Portage — Simulateur salarial · document indicatif, ne vaut pas bulletin de paie officiel</span><span>Généré le ' + m.genereLe + '</span></div>'
     + '</div></body></html>';
-
   return html;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// BULLETIN — GÉNÉRATION PDF VECTORIELLE (jsPDF, sans html2canvas)
+// html2canvas/html2pdf produisent un PDF blanc sur les postes Seven :
+// on dessine directement le bulletin avec les primitives jsPDF.
+// ════════════════════════════════════════════════════════════════════
+function _bulletinJsPDF(m) {
+  var JS = (window.jspdf && window.jspdf.jsPDF) ? window.jspdf.jsPDF : (window.jsPDF || null);
+  if (!JS) throw new Error('jsPDF non chargé');
+  var doc = new JS({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+  var W = 210, ML = 12, MR = 12, CW = W - ML - MR, y = 12;
+  var VIOLET = [115, 67, 238], VIOLET2 = [91, 43, 204], INK = [26, 16, 51], MUTED = [107, 94, 156],
+      LINE = [240, 237, 249], BAND = [245, 243, 255], TOTBG = [247, 246, 255], NETBG = [239, 235, 255], BORD = [228, 224, 250], PALE = [158, 148, 196];
+  var clean = function (s) { return String(s == null ? '' : s).replace(/[  ]/g, ' '); };
+  var eur = function (v) { return (v === null || v === undefined || v === '' || isNaN(v)) ? '' : clean(_bpFmt(v, 2)) + ' €'; };
+  var pct = function (v) { return (v === null || v === undefined) ? '' : clean(_bpPct(v)); };
+  var F = function (style, size, color) { doc.setFont('helvetica', style); doc.setFontSize(size); doc.setTextColor(color[0], color[1], color[2]); };
+  var rr = function (x, yy, w, h, r, fill, stroke) {
+    if (fill) doc.setFillColor(fill[0], fill[1], fill[2]);
+    if (stroke) { doc.setDrawColor(stroke[0], stroke[1], stroke[2]); doc.setLineWidth(0.25); }
+    doc.roundedRect(x, yy, w, h, r, r, fill && stroke ? 'FD' : (fill ? 'F' : 'S'));
+  };
+
+  // ── En-tête ──
+  var logo = (typeof SEVEN_LOGO_MAIL_B64 !== 'undefined' && SEVEN_LOGO_MAIL_B64) ? SEVEN_LOGO_MAIL_B64 : null;
+  if (logo) { try { doc.addImage(logo, 'PNG', ML, y, 40, 14.3); } catch (e) { logo = null; } }
+  if (!logo) { F('bold', 16, VIOLET); doc.text('seven portage', ML, y + 10); }
+  F('normal', 7.5, MUTED);
+  doc.text('Seven Portage · 6 rue d’Armaillé · 75017 Paris', ML, y + 19);
+  doc.text('Convention collective des salariés en portage salarial', ML, y + 22.5);
+  F('bold', 16, VIOLET); doc.text('BULLETIN DE PAIE', W - MR, y + 6, { align: 'right', charSpace: 0.6 });
+  F('bold', 9, [75, 54, 236]);
+  var perW = doc.getTextWidth(m.moisNom) + 10;
+  rr(W - MR - perW, y + 9, perW, 6.5, 3.2, BAND, null);
+  doc.text(m.moisNom, W - MR - perW / 2, y + 13.4, { align: 'center' });
+  F('normal', 7.5, MUTED); doc.text('Période du ' + m.periodeDebut + ' au ' + m.periodeFin + ' · Simulation', W - MR, y + 20, { align: 'right' });
+  y += 26; doc.setDrawColor(VIOLET[0], VIOLET[1], VIOLET[2]); doc.setLineWidth(0.6); doc.line(ML, y, W - MR, y); y += 5;
+
+  // ── Cartes ──
+  var dash = '—';
+  var cards = [
+    { t: 'SALARIÉ', n: m.consultant, kv: [['Email', m.email || dash], ['Emploi', m.poste || dash], ['Mutuelle', m.mutuelle || dash], ['Lieu de mission', m.entreprise || dash]] },
+    { t: 'TEMPS DE TRAVAIL', kv: [['Jours ouvrés', String(m.joursOuvres)], ['Jours calendaires', String(m.joursCalendaires)], ['Jours facturés', clean(_bpFmt(m.nbJours, 0))], ['Absences cumulées', '0']] },
+    { t: 'INDEMNITÉS / JOUR', kv: [['Kilométrique', m.ikJour > 0.01 ? eur(m.ikJour) : dash], ['Télétravail', m.ttJour > 0.01 ? eur(m.ttJour) : dash], ['Repas / grand dépl.', m.repasJour > 0.01 ? eur(m.repasJour) : dash], ['Transport', m.transportJour > 0.01 ? eur(m.transportJour) : dash]] }
+  ];
+  var gap = 3, cw = [(CW - 2 * gap) * 0.385, (CW - 2 * gap) * 0.3075, (CW - 2 * gap) * 0.3075], ch = 30, cx = ML;
+  cards.forEach(function (c, i) {
+    rr(cx, y, cw[i], ch, 2.5, [251, 250, 255], BORD);
+    F('bold', 6.5, VIOLET); doc.text(c.t, cx + 4, y + 5.2, { charSpace: 0.4 });
+    var yy = y + 9.5;
+    if (c.n) { F('bold', 9.5, INK); doc.text(clean(c.n).slice(0, 40), cx + 4, yy + 0.5); yy += 4.6; }
+    c.kv.forEach(function (kv) {
+      F('normal', 7.2, MUTED); doc.text(kv[0], cx + 4, yy);
+      F('bold', 7.2, INK); doc.text(clean(kv[1]).slice(0, 34), cx + cw[i] - 4, yy, { align: 'right' }); yy += 3.9;
+    });
+    cx += cw[i] + gap;
+  });
+  y += ch + 5;
+
+  // ── Tableau ──
+  var col = [70, 22, 15, 21, 15, 21, 22];              // = 186
+  var cxs = []; var acc = ML; col.forEach(function (w) { cxs.push(acc); acc += w; });
+  var right = function (i) { return cxs[i] + col[i] - 2; };
+  // en-tête 2 niveaux
+  doc.setFillColor(VIOLET[0], VIOLET[1], VIOLET[2]); doc.roundedRect(ML, y, CW, 9.5, 2, 2, 'F'); doc.rect(ML, y + 5, CW, 4.5, 'F');
+  doc.setFillColor(VIOLET2[0], VIOLET2[1], VIOLET2[2]); doc.rect(cxs[2], y + 5.2, col[2] + col[3], 4.3, 'F'); doc.rect(cxs[4], y + 5.2, col[4] + col[5], 4.3, 'F');
+  F('bold', 6.3, [255, 255, 255]);
+  doc.text('LIBELLÉ', cxs[0] + 2, y + 6, { charSpace: 0.3 }); doc.text('BASE', right(1), y + 6, { align: 'right', charSpace: 0.3 });
+  doc.text('EMPLOYEUR', cxs[2] + (col[2] + col[3]) / 2, y + 3.8, { align: 'center', charSpace: 0.3 }); doc.text('SALARIÉ', cxs[4] + (col[4] + col[5]) / 2, y + 3.8, { align: 'center', charSpace: 0.3 });
+  doc.text('SOUS-TOTAL', right(6), y + 6, { align: 'right' });
+  F('bold', 5.8, [255, 255, 255]);
+  doc.text('TAUX', right(2), y + 8.3, { align: 'right' }); doc.text('MONTANT', right(3), y + 8.3, { align: 'right' });
+  doc.text('TAUX', right(4), y + 8.3, { align: 'right' }); doc.text('MONTANT', right(5), y + 8.3, { align: 'right' });
+  y += 9.5;
+
+  var rh = 4.7, zebra = 0;
+  m.rows.forEach(function (r) {
+    if (y > 250) { doc.addPage(); y = 14; }
+    if (r.t === 'sec') {
+      doc.setFillColor(BAND[0], BAND[1], BAND[2]); doc.rect(ML, y, CW, 5.2, 'F');
+      doc.setDrawColor(BORD[0], BORD[1], BORD[2]); doc.setLineWidth(0.2); doc.line(ML, y + 5.2, W - MR, y + 5.2);
+      F('bold', 6.4, VIOLET); doc.text(clean(r.label).toUpperCase(), ML + 2, y + 3.6, { charSpace: 0.4 });
+      y += 5.2; zebra = 0; return;
+    }
+    var isTot = r.t === 'row' && r.bold, isNet = r.t === 'row' && r.net;
+    if (isNet) { doc.setFillColor(NETBG[0], NETBG[1], NETBG[2]); doc.rect(ML, y, CW, rh + 1, 'F'); }
+    else if (isTot) { doc.setFillColor(TOTBG[0], TOTBG[1], TOTBG[2]); doc.rect(ML, y, CW, rh, 'F'); }
+    else if (zebra % 2 === 1) { doc.setFillColor(252, 251, 255); doc.rect(ML, y, CW, rh, 'F'); }
+    var h = isNet ? rh + 1 : rh, base = y + h - 1.5;
+    if (isTot) { doc.setDrawColor(201, 191, 247); doc.setLineWidth(0.35); doc.line(ML, y, W - MR, y); doc.line(ML, y + h, W - MR, y + h); }
+    else { doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.setLineWidth(0.2); doc.line(ML, y + h, W - MR, y + h); }
+    var color = isNet ? [75, 54, 236] : INK, size = isNet ? 8 : 7.2;
+    F(isTot ? 'bold' : 'normal', size, color);
+    doc.text(clean(r.label), cxs[0] + 2, base, { maxWidth: col[0] - 3 });
+    F('normal', 7.2, color);
+    if (r.t === 'frais') {
+      if (r.perJour > 0.01) { doc.text(eur(r.perJour), right(1), base, { align: 'right' }); doc.text(clean(_bpFmt(r.nbJours, 2)) + ' j', right(2), base, { align: 'right' }); }
+      F('bold', 7.2, color); doc.text(eur(r.montant), right(6), base, { align: 'right' });
+    } else {
+      doc.text(eur(r.base), right(1), base, { align: 'right' });
+      doc.text(pct(r.tp), right(2), base, { align: 'right' }); doc.text(eur(r.mp), right(3), base, { align: 'right' });
+      doc.text(pct(r.ts), right(4), base, { align: 'right' }); doc.text(eur(r.ms), right(5), base, { align: 'right' });
+      F('bold', size, color); doc.text(eur(r.st), right(6), base, { align: 'right' });
+    }
+    y += h; zebra++;
+  });
+
+  // ── Totaux ──
+  y += 5; if (y > 262) { doc.addPage(); y = 14; }
+  var tw = [(CW - 6) * 0.3, (CW - 6) * 0.3, (CW - 6) * 0.4], tx = ML, th = 15;
+  var blocks = [['TOTAL FRAIS EXONÉRÉS', eur(m.totalFrais), false], ['NET APRÈS IMPÔT', eur(m.netApresImpot), false], ['NET À PAYER', eur(m.netAPayer), true]];
+  blocks.forEach(function (b, i) {
+    if (b[2]) { rr(tx, y, tw[i], th, 2.5, VIOLET, null); F('bold', 6.5, [228, 224, 250]); doc.text(b[0], tx + 4, y + 5, { charSpace: 0.4 }); F('bold', 15, [255, 255, 255]); doc.text(b[1], tx + 4, y + 11.8); }
+    else { rr(tx, y, tw[i], th, 2.5, [255, 255, 255], BORD); F('bold', 6.5, MUTED); doc.text(b[0], tx + 4, y + 5, { charSpace: 0.4 }); F('bold', 11.5, INK); doc.text(b[1], tx + 4, y + 11.3); }
+    tx += tw[i] + 3;
+  });
+
+  // ── Pied ──
+  var fy = 289; doc.setDrawColor(BORD[0], BORD[1], BORD[2]); doc.setLineWidth(0.2); doc.line(ML, fy - 3, W - MR, fy - 3);
+  F('normal', 6.5, PALE);
+  doc.text('Seven Portage — Simulateur salarial · document indicatif, ne vaut pas bulletin de paie officiel', ML, fy);
+  doc.text('Généré le ' + m.genereLe, W - MR, fy, { align: 'right' });
+  return doc;
+}
+
+function _bulletinFilename(data) {
+  var nom = String((data && data.consultant) || 'simulation').trim().replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'simulation';
+  return 'Bulletin_Paie_' + nom + '.pdf';
+}
+
+// PDF du bulletin en base64 (pour pièce jointe .eml / Graph) — vectoriel, fiable.
+// callback(pdfB64, filename, errMsg)
+function buildBulletinPaiePDFb64(data, callback) {
+  try {
+    var m = buildBulletinPaieModel(data);
+    var doc = _bulletinJsPDF(m);
+    var b64 = doc.output('datauristring').split(',')[1];
+    window._lastBulletinPdfDoc = doc;
+    callback(b64, _bulletinFilename(data), null);
+  } catch (e) {
+    console.error('[buildBulletinPaiePDFb64]', e);
+    callback(null, null, e && e.message ? e.message : String(e));
+  }
+}
+
+// Téléchargement direct du bulletin (même PDF que la pièce jointe).
+function downloadBulletinPaiePDF(data) {
+  try {
+    var m = buildBulletinPaieModel(data);
+    var doc = _bulletinJsPDF(m);
+    doc.save(_bulletinFilename(data));
+    return true;
+  } catch (e) {
+    console.warn('[downloadBulletinPaiePDF] jsPDF indisponible, repli sur l’impression native :', e);
+    if (typeof downloadBulletinPaiePDFSeparate === 'function') downloadBulletinPaiePDFSeparate(data, function(){});
+    return false;
+  }
 }
 
 function openBulletinPaieTab(data) {
@@ -4951,76 +5032,7 @@ function openBulletinPaieFromModal() {
 
 // Génère le PDF du bulletin en base64 de manière asynchrone
 // callback(b64, filename) appelé en succès, callback(null, null, errMsg) en cas d'erreur
-function buildBulletinPaiePDFb64(data, callback) {
-  if (typeof html2pdf === 'undefined') {
-    callback(null, null, 'Library html2pdf.js non chargée — vérifiez votre connexion internet.');
-    return;
-  }
-  try {
-    var html = buildBulletinPaieHTML(data);
-
-    // Créer un container invisible pour rendre le HTML
-    var container = document.createElement('div');
-    container.style.cssText = 'position:absolute;left:-99999px;top:0;width:210mm;background:#fff;';
-    // Extraire le body du HTML généré
-    var bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-    var headMatch = html.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
-    if (bodyMatch) {
-      // Injecter le CSS dans le document principal pour qu'il soit rendu
-      var styleId = 'bp-temp-style-' + Date.now();
-      if (headMatch) {
-        var styleTag = document.createElement('style');
-        styleTag.id = styleId;
-        styleTag.innerHTML = headMatch[1];
-        document.head.appendChild(styleTag);
-      }
-      container.innerHTML = bodyMatch[1];
-      // Retirer le bouton d'impression (pas nécessaire dans le PDF)
-      var printBtns = container.querySelectorAll('.bp-print-btn');
-      printBtns.forEach(function(b){ b.remove(); });
-
-      document.body.appendChild(container);
-
-      // Sanitisation du nom de fichier (évite Bulletin_Paie__.pdf si consultant vide)
-      var nomBrut = (data.consultant || 'simulation').trim();
-      var nom = nomBrut.replace(/[^a-zA-Z0-9]/g, '_')
-                       .replace(/_+/g, '_')
-                       .replace(/^_|_$/g, '');
-      if (!nom) nom = 'simulation';
-      var filename = 'Bulletin_Paie_' + nom + '.pdf';
-
-      var opt = {
-        margin: [5, 5, 5, 5],
-        filename: filename,
-        image: { type: 'jpeg', quality: 0.95 },
-        html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-      };
-
-      html2pdf().set(opt).from(container).outputPdf('datauristring').then(function(dataUri) {
-        // Cleanup
-        try { document.body.removeChild(container); } catch(e){}
-        var st = document.getElementById(styleId); if (st) st.remove();
-        // Extraire le base64 pur — robuste à toute variation de préfixe Data URI
-        // (ex: "data:application/pdf;base64," OU "data:application/pdf;filename=generated.pdf;base64,")
-        var commaIdx = dataUri.indexOf(',');
-        var b64 = commaIdx >= 0 ? dataUri.substring(commaIdx + 1) : dataUri;
-        callback(b64, filename);
-      }).catch(function(err) {
-        try { document.body.removeChild(container); } catch(e){}
-        var st = document.getElementById(styleId); if (st) st.remove();
-        console.error('[html2pdf]', err);
-        callback(null, null, 'Erreur génération PDF : ' + (err.message || err));
-      });
-    } else {
-      callback(null, null, 'Impossible d\'extraire le contenu du bulletin.');
-    }
-  } catch(e) {
-    console.error('[buildBulletinPaiePDFb64]', e);
-    callback(null, null, e.message);
-  }
-}
+// (ancienne implémentation html2pdf supprimée le 24/09/2026 — PDF blanc sur les postes Seven ; voir _bulletinJsPDF)
 
 function buildEML(to, subject, htmlBody, attachments, boundary, cc) {
   var CRLF = '\r\n';
