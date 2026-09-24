@@ -4493,8 +4493,7 @@ function doEnvoi() {
         // 24/09/2026 — bulletin PDF vectoriel (jsPDF) : joint au .eml ET téléchargé.
         buildBulletinPaiePDFb64(data, function(pdfB64, filename, errMsg) {
           if (pdfB64) {
-            attachments.push({ name: filename, b64: pdfB64 });
-            try { if (window._lastBulletinPdfDoc) window._lastBulletinPdfDoc.save(filename); } catch(e) { console.warn('[Bulletin] téléchargement :', e); }
+            attachments.push({ name: filename, b64: pdfB64 });   // joint au .eml uniquement (pas de téléchargement séparé)
             finalizeEml();
           } else {
             console.warn('[Bulletin PDF] jsPDF indisponible (' + errMsg + ') — repli impression native, sans pièce jointe.');
@@ -4756,6 +4755,17 @@ function buildBulletinPaieModel(data) {
     moisNom: moisNom, periodeDebut: periodeDebut, periodeFin: periodeFin,
     joursOuvres: joursOuvres, joursCalendaires: joursCalendaires, nbJours: nb_jours,
     ikJour: ikJour, ttJour: ttJour, repasJour: repasJour, transportJour: transportJour,
+    // Indemnités journalières affichées uniquement si > 0 (libellé, montant/jour)
+    // [libellé, montant, unité] — le repas est UNE catégorie selon le mode choisi (Swile / forfait / grand déplacement)
+    indemnites: [
+      [(bd.repas_mode === 'Swile') ? 'Titre restaurant (Swile)' : (bd.repas_mode === 'Forfait') ? 'Forfait repas' : (bd.repas_mode === 'GD') ? 'Grand déplacement' : 'Repas', repasJour, '/ jour'],
+      ['Kilométrique', ikJour, '/ jour'],
+      ['Télétravail', ttJour, '/ jour'],
+      ['Téléphone / internet', telnetJour, '/ jour'],
+      ['Transport (75 %)', bd.frais_transport || 0, '/ mois'],
+      ['Matériel professionnel', bd.frais_materiel || 0, '/ mois'],
+      ['Formation', bd.frais_formation || 0, '/ mois']
+    ].filter(function (x) { return x[1] > 0.01; }),
     rows: rows,
     totalFrais: bd.TOTAL_FRAIS, netAvantImpot: bd.net_avant_impot, netApresImpot: bd.net_apres_impot,
     netAPayer: bd.net_apres_impot + bd.TOTAL_FRAIS,
@@ -4823,15 +4833,10 @@ function buildBulletinPaieHTML(data) {
     + '<div class="kv"><span>Mutuelle</span><span>' + (_bpEsc(m.mutuelle) || dash) + '</span></div>'
     + '<div class="kv"><span>Lieu de mission</span><span>' + (_bpEsc(m.entreprise) || dash) + '</span></div></div>'
     + '<div class="card"><h3>Temps de travail</h3>'
-    + '<div class="kv"><span>Jours ouvrés</span><span>' + m.joursOuvres + '</span></div>'
-    + '<div class="kv"><span>Jours calendaires</span><span>' + m.joursCalendaires + '</span></div>'
-    + '<div class="kv"><span>Jours facturés</span><span>' + _bpFmt(m.nbJours, 0) + '</span></div>'
-    + '<div class="kv"><span>Absences cumulées</span><span>0</span></div></div>'
-    + '<div class="card"><h3>Indemnités / jour</h3>'
-    + '<div class="kv"><span>Kilométrique</span><span>' + (m.ikJour > 0.01 ? eur(m.ikJour) : dash) + '</span></div>'
-    + '<div class="kv"><span>Télétravail</span><span>' + (m.ttJour > 0.01 ? eur(m.ttJour) : dash) + '</span></div>'
-    + '<div class="kv"><span>Repas / grand dépl.</span><span>' + (m.repasJour > 0.01 ? eur(m.repasJour) : dash) + '</span></div>'
-    + '<div class="kv"><span>Transport</span><span>' + (m.transportJour > 0.01 ? eur(m.transportJour) : dash) + '</span></div></div>'
+    + '<div class="kv"><span>Jours de la simulation</span><span>' + _bpFmt(m.nbJours, 0) + '</span></div></div>'
+    + '<div class="card"><h3>Frais &amp; indemnités</h3>'
+    + (m.indemnites.length ? m.indemnites.map(function (i) { return '<div class="kv"><span>' + _bpEsc(i[0]) + '</span><span>' + eur(i[1]) + ' <span style="font-weight:400;color:#9E94C4;font-size:9px;">' + i[2] + '</span></span></div>'; }).join('') : '<div class="kv"><span>Aucune indemnité</span><span>' + dash + '</span></div>')
+    + '</div>'
     + '</div>'
     + '<table><thead><tr><th class="lib" rowspan="2">Libellé</th><th rowspan="2">Base</th><th colspan="2">Employeur</th><th colspan="2">Salarié</th><th rowspan="2">Sous-total</th></tr>'
     + '<tr class="sub"><th>Taux</th><th>Montant</th><th>Taux</th><th>Montant</th></tr></thead><tbody>' + tr + '</tbody></table>'
@@ -4884,10 +4889,13 @@ function _bulletinJsPDF(m) {
   var dash = '—';
   var cards = [
     { t: 'SALARIÉ', n: m.consultant, kv: [['Email', m.email || dash], ['Emploi', m.poste || dash], ['Mutuelle', m.mutuelle || dash], ['Lieu de mission', m.entreprise || dash]] },
-    { t: 'TEMPS DE TRAVAIL', kv: [['Jours ouvrés', String(m.joursOuvres)], ['Jours calendaires', String(m.joursCalendaires)], ['Jours facturés', clean(_bpFmt(m.nbJours, 0))], ['Absences cumulées', '0']] },
-    { t: 'INDEMNITÉS / JOUR', kv: [['Kilométrique', m.ikJour > 0.01 ? eur(m.ikJour) : dash], ['Télétravail', m.ttJour > 0.01 ? eur(m.ttJour) : dash], ['Repas / grand dépl.', m.repasJour > 0.01 ? eur(m.repasJour) : dash], ['Transport', m.transportJour > 0.01 ? eur(m.transportJour) : dash]] }
+    { t: 'TEMPS DE TRAVAIL', kv: [['Jours de la simulation', clean(_bpFmt(m.nbJours, 0))]] },
+    { t: 'FRAIS & INDEMNITÉS', kv: (m.indemnites.length ? m.indemnites.map(function (i) { return [i[0], eur(i[1]) + ' ' + i[2]]; }) : [['Aucune indemnité', dash]]) }
   ];
-  var gap = 3, cw = [(CW - 2 * gap) * 0.385, (CW - 2 * gap) * 0.3075, (CW - 2 * gap) * 0.3075], ch = 30, cx = ML;
+  var gap = 3, cw = [(CW - 2 * gap) * 0.385, (CW - 2 * gap) * 0.3075, (CW - 2 * gap) * 0.3075], cx = ML;
+  // Hauteur des cartes = celle de la plus remplie (titre + nom + lignes)
+  var maxKv = Math.max.apply(null, cards.map(function (c) { return c.kv.length + (c.n ? 1.2 : 0); }));
+  var ch = Math.max(30, 9.5 + maxKv * 3.9 + 3);
   cards.forEach(function (c, i) {
     rr(cx, y, cw[i], ch, 2.5, [251, 250, 255], BORD);
     F('bold', 6.5, VIOLET); doc.text(c.t, cx + 4, y + 5.2, { charSpace: 0.4 });
@@ -39596,8 +39604,8 @@ function exportCommHistCSV() {
         <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
           <input type="checkbox" id="envoi-bulletin-paie" style="width:17px;height:17px;cursor:pointer;accent-color:#7343EE;flex-shrink:0;">
           <div style="flex:1;">
-            <div style="font-weight:700;color:#4B36EC;">📋 Aussi imprimer le bulletin de paie (.pdf séparé)</div>
-            <div style="font-size:11px;color:#6B5E9C;margin-top:2px;">Une fenêtre d'impression s'ouvrira — choisissez "Enregistrer en PDF" puis glissez-déposez le PDF dans votre mail Outlook</div>
+            <div style="font-weight:700;color:#4B36EC;">📎 Ajouter le bulletin de paie au mail</div>
+            <div style="font-size:11px;color:#6B5E9C;margin-top:2px;">Le bulletin PDF est joint automatiquement au mail Outlook</div>
           </div>
         </label>
         <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #D9CFFA;text-align:right;">
