@@ -15854,6 +15854,9 @@ function getProlongationDeals() {
   return deals.filter(function(d) {
     if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs' || d.etat === 'Fin de mission') return false;
     if (d.stand_by === true) return false; // stand by : pas (encore) un deal actif → pas de relance prolongation
+    // FIX 29/09/2026 : deal d'origine d'une continuité (avenant nouveau client) — sa date_fin est la veille
+    // du démarrage chez le nouveau client, ce n'est pas une fin de mission à relancer.
+    if (d.prolonge_par != null) return false;
     if (!d.date_fin) return false;
     var df = new Date(d.date_fin);
     if (isNaN(df.getTime())) return false;
@@ -16799,7 +16802,7 @@ function getPortesActifsForMois(moisStr) {
   lastDay.setHours(23, 59, 59, 999);
 
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
-  return deals.filter(function(d) {
+  var actifs = deals.filter(function(d) {
     if (d.etat !== 'En cours' && d.etat !== 'Signé') return false;
     if (!d.date_entree) return false;
     var de = new Date(d.date_entree);
@@ -16810,6 +16813,11 @@ function getPortesActifsForMois(moisStr) {
     }
     return true;
   });
+  // FIX 29/09/2026 : le mois d'un avenant « Nouveau client », l'origine (fin à la veille) et la
+  // continuité (début le jour même) sont toutes deux actives → le porté comptait deux fois.
+  // On ne garde que la continuité quand elle est active ce mois-là.
+  var _ids = {}; actifs.forEach(function(d){ _ids[String(d.id)] = 1; });
+  return actifs.filter(function(d){ return !(d.prolonge_par != null && _ids[String(d.prolonge_par)]); });
 }
 
 // ── Vue Avantages Sociaux ──
@@ -18783,7 +18791,9 @@ function backfillAvenants() {
   var hist  = (typeof getHistory === 'function') ? getHistory() : [];
   var filledCount = 0, touched = 0;
   avs.forEach(function(a){
-    var deal = deals.find(function(d){ return d.id == a.deal_id; });
+    var deal = (a.mode === 'nouveau_client')
+      ? (deals.find(function(d){ return d && d.prolongation_avenant && String(d.prolongation_avenant.avenant_id) === String(a.id); }) || null)   // continuité, jamais l'ancien client
+      : deals.find(function(d){ return d.id == a.deal_id; });
     var sim  = a.sim_ts ? hist.find(function(s){ return s.timestamp === a.sim_ts; }) : null;
     var before = JSON.stringify(a);
     var fill = function(field, val){
@@ -19308,7 +19318,12 @@ function buildAvenantsContent() {
     + '</tr></thead><tbody>';
 
   var _avDealById = {};
-  try { getDeals().forEach(function(d){ if (d && d.id != null) _avDealById[d.id] = d; }); } catch(_e){}
+  var _avContByAvId = {};   // avenant « Nouveau client » → deal de CONTINUITÉ (celui du nouveau client)
+  try { getDeals().forEach(function(d){
+    if (!d || d.id == null) return;
+    _avDealById[d.id] = d;
+    if (d.prolongation_avenant && d.prolongation_avenant.avenant_id != null) _avContByAvId[String(d.prolongation_avenant.avenant_id)] = d;
+  }); } catch(_e){}
   var _avSimByTs = {};
   try { getHistory().forEach(function(s){ if (s && s.timestamp != null) _avSimByTs[String(s.timestamp)] = s; }); } catch(_e){}
   var _avClientByName = {};
@@ -19413,7 +19428,10 @@ function buildAvenantsContent() {
       return formatted;
     }
     var nomComplet = ((a.prenom_porte||'') + ' ' + _NOMUC(a.nom_porte)).trim() || '—';
-    var _fd = _avDealById[a.deal_id] || null;
+    // FIX 29/09/2026 — un avenant « Nouveau client » stocke deal_id = deal d'ORIGINE (ancien client).
+    // Ses colonnes Signataire / Comptable / Banque / Délai / Lieu / FG doivent venir du deal de
+    // CONTINUITÉ (nouveau client), sinon de la fiche du nouveau client — jamais de l'ancien deal.
+    var _fd = (a.mode === 'nouveau_client') ? (_avContByAvId[String(a.id)] || null) : (_avDealById[a.deal_id] || null);
     var _fs = _avSimByTs[String((a.sim_ts != null && a.sim_ts !== '') ? a.sim_ts : ((_fd && _fd.sim_ts) || ''))] || null;
     var _fc = _avClientByName[String(a.client||'').trim().toLowerCase()] || null;
     // ADV en charge du dossier : Clémence (A-H) / Marie (I-Z) selon le nom du porté (règle config-aware)
