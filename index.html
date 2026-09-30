@@ -1830,6 +1830,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
             <option value="12">Décembre</option>
           </optgroup>
         </select>
+        <select id="hist-select-year" onchange="setHistYearSelect(this.value)" title="Année"
+          style="padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;color:#1A1033;background:#fff;cursor:pointer;outline:none;min-width:110px;">
+          <option value="all">Toutes années</option>
+        </select>
         <select id="hist-select-dest" onchange="setHistFilterDestSelect(this.value)"
           style="padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;color:#1A1033;background:#fff;cursor:pointer;outline:none;min-width:130px;">
           <option value="__all__">Tous destinataires</option>
@@ -5352,17 +5356,19 @@ function toggleHistDet(id, btn) {
 }
 
 var histPeriod = 'month'; // ce mois par défaut
+var histYear = String(new Date().getFullYear()); // filtre année de l'Historique ('all' = toutes) — ajouté le 30/09/2026
+function _histYearOk(d) { return histYear === 'all' || String(d.getFullYear()) === String(histYear); }
 
 function filterByPeriod(all, period) {
-  if (period === 'all') return all;
+  if (period === 'all') return all.filter(function(s){ return !s || !s.timestamp ? histYear === 'all' : _histYearOk(new Date(s.timestamp)); });
   var now = new Date();
-  // Par mois numéroté
+  // Par mois numéroté (+ année sélectionnée)
   var monthNum = parseInt(period);
   if (!isNaN(monthNum)) {
     return all.filter(function(s) {
       if (!s.timestamp) return false;
       var d = new Date(s.timestamp);
-      return d.getMonth() + 1 === monthNum;
+      return d.getMonth() + 1 === monthNum && _histYearOk(d);
     });
   }
   // Cette semaine (lundi au dimanche courant)
@@ -5403,7 +5409,8 @@ function _dashGo(kind) {
   setTimeout(function(){
     try {
       if (kind === 'placements') {
-        dealFilterComm = comm; dealFilterMonthDeal = ym; dealFilterMonthEntree = ''; dealFilterEtat = '__all__';
+        dealFilterComm = comm; dealFilterMonthDeal = ym; dealFilterMonthEntree = ''; dealFilterEtat = '__all__'; dealHideAnnules = true;
+        var _hc = document.getElementById('deal-hide-annules'); if (_hc) _hc.checked = true;
         if (typeof showRHSection === 'function') showRHSection('deals');
         setSel('deal-filter-comm', comm); setSel('deal-filter-month-deal', ym); setSel('deal-filter-month-entree', '');
         if (typeof renderDeals === 'function') renderDeals();
@@ -5412,31 +5419,59 @@ function _dashGo(kind) {
         entreesFilters.commercial = (comm === '__all__') ? '' : comm;
         if (typeof showRHSection === 'function') showRHSection('entrees');
         if (typeof renderEntrees === 'function') renderEntrees();
-      } else if (kind === 'sortants') {
-        window._sortantsFilter = window._sortantsFilter || {};
-        Object.assign(window._sortantsFilter, { commercial: comm, year: y, month: mm, cdi_year: '__all__', cdi_month: '__all__' });
+      } else if (kind === 'sortants' || kind === 'fin_mission') {
+        // Filtres par défaut complets (un objet vide masquait TOUTES les fiches : raison/type/… undefined ≠ '__all__')
+        var _sfDef = { commercial: '__all__', raison: '__all__', type: '__all__', fin_contrat: '__all__', year: '__all__', month: '__all__', cdi_year: '__all__', cdi_month: '__all__', search: '' };
+        window._sortantsFilter = Object.assign(_sfDef, window._sortantsFilter || {});
+        window._sortantsFilter.raison = '__all__'; window._sortantsFilter.type = '__all__'; window._sortantsFilter.search = '';
+        var _sn = {}; (typeof getSortants === 'function' ? getSortants() : []).forEach(function(s){ if (s && s.commercial) _sn[s.commercial] = 1; });
+        if (kind === 'sortants') {
+          // Sortants = fins de CONTRAT de la période (filtre « fin de contrat » de l'onglet)
+          Object.assign(window._sortantsFilter, { commercial: _commMatchIn(Object.keys(_sn), comm), fin_contrat: 'Oui', year: '__all__', month: '__all__', cdi_year: y, cdi_month: mm });
+        } else {
+          // Fins de mission sans fin de contrat (filtre « fin de mission » de l'onglet)
+          Object.assign(window._sortantsFilter, { commercial: _commMatchIn(Object.keys(_sn), comm), fin_contrat: 'Non', year: y, month: mm, cdi_year: '__all__', cdi_month: '__all__' });
+        }
         if (typeof showRHSection === 'function') showRHSection('sortants');
         if (typeof renderSortants === 'function') renderSortants();
+      } else if (kind === 'chgt_client') {
+        // Changements de client = avenants « Nouveau client » créés dans la période (date de l'avenant)
+        var _an2 = {}; (typeof getAvenants === 'function' ? getAvenants() : []).forEach(function(a){ if (a && a.commercial) _an2[a.commercial] = 1; });
+        AVENANTS_FILTER.statut = 'all'; AVENANTS_FILTER.nature = 'nouveau_client'; AVENANTS_FILTER.search = '';
+        AVENANTS_FILTER.commercial = (comm === '__all__') ? 'all' : _commMatchIn(Object.keys(_an2), comm);
+        AVENANTS_FILTER.month = (m === '__all__') ? 'all' : (parseInt(m, 10) - 1); AVENANTS_FILTER.year = (y === '__all__') ? new Date().getFullYear() : parseInt(y, 10);
+        if (typeof showRHSection === 'function') showRHSection('avenants');
+        if (typeof renderAvenants === 'function') renderAvenants();
       } else if (kind === 'avenants') {
         // « À traiter » est un état instantané : on ne filtre pas sur la période
-        AVENANTS_FILTER.statut = 'a_traiter'; AVENANTS_FILTER.commercial = (comm === '__all__') ? 'all' : comm;
-        AVENANTS_FILTER.month = 'all'; AVENANTS_FILTER.search = '';
+        var _an = {}; (typeof getAvenants === 'function' ? getAvenants() : []).forEach(function(a){ if (a && a.commercial) _an[a.commercial] = 1; });
+        AVENANTS_FILTER.statut = 'a_traiter'; AVENANTS_FILTER.commercial = (comm === '__all__') ? 'all' : _commMatchIn(Object.keys(_an), comm);
+        AVENANTS_FILTER.month = 'all'; AVENANTS_FILTER.search = ''; AVENANTS_FILTER.nature = 'all';
         if (typeof showRHSection === 'function') showRHSection('avenants');
         if (typeof renderAvenants === 'function') renderAvenants();
       } else if (kind === 'portes') {
-        setSel('cand-filter-statut', 'Porté'); setSel('cand-filter-commercial', comm === '__all__' ? '' : comm);
+        setSel('cand-filter-statut', 'Porté'); _dashSetCandComm(comm);
         if (typeof renderCandidats === 'function') renderCandidats();
       }
     } catch(e) { console.warn('[dashboard → liste]', e); }
   }, 150);
 }
 
+// Positionne le filtre commercial de l'onglet Candidats sur le commercial du Dashboard (libellé de l'onglet)
+function _dashSetCandComm(comm) {
+  var el = document.getElementById('cand-filter-commercial'); if (!el) return;
+  if (!comm || comm === '__all__') { el.value = ''; return; }
+  if (typeof renderCandidats === 'function') { try { renderCandidats(); } catch(e){} }   // (re)construit la liste des options
+  var opts = Array.prototype.slice.call(el.options).map(function(o){ return o.value; }).filter(function(v){ return v && v !== '__mine__'; });
+  el.value = _commMatchIn(opts, comm);
+}
 function _dashGoToCandidats(statut) {
   if (typeof mainNavTo === 'function') mainNavTo('candidats');
   setTimeout(function(){
     var sel = document.getElementById('cand-filter-statut');
     if (sel) {
       sel.value = statut || '';
+      _dashSetCandComm(dashFilters.commercial);
       if (typeof renderCandidats === 'function') renderCandidats();
     }
   }, 150);
@@ -5445,7 +5480,7 @@ function _dashGoToCandidats(statut) {
 // Match d'une date (string deal) sur la période active de l'Historique (histPeriod).
 // Réplique la logique de filterByPeriod mais pour une date isolée (ex: date_deal).
 function _histMatchPeriod(dateStr) {
-  if (histPeriod === 'all') return true;
+  if (histPeriod === 'all' && histYear === 'all') return true;
   if (!dateStr) return false;
   var d;
   if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) { d = new Date(dateStr); }
@@ -5453,8 +5488,9 @@ function _histMatchPeriod(dateStr) {
   else { d = new Date(dateStr); }
   if (isNaN(d.getTime())) return false;
   var now = new Date();
+  if (histPeriod === 'all') return _histYearOk(d);
   var monthNum = parseInt(histPeriod);
-  if (!isNaN(monthNum)) return (d.getMonth() + 1) === monthNum;
+  if (!isNaN(monthNum)) return (d.getMonth() + 1) === monthNum && _histYearOk(d);
   if (histPeriod === 'week') {
     var day = now.getDay() || 7;
     var monday = new Date(now); monday.setHours(0,0,0,0); monday.setDate(now.getDate() - day + 1);
@@ -5494,7 +5530,7 @@ function buildDashboard(all) {
   // Placements = deals non annulés, filtrés sur la même période + le même commercial
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
   var placements = deals.filter(function(d) {
-    if (!d || d.etat === 'Annulé') return false;
+    if (!d || d.etat === 'Annulé' || d._deleted || d.prolongation_avenant) return false;   // même base que le tableau des deals
     if (typeof histFilterCommercial !== 'undefined' && histFilterCommercial && histFilterCommercial !== '__all__' && (d.commercial || '') !== histFilterCommercial) return false;
     return _histMatchPeriod(d.date_deal);
   });
@@ -5538,6 +5574,7 @@ function showHistorique() {
   var pr = document.querySelector('.panel-right'); if (pr) pr.style.display = 'none';
   var app = document.querySelector('.app'); if (app) app.style.gridTemplateColumns = '1fr';
 
+  _histBuildYearSelect();
   renderHistorique();
   var selM = document.getElementById('hist-select-period');
   if (selM) selM.value = 'month';
@@ -5582,12 +5619,15 @@ function renderDashboardPage() {
   var tab = document.getElementById('tab-dashboard');
   if (!tab) return;
 
-  var allCommercials = {};
+  // Liste des commerciaux DÉ-DOUBLONNÉE par prénom (libellé le plus complet), comme l'onglet Candidats
+  var commVariants = {};
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
   var history = (typeof getHistory === 'function') ? getHistory() : [];
-  deals.forEach(function(d){ if (d.commercial) allCommercials[d.commercial] = 1; });
-  history.forEach(function(s){ if (s.commercial) allCommercials[s.commercial] = 1; });
-  var commNames = Object.keys(allCommercials).sort();
+  function _collectDashComm(name){ if (!name) return; var clean = String(name).trim().replace(/\s+/g,' '); if (!clean) return; var key = clean.toLowerCase().split(' ')[0]; if (!commVariants[key] || clean.length > commVariants[key].length) commVariants[key] = clean; }
+  deals.forEach(function(d){ if (d && !d._deleted) _collectDashComm(d.commercial); });
+  history.forEach(function(s){ if (s) _collectDashComm(s.commercial); });
+  var commNames = Object.keys(commVariants).sort().map(function(k){ return commVariants[k]; });
+  if (dashFilters.commercial !== '__all__') dashFilters.commercial = _commMatchIn(commNames, dashFilters.commercial);
 
   var monthLabels = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
   var monthOptions = '<option value="__all__">Toute l\'année</option>'
@@ -5667,7 +5707,20 @@ function _dashMatchPeriod(dateStr) {
 
 function _dashMatchCommercial(item) {
   if (dashFilters.commercial === '__all__') return true;
-  return (item.commercial || '') === dashFilters.commercial;
+  // ALIGNEMENT (30/09/2026) : même comparaison tolérante que l'onglet Candidats et le tableau des deals
+  // (« David » = « David Harroch »), au lieu d'une égalité stricte qui laissait des deals de côté.
+  return _dashSameComm(item && item.commercial);
+}
+function _dashSameComm(name) {
+  if (dashFilters.commercial === '__all__') return true;
+  return (typeof _sameCommercial === 'function') ? _sameCommercial(name, dashFilters.commercial)
+       : ((name || '').trim().toLowerCase() === (dashFilters.commercial || '').trim().toLowerCase());
+}
+// Dans une liste de libellés de commerciaux, retrouve celui qui correspond à « name » (tolérant), sinon name.
+function _commMatchIn(list, name) {
+  if (!name || name === '__all__') return name;
+  for (var i = 0; i < (list || []).length; i++) { if (typeof _sameCommercial === 'function' && _sameCommercial(list[i], name)) return list[i]; }
+  return name;
 }
 
 // Helper : rafraîchit les KPIs du dashboard SI il est affiché.
@@ -5690,31 +5743,58 @@ function renderDashboardKPIs() {
   var sortants = (typeof getSortants === 'function') ? getSortants() : [];
   var candidats = (typeof getCandidats === 'function') ? getCandidats() : [];
 
-  var placements = deals.filter(function(d) {
+  // ALIGNEMENT (30/09/2026) : même base que le tableau des deals (Suivi RH) — on ignore les deals
+  // supprimés (tombstone) et les lignes de continuité de contrat (avenant « nouveau client » :
+  // même personne, pas un nouveau placement ni une nouvelle entrée).
+  var _dashBase = deals.filter(function(d) { return d && !d._deleted && !d.prolongation_avenant; });
+  var placements = _dashBase.filter(function(d) {
     return d.etat !== 'Annulé' && !d.stand_by && _dashMatchCommercial(d) && _dashMatchPeriod(d.date_deal);
   });
-  var nbPlacements = placements.length;
+  // Changements de client (avenant « nouveau client ») : décision du 30/09/2026 — ils COMPTENT comme
+  // placements du mois (date deal = date de l'avenant), et sont aussi affichés à part.
+  var chgtClient = deals.filter(function(d) {
+    return d && !d._deleted && d.prolongation_avenant && d.etat !== 'Annulé' && !d.stand_by && _dashMatchCommercial(d) && _dashMatchPeriod(d.date_deal);
+  });
+  var nbChgtClient = chgtClient.length;
+  var nbPlacements = placements.length + nbChgtClient;
+  var placementsTous = placements.concat(chgtClient);   // pour TJM / frais moyens
 
-  var starters = deals.filter(function(d) {
+  var starters = _dashBase.filter(function(d) {
     return d.etat !== 'Annulé' && !d.stand_by && _dashMatchCommercial(d) && _dashMatchPeriod(d.date_entree);
   });
   var nbStarters = starters.length;
 
-  var nbSortants = sortants.filter(function(s) {
-    if (dashFilters.commercial !== '__all__' && (s.commercial || '') !== dashFilters.commercial) return false;
-    return _dashMatchPeriod(s.date_sortie);
-  }).length;
+  // CORRECTIF (30/09/2026) : la fiche sortant porte « fin_mission » et « raison » (pas date_sortie / raison_sortie),
+  // le compteur restait donc toujours à 0 et le graphique « Raisons de sortie » vide.
+  // Règle = celle de l'onglet Sortants (filtre mois sur la fin de mission), que le clic ouvre avec la même période.
+  // Décision du 30/09/2026 : « Sortants » = FINS DE CONTRAT DE TRAVAIL du mois (date de fin de contrat),
+  // tous types confondus ; indicateur séparé pour les fins de mission SANS fin de contrat (le porté reste chez Seven).
+  var sortantsContrat = sortants.filter(function(s) {
+    if (!s || s._deleted) return false;
+    if (!_dashSameComm(s.commercial)) return false;
+    if (s.fin_contrat_travail !== 'Oui') return false;
+    return _dashMatchPeriod(s.date_fin_contrat || s.fin_mission || s.date_sortie);
+  });
+  var sortantsMission = sortants.filter(function(s) {
+    if (!s || s._deleted) return false;
+    if (!_dashSameComm(s.commercial)) return false;
+    if (s.fin_contrat_travail === 'Oui') return false;
+    return _dashMatchPeriod(s.fin_mission || s.date_sortie);
+  });
+  var sortantsFiltered = sortantsContrat.concat(sortantsMission);   // pour le graphique « Raisons de sortie »
+  var nbSortants = sortantsContrat.length, nbFinMission = sortantsMission.length;
 
   // Avenants à traiter (instant T) — non finalisés = au moins une signature ou Modif LAYA manquante
   var avenantsAll = (typeof getAvenants === 'function') ? getAvenants() : [];
   var avenantsATraiter = avenantsAll.filter(function(a){
-    if (dashFilters.commercial !== '__all__' && (a.commercial || '') !== dashFilters.commercial) return false;
+    if (!a || a._deleted) return false;
+    if (!_dashSameComm(a.commercial)) return false;
     return !_avIsFinalise(a);
   });
   var nbAvenantsATraiter = avenantsATraiter.length;
 
   var simsFiltered = simulations.filter(function(s) {
-    if (dashFilters.commercial !== '__all__' && (s.commercial || '') !== dashFilters.commercial) return false;
+    if (!s || !_dashSameComm(s.commercial)) return false;
     return _dashMatchPeriod(s.date);
   });
   var nbSimulations = simsFiltered.length;
@@ -5724,10 +5804,24 @@ function renderDashboardKPIs() {
   // Portés actifs — ALIGNÉ sur l'onglet Candidats (computeCandStatutAuto) :
   // un deal/candidat est "Porté" tant que l'état est Signé / En cours / Nouveau placement.
   // On n'exclut PAS sur date_entree/date_fin (missions souvent renouvelées sans MAJ de la date de fin).
+  var _idsAll = {}; deals.forEach(function(d){ if (d && d.id != null) _idsAll[String(d.id)] = 1; });
+  // Fiches sortant par deal : même règle que le statut candidat (computeCandStatutAuto) — une fiche sortant
+  // fait foi même si l'état du deal n'a pas suivi ; la sortie n'est effective qu'à sa date.
+  var _dashSortByDeal = {}; sortants.forEach(function(s){ if (s && !s._deleted && s.deal_id != null) _dashSortByDeal[String(s.deal_id)] = s; });
+  var _dashDateOk = function(v){ if (!v) return null; var x = new Date(v); return isNaN(x.getTime()) ? null : x; };
+  var _dashToday = new Date(); _dashToday.setHours(23, 59, 59, 999);
   var portesActifs = deals.filter(function(d) {
+    if (!d || d._deleted) return false;
     if (!_dashMatchCommercial(d)) return false;
     if (d.stand_by === true) return false; // un placement en stand by n'est pas un deal actif
-    return d.etat === 'En cours' || d.etat === 'Signé' || d.etat === 'Nouveau placement';
+    if (d.prolonge_par != null && _idsAll[String(d.prolonge_par)]) return false; // deal d'origine continué chez un nouveau client : c'est la continuité qui compte (client, GD, étranger)
+    if (d.etat === 'Sorti des effectifs') { var _dso = _dashDateOk(d.date_sortie); return !!(_dso && _dso > _dashToday); }   // sortie planifiée dans le futur = encore porté
+    if (!(d.etat === 'En cours' || d.etat === 'Signé' || d.etat === 'Nouveau placement')) return false;
+    var _so = _dashSortByDeal[String(d.id)];
+    if (!_so) return true;
+    var _dfc = _dashDateOk(_so.date_fin_contrat), _dfm = _dashDateOk(_so.date_fin_mission || _so.fin_mission);
+    if (_so.fin_contrat_travail === 'Oui') { var _ds = _dfc || _dfm; return !!(_ds && _ds > _dashToday); }
+    return !!(_dfm && _dfm > _dashToday);   // fin de mission sans fin de contrat : porté sans mission, plus « actif » chez ce client
   });
   // Une continuité de contrat concerne la MÊME personne que son deal d'origine : dédoublonnage par e-mail
   (function(){ var seen = {}; portesActifs = portesActifs.filter(function(d){ var k = (d.email_candidat_reel || d.email || '').trim().toLowerCase() || ('id:' + d.id); if (seen[k]) return false; seen[k] = 1; return true; }); })();
@@ -5749,13 +5843,13 @@ function renderDashboardKPIs() {
     }).length;
   } catch(e) { nbPortesActifs = portesActifs.length; }
 
-  var tjmValues = placements.map(function(d){ return parseFloat(d.tjm) || 0; }).filter(function(v){ return v > 0; });
+  var tjmValues = placementsTous.map(function(d){ return parseFloat(d.tjm) || 0; }).filter(function(v){ return v > 0; });
   var avgTjm = tjmValues.length ? Math.round(tjmValues.reduce(function(a,b){ return a+b; }, 0) / tjmValues.length) : 0;
 
-  var fraisPct = placements.map(function(d){ return parseFloat(d.frais_gestion) || 0; }).filter(function(v){ return v > 0; });
+  var fraisPct = placementsTous.map(function(d){ return parseFloat(d.frais_gestion) || 0; }).filter(function(v){ return v > 0; });
   var avgFraisPct = fraisPct.length ? (fraisPct.reduce(function(a,b){ return a+b; }, 0) / fraisPct.length).toFixed(1) : null;
 
-  var fraisEuros = placements.map(function(d) {
+  var fraisEuros = placementsTous.map(function(d) {
     var tjm = parseFloat(d.tjm) || 0;
     var marge = parseFloat(d.frais_gestion) || 0;
     var nbJ = parseFloat(d.nb_jours) || 21;
@@ -5783,7 +5877,7 @@ function renderDashboardKPIs() {
   var avgDaysSimToDeal = daysSimToDeal.length ? Math.round(daysSimToDeal.reduce(function(a,b){ return a+b; }, 0) / daysSimToDeal.length) : null;
 
   var daysDealToSig = [];
-  deals.forEach(function(d) {
+  _dashBase.forEach(function(d) {
     if (!_dashMatchCommercial(d)) return;
     if (d.etat !== 'Signé' || !d.date_deal || !d.date_signature) return;
     if (!_dashMatchPeriod(d.date_deal)) return;
@@ -5809,13 +5903,9 @@ function renderDashboardKPIs() {
   var originEntries = Object.entries(originCount).sort(function(a,b){ return b[1]-a[1]; });
   var originTotal = originEntries.reduce(function(acc, e){ return acc + e[1]; }, 0);
 
-  var sortantsFiltered = sortants.filter(function(s) {
-    if (dashFilters.commercial !== '__all__' && (s.commercial || '') !== dashFilters.commercial) return false;
-    return _dashMatchPeriod(s.date_sortie);
-  });
   var raisonCount = {};
   sortantsFiltered.forEach(function(s){
-    var r = s.raison_sortie || 'Non renseignée';
+    var r = s.raison || s.raison_sortie || 'Non renseignée';
     raisonCount[r] = (raisonCount[r] || 0) + 1;
   });
   var raisonEntries = Object.entries(raisonCount).sort(function(a,b){ return b[1]-a[1]; });
@@ -5824,10 +5914,10 @@ function renderDashboardKPIs() {
   var nbSansMission = 0, nbPerdus = 0, nbProspectsChauds = 0;
   if (typeof computeCandStatutAuto === 'function') {
     candidats.forEach(function(c) {
-      if (dashFilters.commercial !== '__all__') {
-        var lastSim = (c.simulations || [])[0];
-        if (!lastSim || (lastSim.commercial || '') !== dashFilters.commercial) return;
-      }
+      if (!c || c._deleted) return;
+      // ALIGNEMENT : un candidat appartient au commercial de SA FICHE (règle de l'onglet Candidats),
+      // plus au commercial de sa dernière simulation.
+      if (!_dashSameComm(c.commercial)) return;
       var statut;
       try { statut = computeCandStatutAuto(c); } catch(e) { statut = c.statut_portage || ''; }
       if (statut === 'Porté sans mission') nbSansMission++;
@@ -5910,7 +6000,7 @@ function renderDashboardKPIs() {
     var periodKeys = _expandPeriodKeys();
     // Indexer les deals par id pour accès rapide
     var dealById = {};
-    deals.forEach(function(d){ if (d && d.id != null) dealById[String(d.id)] = d; });
+    deals.forEach(function(d){ if (d && d.id != null && !d._deleted) dealById[String(d.id)] = d; });
     // Itérer sur jours prestés
     Object.keys(jp).forEach(function(dealId){
       var deal = dealById[String(dealId)];
@@ -5945,10 +6035,12 @@ function renderDashboardKPIs() {
     + '</div>'
 
     + '<div class="dash-section-title">📊 Volumes du mois</div>'
-    + '<div class="dash-grid cols-4">'
-    +   kpi('kpi-violet', '📋', nbPlacements, '', 'Placements', 'créés dans la période', '_dashGo(\'placements\');')
+    + '<div class="dash-grid cols-3">'
+    +   kpi('kpi-violet', '📋', nbPlacements, '', 'Placements', 'créés dans la période' + (nbChgtClient ? ' · dont ' + nbChgtClient + ' changement' + (nbChgtClient > 1 ? 's' : '') + ' de client' : ''), '_dashGo(\'placements\');')
+    +   kpi('kpi-purple', '🔁', nbChgtClient, '', 'Changements de client', 'avenants « nouveau client » de la période', '_dashGo(\'chgt_client\');')
     +   kpi('kpi-green',  '🚀', nbStarters,   '', 'Starters',   'entrées effectives', '_dashGo(\'starters\');')
-    +   kpi('kpi-red',    '🚪', nbSortants,   '', 'Sortants',   'sorties enregistrées', '_dashGo(\'sortants\');')
+    +   kpi('kpi-red',    '🚪', nbSortants,   '', 'Sortants',   'fins de contrat de travail (tous types)', '_dashGo(\'sortants\');')
+    +   kpi('kpi-orange', '⏸', nbFinMission, '', 'Fins de mission sans sortie', 'mission terminée, porté toujours chez Seven', '_dashGo(\'fin_mission\');')
     +   kpi('kpi-gold',   '📈', nbSimulations,'', 'Simulations','créées dans la période', 'mainNavTo(\'historique\');')
     + '</div>'
 
@@ -5970,7 +6062,7 @@ function renderDashboardKPIs() {
     + '<div class="dash-section-title">💰 Financier &amp; production</div>'
     + '<div class="dash-grid cols-3">'
     +   kpi('kpi-violet', '💶', avgTjm ? avgTjm.toLocaleString('fr-FR') : '—',  avgTjm ? '€' : '',    'TJM moyen',             'sur placements période')
-    +   kpi('kpi-blue',   '📊', avgFraisPct === null ? '—' : avgFraisPct,       avgFraisPct === null ? '' : '%', 'Frais de gestion',      'moyenne pondérée')
+    +   kpi('kpi-blue',   '📊', avgFraisPct === null ? '—' : avgFraisPct,       avgFraisPct === null ? '' : '%', 'Frais de gestion',      'moyenne des placements période')
     +   kpi('kpi-green',  '💰', fmtEur(avgFraisEuros),                          avgFraisEuros ? '€' : '',        'Frais de gestion moyens', 'TJM × marge × jours (par placement)')
     + '</div>'
     + '<div class="dash-grid cols-2" style="margin-top:10px;">'
@@ -6002,6 +6094,20 @@ function renderDashboardKPIs() {
   zone.innerHTML = ui;
 }
 
+function setHistYearSelect(val) {
+  histYear = val;
+  buildDashboard(getHistory());
+  renderHistorique();
+}
+function _histBuildYearSelect() {
+  var sel = document.getElementById('hist-select-year'); if (!sel) return;
+  var years = {}; years[String(new Date().getFullYear())] = 1;
+  try { (getHistory() || []).forEach(function(s){ if (s && s.timestamp) years[String(new Date(s.timestamp).getFullYear())] = 1; }); } catch(e){}
+  var html = '<option value="all">Toutes ann\u00e9es</option>';
+  Object.keys(years).sort().reverse().forEach(function(y){ html += '<option value="' + y + '">' + y + '</option>'; });
+  sel.innerHTML = html; sel.value = (histYear === 'all' || years[histYear]) ? histYear : String(new Date().getFullYear());
+  histYear = sel.value;
+}
 function setHistPeriodSelect(val) {
   histPeriod = val;
   buildDashboard(getHistory());
@@ -11083,12 +11189,6 @@ function renderDeals() {
   // ── Filtre Portage commercial uniquement ──
   if (dealFilterPC) deals = deals.filter(function(d) { return d.type_deal === 'portage_commercial'; });
 
-  // ── Filtre Mois sur la DATE DEAL ──
-  if (dealFilterMonthDeal) deals = deals.filter(function(d){ return _dealMonthKey(d.date_deal) === dealFilterMonthDeal; });
-
-  // ── Filtre Mois sur la DATE D'ENTRÉE (starters du mois) ──
-  if (dealFilterMonthEntree) deals = deals.filter(function(d){ return _dealMonthKey(d.date_entree) === dealFilterMonthEntree; });
-
   // ── Filtre ADV (Clémence A-H / Marie I-Z selon la 1ère lettre du nom du consultant) ──
   if (dealFilterADV === 'clemence') {
     deals = deals.filter(function(d){ return _getADVForDeal(d) === 'clemence'; });
@@ -11111,6 +11211,15 @@ function renderDeals() {
     }
   }
 
+  // Base des compteurs = tous les filtres SAUF les deux filtres mois (voir ci-dessous)
+  var _dealsHorsMois = deals;
+
+  // ── Filtre Mois sur la DATE DEAL ──
+  if (dealFilterMonthDeal) deals = deals.filter(function(d){ return _dealMonthKey(d.date_deal) === dealFilterMonthDeal; });
+
+  // ── Filtre Mois sur la DATE D'ENTRÉE (starters du mois) ──
+  if (dealFilterMonthEntree) deals = deals.filter(function(d){ return _dealMonthKey(d.date_entree) === dealFilterMonthEntree; });
+
   var listEl = document.getElementById('deals-list');
   if (!listEl) return;
 
@@ -11118,13 +11227,16 @@ function renderDeals() {
   //   • Deals    = comptés sur la DATE DEAL (date_deal)
   //   • Starters = comptés sur la DATE D'ENTREE (date_entree)
   //   Mois retenu : son propre filtre mois si défini, sinon celui de l'autre filtre mois.
-  //   Sans aucun filtre mois : total affiché (deals = lignes, starters = lignes avec date d'entree).
-  //   Ex. Starters=juillet sur 27 entrees signees en juin -> 0 deal (juil.) / 27 starters (juil.).
+  //   ALIGNEMENT (30/09/2026) : chaque compteur est calculé sur TOUS les deals du périmètre
+  //   (commercial, état, etc.), pas seulement sur les lignes affichées, pour donner le même chiffre
+  //   que le Dashboard : « 77 starters en septembre » même si le tableau n'affiche que les deals
+  //   signés en septembre (dont 38 démarrent en septembre).
+  //   Sans aucun filtre mois : deals = lignes affichées, starters = entrées à partir d'aujourd'hui.
   try {
     var _mDeals = dealFilterMonthDeal || dealFilterMonthEntree || '';
     var _mStart = dealFilterMonthEntree || dealFilterMonthDeal || '';
     // Un placement en stand by n'est pas un deal → exclu des compteurs.
-    var _real = deals.filter(function(d){ return d && d.stand_by !== true; });
+    var _real = _dealsHorsMois.filter(function(d){ return d && d.stand_by !== true; });
     var _nDeals = _mDeals
       ? _real.filter(function(d){ return _dealMonthKey(d.date_deal) === _mDeals; }).length
       : _real.length;
@@ -11138,8 +11250,22 @@ function renderDeals() {
           var _de = new Date(_s); return !isNaN(_de.getTime()) && _de >= _todayStart;
         }).length;
     var _moisLbl = _mDeals ? (' <span style=\"opacity:.7;font-weight:600;\">(' + _mDeals + ')</span>') : '';
+    // Changements de client (lignes de continuité, non affichées ici) : comptés comme placements du mois (décision 30/09/2026)
+    var _nChgt = 0;
+    try {
+      var _myN = (dealFilterComm === '__mine__' && typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
+      _nChgt = getDeals().filter(function(d){
+        if (!d || d._deleted || !d.prolongation_avenant || d.stand_by === true) return false;
+        if (d.etat === 'Annulé' && (dealHideAnnules || dealFilterEtat !== 'Annulé')) return false;
+        if (dealFilterEtat !== '__all__' && dealFilterEtat !== '__standby__' && d.etat !== dealFilterEtat) return false;
+        if (dealFilterComm === '__mine__') { if (_myN && !(typeof _sameCommercial === 'function' ? _sameCommercial(d.commercial, _myN) : (d.commercial||'').trim().toLowerCase() === _myN.toLowerCase())) return false; }
+        else if (dealFilterComm !== '__all__' && !(typeof _sameCommercial === 'function' ? _sameCommercial(d.commercial, dealFilterComm) : (d.commercial||'') === dealFilterComm)) return false;
+        return _mDeals ? _dealMonthKey(d.date_deal) === _mDeals : true;
+      }).length;
+    } catch(e) {}
     var _cEl = document.getElementById('deal-counter');
     if (_cEl) _cEl.innerHTML = '&#128197; <b>' + _nDeals + '</b> deal' + (_nDeals>1?'s':'')
+      + (_nChgt ? ' <span style=\"opacity:.85;\">+ &#128257; <b>' + _nChgt + '</b> chgt client</span>' : '')
       + ' &middot; &#128640; <b>' + _nStarters + '</b> starter' + (_nStarters>1?'s':'') + _moisLbl;
   } catch(e){}
 
@@ -13934,16 +14060,18 @@ function reconcilierEtatsSortants(silent) {
   deals.forEach(function(d){
     if (!d || !(d.etat === 'Signé' || d.etat === 'En cours' || d.etat === 'Nouveau placement')) return;
     var s = byDeal[String(d.id)]; if (!s) return;
-    var dfc = s.date_fin_contrat ? new Date(s.date_fin_contrat) : null, dfm = s.date_fin_mission ? new Date(s.date_fin_mission) : null;
+    // CORRECTIF (30/09/2026) : la fiche sortant stocke la fin de mission dans « fin_mission » (date_fin_mission n'existait pas → jamais lue)
+    var _sfm = s.date_fin_mission || s.fin_mission || '';
+    var dfc = s.date_fin_contrat ? new Date(s.date_fin_contrat) : null, dfm = _sfm ? new Date(_sfm) : null;
     if (dfc && isNaN(dfc.getTime())) dfc = null; if (dfm && isNaN(dfm.getTime())) dfm = null;
     var before = d.etat;
     if (s.fin_contrat_travail === 'Oui') {
       var ds = dfc || dfm; if (!ds || ds > today) return;
-      d.etat = 'Sorti des effectifs'; d.date_sortie = s.date_fin_contrat || s.date_fin_mission || d.date_sortie;
-      if (s.date_fin_mission) d.date_fin = s.date_fin_mission;
+      d.etat = 'Sorti des effectifs'; d.date_sortie = s.date_fin_contrat || _sfm || d.date_sortie;
+      if (_sfm) d.date_fin = _sfm;
     } else {
       if (!dfm || dfm > today) return;
-      d.etat = 'Fin de mission'; if (s.date_fin_mission) d.date_fin = s.date_fin_mission; delete d.date_sortie;
+      d.etat = 'Fin de mission'; if (_sfm) d.date_fin = _sfm; delete d.date_sortie;
     }
     d.raison_sortie = d.raison_sortie || s.raison || ''; d.updated_at = Date.now(); d.updated_ts = Date.now();
     fixed.push((d.prenom||'') + ' ' + (d.nom||'') + ' @' + (d.entreprise||'') + ' : ' + before + ' → ' + d.etat);
@@ -14057,7 +14185,7 @@ function computeCandStatutAuto(cand) {
       // même si l'état du deal n'a pas suivi (désynchronisation observée en production).
       var _so = _sortantByDeal[String(d.id)];
       if (_so) {
-        var _dfc = _dateOk(_so.date_fin_contrat), _dfm = _dateOk(_so.date_fin_mission);
+        var _dfc = _dateOk(_so.date_fin_contrat), _dfm = _dateOk(_so.date_fin_mission || _so.fin_mission);   // CORRECTIF 30/09/2026 : champ réel = fin_mission
         if (_so.fin_contrat_travail === 'Oui') {
           var _dSortie = _dfc || _dfm;
           if (_dSortie && _dSortie > today) hasActive = true; else hasPast = true;
@@ -18011,8 +18139,11 @@ function getPortesDemarrantDansMois(moisStr) {
 
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
   return deals.filter(function(d) {
-    if (d.etat === 'Annulé') return false;
+    if (!d || d.etat === 'Annulé') return false;
+    if (d._deleted || d.prolongation_avenant || d.stand_by === true) return false;   // ALIGNEMENT Dashboard / tableau des deals (30/09/2026)
     if (!d.date_entree) return false;
+    // Même lecture du mois que le tableau des deals / Dashboard (formats ISO et JJ/MM/AAAA)
+    if (typeof _dealMonthKey === 'function') return _dealMonthKey(d.date_entree) === moisStr;
     var de = new Date(d.date_entree);
     if (isNaN(de.getTime())) return false;
     return de >= firstDay && de <= lastDay;
@@ -18815,7 +18946,8 @@ var AVENANTS_FILTER = {
   statut: 'all',  // 'all' / 'a_traiter' (au moins une signature manquante OU LAYA non fait) / 'finalise' (tout = Oui)
   month: (new Date()).getMonth(),
   year: (new Date()).getFullYear(),
-  adv: 'all'
+  adv: 'all',
+  nature: 'all'   // 'all' / 'nouveau_client' / 'prolongation' / 'nouvelle_simu' / … (champ mode de l'avenant)
 };
 
 // Helper : un avenant est "finalisé" quand CDT signé = Oui ET CDPS signé = Oui ET Modif LAYA = Oui
@@ -19203,8 +19335,17 @@ function buildAvenantsContent() {
   var filtered = avenants.filter(function(a){
     if (AVENANTS_FILTER.statut === 'a_traiter' && _avIsFinalise(a)) return false;
     if (AVENANTS_FILTER.statut === 'finalise' && !_avIsFinalise(a)) return false;
+    if (AVENANTS_FILTER.nature && AVENANTS_FILTER.nature !== 'all') {
+      // Période d'un « Nouveau client » = date de l'avenant (= date deal de la ligne de continuité, comme le Dashboard)
+      if ((a.mode || '') !== AVENANTS_FILTER.nature) return false;
+      if (AVENANTS_FILTER.nature === 'nouveau_client' && AVENANTS_FILTER.month !== 'all' && AVENANTS_FILTER.month != null) {
+        var _da = a.date_avenant || a.date_debut || a.date_demande || ''; var _dda = _da ? new Date(_da) : null;
+        if (!_dda || isNaN(_dda.getTime())) return false;
+        if (_dda.getMonth() !== AVENANTS_FILTER.month || _dda.getFullYear() !== AVENANTS_FILTER.year) return false;
+      }
+    }
     if (AVENANTS_FILTER.commercial !== 'all') {
-      if ((a.commercial || '') !== AVENANTS_FILTER.commercial) return false;
+      if (!(typeof _sameCommercial === 'function' ? _sameCommercial(a.commercial, AVENANTS_FILTER.commercial) : ((a.commercial || '') === AVENANTS_FILTER.commercial))) return false;
     }
     if (AVENANTS_FILTER.etat_cdt !== 'all') {
       if ((a.etat_avenant_cdt || '') !== AVENANTS_FILTER.etat_cdt) return false;
@@ -19212,7 +19353,10 @@ function buildAvenantsContent() {
     if (AVENANTS_FILTER.etat_cdps !== 'all') {
       if ((a.etat_av_cdps || '') !== AVENANTS_FILTER.etat_cdps) return false;
     }
-    if (AVENANTS_FILTER.month !== 'all' && AVENANTS_FILTER.month != null) {
+    return _avPassesOtherFilters(a);
+  });
+  function _avPassesOtherFilters(a) {
+    if (AVENANTS_FILTER.month !== 'all' && AVENANTS_FILTER.month != null && !(AVENANTS_FILTER.nature === 'nouveau_client')) {
       // Filtre période sur « À partir du » (date_debut), c'est-à-dire la date d'effet
       // de l'avenant — et non sa date de saisie. Repli sur la date de l'avenant puis
       // sur la date de demande pour les enregistrements anciens sans date de début.
@@ -19231,7 +19375,7 @@ function buildAvenantsContent() {
       if (hay.indexOf(q) < 0) return false;
     }
     return true;
-  });
+  }
 
   // Tri par date demande décroissante
   filtered.sort(function(a, b){
@@ -19245,7 +19389,7 @@ function buildAvenantsContent() {
   avenants.forEach(function(a){ if (a.commercial) commerciauxSet[a.commercial] = (commerciauxSet[a.commercial] || 0) + 1; });
   var commerciauxList = Object.keys(commerciauxSet).sort(function(a,b){ return a.localeCompare(b,'fr'); });
 
-  var hasActiveFilter = AVENANTS_FILTER.commercial !== 'all' || AVENANTS_FILTER.etat_cdt !== 'all' || AVENANTS_FILTER.etat_cdps !== 'all' || AVENANTS_FILTER.search || AVENANTS_FILTER.statut !== 'all' || AVENANTS_FILTER.adv !== 'all';
+  var hasActiveFilter = AVENANTS_FILTER.commercial !== 'all' || AVENANTS_FILTER.etat_cdt !== 'all' || AVENANTS_FILTER.etat_cdps !== 'all' || AVENANTS_FILTER.search || AVENANTS_FILTER.statut !== 'all' || AVENANTS_FILTER.adv !== 'all' || (AVENANTS_FILTER.nature && AVENANTS_FILTER.nature !== 'all');
 
   var html = '<style>'
     + '.av-wrap{padding:14px 18px;max-width:100%;}'
@@ -19339,6 +19483,15 @@ function buildAvenantsContent() {
     +   '<select onchange="avSetYear(this.value)" style="padding:8px 6px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;">' + _avYearOpts + '</select>'
     +   '<button onclick="avShiftMonth(1)" title="Mois suivant" style="border:1.5px solid #E4E0FA;background:#fff;color:#5B2BCC;cursor:pointer;font-size:13px;padding:6px 8px;border-radius:7px;line-height:1;">&#9654;</button>'
     + '</div></div>';
+  html += '<div style="min-width:170px;">'
+    + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">Nature</label>'
+    + '<select onchange="AVENANTS_FILTER.nature=this.value;renderAvenants();" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;">'
+    +   '<option value="all"' + (AVENANTS_FILTER.nature==='all'?' selected':'') + '>Toutes</option>'
+    +   '<option value="nouveau_client"' + (AVENANTS_FILTER.nature==='nouveau_client'?' selected':'') + '>Nouveau client (p\u00e9riode = date de l\u2019avenant)</option>'
+    +   '<option value="prolongation"' + (AVENANTS_FILTER.nature==='prolongation'?' selected':'') + '>Prolongation</option>'
+    +   '<option value="nouvelle_simu"' + (AVENANTS_FILTER.nature==='nouvelle_simu'?' selected':'') + '>Nouvelle simulation</option>'
+    +   '<option value="mission_parallele"' + (AVENANTS_FILTER.nature==='mission_parallele'?' selected':'') + '>Mission parall\u00e8le</option>'
+    + '</select></div>';
   html += '<div style="min-width:150px;">'
     + '<label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px;">ADV</label>'
     + '<select onchange="AVENANTS_FILTER.adv=this.value;renderAvenants();" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12.5px;background:#fff;">'
@@ -19347,7 +19500,7 @@ function buildAvenantsContent() {
     +   '<option value="marie"' + (AVENANTS_FILTER.adv==='marie'?' selected':'') + '>Marie (I\u2013Z)</option>'
     + '</select></div>';
   if (hasActiveFilter) {
-    html += '<button onclick="AVENANTS_FILTER={search:\'\',commercial:\'all\',etat_cdt:\'all\',etat_cdps:\'all\',statut:\'all\',month:(new Date()).getMonth(),year:(new Date()).getFullYear(),adv:\'all\'};renderAvenants();" style="padding:8px 14px;background:#FFF4D6;color:#8A5F00;border:1.5px solid #F0A500;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;align-self:flex-end;">✗ Effacer les filtres</button>';
+    html += '<button onclick="AVENANTS_FILTER={search:\'\',commercial:\'all\',etat_cdt:\'all\',etat_cdps:\'all\',statut:\'all\',month:(new Date()).getMonth(),year:(new Date()).getFullYear(),adv:\'all\',nature:\'all\'};renderAvenants();" style="padding:8px 14px;background:#FFF4D6;color:#8A5F00;border:1.5px solid #F0A500;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;align-self:flex-end;">✗ Effacer les filtres</button>';
   }
   html += '</div>';
 
@@ -26619,7 +26772,7 @@ function renderSortants() {
 
   // Filtrage
   var filtered = all.filter(function(s){
-    if (f.commercial !== '__all__' && (s.commercial || '') !== f.commercial) return false;
+    if (f.commercial !== '__all__' && !(typeof _sameCommercial === 'function' ? _sameCommercial(s.commercial, f.commercial) : ((s.commercial || '') === f.commercial))) return false;
     if (f.raison !== '__all__' && (s.raison || '') !== f.raison) return false;
     if (f.type !== '__all__' && (s.type_fin_contrat || '') !== f.type) return false;
     if (f.fin_contrat !== '__all__' && (s.fin_contrat_travail || '') !== f.fin_contrat) return false;
@@ -26842,7 +26995,7 @@ function exportSortantsCSV() {
   var all = getSortants();
   var f = window._sortantsFilter || { commercial:'__all__', raison:'__all__', type:'__all__', year:'__all__', month:'__all__', cdi_year:'__all__', cdi_month:'__all__', search:'' };
   var filtered = all.filter(function(s){
-    if (f.commercial !== '__all__' && (s.commercial || '') !== f.commercial) return false;
+    if (f.commercial !== '__all__' && !(typeof _sameCommercial === 'function' ? _sameCommercial(s.commercial, f.commercial) : ((s.commercial || '') === f.commercial))) return false;
     if (f.raison !== '__all__' && (s.raison || '') !== f.raison) return false;
     if (f.type !== '__all__' && (s.type_fin_contrat || '') !== f.type) return false;
     if (f.year !== '__all__') {
@@ -37859,6 +38012,40 @@ function _dealFGEffectif(d) {
   return parseFloat(d.frais_gestion) || 0;
 }
 // Filtre les deals éligibles pour un commercial + période (année+mois éventuel)
+// Statut « 3 mois chez le nouveau client » d'une ligne de continuité (avenant nouveau client).
+//   eligible  : le porté a passé 3 mois révolus chez le nouveau client sans que la mission s'arrête avant
+//   date_eligible : date à partir de laquelle la ligne compte (début + 3 mois)
+//   motif     : explication lisible (pour l'onglet Commissions)
+function _commContinuiteStatut(d) {
+  var deb = _dgParseDate(d.date_entree) || _dgParseDate((d.prolongation_avenant || {}).date) || _dgParseDate(d.date_deal);
+  if (!deb) return { eligible: false, date_eligible: null, motif: 'date de début chez le nouveau client inconnue' };
+  var seuil = new Date(deb); seuil.setMonth(seuil.getMonth() + 3);
+  var today = new Date(); today.setHours(23, 59, 59, 999);
+  // Mission arrêtée avant les 3 mois ? (état du deal, ou fiche sortant)
+  var fin = null;
+  if (d.etat === 'Fin de mission' || d.etat === 'Sorti des effectifs') fin = _dgParseDate(d.date_sortie) || _dgParseDate(d.date_fin);
+  try {
+    var so = (typeof _sortantsCached === 'function' ? _sortantsCached() : getSortants()).filter(function(s){ return s && !s._deleted && String(s.deal_id) === String(d.id); })[0];
+    if (so) { var fm = _dgParseDate(so.fin_mission) || _dgParseDate(so.date_fin_contrat); if (fm && (!fin || fm < fin)) fin = fm; }
+  } catch(e) {}
+  if (fin && fin < seuil) return { eligible: false, date_eligible: seuil, motif: 'mission terminée le ' + fin.toLocaleDateString('fr-FR') + ' (avant 3 mois)', termine: true };
+  if (seuil > today) return { eligible: false, date_eligible: seuil, motif: 'comptera à partir du ' + seuil.toLocaleDateString('fr-FR') + ' (3 mois chez le nouveau client)' };
+  return { eligible: true, date_eligible: seuil, motif: '3 mois chez le nouveau client atteints le ' + seuil.toLocaleDateString('fr-FR') };
+}
+// Changements de client du mois qui ne comptent PAS (encore) dans la commission
+function getCommContinuitesEnAttente(commercial, year, month) {
+  var all = (typeof getDeals === 'function') ? getDeals() : [], out = [];
+  var wanted = (commercial || '').trim().toLowerCase();
+  all.forEach(function(d){
+    if (!d || d._deleted || !d.prolongation_avenant || d.etat === 'Annulé') return;
+    if (wanted && (d.commercial || '').trim().toLowerCase() !== wanted) return;
+    var ref = getDealReferenceDate(d); if (!ref || ref.getFullYear() !== year) return;
+    if (month !== null && month !== undefined && ref.getMonth() !== month) return;
+    var st = _commContinuiteStatut(d); if (st.eligible) return;
+    out.push({ deal: d, statut: st });
+  });
+  return out;
+}
 function getCommDealsForPeriod(commercial, year, month /* 0-11, null = toute l'année */) {
   var params = getCommParams();
   var seuilFG = params.seuil_frais_gestion_min;
@@ -37883,8 +38070,10 @@ function getCommDealsForPeriod(commercial, year, month /* 0-11, null = toute l'a
     var wanted = (commercial || '').trim().toLowerCase();
     if (wanted && dealComm !== wanted) return false;
     // Continuité de contrat (avenant nouveau client) : c'est un NOUVEAU deal, commissionné
-    // dans le mois de sa création (date_deal = date de l'avenant).
+    // dans le mois de sa création (date_deal = date de l'avenant) — MAIS seulement une fois que le
+    // porté est resté 3 mois chez le nouveau client (décision 30/09/2026, en attendant l'info « facturé 3 mois »).
     if (d.etat === 'Annulé') return false;
+    if (d.prolongation_avenant && !_commContinuiteStatut(d).eligible) return false;
     // Frais de gestion ≥ seuil (override commission prioritaire)
     var fg = (fgOv[d.id] !== undefined) ? fgOv[d.id] : _dealFGEffectif(d);
     if (fg < seuilFG) return false;
@@ -38354,6 +38543,19 @@ function renderCommCurrentView() {
     html += '</tbody></table></div>';
   }
   html += '</div>';
+
+  // Changements de client en attente des 3 mois (non comptés)
+  try {
+    var _att = (typeof getCommContinuitesEnAttente === 'function') ? getCommContinuitesEnAttente(currentCommCommercial, currentCommYear, currentCommMonth) : [];
+    if (_att.length) {
+      html += '<div class="comm-card" style="background:#FFF8E8;border-color:#F0D98A;">'
+        + '<div class="comm-card-title"><span class="comm-card-title-dot" style="background:#F0A500;"></span><span>&#128257; Changements de client non compt\u00e9s (r\u00e8gle des 3 mois)</span></div>'
+        + '<div style="font-size:12.5px;color:#1A1033;line-height:1.7;">'
+        + _att.map(function(x){ var d = x.deal; return '<div>&bull; <strong>' + ((d.prenom||'') + ' ' + (d.nom||'')).trim() + '</strong> \u2192 ' + (d.entreprise||'?') + ' : ' + x.statut.motif + '</div>'; }).join('')
+        + '<div style="margin-top:6px;font-size:11.5px;color:#8A5F00;">Un changement de client compte comme un deal du mois de l\u2019avenant d\u00e8s que le port\u00e9 est rest\u00e9 3 mois chez le nouveau client.</div>'
+        + '</div></div>';
+    }
+  } catch(e) {}
 
   // Résumé du calcul
   if (result.nb > 0) {
