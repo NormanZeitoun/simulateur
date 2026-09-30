@@ -5112,12 +5112,21 @@ function _lzSet(key, obj){
   var json = JSON.stringify(obj == null ? null : obj);
   var c = _lzCache[key];
   if (c && c.json === json) return;   // donnée identique → rien à faire (évite une recompression inutile)
-  _lzCache[key] = { json: json, dirty: true };
+  _lzCache[key] = { json: json, dirty: true, obj: null };   // obj : re-parsé à la demande (PERF 30/09/2026)
   _lzScheduleFlush();                 // compression + écriture localStorage différées (non bloquant)
+}
+// PERF 30/09/2026 : l'objet parsé est mis en cache. Avant, CHAQUE getHistory() re-parsait
+// ~1,5 Mo de JSON (2 300 simulations) — et getHistory() est appelé par carte candidat et par
+// cellule du tableau des deals : plusieurs milliers de parses par rendu, d'où les secondes de lag.
+// Les tableaux sont rendus en copie superficielle (slice) : un .sort()/.push() chez l'appelant
+// ne modifie pas le cache ; les objets qu'ils contiennent restent partagés (comme _dealsCache).
+function _lzParsed(c){
+  if (c.obj === undefined || c.obj === null) { try { c.obj = JSON.parse(c.json); } catch(e){ c.obj = null; return null; } }
+  return Array.isArray(c.obj) ? c.obj.slice() : c.obj;
 }
 function _lzGet(key){
   var c = _lzCache[key];
-  if (c) { try { return JSON.parse(c.json); } catch(e){ return null; } }   // cache = source de vérité dans l'onglet
+  if (c) return _lzParsed(c);   // cache = source de vérité dans l'onglet
   var raw = localStorage.getItem(key);
   if (raw == null) return null;
   var jsonStr;
@@ -5126,8 +5135,8 @@ function _lzGet(key){
   } else {
     jsonStr = raw;
   }
-  _lzCache[key] = { json: jsonStr, dirty: false };   // 1ère lecture : décompression unique puis cache
-  try { return JSON.parse(jsonStr); } catch(e){ return null; }
+  c = _lzCache[key] = { json: jsonStr, dirty: false, obj: null };   // 1ère lecture : décompression unique puis cache
+  return _lzParsed(c);
 }
 // Persistance garantie avant fermeture / mise en arrière-plan de l'onglet
 window.addEventListener('beforeunload', function(){ try { _lzFlush(); } catch(e){} });
@@ -10929,14 +10938,16 @@ function _findSimForDeal(d) {
   if (window._simForDealCache.map[cacheKey] !== undefined) {
     return window._simForDealCache.map[cacheKey];
   }
-  var allSims = getHistory();
+  var allSims = null;   // chargé seulement si la méthode 2 est nécessaire (PERF)
   var sim = null;
-  // Méthode 1 : sim_ts exact
+  // Méthode 1 : sim_ts exact — via l'index (cache 3 s), plus de balayage de l'historique par deal
   if (d.sim_ts) {
-    sim = allSims.find(function(s){ return s.timestamp === d.sim_ts; }) || null;
+    if (typeof _simIndex === 'function') sim = _simIndex().byTs[String(d.sim_ts)] || null;
+    else { allSims = getHistory(); sim = allSims.find(function(s){ return s.timestamp === d.sim_ts; }) || null; }
   }
   // Méthode 2 (fallback) : email + entreprise → la plus récente
   if (!sim && d.email) {
+    if (!allSims) allSims = getHistory();
     var dEmail = d.email.toLowerCase().trim();
     var dEnt = (d.entreprise||'').toLowerCase().trim();
     var matchingSims = allSims.filter(function(s){
@@ -10979,6 +10990,58 @@ function _dealMonthKey(v){
   var iso = s.match(/^(\d{4})-(\d{2})/); if(iso) return iso[1]+'-'+iso[2];
   var fr = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(fr) return fr[3]+'-'+('0'+fr[2]).slice(-2);
   return '';
+}
+// ── Rendu progressif du tableau des deals (voir renderDeals) ──
+var _DEALS_RENDER_CHUNK = 80;          // lignes rendues d'un coup (≈ 2 écrans)
+var _dealsRenderPending = null;        // { deals, next, visColDefs, ECOLORS } quand il reste des lignes à rendre
+function _dealRowHTML(d, visColDefs, ECOLORS) {
+  var html = '';
+  try {
+    var color = ECOLORS[d.etat]||'#6B5E9C';
+    var classList = [];
+    if (d.salarie_etranger) classList.push('row-etranger');
+    if (d.etat === 'Annulé') classList.push('row-cancelled');
+    var rowClass = classList.length ? ' class="' + classList.join(' ') + '"' : '';
+    html += '<tr' + rowClass + ' data-deal-id="' + (d.id != null ? d.id : '') + '" style="border-left:3px solid '+color+';">';
+    // Le tableau des deals affiche le PLACEMENT, pas les avenants : les conditions
+    // d'un avenant se consultent dans l'onglet Avenants. (Retrait de la superposition
+    // _dealEnVigueur() — décision du 23/09/2026.)
+    var _dV = d;
+    visColDefs.forEach(function(col){
+      var fc = col.freeze==='f1' ? ' class="col-freeze"' : col.freeze==='f2' ? ' class="col-freeze2"' : '';
+      var cellHtml;
+      try {
+        cellHtml = getCellValue(_dV, col.key);
+      } catch(cellErr) {
+        // Une cellule défaillante ne doit JAMAIS vider tout le tableau :
+        // on affiche un placeholder et on log le problème.
+        console.warn('[renderDeals] cellule "' + col.key + '" en erreur pour deal', d.id, cellErr);
+        cellHtml = '<span style="color:#E24B4A;">!</span>';
+      }
+      html += '<td'+fc+'>' + (cellHtml == null ? '—' : cellHtml) + '</td>';
+    });
+    html += '</tr>';
+  } catch(rowErr) {
+    console.warn('[renderDeals] ligne en erreur pour deal', d && d.id, rowErr);
+    return '';
+  }
+  return html;
+}
+function _dealsAppendMoreRow(wrap) {
+  var tb = wrap && wrap.querySelector('tbody'); if (!tb || !_dealsRenderPending) return;
+  var reste = _dealsRenderPending.deals.length - _dealsRenderPending.next;
+  tb.insertAdjacentHTML('beforeend', '<tr class="deals-more-row" data-more="1"><td colspan="' + _dealsRenderPending.visColDefs.length + '" style="text-align:center;padding:10px;color:#6B5E9C;font-size:12px;cursor:pointer;background:#F7F5FC;" onclick="_dealsRenderMore(this.closest(\'.deals-table-wrap\'))">&#9660; ' + reste + ' autre' + (reste > 1 ? 's' : '') + ' deal' + (reste > 1 ? 's' : '') + ' &mdash; faites d&eacute;filer ou cliquez ici pour les afficher</td></tr>');
+}
+function _dealsRenderMore(wrap) {
+  var P = _dealsRenderPending; if (!P || !wrap) return;
+  var tb = wrap.querySelector('tbody'); if (!tb) return;
+  var more = tb.querySelector('tr.deals-more-row'); if (more) more.parentNode.removeChild(more);
+  var end = Math.min(P.next + _DEALS_RENDER_CHUNK, P.deals.length), html = '';
+  for (var i = P.next; i < end; i++) html += _dealRowHTML(P.deals[i], P.visColDefs, P.ECOLORS);
+  tb.insertAdjacentHTML('beforeend', html);
+  P.next = end;
+  if (P.next >= P.deals.length) { _dealsRenderPending = null; return; }
+  _dealsAppendMoreRow(wrap);
 }
 function renderDeals() {
   var deals = getDeals();
@@ -11136,37 +11199,6 @@ function renderDeals() {
   });
   html += '</tr></thead><tbody>';
 
-  deals.forEach(function(d){
-    try {
-      var color = ECOLORS[d.etat]||'#6B5E9C';
-      var classList = [];
-      if (d.salarie_etranger) classList.push('row-etranger');
-      if (d.etat === 'Annulé') classList.push('row-cancelled');
-      var rowClass = classList.length ? ' class="' + classList.join(' ') + '"' : '';
-      html += '<tr' + rowClass + ' data-deal-id="' + (d.id != null ? d.id : '') + '" style="border-left:3px solid '+color+';">';
-      // Le tableau des deals affiche le PLACEMENT, pas les avenants : les conditions
-      // d'un avenant se consultent dans l'onglet Avenants. (Retrait de la superposition
-      // _dealEnVigueur() — décision du 23/09/2026.)
-      var _dV = d;
-      visColDefs.forEach(function(col){
-        var fc = col.freeze==='f1' ? ' class="col-freeze"' : col.freeze==='f2' ? ' class="col-freeze2"' : '';
-        var cellHtml;
-        try {
-          cellHtml = getCellValue(_dV, col.key);
-        } catch(cellErr) {
-          // Une cellule défaillante ne doit JAMAIS vider tout le tableau :
-          // on affiche un placeholder et on log le problème.
-          console.warn('[renderDeals] cellule "' + col.key + '" en erreur pour deal', d.id, cellErr);
-          cellHtml = '<span style="color:#E24B4A;">!</span>';
-        }
-        html += '<td'+fc+'>' + (cellHtml == null ? '—' : cellHtml) + '</td>';
-      });
-      html += '</tr>';
-    } catch(rowErr) {
-      console.warn('[renderDeals] ligne en erreur pour deal', d && d.id, rowErr);
-    }
-  });
-  html += '</tbody></table></div>';
   // Préserver la position de scroll horizontale/verticale avant re-render
   var scrollContainer = listEl.querySelector('.deals-table-wrap');
   var savedScrollLeft = scrollContainer ? scrollContainer.scrollLeft : 0;
@@ -11182,7 +11214,36 @@ function renderDeals() {
       selectionEnd: activeEl.selectionEnd
     };
   }
+
+  // PERF (30/09/2026) : rendu PROGRESSIF. Le coût dominant n'était pas le calcul des cellules mais la
+  // mise en page par le navigateur (713 lignes × 60 colonnes ≈ 2,5 s à chaque frappe / modification).
+  // On ne rend d'abord que les lignes visibles (+ marge), les suivantes sont ajoutées au fur et à mesure
+  // du défilement. Les compteurs, filtres et exports travaillent toujours sur la liste complète.
+  var _limit = _DEALS_RENDER_CHUNK;
+  if (scrollContainer && savedScrollTop > 0) {
+    var _prevRows = scrollContainer.querySelectorAll('tbody tr[data-deal-id]').length;
+    var _rowH = (_prevRows > 0) ? (scrollContainer.scrollHeight / _prevRows) : 36;
+    _limit = Math.max(_limit, Math.ceil((savedScrollTop + scrollContainer.clientHeight) / Math.max(_rowH, 10)) + _DEALS_RENDER_CHUNK);
+  }
+  if (activeInfo && activeInfo.dealId) {
+    for (var _ai = 0; _ai < deals.length; _ai++) { if (String(deals[_ai].id) === String(activeInfo.dealId)) { _limit = Math.max(_limit, _ai + 1 + _DEALS_RENDER_CHUNK); break; } }
+  }
+  var _first = Math.min(_limit, deals.length);
+  for (var _ri = 0; _ri < _first; _ri++) html += _dealRowHTML(deals[_ri], visColDefs, ECOLORS);
+  html += '</tbody></table></div>';
   listEl.innerHTML = html;
+  _dealsRenderPending = null;
+  if (_first < deals.length) {
+    _dealsRenderPending = { deals: deals, next: _first, visColDefs: visColDefs, ECOLORS: ECOLORS };
+    var _wrapP = listEl.querySelector('.deals-table-wrap');
+    if (_wrapP) {
+      _dealsAppendMoreRow(_wrapP);
+      _wrapP.addEventListener('scroll', function(){
+        if (!_dealsRenderPending) return;
+        if (_wrapP.scrollTop + _wrapP.clientHeight >= _wrapP.scrollHeight - 800) _dealsRenderMore(_wrapP);
+      }, { passive: true });
+    }
+  }
   // Restaurer la position de scroll
   var newContainer = listEl.querySelector('.deals-table-wrap');
   if (newContainer) {
@@ -12810,24 +12871,37 @@ var CAND_KEY = 'sp_candidats_v1';
 // sp_deals_v1, mergé via mergeDeals avec updated_at) OU de sim.snapshot (stocké dans
 // sp_historique_v3, mergé via mergeHistorique). Aucun nouveau champ stocké côté candidat
 // (sp_candidats_v1) — donc rien à ajouter aux merges ni aux fonctions de save.
+// PERF : index des deals « actifs » (hors Annulé / Sorti des effectifs / Fin de mission) par e-mail et par nom complet.
+// Recalculé uniquement si la liste des deals a changé (autre tableau) ou après 3 s.
+var _candTjmIdxCache = null, _candTjmIdxSrc = null, _candTjmIdxTs = 0;
+function _candTjmDealIdx() {
+  var deals = getDeals();
+  if (_candTjmIdxCache && _candTjmIdxSrc === deals && Date.now() - _candTjmIdxTs < 3000) return _candTjmIdxCache;
+  var byEmail = {}, byName = {};
+  deals.forEach(function(d){
+    if (!d) return;
+    if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs' || d.etat === 'Fin de mission') return;
+    var dEmail = (d.email || '').toLowerCase();
+    var dFullName = ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase();
+    if (dEmail) (byEmail[dEmail] = byEmail[dEmail] || []).push(d);
+    if (dFullName) (byName[dFullName] = byName[dFullName] || []).push(d);
+  });
+  _candTjmIdxCache = { byEmail: byEmail, byName: byName }; _candTjmIdxSrc = deals; _candTjmIdxTs = Date.now();
+  return _candTjmIdxCache;
+}
 function _candConnaitTjm(cand) {
   var EMPTY = { value: '', source: '' };
   if (!cand) return EMPTY;
 
   // ── RÈGLE 1 : placement actif ────────────────────────────────
   if (typeof getDeals === 'function') {
-    var deals = getDeals();
     var cEmail = (cand.email || '').trim().toLowerCase();
     var cFullName = ((cand.prenom||'') + ' ' + (cand.nom||'')).trim().toLowerCase();
-    var candDeals = deals.filter(function(d){
-      if (!d) return false;
-      if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs' || d.etat === 'Fin de mission') return false;
-      var dEmail = (d.email || '').toLowerCase();
-      var dFullName = ((d.prenom||'') + ' ' + (d.nom||'')).trim().toLowerCase();
-      if (cEmail && dEmail && dEmail === cEmail) return true;
-      if (cFullName && dFullName === cFullName) return true;
-      return false;
-    });
+    // PERF : index des deals actifs par e-mail / nom complet (reconstruit si la liste change), plus de balayage par candidat
+    var _ix = _candTjmDealIdx(), candDeals = [], _seen = {};
+    var _push = function(arr){ (arr || []).forEach(function(d){ var k = (d.id != null) ? String(d.id) : ''; if (k && _seen[k]) return; if (k) _seen[k] = 1; candDeals.push(d); }); };
+    if (cEmail) _push(_ix.byEmail[cEmail]);
+    if (cFullName) _push(_ix.byName[cFullName]);
     // Tri : date_deal desc, fallback id desc (le plus récent en premier)
     candDeals.sort(function(a, b){
       var dA = a.date_deal ? new Date(a.date_deal).getTime() : 0;
@@ -12843,11 +12917,9 @@ function _candConnaitTjm(cand) {
       }
       // Cas b : le deal n'a pas la valeur, mais on peut remonter à la simu source
       if (topDeal.sim_ts && typeof getHistory === 'function') {
-        var histForDeal = getHistory();
         var simSource = null;
-        for (var i = 0; i < histForDeal.length; i++) {
-          if (histForDeal[i] && histForDeal[i].timestamp === topDeal.sim_ts) { simSource = histForDeal[i]; break; }
-        }
+        if (typeof _simIndex === 'function') { simSource = _simIndex().byTs[String(topDeal.sim_ts)] || null; }   // PERF : index, plus de balayage
+        else { var histForDeal = getHistory(); for (var i = 0; i < histForDeal.length; i++) { if (histForDeal[i] && histForDeal[i].timestamp === topDeal.sim_ts) { simSource = histForDeal[i]; break; } } }
         if (simSource && simSource.snapshot && simSource.snapshot._checkboxes
             && typeof simSource.snapshot._checkboxes['sim-connait-tjm'] !== 'undefined') {
           return {
@@ -12864,24 +12936,14 @@ function _candConnaitTjm(cand) {
   }
 
   // ── RÈGLE 2 (fallback) : dernière simulation envoyée ─────────
-  var hist = (typeof getHistory === 'function') ? getHistory() : [];
-  if (!hist.length) return EMPTY;
+  // PERF : via l'index des simulations (_simIndex : e-mail d'envoi + clé nom/prénom), plus de balayage de l'historique
+  if (typeof getHistory !== 'function' || typeof _simIndex !== 'function') return EMPTY;
   var cEmail2 = (cand.email || '').trim().toLowerCase();
   var ck = (typeof _personKey === 'function') ? _personKey(cand.prenom, cand.nom) : '';
-  var lastSim = null;
-  hist.forEach(function(s){
-    if (!s) return;
-    var se = (s.email || '').trim().toLowerCase();
-    var match = false;
-    if (cEmail2 && se && se === cEmail2) match = true;
-    if (!match && ck && typeof _splitFullName === 'function') {
-      var np = _splitFullName(s.consultant);
-      if (_personKey(np.prenom, np.nom) === ck) match = true;
-    }
-    if (match) {
-      if (!lastSim || (s.timestamp||0) > (lastSim.timestamp||0)) lastSim = s;
-    }
-  });
+  var lastSim = null, _sx = _simIndex();
+  var _consider = function(tsList){ (tsList || []).forEach(function(ts){ var s = _sx.byTs[ts]; if (!s) return; if (!lastSim || (s.timestamp||0) > (lastSim.timestamp||0)) lastSim = s; }); };
+  if (cEmail2) _consider(_sx.byDest[cEmail2]);
+  if (ck) _consider(_sx.byKey[ck]);
   if (!lastSim) return EMPTY;
   var snap = lastSim.snapshot;
   if (snap && snap._checkboxes && typeof snap._checkboxes['sim-connait-tjm'] !== 'undefined') {
@@ -13934,8 +13996,9 @@ function computeCandStatutAuto(cand) {
   var candKey = (typeof _personKey === 'function') ? _personKey(cand.prenom, cand.nom) : '';
   var candTel = (cand.tel || '').toString().replace(/[\s.\-+()]/g, '');
   if (!email && !candKey && candTel.length < 8) return manualStatut;
-  var allDeals = (typeof getDeals === 'function') ? getDeals() : [];
   var _ctxS = (typeof _candMatchCtx === 'function') ? _candMatchCtx(cand) : null;
+  // PERF : via l'index (mêmes critères de rattachement), au lieu de filtrer tous les deals par candidat
+  var allDeals = (_ctxS && typeof _candDealsOf === 'function') ? _candDealsOf(_ctxS) : ((typeof getDeals === 'function') ? getDeals() : []);
   var dealsOfCand = allDeals.filter(function(d){
     if (d.etat === 'Annulé') return false;
     if (d.stand_by === true) return false; // un placement en stand by n'est pas (encore) un deal
@@ -14254,11 +14317,8 @@ function renderCandidats() {
       if (!isNaN(b)) brutMensuel = b.toLocaleString('fr-FR') + ' €';
     }
     var hasCv = cand.cv_name ? true : false;
-    html += candCard(cand.id);
-
-    html += '<div style="position:absolute;top:0;left:0;right:0;height:4px;background:' + scfg.color + ';border-radius:12px 12px 0 0;"></div>';
-    // Appliquer le style de fond sur la carte active (injection d'un style inline via class spécifique)
-    var cardMarker = 'data-candid="' + cand.id + '"';
+    // PERF 30/09/2026 : le style de la carte est calculé AVANT d'ouvrir la balise (l'ancien
+    // code faisait un html.replace() sur toute la chaîne cumulée à CHAQUE carte : quadratique).
     var bgStyle = '';
     if (_isSB) {
       bgStyle = 'border-color:#7343EE !important;background:#F5F3FF !important;';
@@ -14269,12 +14329,8 @@ function renderCandidats() {
     } else if (statut === 'Ancien porté') {
       bgStyle = 'border-color:#E24B4A !important;background:#FFF5F5 !important;';
     }
-    if (bgStyle) {
-      // Injecter le style inline à la bonne position : APRÈS class="cand-card"
-      var searchStr = cardMarker + ' onclick="openCandidatFiche(parseInt(this.dataset.candid))" class="cand-card"';
-      var replaceStr = cardMarker + ' onclick="openCandidatFiche(parseInt(this.dataset.candid))" class="cand-card" style="' + bgStyle + '"';
-      html = html.replace(searchStr, replaceStr);
-    }
+    html += '<div data-candid="' + cand.id + '" onclick="openCandidatFiche(parseInt(this.dataset.candid))" class="cand-card"' + (bgStyle ? ' style="' + bgStyle + '"' : '') + '>';
+    html += '<div style="position:absolute;top:0;left:0;right:0;height:4px;background:' + scfg.color + ';border-radius:12px 12px 0 0;"></div>';
     html += '<div style="display:flex;align-items:flex-start;gap:10px;margin-top:6px;">';
     html += '<div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">' + initials + '</div>';
     html += '<div style="flex:1;min-width:0;">';
@@ -33120,6 +33176,38 @@ function _candMatchCtx(cand) {
   if (email && idx.byEmail[email]) idx.byEmail[email].forEach(function(ts){ simTs[ts] = 1; });
   if (key && idx.byKey[key]) idx.byKey[key].forEach(function(ts){ simTs[ts] = 1; });
   return { email: email, key: key, tel: tel, simTs: simTs };
+}
+// PERF (30/09/2026) : index des deals par e-mail / clé nom-prénom / téléphone / sim_ts, pour retrouver
+// les deals d'un candidat sans balayer toute la liste (952 candidats × 713 deals à chaque rendu).
+// Résultat strictement identique à getDeals().filter(_dealBelongsToCand). Recalculé si la liste change ou après 3 s.
+var _candDealIdxCache = null, _candDealIdxSrc = null, _candDealIdxTs = 0;
+function _candDealIndex() {
+  var deals = getDeals();
+  if (_candDealIdxCache && _candDealIdxSrc === deals && Date.now() - _candDealIdxTs < 3000) return _candDealIdxCache;
+  var byEmail = {}, byKey = {}, byTel = {}, bySim = {};
+  var add = function(map, k, i){ if (!k) return; (map[k] = map[k] || []).push(i); };
+  for (var i = 0; i < deals.length; i++) {
+    var d = deals[i]; if (!d) continue;
+    add(byEmail, (d.email || '').trim().toLowerCase(), i);
+    var der = (d.email_candidat_reel || '').trim().toLowerCase(); if (der && der !== (d.email || '').trim().toLowerCase()) add(byEmail, der, i);
+    if (typeof _personKey === 'function') { var _sig = (d.prenom || '') + '|' + (d.nom || ''); if (d._pkSig !== _sig) { d._pkSig = _sig; d._pk = _personKey(d.prenom, d.nom); } add(byKey, d._pk, i); }
+    add(byTel, (d.tel || '').toString().replace(/[\s.\-+()]/g, ''), i);
+    if (d.sim_ts != null) add(bySim, String(d.sim_ts), i);
+  }
+  _candDealIdxCache = { deals: deals, byEmail: byEmail, byKey: byKey, byTel: byTel, bySim: bySim }; _candDealIdxSrc = deals; _candDealIdxTs = Date.now();
+  return _candDealIdxCache;
+}
+// Deals rattachés au candidat (même critères que _dealBelongsToCand), dans l'ordre de la liste des deals.
+function _candDealsOf(ctx) {
+  if (!ctx) return [];
+  var ix = _candDealIndex(), hit = {}, out = [];
+  var take = function(arr){ (arr || []).forEach(function(i){ hit[i] = 1; }); };
+  if (ctx.email) take(ix.byEmail[ctx.email]);
+  if (ctx.key) take(ix.byKey[ctx.key]);
+  if (ctx.tel && ctx.tel.length >= 8) take(ix.byTel[ctx.tel]);
+  if (ctx.simTs) Object.keys(ctx.simTs).forEach(function(ts){ take(ix.bySim[ts]); });
+  Object.keys(hit).map(Number).sort(function(a, b){ return a - b; }).forEach(function(i){ if (ix.deals[i]) out.push(ix.deals[i]); });
+  return out;
 }
 function _dealBelongsToCand(d, ctx) {
   if (!d || !ctx) return false;
