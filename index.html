@@ -5085,6 +5085,69 @@ function buildEML(to, subject, htmlBody, attachments, boundary, cc) {
 // ===== Compression localStorage (LZString) pour les gros blocs (historique, impayés) =====
 // Lib LZString officielle (v1.x) — définit la globale LZString.
 var LZString=function(){var r=String.fromCharCode,o="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",n="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-$",e={};function t(r,o){if(!e[r]){e[r]={};for(var n=0;n<r.length;n++)e[r][r.charAt(n)]=n}return e[r][o]}var i={compressToBase64:function(r){if(null==r)return"";var n=i._compress(r,6,function(r){return o.charAt(r)});switch(n.length%4){default:case 0:return n;case 1:return n+"===";case 2:return n+"==";case 3:return n+"="}},decompressFromBase64:function(r){return null==r?"":""==r?null:i._decompress(r.length,32,function(n){return t(o,r.charAt(n))})},compressToUTF16:function(o){return null==o?"":i._compress(o,15,function(o){return r(o+32)})+" "},decompressFromUTF16:function(r){return null==r?"":""==r?null:i._decompress(r.length,16384,function(o){return r.charCodeAt(o)-32})},compressToUint8Array:function(r){for(var o=i.compress(r),n=new Uint8Array(2*o.length),e=0,t=o.length;e<t;e++){var s=o.charCodeAt(e);n[2*e]=s>>>8,n[2*e+1]=s%256}return n},decompressFromUint8Array:function(o){if(null==o)return i.decompress(o);for(var n=new Array(o.length/2),e=0,t=n.length;e<t;e++)n[e]=256*o[2*e]+o[2*e+1];var s=[];return n.forEach(function(o){s.push(r(o))}),i.decompress(s.join(""))},compressToEncodedURIComponent:function(r){return null==r?"":i._compress(r,6,function(r){return n.charAt(r)})},decompressFromEncodedURIComponent:function(r){return null==r?"":""==r?null:(r=r.replace(/ /g,"+"),i._decompress(r.length,32,function(o){return t(n,r.charAt(o))}))},compress:function(o){return i._compress(o,16,function(o){return r(o)})},_compress:function(r,o,n){if(null==r)return"";var e,t,i,s={},u={},a="",p="",c="",l=2,f=3,h=2,d=[],m=0,v=0;for(i=0;i<r.length;i+=1)if(a=r.charAt(i),Object.prototype.hasOwnProperty.call(s,a)||(s[a]=f++,u[a]=!0),p=c+a,Object.prototype.hasOwnProperty.call(s,p))c=p;else{if(Object.prototype.hasOwnProperty.call(u,c)){if(c.charCodeAt(0)<256){for(e=0;e<h;e++)m<<=1,v==o-1?(v=0,d.push(n(m)),m=0):v++;for(t=c.charCodeAt(0),e=0;e<8;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}else{for(t=1,e=0;e<h;e++)m=m<<1|t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t=0;for(t=c.charCodeAt(0),e=0;e<16;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}0==--l&&(l=Math.pow(2,h),h++),delete u[c]}else for(t=s[c],e=0;e<h;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1;0==--l&&(l=Math.pow(2,h),h++),s[p]=f++,c=String(a)}if(""!==c){if(Object.prototype.hasOwnProperty.call(u,c)){if(c.charCodeAt(0)<256){for(e=0;e<h;e++)m<<=1,v==o-1?(v=0,d.push(n(m)),m=0):v++;for(t=c.charCodeAt(0),e=0;e<8;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}else{for(t=1,e=0;e<h;e++)m=m<<1|t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t=0;for(t=c.charCodeAt(0),e=0;e<16;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1}0==--l&&(l=Math.pow(2,h),h++),delete u[c]}else for(t=s[c],e=0;e<h;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1;0==--l&&(l=Math.pow(2,h),h++)}for(t=2,e=0;e<h;e++)m=m<<1|1&t,v==o-1?(v=0,d.push(n(m)),m=0):v++,t>>=1;for(;;){if(m<<=1,v==o-1){d.push(n(m));break}v++}return d.join("")},decompress:function(r){return null==r?"":""==r?null:i._decompress(r.length,32768,function(o){return r.charCodeAt(o)})},_decompress:function(o,n,e){var t,i,s,u,a,p,c,l=[],f=4,h=4,d=3,m="",v=[],g={val:e(0),position:n,index:1};for(t=0;t<3;t+=1)l[t]=t;for(s=0,a=Math.pow(2,2),p=1;p!=a;)u=g.val&g.position,g.position>>=1,0==g.position&&(g.position=n,g.val=e(g.index++)),s|=(u>0?1:0)*p,p<<=1;switch(s){case 0:for(s=0,a=Math.pow(2,8),p=1;p!=a;)u=g.val&g.position,g.position>>=1,0==g.position&&(g.position=n,g.val=e(g.index++)),s|=(u>0?1:0)*p,p<<=1;c=r(s);break;case 1:for(s=0,a=Math.pow(2,16),p=1;p!=a;)u=g.val&g.position,g.position>>=1,0==g.position&&(g.position=n,g.val=e(g.index++)),s|=(u>0?1:0)*p,p<<=1;c=r(s);break;case 2:return""}for(l[3]=c,i=c,v.push(c);;){if(g.index>o)return"";for(s=0,a=Math.pow(2,d),p=1;p!=a;)u=g.val&g.position,g.position>>=1,0==g.position&&(g.position=n,g.val=e(g.index++)),s|=(u>0?1:0)*p,p<<=1;switch(c=s){case 0:for(s=0,a=Math.pow(2,8),p=1;p!=a;)u=g.val&g.position,g.position>>=1,0==g.position&&(g.position=n,g.val=e(g.index++)),s|=(u>0?1:0)*p,p<<=1;l[h++]=r(s),c=h-1,f--;break;case 1:for(s=0,a=Math.pow(2,16),p=1;p!=a;)u=g.val&g.position,g.position>>=1,0==g.position&&(g.position=n,g.val=e(g.index++)),s|=(u>0?1:0)*p,p<<=1;l[h++]=r(s),c=h-1,f--;break;case 2:return v.join("")}if(0==f&&(f=Math.pow(2,d),d++),l[c])m=l[c];else{if(c!==h)return null;m=i+i.charAt(0)}v.push(m),l[h++]=i+m.charAt(0),i=m,0==--f&&(f=Math.pow(2,d),d++)}}};return i}();"function"==typeof define&&define.amd?define(function(){return LZString}):"undefined"!=typeof module&&null!=module?module.exports=LZString:"undefined"!=typeof angular&&null!=angular&&angular.module("LZString",[]).factory("LZString",function(){return LZString});
+// ═══ COMPRESSION TRANSPARENTE DES GROS STOCKS (01/10/2026) ═══════════════════════════════
+// Constat : 10 Mo de localStorage atteints sur certains postes (candidats 3,2 Mo, deals 3,2 Mo, clients 0,9 Mo…)
+// → écritures refusées (QuotaExceededError), fusions SharePoint impossibles, saisies perdues au rechargement.
+// Principe : on intercepte localStorage.getItem/setItem pour ces clés. Le reste du code continue de lire et
+// d'écrire du JSON clair ; en réalité la valeur est stockée compressée (LZString, marqueur 'LZ1|', ÷4 à ÷5).
+//  • lecture  : décompression unique puis cache mémoire (tant que la valeur stockée n'a pas changé)
+//  • écriture : mise en cache immédiate, compression + écriture différées (1,2 s, regroupe les rafales),
+//               flush garanti à la fermeture / mise en arrière-plan de l'onglet
+//  • migration : à l'ouverture, ce qui est encore en clair est recompressé sur place (du plus gros au plus petit)
+(function(){
+  if (!window.LZString || !window.Storage || !window.localStorage) return;
+  var KEYS = { 'sp_candidats_v1':1, 'sp_deals_v1':1, 'sp_clients_v1':1, 'sp_visites_medicales_v1':1, 'sp_salaires_bloques_v1':1,
+               'sp_avenants_v1':1, 'sp_sortants_v1':1, 'sp_cooptations_v1':1, 'sp_rappels_v1':1, 'sp_taches_v1':1, 'sp_avances_v1':1 };
+  var P = Storage.prototype, oGet = P.getItem, oSet = P.setItem, oRem = P.removeItem;
+  var cache = {}, pending = {}, timer = null;
+  function isLocal(s){ try { return s === window.localStorage; } catch(e){ return false; } }
+  function flush(){
+    if (timer) { clearTimeout(timer); timer = null; }
+    Object.keys(pending).forEach(function(k){
+      var json = pending[k]; delete pending[k];
+      var stored = json;
+      try { if (json.length > 2000) stored = 'LZ1|' + LZString.compressToUTF16(json); } catch(e){ stored = json; }
+      try { oSet.call(localStorage, k, stored); cache[k] = { raw: stored, json: json }; }
+      catch(e){
+        pending[k] = json;   // on garde la valeur en mémoire (lectures cohérentes, synchro SharePoint possible) et on réessaiera
+        console.error('[localStorage plein] ' + k, e);
+        try { if (typeof showNotifToast === 'function') showNotifToast('⚠ Stockage navigateur plein : ' + k); } catch(_e){}
+      }
+    });
+  }
+  function schedule(){ if (!timer) timer = setTimeout(flush, 1200); }
+  P.getItem = function(k){
+    if (!KEYS[k] || !isLocal(this)) return oGet.call(this, k);
+    if (pending[k] !== undefined) return pending[k];
+    var raw = oGet.call(this, k);
+    if (raw == null || raw.indexOf('LZ1|') !== 0) return raw;
+    var c = cache[k]; if (c && c.raw === raw) return c.json;
+    var json = null; try { json = LZString.decompressFromUTF16(raw.slice(4)); } catch(e){ console.error('[LZ] ' + k, e); return null; }
+    if (json == null) return null;
+    cache[k] = { raw: raw, json: json }; return json;
+  };
+  P.setItem = function(k, v){
+    if (!KEYS[k] || !isLocal(this)) return oSet.call(this, k, v);
+    v = String(v);
+    if (v.indexOf('LZ1|') === 0) { delete pending[k]; cache[k] = null; return oSet.call(this, k, v); }
+    pending[k] = v; schedule();
+  };
+  P.removeItem = function(k){ if (KEYS[k] && isLocal(this)) { delete pending[k]; cache[k] = null; } return oRem.call(this, k); };
+  window.addEventListener('beforeunload', flush);
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden') flush(); });
+  window._lzStoreFlush = flush;
+  window._lzStoreKeys = KEYS;
+  // Taille réellement occupée (valeurs stockées, compressées), pour les diagnostics
+  window._lzStoreUsage = function(){ var t = 0; for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); var v = oGet.call(localStorage, k) || ''; t += (k.length + v.length) * 2; } return t; };
+  try {
+    var todo = Object.keys(KEYS).map(function(k){ var r = oGet.call(localStorage, k); return (r != null && r.indexOf('LZ1|') !== 0 && r.length > 2000) ? { k: k, r: r } : null; })
+                  .filter(Boolean).sort(function(a, b){ return b.r.length - a.r.length; });
+    var avant = window._lzStoreUsage();
+    todo.forEach(function(t){ try { oSet.call(localStorage, t.k, 'LZ1|' + LZString.compressToUTF16(t.r)); } catch(e){ console.warn('[LZ migration] ' + t.k, e); } });
+    if (todo.length) console.log('[LZ] ' + todo.length + ' stock(s) compressé(s) (' + todo.map(function(t){ return t.k; }).join(', ') + ') : ' + (avant / 1048576).toFixed(2) + ' Mo → ' + (window._lzStoreUsage() / 1048576).toFixed(2) + ' Mo');
+  } catch(e){ console.warn('[LZ migration]', e); }
+})();
 // Helpers de lecture/écriture compressée (marqueur 'LZ1|'). Rétrocompatible :
 // une valeur non préfixée est lue en JSON brut (migration paresseuse à la prochaine écriture).
 // Cache mémoire + écriture DIFFÉRÉE (la compression LZString est lourde ~centaines de ms :
@@ -8443,6 +8506,7 @@ function _odEmergencyPush() {
     var entities = (typeof SYNC_ENTITIES !== 'undefined') ? SYNC_ENTITIES : [];
     entities.forEach(function(ent){
       if (!ent || typeof ent.getData !== 'function') return;
+      if (ent._loadFailed) return;   // jamais fusionnée avec SharePoint → ne pas écraser
       var body;
       try { body = JSON.stringify(ent.getData()); } catch(e){ return; }
       var putUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + _odEncPath(ent.path) + ':/content';
@@ -8621,6 +8685,7 @@ function odSilentFullSync() {
 
     // ═══ PHASE 1 : LOAD parallèle (toutes les entités en même temps) ═══
     var loadPromises = entities.map(function(ent) {
+      ent._loadFailed = false;   // SÉCURITÉ (01/10/2026) : une entité dont la lecture/fusion échoue ne sera PAS poussée (sinon on écraserait SharePoint avec une version non fusionnée)
       var loadUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + _odEncPath(ent.path) + ':/content';
       return fetch(loadUrl, { headers: { 'Authorization': 'Bearer ' + token } })
         .then(function(r) {
@@ -8646,12 +8711,14 @@ function odSilentFullSync() {
             }
           } catch(mergeErr) {
             console.error('[AutoSync merge] ' + ent.key, mergeErr);
-            errors.push('merge ' + ent.key);
+            errors.push('merge ' + ent.key + ' : ' + (mergeErr && mergeErr.message ? mergeErr.message : mergeErr));
+            ent._loadFailed = true;
           }
         })
         .catch(function(err) {
           console.warn('[AutoSync load] ' + ent.key, err);
-          errors.push('load ' + ent.key);
+          errors.push('load ' + ent.key + ' : ' + (err && err.message ? err.message : err));
+          ent._loadFailed = true;
         });
     });
 
@@ -8689,6 +8756,7 @@ function odSilentFullSync() {
       // (l'écrasement last-write-wins se fait sans en-tête de précondition sur cet endpoint).
       function pushOne(ent, attempt) {
         attempt = attempt || 1;
+        if (ent._loadFailed) { errors.push('push ignoré ' + ent.key + ' (lecture SharePoint échouée → non écrasé, nouvel essai à la prochaine synchro)'); return Promise.resolve(); }
         var putUrl = 'https://graph.microsoft.com/v1.0' + OD_DRIVE_BASE + '/root:' + _odEncPath(ent.path) + ':/content';
         var body;
         try { body = JSON.stringify(ent.getData()); }
@@ -8731,11 +8799,15 @@ function odSilentFullSync() {
         if (window._odSyncInFlightTimer) { clearTimeout(window._odSyncInFlightTimer); window._odSyncInFlightTimer = null; }
         // Lecture auto du dossier OneDrive des virements (throttlée à 5 min en interne).
         try { if (typeof odAutoImportPaiements === 'function') odAutoImportPaiements(); } catch(e){}
+        window._odLastSyncErrors = errors.slice(); window._odLastSyncAt = Date.now();
+        var _stEl = document.getElementById('od-status');
         if (errors.length) {
           console.warn('[AutoSync] Terminé avec avertissements:', errors);
-          odSetStatus('⚠ Sync partielle (' + errors.length + ')', true);
+          odSetStatus('⚠ Sync partielle (' + errors.length + ') — cliquez pour le détail', true);
+          if (_stEl) { _stEl.title = errors.join('\n'); _stEl.style.cursor = 'pointer'; _stEl.onclick = function(){ alert('Synchronisation partielle — ' + new Date(window._odLastSyncAt).toLocaleString('fr-FR') + '\n\n' + (window._odLastSyncErrors || []).join('\n') + '\n\nLes fichiers en erreur seront retentés à la prochaine synchronisation (bouton Sync). Rien n\u2019est perdu localement.'); }; }
           // Sync partielle : on GARDE le flag pending (des entités n'ont pas été poussées)
         } else {
+          if (_stEl) { _stEl.title = ''; _stEl.style.cursor = ''; _stEl.onclick = null; }
           odSetStatus('✓ Sync auto OK (' + (Date.now() - t0) + 'ms)', false);
           // FIX ANTI-PERTE : push réussi → on efface le flag "modifs en attente"
           _odClearPending();
@@ -33333,6 +33405,8 @@ function _candMatchCtx(cand) {
 // PERF (30/09/2026) : index des deals par e-mail / clé nom-prénom / téléphone / sim_ts, pour retrouver
 // les deals d'un candidat sans balayer toute la liste (952 candidats × 713 deals à chaque rendu).
 // Résultat strictement identique à getDeals().filter(_dealBelongsToCand). Recalculé si la liste change ou après 3 s.
+// Champ de cache NON énumérable : jamais sérialisé dans localStorage / SharePoint (sinon +50 Ko de _pk/_pkSig dans sp_deals_v1)
+function _setHidden(o, k, v) { try { Object.defineProperty(o, k, { value: v, writable: true, configurable: true, enumerable: false }); } catch(e) { o[k] = v; } }
 var _candDealIdxCache = null, _candDealIdxSrc = null, _candDealIdxTs = 0;
 function _candDealIndex() {
   var deals = getDeals();
@@ -33343,7 +33417,7 @@ function _candDealIndex() {
     var d = deals[i]; if (!d) continue;
     add(byEmail, (d.email || '').trim().toLowerCase(), i);
     var der = (d.email_candidat_reel || '').trim().toLowerCase(); if (der && der !== (d.email || '').trim().toLowerCase()) add(byEmail, der, i);
-    if (typeof _personKey === 'function') { var _sig = (d.prenom || '') + '|' + (d.nom || ''); if (d._pkSig !== _sig) { d._pkSig = _sig; d._pk = _personKey(d.prenom, d.nom); } add(byKey, d._pk, i); }
+    if (typeof _personKey === 'function') { var _sig = (d.prenom || '') + '|' + (d.nom || ''); if (d._pkSig !== _sig || Object.prototype.propertyIsEnumerable.call(d, '_pk')) { _setHidden(d, '_pkSig', _sig); _setHidden(d, '_pk', _personKey(d.prenom, d.nom)); } add(byKey, d._pk, i); }
     add(byTel, (d.tel || '').toString().replace(/[\s.\-+()]/g, ''), i);
     if (d.sim_ts != null) add(bySim, String(d.sim_ts), i);
   }
@@ -33368,7 +33442,7 @@ function _dealBelongsToCand(d, ctx) {
   if (ctx.email && (de === ctx.email || der === ctx.email)) return true;
   if (ctx.key && typeof _personKey === 'function') {
     var _sig = (d.prenom || '') + '|' + (d.nom || '');
-    if (d._pkSig !== _sig) { d._pkSig = _sig; d._pk = _personKey(d.prenom, d.nom); }
+    if (d._pkSig !== _sig) { _setHidden(d, '_pkSig', _sig); _setHidden(d, '_pk', _personKey(d.prenom, d.nom)); }
     if (d._pk === ctx.key) return true;
   }
   if (ctx.tel.length >= 8) { var dt = (d.tel || '').toString().replace(/[\s.\-+()]/g, ''); if (dt === ctx.tel) return true; }
