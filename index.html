@@ -27640,6 +27640,12 @@ function showCooptationsView() {
   renderCooptations();
 }
 
+// Nature de la cooptation (menu déroulant du tableau Cooptation — 02/10/2026) et commercial du deal associé
+var COOP_NATURES = ['Chèques vacances', 'Chèques culture', 'Chèques cadeaux'];
+function _coopCommercial(c) {
+  try { var d = getDeals().find(function(x){ return x && String(x.id) === String(c.deal_id); }); if (d && d.commercial) return String(d.commercial).trim(); } catch(e){}
+  return c.commercial || '';
+}
 function renderCooptations() {
   var container = document.getElementById('cooptations-container');
   if (!container) return;
@@ -27687,7 +27693,7 @@ function renderCooptations() {
     }
     if (f.search) {
       var q = f.search.toLowerCase();
-      var hay = [(c.porte_prenom||''),(c.porte_nom||''),(c.coopteur_nom||''),(c.entreprise||''),(c.coopteur_entreprise||'')].join(' ').toLowerCase();
+      var hay = [(c.porte_prenom||''),(c.porte_nom||''),(c.coopteur_nom||''),(c.entreprise||''),(c.coopteur_entreprise||''),(c.nature||''),_coopCommercial(c)].join(' ').toLowerCase();
       if (hay.indexOf(q) < 0) return false;
     }
     return true;
@@ -27775,12 +27781,14 @@ function renderCooptations() {
   } else {
     html += '<div class="comm-card" style="padding:0;overflow:hidden;">'
       + '<div style="overflow-x:auto;max-width:100%;">'
-      + '<table class="comm-deals-table" style="min-width:1560px;">'
+      + '<table class="comm-deals-table" style="min-width:1860px;">'
       + '<thead><tr>'
       +   '<th style="min-width:160px;">Porté</th>'
+      +   '<th style="min-width:110px;">Commercial</th>'
       +   '<th style="min-width:200px;">Coopteur</th>'
       +   '<th style="min-width:160px;">Entreprise coopteur</th>'
       +   '<th style="min-width:80px;">Type</th>'
+      +   '<th style="min-width:150px;">Nature</th>'
       +   '<th style="min-width:100px;">Date deal</th>'
       +   '<th style="min-width:110px;">Début mission</th>'
       +   '<th style="min-width:110px;">Fin mission</th>'
@@ -27849,11 +27857,19 @@ function renderCooptations() {
       else if (st.due) statutBadge = '<span style="display:inline-block;padding:3px 10px;background:#FDECEC;color:#A8322A;border-radius:10px;font-size:10.5px;font-weight:700;">🔴 À payer · J+' + st.days_since_start + '</span>';
       else statutBadge = '<span style="display:inline-block;padding:3px 10px;background:#FFF8E1;color:#8A6500;border-radius:10px;font-size:10.5px;font-weight:700;">⏳ J+' + st.days_since_start + '/' + cfg.delai_jours + '</span>';
 
+      var natureSel = '<select onchange="updateCooptationField(\'' + escId + '\',\'nature\',this.value);" style="padding:4px 6px;border:1.5px solid #E4E0FA;border-radius:5px;font-size:11px;font-family:inherit;background:#fff;cursor:pointer;max-width:150px;">'
+        + '<option value=""' + (!c.nature ? ' selected' : '') + '>—</option>'
+        + COOP_NATURES.map(function(n){ return '<option value="' + n + '"' + (c.nature === n ? ' selected' : '') + '>' + n + '</option>'; }).join('')
+        + (c.nature && COOP_NATURES.indexOf(c.nature) < 0 ? '<option value="' + String(c.nature).replace(/"/g,'&quot;') + '" selected>' + c.nature + '</option>' : '')
+        + '</select>';
+      var commCell = _coopCommercial(c) ? '<span style="font-weight:600;color:#1A1033;">' + _coopCommercial(c) + '</span>' : '<span style="color:#C0B8E0;">—</span>';
       html += '<tr' + (st.due ? ' style="background:#FEF6F6;"' : '') + '>'
         + '<td>' + porteLink + '</td>'
+        + '<td>' + commCell + '</td>'
         + '<td>' + coopteurLink + '</td>'
         + '<td>' + entrepriseCell + '</td>'
         + '<td>' + typeBadge + '</td>'
+        + '<td>' + natureSel + '</td>'
         + '<td>' + (c.date_deal || '—') + '</td>'
         + '<td>' + debut + '</td>'
         + '<td>' + fin + '</td>'
@@ -27913,20 +27929,20 @@ function exportCooptationsCSV() {
     }
     if (f.search) {
       var q = f.search.toLowerCase();
-      var hay = [(c.porte_prenom||''),(c.porte_nom||''),(c.coopteur_nom||''),(c.entreprise||''),(c.coopteur_entreprise||'')].join(' ').toLowerCase();
+      var hay = [(c.porte_prenom||''),(c.porte_nom||''),(c.coopteur_nom||''),(c.entreprise||''),(c.coopteur_entreprise||''),(c.nature||''),_coopCommercial(c)].join(' ').toLowerCase();
       if (hay.indexOf(q) < 0) return false;
     }
     return true;
   });
   if (filtered.length === 0) { alert('Aucune cooptation à exporter.'); return; }
-  var headers = ['Porté prénom','Porté nom','Entreprise portage','Coopteur','Coopteur entreprise','Type','Date deal','Début mission','Fin mission','Montant €','Date paiement','Statut'];
+  var headers = ['Porté prénom','Porté nom','Entreprise portage','Commercial','Coopteur','Coopteur entreprise','Type','Nature','Date deal','Début mission','Fin mission','Montant €','Date paiement','Statut'];
   var rows = filtered.map(function(e){
     var c = e.coop, st = e.status;
     var statut = st.paid ? 'Payé' : (st.mission_abregee ? 'Abrégée' : (st.due ? 'À payer' : 'En attente'));
     return [
-      c.porte_prenom||'', c.porte_nom||'', c.entreprise||'',
+      c.porte_prenom||'', c.porte_nom||'', c.entreprise||'', _coopCommercial(c),
       c.coopteur_nom||'', c.coopteur_entreprise||'',
-      c.type==='client'?'Client':'Candidat',
+      c.type==='client'?'Client':'Candidat', c.nature||'',
       c.date_deal||'',
       c.date_debut_mission ? new Date(c.date_debut_mission).toLocaleDateString('fr-FR') : '',
       c.date_fin_mission ? new Date(c.date_fin_mission).toLocaleDateString('fr-FR') : '',
@@ -38091,20 +38107,20 @@ function _dealFGEffectif(d) {
 //   date_eligible : date à partir de laquelle la ligne compte (début + 3 mois)
 //   motif     : explication lisible (pour l'onglet Commissions)
 function _commContinuiteStatut(d) {
-  var deb = _dgParseDate(d.date_entree) || _dgParseDate((d.prolongation_avenant || {}).date) || _dgParseDate(d.date_deal);
-  if (!deb) return { eligible: false, date_eligible: null, motif: 'date de début chez le nouveau client inconnue' };
-  var seuil = new Date(deb); seuil.setMonth(seuil.getMonth() + 3);
-  var today = new Date(); today.setHours(23, 59, 59, 999);
-  // Mission arrêtée avant les 3 mois ? (état du deal, ou fiche sortant)
-  var fin = null;
-  if (d.etat === 'Fin de mission' || d.etat === 'Sorti des effectifs') fin = _dgParseDate(d.date_sortie) || _dgParseDate(d.date_fin);
-  try {
-    var so = (typeof _sortantsCached === 'function' ? _sortantsCached() : getSortants()).filter(function(s){ return s && !s._deleted && String(s.deal_id) === String(d.id); })[0];
-    if (so) { var fm = _dgParseDate(so.fin_mission) || _dgParseDate(so.date_fin_contrat); if (fm && (!fin || fm < fin)) fin = fm; }
-  } catch(e) {}
-  if (fin && fin < seuil) return { eligible: false, date_eligible: seuil, motif: 'mission terminée le ' + fin.toLocaleDateString('fr-FR') + ' (avant 3 mois)', termine: true };
-  if (seuil > today) return { eligible: false, date_eligible: seuil, motif: 'comptera à partir du ' + seuil.toLocaleDateString('fr-FR') + ' (3 mois chez le nouveau client)' };
-  return { eligible: true, date_eligible: seuil, motif: '3 mois chez le nouveau client atteints le ' + seuil.toLocaleDateString('fr-FR') };
+  // RÈGLE (02/10/2026) : un avenant « nouveau client » compte comme un deal si le PLACEMENT PRÉCÉDENT
+  // (le deal d'origine, chez l'ancien client) a duré au moins 3 mois : de son entrée jusqu'au début chez le nouveau client.
+  // Connu dès la création de l'avenant (pas d'attente).
+  var pa = d.prolongation_avenant || {};
+  var orig = null; try { orig = getDeals().find(function(x){ return x && String(x.id) === String(pa.deal_origine_id); }) || null; } catch(e) {}
+  if (!orig) return { eligible: false, date_eligible: null, motif: 'placement précédent introuvable (deal d’origine ' + (pa.deal_origine_id || '?') + ')' };
+  var debOrig = _dgParseDate(orig.date_entree) || _dgParseDate(orig.date_deal);
+  var finOrig = _dgParseDate(d.date_entree) || _dgParseDate(pa.date) || _dgParseDate(d.date_deal) || (orig.date_fin ? _dgParseDate(orig.date_fin) : null);
+  if (!debOrig || !finOrig) return { eligible: false, date_eligible: null, motif: 'dates du placement précédent inconnues' };
+  var seuil = new Date(debOrig); seuil.setMonth(seuil.getMonth() + 3);
+  var mois = Math.max(0, Math.round((finOrig - debOrig) / (30.4375 * 86400000) * 10) / 10);
+  var periode = 'du ' + debOrig.toLocaleDateString('fr-FR') + ' au ' + finOrig.toLocaleDateString('fr-FR') + ' chez ' + (orig.entreprise || pa.ancien_client || '?');
+  if (finOrig < seuil) return { eligible: false, date_eligible: seuil, motif: 'placement précédent de ' + mois + ' mois (' + periode + ') : moins de 3 mois → ne compte pas', termine: true };
+  return { eligible: true, date_eligible: seuil, motif: 'placement précédent de ' + mois + ' mois (' + periode + ') : au moins 3 mois → compte comme un deal' };
 }
 // Changements de client du mois qui ne comptent PAS (encore) dans la commission
 function getCommContinuitesEnAttente(commercial, year, month) {
@@ -38144,8 +38160,8 @@ function getCommDealsForPeriod(commercial, year, month /* 0-11, null = toute l'a
     var wanted = (commercial || '').trim().toLowerCase();
     if (wanted && dealComm !== wanted) return false;
     // Continuité de contrat (avenant nouveau client) : c'est un NOUVEAU deal, commissionné
-    // dans le mois de sa création (date_deal = date de l'avenant) — MAIS seulement une fois que le
-    // porté est resté 3 mois chez le nouveau client (décision 30/09/2026, en attendant l'info « facturé 3 mois »).
+    // dans le mois de sa création (date_deal = date de l'avenant) — MAIS seulement si le placement
+    // précédent (chez l'ancien client) a duré au moins 3 mois (règle du 02/10/2026).
     if (d.etat === 'Annulé') return false;
     if (d.prolongation_avenant && !_commContinuiteStatut(d).eligible) return false;
     // Frais de gestion ≥ seuil (override commission prioritaire)
@@ -38623,10 +38639,10 @@ function renderCommCurrentView() {
     var _att = (typeof getCommContinuitesEnAttente === 'function') ? getCommContinuitesEnAttente(currentCommCommercial, currentCommYear, currentCommMonth) : [];
     if (_att.length) {
       html += '<div class="comm-card" style="background:#FFF8E8;border-color:#F0D98A;">'
-        + '<div class="comm-card-title"><span class="comm-card-title-dot" style="background:#F0A500;"></span><span>&#128257; Changements de client non compt\u00e9s (r\u00e8gle des 3 mois)</span></div>'
+        + '<div class="comm-card-title"><span class="comm-card-title-dot" style="background:#F0A500;"></span><span>&#128257; Changements de client non compt\u00e9s (placement pr\u00e9c\u00e9dent de moins de 3 mois)</span></div>'
         + '<div style="font-size:12.5px;color:#1A1033;line-height:1.7;">'
         + _att.map(function(x){ var d = x.deal; return '<div>&bull; <strong>' + ((d.prenom||'') + ' ' + (d.nom||'')).trim() + '</strong> \u2192 ' + (d.entreprise||'?') + ' : ' + x.statut.motif + '</div>'; }).join('')
-        + '<div style="margin-top:6px;font-size:11.5px;color:#8A5F00;">Un changement de client compte comme un deal du mois de l\u2019avenant d\u00e8s que le port\u00e9 est rest\u00e9 3 mois chez le nouveau client.</div>'
+        + '<div style="margin-top:6px;font-size:11.5px;color:#8A5F00;">Un changement de client compte comme un deal du mois de l\u2019avenant si le placement pr\u00e9c\u00e9dent (chez l\u2019ancien client) a dur\u00e9 au moins 3 mois.</div>'
         + '</div></div>';
     }
   } catch(e) {}
