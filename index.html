@@ -15865,7 +15865,7 @@ function renderVisiteMedicale() {
   h += '<div style="overflow-x:auto;background:#fff;border:1px solid #E4E0FA;border-radius:10px;">';
   h += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
   h += '<thead><tr style="background:#F5F3FF;color:#6B5E9C;">'
-    + ['Traité par','Civilité','Nom','Prénom','Email','Téléphone','Date entrée','Commercial','Client','Commentaire','Contrat signé','Mutuelle','SWILE','Forfait repas','Grand dépl.','CRA saisi LAYA','CRA validé','Mail confirmation client','Mail relance CRA','Ville','Adresse','Date inscription','Inscription','Date VM','Avis aptitude','Prochaine VM'].map(function(col){ return '<th style="padding:9px 10px;text-align:left;font-size:11px;white-space:nowrap;">'+col+'</th>'; }).join('')
+    + ['Traité par','Civilité','Nom','Prénom','Email','Téléphone','Date entrée','Commercial','Client','Ville','Adresse','Date inscription','Inscription','Date VM','Avis aptitude','Prochaine VM'].map(function(col){ return '<th style="padding:9px 10px;text-align:left;font-size:11px;white-space:nowrap;">'+col+'</th>'; }).join('')
     + '</tr></thead><tbody>';
   var ouiNon = function(id, field, val){
     return '<select onchange="updateVMField(\''+id+'\',\''+field+'\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11.5px;font-weight:700;color:'+(val==='Oui'?'#0F5132':'#8A5F00')+';background:'+(val==='Oui'?'#F0FAF4':'#FFF8E8')+';">'
@@ -15885,21 +15885,16 @@ function renderVisiteMedicale() {
     return '<input type="text" value="'+String(val||'').replace(/"/g,'&quot;').replace(/</g,'&lt;')+'" onchange="updateVMField(\''+id+'\',\''+field+'\',this.value)" style="width:'+(w||130)+'px;padding:3px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;box-sizing:border-box;">';
   };
   var _vmDealById = {}; try { getDeals().forEach(function(d){ if (d && d.id != null) _vmDealById[String(d.id)] = d; }); } catch(e){}
-  var _vmSimByTs = {}; try { getHistory().forEach(function(s){ if (s && s.timestamp != null) _vmSimByTs[String(s.timestamp)] = s; }); } catch(e){}
   var _sbLk = _standByLookup();
   list.forEach(function(v){
     var _sbLocked = _vmRowStandBy(v, _sbLk);
     h += '<tr title="' + (_sbLocked ? 'Deal en stand by \u2014 convertissez le placement pour d\u00e9bloquer' : '') + '" style="border-bottom:1px solid #F0EDF9;' + (_sbLocked ? 'opacity:.55;pointer-events:none;background:#F7F5FC;' : '') + '">'
       + (function(){
           var _d = (v.deal_id != null) ? _vmDealById[String(v.deal_id)] : null;
-          var _s = (_d && typeof _dealSimEnVigueur === 'function') ? _dealSimEnVigueur(_d) : ((_d && _d.sim_ts != null) ? _vmSimByTs[String(_d.sim_ts)] : null);
-          var _frais = (_s && typeof _avExtractFraisFromSim === 'function') ? _avExtractFraisFromSim(_s) : {};
           var _email = (_d && (_d.email_candidat_reel || _d.email)) || v.email || '';
           var _tel = (_d && _d.tel) || v.tel || '';
           var _client = String((_d && _d.entreprise) || v.client || '');
           var _commVal = v.commercial || (_d && _d.commercial) || '';
-          var _forfait = (v.swile === 'Actif') ? '' : ((_frais && _frais.forfait_repas) || '');
-          var _gd = (_frais && _frais.grand_deplacement && _frais.grand_deplacement !== 'Non') ? 'Oui' : 'Non';
           return '<td style="padding:8px 10px;">' + selCell(v.id,'traite_par',v.traite_par,['Marie','Clémence','Erika']) + '</td>'
             + '<td style="padding:8px 10px;">' + selCell(v.id,'civilite',v.civilite,['Monsieur','Madame']) + '</td>'
             + '<td style="padding:8px 10px;font-weight:600;color:#1A1033;white-space:nowrap;">' + String(v.nom||'').toUpperCase() + (_sbLocked ? ' <span style="background:#7343EE;color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">\u23F8 STAND BY</span>' : '') + (_vmIsNew(v.date_entree) ? ' <span style="background:#1D9E75;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">NEW</span>' : '') + '</td>'
@@ -15909,16 +15904,6 @@ function renderVisiteMedicale() {
             + '<td style="padding:8px 10px;white-space:nowrap;">' + _vmFmtDate(v.date_entree) + '</td>'
             + '<td style="padding:8px 10px;">' + selCell(v.id,'commercial',_commVal,['Joanne','Farah','Esteban','Rayan','Sacha','David']) + '</td>'
             + '<td style="padding:8px 10px;font-weight:600;white-space:nowrap;">' + (_client ? _client.toUpperCase().replace(/</g,'&lt;') : '—') + '</td>'
-            + '<td style="padding:8px 10px;">' + txtCell(v.id,'commentaire',v.commentaire,150) + '</td>'
-            + '<td style="padding:8px 10px;">' + ouiNon(v.id,'contrat_signe',v.contrat_signe) + '</td>'
-            + '<td style="padding:8px 10px;">' + selCell(v.id,'mutuelle',v.mutuelle,['Affilié','En Attente','Dispensé']) + '</td>'
-            + '<td style="padding:8px 10px;">' + selCell(v.id,'swile',v.swile,['Actif','En Attente']) + '</td>'
-            + '<td style="padding:8px 10px;text-align:right;">' + (_forfait ? (_forfait + ' €') : '—') + '</td>'
-            + '<td style="padding:8px 10px;"><span style="padding:2px 9px;border-radius:10px;font-size:10.5px;font-weight:700;background:'+(_gd==='Oui'?'#EEF4FF':'#F5F3FF')+';color:'+(_gd==='Oui'?'#1A4F96':'#9E94C4')+';">' + _gd + '</span></td>'
-            + '<td style="padding:8px 10px;">' + ouiNon(v.id,'cra_saisi',v.cra_saisi) + '</td>'
-            + '<td style="padding:8px 10px;">' + txtCell(v.id,'cra_valide',v.cra_valide,60) + '</td>'
-            + '<td style="padding:8px 10px;">' + ouiNon(v.id,'mail_confirmation',v.mail_confirmation) + '</td>'
-            + '<td style="padding:8px 10px;">' + (v.cra_saisi === 'Oui' ? '<span style="padding:2px 9px;border-radius:10px;font-size:10.5px;font-weight:700;background:#F5F3FF;color:#9E94C4;">N/A</span>' : ouiNon(v.id,'mail_relance',v.mail_relance)) + '</td>'
             + '<td style="padding:8px 10px;"><select onchange="updateVMField(\''+v.id+'\',\'ville\',this.value)" style="padding:3px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;font-weight:700;background:'+(v.ville==='IDF'?'#EEF4FF':(v.ville==='Région'?'#FFF4EC':'#fff'))+';color:'+(v.ville==='IDF'?'#1A4F96':(v.ville==='Région'?'#9A5B00':'#9E94C4'))+';"><option value=""'+(!v.ville?' selected':'')+'>—</option><option value="IDF"'+(v.ville==='IDF'?' selected':'')+'>IDF</option><option value="Région"'+(v.ville==='Région'?' selected':'')+'>Région</option></select></td>'
             + '<td style="padding:8px 10px;color:#6B5E9C;min-width:220px;">' + String(v.adresse||'—').replace(/</g,'&lt;') + '</td>'
             + '<td style="padding:8px 10px;white-space:nowrap;">' + _vmFmtDate(v.date_inscription) + '</td>'
@@ -18389,7 +18374,7 @@ function buildEntreesContent() {
     + '</div>'
     // Tableau
     + '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E4E0FA;overflow-x:auto;">'
-    +   '<table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:1800px;">'
+    +   '<table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:2250px;">'
     +     '<thead style="background:#F5F3FF;">'
     +       '<tr style="border-bottom:2px solid #E4E0FA;">'
     +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Civilité</th>'
@@ -18409,6 +18394,10 @@ function buildEntreesContent() {
     +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">SWILE</th>'
     +         '<th style="padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;">Forfait repas</th>'
     +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Grand dép.</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">CRA saisi LAYA</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;" title="Nombre de jours validés">CRA validé (j)</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Mail confirmation client</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;" title="N/A dès que le CRA est saisi">Mail relance CRA</th>'
     +       '</tr>'
     +     '</thead>'
     +     '<tbody>' + rowsHtml + emptyState + '</tbody>'
@@ -18429,6 +18418,14 @@ function buildEntreeRow(item) {
   var signature = etat.signature_contrat || '';
   var mutuelle = etat.mutuelle || 'En Attente';
   var commentaire = etat.commentaire || '';
+  // Suivi CRA / mails (saisi ici ; reprise des valeurs saisies auparavant dans l'onglet Visite médicale)
+  var _vmOld = null; try { _vmOld = (typeof getVisitesMedicales === 'function') ? getVisitesMedicales().find(function(v){ return v && String(v.deal_id) === String(dealId); }) : null; } catch(e){}
+  function _ob(field){ var x = etat[field]; if (x !== undefined && x !== null && x !== '') return x; return (_vmOld && _vmOld[field] !== undefined && _vmOld[field] !== null) ? _vmOld[field] : ''; }
+  var craSaisi = _ob('cra_saisi') || 'Non', craValide = _ob('cra_valide'), mailConf = _ob('mail_confirmation') || 'Non', mailRel = _ob('mail_relance') || 'Non';
+  function _ouiNonSel(field, val){
+    return '<select onchange="updateDemarrageField(' + dealId + ',\'' + field + '\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;font-weight:700;color:' + (val === 'Oui' ? '#0F5132' : '#8A5F00') + ';background:' + (val === 'Oui' ? '#F0FAF4' : '#FFF8E8') + ';">'
+      + '<option value="Non"' + (val !== 'Oui' ? ' selected' : '') + '>Non</option><option value="Oui"' + (val === 'Oui' ? ' selected' : '') + '>Oui</option></select>';
+  }
 
   // Lookup manager email + références pour les liens (fiche client / fiche manager)
   var managerEmail = '';
@@ -18538,6 +18535,14 @@ function buildEntreeRow(item) {
     + '<td style="padding:9px 8px;text-align:right;color:#1A1033;font-weight:600;">' + forfaitRepas + '</td>'
     // 17. Grand déplacement (auto)
     + '<td style="padding:9px 8px;text-align:center;color:#4B36EC;font-weight:600;">' + grandDep + '</td>'
+    // 18. CRA saisi LAYA
+    + '<td style="padding:9px 8px;text-align:center;">' + _ouiNonSel('cra_saisi', craSaisi) + '</td>'
+    // 19. CRA validé (nombre de jours)
+    + '<td style="padding:9px 8px;text-align:center;"><input type="text" inputmode="decimal" value="' + String(craValide || '').replace(/"/g,'&quot;') + '" onchange="updateDemarrageField(' + dealId + ',\'cra_valide\',this.value)" placeholder="j" style="width:52px;padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;text-align:center;"></td>'
+    // 20. Mail confirmation client
+    + '<td style="padding:9px 8px;text-align:center;">' + _ouiNonSel('mail_confirmation', mailConf) + '</td>'
+    // 21. Mail relance CRA (N/A dès que le CRA est saisi)
+    + '<td style="padding:9px 8px;text-align:center;">' + (craSaisi === 'Oui' ? '<span style="padding:2px 9px;border-radius:10px;font-size:10.5px;font-weight:700;background:#F5F3FF;color:#9E94C4;">N/A</span>' : _ouiNonSel('mail_relance', mailRel)) + '</td>'
     + '</tr>';
 }
 
