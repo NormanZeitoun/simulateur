@@ -22377,7 +22377,8 @@ var IMPAYES_FILTER = {
   banque: 'all',       // dropdown banque (compte bancaire)
   commercial: 'all',   // dropdown chargé de clientèle
   bucket: 'all',       // pills retard (< 30 / 30-60 / > 60)
-  exclude_clients: [], // liste de clients exclus (multi)
+  exclude_clients: [], // liste de clients exclus (multi) — chargée depuis les exclusions « Salaires bloqués » (persistées, synchronisées)
+  show_excluded: false, // true = n'afficher QUE les factures des clients exclus
   sort_col: 'retard',  // colonne de tri
   sort_dir: 'desc',    // 'asc' | 'desc'
   view_mode: 'open'    // 'open' (impayés en cours) | 'paid' (payées récentes) | 'all'
@@ -22903,6 +22904,13 @@ function _sbPurgeExcluded() {
 }
 
 function _sbOpenExclusions() {
+  if (!window._impExclUnlocked && typeof promptGenericAdminPassword === 'function') {
+    promptGenericAdminPassword(
+      { title: 'Exclusions — Salaires bloqués', subtitle: 'Saisissez le mot de passe administrateur pour modifier les exclusions.' },
+      function(){ window._impExclUnlocked = true; _sbOpenExclusions(); }
+    );
+    return;
+  }
   var ex = _sbGetExclusions();
   function uniq(a){ return a.filter(function(v,i,arr){ return v && arr.indexOf(v)===i; }).sort(); }
   var allClients = uniq(getSalairesBloques().map(function(e){ return e.client; }));
@@ -22989,6 +22997,7 @@ function _sbRemoveExclusion(type, idx) {
   list.splice(idx, 1);
   _sbSaveExclusions(ex);
   if (typeof runSalaireBloqueEngine === 'function') { try { runSalaireBloqueEngine(); } catch(e){} }
+  try { if (typeof currentRHSubTab !== 'undefined' && currentRHSubTab === 'impayes' && typeof renderImpayes === 'function') renderImpayes(); } catch(e){}
   _sbOpenExclusions();
   if (typeof renderSalairesBloques === 'function') renderSalairesBloques();
 }
@@ -23777,7 +23786,17 @@ function renderImpayes() {
   el.innerHTML = buildImpayesContent();
 }
 
+// Exclusions clients : source unique = exclusions « Salaires bloqués » (synchronisée OneDrive).
+// Un client exclu est masqué des impayés ET n'est jamais bloqué (salaire).
+function _impExcludedClients() {
+  try { return (_sbGetExclusions().clients || []).slice(); } catch(e) { return []; }
+}
+function _impClientIsExcluded(client) {
+  var n = _sbNormClient(client);
+  return (IMPAYES_FILTER.exclude_clients || []).some(function(cl){ return _sbNormClient(cl) === n; });
+}
 function buildImpayesContent() {
+  IMPAYES_FILTER.exclude_clients = _impExcludedClients();
   var impayesAll = getImpayes();
 
   // ── Filtrer selon le view_mode AVANT toute autre logique ──
@@ -23805,7 +23824,8 @@ function buildImpayesContent() {
         if ((r.client || '') !== IMPAYES_FILTER.client) return false;
       }
       if (except !== 'exclude_clients' && IMPAYES_FILTER.exclude_clients && IMPAYES_FILTER.exclude_clients.length) {
-        if (IMPAYES_FILTER.exclude_clients.indexOf(r.client || '') >= 0) return false;
+        var _isExcl = _impClientIsExcluded(r.client);
+        if (IMPAYES_FILTER.show_excluded ? !_isExcl : _isExcl) return false;   // mode « afficher les exclus » = inverse du filtre
       }
       if (except !== 'banque' && IMPAYES_FILTER.banque !== 'all') {
         if ((r.banque || '') !== IMPAYES_FILTER.banque) return false;
@@ -24073,6 +24093,11 @@ function buildImpayesContent() {
     + 'style="padding:8px 10px;border:1.5px solid ' + (nbExcluded>0?'#E24B4A':'#E4E0FA') + ';background:' + (nbExcluded>0?'#FDECEC':'#fff') + ';color:' + (nbExcluded>0?'#A8322A':'#6B5E9C') + ';border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;">'
     + (nbExcluded>0 ? '🚫 ' + nbExcluded + ' exclu' + (nbExcluded>1?'s':'') : '🚫 Exclure')
     + '</button>'
+    + (nbExcluded>0
+        ? '<button onclick="IMPAYES_FILTER.show_excluded=!IMPAYES_FILTER.show_excluded;renderImpayes();" title="' + (IMPAYES_FILTER.show_excluded ? 'Revenir à l\'affichage normal' : 'Afficher uniquement les factures des clients exclus') + '" '
+          + 'style="padding:8px 10px;border:1.5px solid ' + (IMPAYES_FILTER.show_excluded?'#7343EE':'#E4E0FA') + ';background:' + (IMPAYES_FILTER.show_excluded?'#EFEBFF':'#fff') + ';color:' + (IMPAYES_FILTER.show_excluded?'#4B36EC':'#6B5E9C') + ';border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">'
+          + (IMPAYES_FILTER.show_excluded ? '↩ Masquer les exclus' : '👁 Afficher les exclus') + '</button>'
+        : '')
     + '</div></div>';
 
   // Banque
@@ -24649,7 +24674,7 @@ function clearImpayesFilters() {
   IMPAYES_FILTER.banque = 'all';
   IMPAYES_FILTER.commercial = 'all';
   IMPAYES_FILTER.bucket = 'all';
-  IMPAYES_FILTER.exclude_clients = [];
+  IMPAYES_FILTER.show_excluded = false;   // (les exclusions elles-mêmes sont persistées : voir le bouton Exclure)
   // Ne pas reset le tri ni le view_mode (préférence utilisateur)
   renderImpayes();
 }
@@ -24691,18 +24716,28 @@ function setImpayesSort(col) {
 // ═══════════════════════════════════════════════════════════════════
 // Modal d'exclusion de clients (modif #3)
 // ═══════════════════════════════════════════════════════════════════
+// Sélection des exclusions protégée par le mot de passe administrateur (déverrouillé pour la session)
 function openImpayesExcludeModal() {
+  if (window._impExclUnlocked) { _openImpayesExcludeModalImpl(); return; }
+  if (typeof promptGenericAdminPassword !== 'function') { _openImpayesExcludeModalImpl(); return; }
+  promptGenericAdminPassword(
+    { title: 'Exclusions clients', subtitle: 'Les clients exclus sont masqués des impayés et leurs portés ne sont jamais bloqués. Saisissez le mot de passe administrateur.' },
+    function(){ window._impExclUnlocked = true; _openImpayesExcludeModalImpl(); }
+  );
+}
+function _openImpayesExcludeModalImpl() {
   var impayes = getImpayes();
   var clientsCount = {};
   impayes.forEach(function(r){ if (r.client) clientsCount[r.client] = (clientsCount[r.client]||0) + 1; });
+  var current = _impExcludedClients();
+  // Les clients exclus sans facture en cours restent listés (pour pouvoir les retirer)
+  current.forEach(function(cl){ if (cl && !(cl in clientsCount)) clientsCount[cl] = 0; });
   var clientsAll = Object.keys(clientsCount).sort(function(a,b){ return a.localeCompare(b,'fr'); });
 
   if (clientsAll.length === 0) {
     alert('Aucun client à exclure.');
     return;
   }
-
-  var current = IMPAYES_FILTER.exclude_clients || [];
 
   // Fond
   var ov = document.createElement('div');
@@ -24716,7 +24751,7 @@ function openImpayesExcludeModal() {
   var html = ''
     + '<div style="padding:18px 20px;border-bottom:1.5px solid #F0EDF9;display:flex;align-items:center;justify-content:space-between;gap:12px;">'
     + '<div><div style="font-size:16px;font-weight:800;color:#1A1033;">🚫 Exclure des clients</div>'
-    + '<div style="font-size:11.5px;color:#6B5E9C;margin-top:3px;">Cochez les clients à masquer de l\'affichage</div></div>'
+    + '<div style="font-size:11.5px;color:#6B5E9C;margin-top:3px;">Cochez les clients à exclure : masqués des impayés et <strong>jamais bloqués</strong> (salaires). Enregistré et partagé avec toute l\'équipe.</div></div>'
     + '<button onclick="closeImpayesExcludeModal()" style="background:#F5F3FF;border:none;width:32px;height:32px;border-radius:8px;font-size:18px;cursor:pointer;color:#6B5E9C;font-family:inherit;">×</button>'
     + '</div>'
     + '<div style="padding:10px 20px;border-bottom:1px solid #F0EDF9;display:flex;gap:8px;align-items:center;">'
@@ -24727,14 +24762,14 @@ function openImpayesExcludeModal() {
     + '<div id="imp-excl-list" style="flex:1;overflow-y:auto;padding:10px 20px;">';
 
   clientsAll.forEach(function(cl){
-    var checked = current.indexOf(cl) >= 0 ? ' checked' : '';
+    var checked = current.some(function(x){ return _sbNormClient(x) === _sbNormClient(cl); }) ? ' checked' : '';
     var safe = cl.replace(/"/g,'&quot;');
     html += '<label class="imp-excl-row" data-client="' + safe.toLowerCase() + '" '
       + 'style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px;cursor:pointer;font-size:12.5px;color:#1A1033;" '
       + 'onmouseenter="this.style.background=\'#F5F3FF\'" onmouseleave="this.style.background=\'transparent\'">'
       + '<input type="checkbox" value="' + safe + '"' + checked + ' style="cursor:pointer;width:16px;height:16px;accent-color:#7343EE;">'
       + '<span style="flex:1;">' + cl + '</span>'
-      + '<span style="font-size:10px;color:#9E94C4;font-weight:600;">' + clientsCount[cl] + ' fact.</span>'
+      + '<span style="font-size:10px;color:#9E94C4;font-weight:600;">' + (clientsCount[cl] ? clientsCount[cl] + ' fact.' : 'aucune facture') + '</span>'
       + '</label>';
   });
   html += '</div>'
@@ -24776,7 +24811,16 @@ function applyImpayesExclude() {
   var inputs = document.querySelectorAll('#imp-excl-list input[type=checkbox]:checked');
   var arr = [];
   inputs.forEach(function(i){ arr.push(i.value); });
-  IMPAYES_FILTER.exclude_clients = arr;
+  // Persistance + partage : la liste des clients exclus vit dans les exclusions « Salaires bloqués » (sync OneDrive)
+  var ex = _sbGetExclusions();
+  ex.clients = arr;
+  _sbSaveExclusions(ex);
+  IMPAYES_FILTER.exclude_clients = arr.slice();
+  // Un client exclu ne doit plus avoir de blocage de salaire : suppression des blocages existants + recalcul
+  var removed = 0;
+  try { removed = _sbPurgeExcluded(); } catch(e) { console.warn('[Impayés exclusions] purge', e); }
+  try { if (typeof runSalaireBloqueEngine === 'function') runSalaireBloqueEngine(); } catch(e) {}
+  if (removed && typeof showNotifToast === 'function') showNotifToast('🚫 ' + arr.length + ' client(s) exclu(s) · ' + removed + ' blocage(s) de salaire supprimé(s)');
   closeImpayesExcludeModal();
   renderImpayes();
 }
