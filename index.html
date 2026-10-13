@@ -1669,7 +1669,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div id="params-prolongation-content" style="padding:12px;">Chargement…</div>
       </div>
 
-      <div class="params-acc-header" onclick="toggleAcc('acc-avantages-cfg')">&#127873; Paramètres Avantages Sociaux<span class="params-acc-arrow" id="acc-avantages-cfg-arrow">&#9658;</span></div>
+      <div class="params-acc-header" onclick="toggleAcc('acc-avantages-cfg')">&#127873; Paramètres Frais &amp; Avantages Sociaux<span class="params-acc-arrow" id="acc-avantages-cfg-arrow">&#9658;</span></div>
       <div class="params-acc-body" id="acc-avantages-cfg">
         <div id="params-avantages-content" style="padding:12px;">Chargement…</div>
       </div>
@@ -4307,7 +4307,7 @@ function buildMailHTML(data, msgCustom){
 
   var PRE1 = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light only"><meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no"><style>:root{color-scheme:light only;supported-color-schemes:light only;}a[x-apple-data-detectors]{color:inherit !important;text-decoration:none !important;font-size:inherit !important;font-family:inherit !important;font-weight:inherit !important;line-height:inherit !important;}.sp-hdr,.sp-hdr a{color:#FFFFFF !important;text-decoration:none !important;}.sp-ftr,.sp-ftr a{color:#4A4270 !important;text-decoration:none !important;}</style></head><body style="margin:0;padding:0;background:#F7F6FF;font-family:Segoe UI,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F7F6FF;padding:24px 0;"><tr><td align="left"><table width="660" cellpadding="0" cellspacing="0" bgcolor="#FFFFFF" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(115,67,238,0.10);"><tr><td bgcolor="#4B36EC" style="background:#4B36EC;padding:28px 36px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td><img src="data:image/png;base64,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" alt="Seven Portage" style="height:40px;display:block;" border="0"></td><td align="right" style="vertical-align:top"><p style="margin:0;font-size:13px;font-weight:700;color:#fff;">' + (C_NOM) + '</p><p class="sp-hdr" style="margin:2px 0 0;font-size:11px;color:#FFFFFF;">&#128222; <a href="' + ('tel:'+C_TELH) + '" style="color:#FFFFFF;text-decoration:none;">' + (C_TELD) + '</a></p><p class="sp-hdr" style="margin:2px 0 0;font-size:11px;color:#FFFFFF;">&#9993; <a href="' + ('mailto:'+C_MAIL) + '" style="color:#FFFFFF;text-decoration:none;">' + (C_MAIL) + '</a></p></td></tr><tr><td colspan="2" style="padding-top:10px"><span style="background:#6B57F2;color:#FFFFFF;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;letter-spacing:0.5px;">Simulation</span></td></tr></table></td></tr><tr><td style="padding:28px 36px 0;"><p style="margin:0 0 8px;font-size:14px;font-weight:400;color:#444;line-height:1.6;">' + ('Bonjour '+PRENOM+',') + '</p><p style="margin:0 0 16px;color:#444;font-size:14px;line-height:1.6;">Je fais suite &agrave; notre conversation de ce jour et vous prie de trouver ci-dessous la simulation demand&eacute;e.</p>';
   var PRE2 = '</td></tr><tr><td style="padding:0 36px 16px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td width="49%" style="background:#FAFAFA;border:1.5px solid #E4E0FA;border-radius:10px;padding:16px;text-align:center;"><div style="font-size:12px;color:#6B5E9C;margin-bottom:8px;">Salaire net avant imp&ocirc;t</div><div style="font-size:22px;font-weight:700;color:#7343EE;">' + (NETA) + '</div></td><td width="2%"></td><td width="49%" style="background:#FAFAFA;border:1.5px solid #E4E0FA;border-radius:10px;padding:16px;text-align:center;"><div style="font-size:12px;color:#6B5E9C;margin-bottom:8px;">Frais rembours&eacute;s <span style="font-size:10px;">(nets et non imposables)</span></div><div style="font-size:22px;font-weight:700;color:#1D9E75;">' + (FRAISV) + '</div></td></tr></table></td></tr><tr><td style="padding:0 36px 16px;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F0EDFF;border:2px solid #7343EE;border-radius:12px;padding:11px 14px;text-align:center;"><tr><td><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#7343EE;margin-bottom:5px;text-align:center;">Total vers&eacute; en fin de mois</div><div style="font-size:33px;font-weight:800;color:#7343EE;letter-spacing:-1px;text-align:center;line-height:37px;mso-line-height-rule:exactly;">' + (NETP) + '</div><div style="font-size:11px;color:#6B5E9C;margin-top:3px;text-align:center;">Salaire net avant imp&ocirc;t + Frais rembours&eacute;s (nets et non imposables)</div></td></tr></table></td></tr><tr><td style="padding:0 36px 16px;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F3FF;border-radius:8px;padding:14px 18px;"><tr><td style="font-size:8pt;color:#1A1033;line-height:12pt;mso-line-height-rule:exactly;">Les frais de <strong>' + (FRAISV) + '</strong> sont au forfait. Vous n&rsquo;avez donc pas besoin de justificatifs &agrave; fournir en fin de mois.<br>Autrement dit, ' + ('sur <strong>'+NB+' jours</strong>') + ' travaill&eacute;s, vous toucherez <strong>' + (NETP) + '</strong>, mais vous paierez vos imp&ocirc;ts uniquement sur <strong>' + (NETA) + '</strong>, soit un revenu non fiscalis&eacute; de <strong>' + (REVENU) + '</strong>/an.</td></tr></table></td></tr><tr><td style="padding:0 36px;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#F7F6FF;border-radius:10px;"><tr><td style="padding:20px;"><table width="100%" cellpadding="0" cellspacing="0">';
-  var POST = '</table></td></tr></table></td></tr><tr><td style="padding:0 36px 20px;"><p style="margin:0 0 6px;font-size:13px;color:#1A1033;">Vous pouvez &eacute;galement faire passer en frais professionnels tous frais li&eacute;s &agrave; votre activit&eacute; (t&eacute;l&eacute;phone portable, tablette, ordinateur, bureau, chaise, licences informatiques, certifications, formations, etc.)</p></td></tr><tr><td style="padding:0 36px 20px;"><table width="100%" cellpadding="0" cellspacing="0" style="border:1.5px solid #E4E0FA;border-radius:10px;overflow:hidden;"><tr><td style="background:#7343EE;padding:12px 18px;font-size:12px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.8px;">Seven Portage — vous accompagne dans vos projets &agrave; travers nos 7 engagements :</td></tr><tr><td style="padding:14px 18px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128640; Simplicit&eacute;</span> 0 d&eacute;marche et 0 contrainte administrative</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#9889; Rapidit&eacute;</span> Contrat sous 24 heures</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128269; Transparence</span> Transparence sur les frais pr&eacute;lev&eacute;s</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128274; S&eacute;curit&eacute;</span> CDI, couverture sociale et droit au ch&ocirc;mage</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128181; Paiement</span> Salaires pay&eacute;s en fin de mois ind&eacute;pendamment de votre client</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128222; Disponibilit&eacute;</span> 7/7, retours dans la journ&eacute;e</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#129309; Accompagnement</span> Proximit&eacute;, interlocuteur unique, conseils personnalis&eacute;s</td></tr></table></td></tr></table></td></tr><tr><td style="padding:0 36px 28px;"><p style="margin:0 0 6px;font-size:13px;color:#1A1033;">N&#39;h&eacute;sitez pas &agrave; me contacter si vous avez des questions, je reste &agrave; votre disposition.</p><p style="margin:0;font-size:13px;color:#1A1033;">Excellente journ&eacute;e,</p></td></tr><tr><td bgcolor="#F7F6FF" style="background:#F7F6FF;padding:16px 36px;border-top:1.5px solid #E4E0FA;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td><p style="margin:0;font-size:13px;font-weight:700;color:#7343EE;">' + (C_NOM) + '</p><p class="sp-ftr" style="margin:2px 0 0;font-size:12px;color:#4A4270;">&#128222; <a href="' + ('tel:'+C_TELH) + '" style="color:#4A4270;text-decoration:none;">' + (C_TELD) + '</a></p><p class="sp-ftr" style="margin:2px 0 0;font-size:12px;color:#4A4270;">&#9993; <a href="' + ('mailto:'+C_MAIL) + '" style="color:#4A4270;text-decoration:none;">' + (C_MAIL) + '</a></p><p style="margin:4px 0 0;font-size:11px;color:#6B5E9C;">Seven Portage &mdash; <a href="https://www.sevenportage.fr" style="color:#7343EE;">www.sevenportage.fr</a></p></td></tr></table><p style="margin:8px 0 0;font-size:10px;color:#aaa;">Pi&egrave;ces jointes : Seven_Portage_Avantages_Sociaux_2026.pdf &bull; Seven_Portage_Tableau_Garanties_Henner.pdf</p></td></tr></table></td></tr></table></body></html>';
+  var POST = '</table></td></tr></table></td></tr><tr><td style="padding:0 36px 20px;"><p style="margin:0 0 6px;font-size:13px;color:#1A1033;">Vous pouvez &eacute;galement faire passer en frais professionnels tous frais li&eacute;s &agrave; votre activit&eacute; (t&eacute;l&eacute;phone portable, tablette, ordinateur, bureau, chaise, licences informatiques, certifications, formations, etc.)</p></td></tr><tr><td style="padding:0 36px 20px;"><table width="100%" cellpadding="0" cellspacing="0" style="border:1.5px solid #E4E0FA;border-radius:10px;overflow:hidden;"><tr><td style="background:#7343EE;padding:12px 18px;font-size:12px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.8px;">Seven Portage — vous accompagne dans vos projets &agrave; travers nos 7 engagements :</td></tr><tr><td style="padding:14px 18px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128640; Simplicit&eacute;</span> 0 d&eacute;marche et 0 contrainte administrative</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#9889; Rapidit&eacute;</span> Contrat sous 24 heures</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128269; Optimisation de votre r&eacute;mun&eacute;ration</span></td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128274; S&eacute;curit&eacute;</span> CDI, couverture sociale et droit au ch&ocirc;mage</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128181; Paiement</span> Salaires pay&eacute;s en fin de mois ind&eacute;pendamment de votre client</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#128222; Disponibilit&eacute;</span> 7/7, retours dans la journ&eacute;e</td></tr><tr><td style="padding:0 0 5px 0;line-height:17px;mso-line-height-rule:exactly;font-size:12px;color:#6B5E9C;"><span style="font-size:13px;font-weight:600;color:#1A1033;">&#129309; Accompagnement</span> Proximit&eacute;, interlocuteur unique, conseils personnalis&eacute;s</td></tr></table></td></tr></table></td></tr><tr><td style="padding:0 36px 28px;"><p style="margin:0 0 6px;font-size:13px;color:#1A1033;">N&#39;h&eacute;sitez pas &agrave; me contacter si vous avez des questions, je reste &agrave; votre disposition.</p><p style="margin:0;font-size:13px;color:#1A1033;">Excellente journ&eacute;e,</p></td></tr><tr><td bgcolor="#F7F6FF" style="background:#F7F6FF;padding:16px 36px;border-top:1.5px solid #E4E0FA;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td><p style="margin:0;font-size:13px;font-weight:700;color:#7343EE;">' + (C_NOM) + '</p><p class="sp-ftr" style="margin:2px 0 0;font-size:12px;color:#4A4270;">&#128222; <a href="' + ('tel:'+C_TELH) + '" style="color:#4A4270;text-decoration:none;">' + (C_TELD) + '</a></p><p class="sp-ftr" style="margin:2px 0 0;font-size:12px;color:#4A4270;">&#9993; <a href="' + ('mailto:'+C_MAIL) + '" style="color:#4A4270;text-decoration:none;">' + (C_MAIL) + '</a></p><p style="margin:4px 0 0;font-size:11px;color:#6B5E9C;">Seven Portage &mdash; <a href="https://www.sevenportage.fr" style="color:#7343EE;">www.sevenportage.fr</a></p></td></tr></table><p style="margin:8px 0 0;font-size:10px;color:#aaa;">Pi&egrave;ces jointes : Seven_Portage_Avantages_Sociaux_2026.pdf &bull; Seven_Portage_Tableau_Garanties_Henner.pdf</p></td></tr></table></td></tr></table></body></html>';
 
   // ---- Bloc DÉTAIL (reconstruit, conditionnel) ----
   var nbNum = parseFloat(NB)||21;
@@ -4362,7 +4362,7 @@ function engList(items, dark, muted) {
 
 function buildMailSubject(data) {
   var nom = data.consultant ? data.consultant.trim() : 'Simulation';
-  return 'Simulation salariale Seven Portage - ' + nom;
+  return 'Simulation de votre r\u00e9mun\u00e9ration - Seven Portage - ' + nom;
 }
 
 function _propagateSimComment(data, dest) {
@@ -16817,32 +16817,9 @@ function showFraisView() {
 function renderFrais() {
   var container = document.getElementById('frais-container');
   if (!container) return;
-
-  var subtabs = [
-    { key: 'avantages', label: 'Avantages Sociaux', icon: '\u{1F4B0}' },
-    { key: 'pro',       label: 'Frais Pro',         icon: '\u{1F4BC}' }
-  ];
-
-  var subnavHtml = '<div style="display:flex;gap:6px;margin-bottom:16px;padding:6px;background:#F5F3FF;border-radius:10px;">'
-    + subtabs.map(function(st) {
-        var isActive = st.key === currentFraisSubTab;
-        return '<button onclick="currentFraisSubTab=\'' + st.key + '\';renderFrais();" '
-          + 'style="padding:8px 16px;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;'
-          + (isActive
-              ? 'background:#fff;color:#4B36EC;box-shadow:0 2px 6px rgba(115,67,238,0.15);'
-              : 'background:transparent;color:#6B5E9C;')
-          + '">' + st.icon + ' ' + st.label + '</button>';
-      }).join('')
-    + '</div>';
-
-  var content = '';
-  if (currentFraisSubTab === 'avantages') {
-    content = buildFraisAvantagesContent();
-  } else {
-    content = buildFraisProContent();
-  }
-
-  container.innerHTML = subnavHtml + content;
+  // 13/10/2026 : Avantages Sociaux + Frais Pro fusionnés dans un seul tableau
+  // (les deux stockages sp_frais_pro_v1 / sp_avantages_sociaux_v1 sont conservés tels quels).
+  container.innerHTML = buildFraisMergedContent();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -18023,8 +18000,8 @@ function openFraisProExceptionnelPopup() {
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(26,16,51,0.55);z-index:3000;display:flex;align-items:center;justify-content:center;';
   modal.innerHTML = ''
     + '<div style="background:#fff;border-radius:14px;padding:24px;width:90%;max-width:480px;box-shadow:0 10px 40px rgba(0,0,0,0.25);">'
-    +   '<div style="font-size:16px;font-weight:700;color:#1A1033;margin-bottom:8px;">+ Ligne exceptionnelle — Frais Pro</div>'
-    +   '<div style="font-size:12px;color:#6B5E9C;margin-bottom:16px;line-height:1.5;">Ajouter une ligne de frais supplémentaire pour un consultant (en plus de sa ligne mensuelle standard).</div>'
+    +   '<div style="font-size:16px;font-weight:700;color:#1A1033;margin-bottom:8px;">+ Ligne exceptionnelle</div>'
+    +   '<div style="font-size:12px;color:#6B5E9C;margin-bottom:16px;line-height:1.5;">Ajouter une ligne supplémentaire (frais pro + avantages) pour un consultant, en plus de sa ligne mensuelle standard.</div>'
     +   '<label style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:4px;">Rechercher un consultant</label>'
     +   '<div style="position:relative;margin-bottom:10px;">'
     +     '<span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#9E94C4;font-size:14px;pointer-events:none;">🔍</span>'
@@ -18094,9 +18071,12 @@ function confirmFraisProExceptionnel() {
   var hidden = document.getElementById('fraispro-exc-deal-id');
   if (!hidden || !hidden.value) { alert('Veuillez sélectionner un consultant.'); return; }
   var dealId = parseInt(hidden.value);
+  // Tableau fusionné : une ligne exceptionnelle = 1 enregistrement Frais Pro + 1 enregistrement
+  // Avantages Sociaux reliés par le même exc_group (les deux stockages restent séparés).
+  var grp = Date.now();
   var all = getFraisPro();
   all.unshift({
-    id: Date.now(),
+    id: grp,
     deal_id: dealId,
     mois: fraisProCurrentMois,
     montant_1: 0,
@@ -18105,11 +18085,403 @@ function confirmFraisProExceptionnel() {
     commentaire: '',
     bp_fait: 'Non',
     exceptionnel: true,
+    exc_group: grp,
     updated_ts: Date.now()
   });
   saveFraisPro(all);
+  var allAv = getAvantagesSociaux();
+  allAv.unshift({
+    id: grp + 1,
+    deal_id: dealId,
+    mois: fraisProCurrentMois,
+    type_avantage: '',
+    montant: 0,
+    montant_ajustement: 0,
+    ajustement_bp: 'Non',
+    chargement_swile: 'Non',
+    wellpass: 'Non',
+    creches: 'Non',
+    commentaire: '',
+    exceptionnel: true,
+    exc_group: grp,
+    updated_ts: Date.now()
+  });
+  saveAvantagesSociaux(allAv);
   document.getElementById('modal-fraispro-exc').remove();
   if (typeof renderFrais === 'function') renderFrais();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FRAIS — TABLEAU FUSIONNÉ (Frais Pro + Avantages Sociaux) — 13/10/2026
+// Une ligne par porté actif du mois : les 6 premières colonnes viennent de Frais Pro
+// (sp_frais_pro_v1), les suivantes des Avantages Sociaux (sp_avantages_sociaux_v1).
+// Aucune migration : chaque champ est lu/écrit dans son stockage d'origine.
+// Champs partagés (Ajustement BP, Commentaire) : écrits dans les deux enregistrements.
+// ═══════════════════════════════════════════════════════════════════
+var fraisMergedSort = { col: null, dir: 'asc' };   // 'nom' | 'total' | 'montant'
+var fraisMergedFilters = { type: '', bp: '', swile: '', wellpass: '', creches: '', sans_frais: false, sans_avantage: false };
+var fraisMergedSearch = '';
+
+function setFraisMergedMois(v) {
+  fraisProCurrentMois = v; avantagesCurrentMois = v;
+  renderFrais();
+}
+function setFraisMergedSort(col) {
+  if (fraisMergedSort.col === col) fraisMergedSort.dir = (fraisMergedSort.dir === 'asc') ? 'desc' : 'asc';
+  else { fraisMergedSort.col = col; fraisMergedSort.dir = 'asc'; }
+  renderFrais();
+}
+function setFraisMergedFilter(field, value) {
+  fraisMergedFilters[field] = value;
+  // la colonne « enfants » conditionnelle s'appuie sur avantagesFilters.type
+  if (field === 'type') avantagesFilters.type = value;
+  renderFrais();
+}
+function setFraisMergedSearch(val) {
+  fraisMergedSearch = val || '';
+  _debounceSearchRefocus('fraismerged', function(){ renderFrais(); }, 'fraismerged-search-input');
+}
+function resetFraisMergedFilters() {
+  fraisMergedFilters = { type: '', bp: '', swile: '', wellpass: '', creches: '', sans_frais: false, sans_avantage: false };
+  avantagesFilters.type = '';
+  fraisMergedSort = { col: null, dir: 'asc' };
+  fraisMergedSearch = '';
+  renderFrais();
+}
+
+// Valeur fusionnée « Ajustement BP » : Oui seulement si tous les enregistrements significatifs
+// (avec un montant) sont à Oui ; s'il n'y a aucun montant, on regarde les enregistrements existants.
+function _fmBpValue(fp, av) {
+  var recs = [];
+  if (fp) recs.push({ v: fp.bp_fait || 'Non', amt: computeFraisProTotal(fp) });
+  if (av) recs.push({ v: av.ajustement_bp || 'Non', amt: parseFloat(av.montant) || 0 });
+  if (!recs.length) return 'Non';
+  var sig = recs.filter(function(r){ return r.amt > 0; });
+  if (!sig.length) sig = recs;
+  return sig.every(function(r){ return r.v === 'Oui'; }) ? 'Oui' : 'Non';
+}
+// Commentaire fusionné : les deux commentaires s'ils diffèrent (aucune perte), sinon l'unique.
+function _fmCommentValue(fp, av) {
+  var parts = [];
+  [fp && fp.commentaire, av && av.commentaire].forEach(function(c){ c = String(c || '').trim(); if (c && parts.indexOf(c) < 0) parts.push(c); });
+  return parts.join(' · ');
+}
+function _fmEsc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+
+function buildFraisMergedContent() {
+  var cfg = getAvantagesConfig();
+  var coef = cfg.coefficient_ajustement || 1.46;
+  var mois = fraisProCurrentMois;
+  if (avantagesCurrentMois !== mois) avantagesCurrentMois = mois;
+  var portes = getPortesActifsForMois(mois);
+  var allDeals = (typeof getDeals === 'function') ? getDeals() : [];
+  var dealById = {}; allDeals.forEach(function(d){ if (d) dealById[String(d.id)] = d; });
+
+  var fpMois = getFraisPro().filter(function(a){ return a && a.mois === mois; });
+  var avMois = getAvantagesSociaux().filter(function(a){ return a && a.mois === mois; });
+
+  var fpByDeal = {}, avByDeal = {}, groups = {}, groupOrder = [];
+  function grpKey(r) { return String(r.exc_group != null ? r.exc_group : r.id); }
+  fpMois.forEach(function(a) {
+    if (a.exceptionnel) { var k = grpKey(a); if (!groups[k]) { groups[k] = { fp: null, av: null, deal_id: a.deal_id }; groupOrder.push(k); } groups[k].fp = a; }
+    else fpByDeal[String(a.deal_id)] = a;
+  });
+  avMois.forEach(function(a) {
+    if (a.exceptionnel) { var k2 = grpKey(a); if (!groups[k2]) { groups[k2] = { fp: null, av: null, deal_id: a.deal_id }; groupOrder.push(k2); } groups[k2].av = a; if (!groups[k2].deal_id) groups[k2].deal_id = a.deal_id; }
+    else avByDeal[String(a.deal_id)] = a;
+  });
+
+  function mkItem(deal, fp, av, isExc, excGroup, fallbackName) {
+    var prenomNom = deal ? ((deal.prenom||'') + ' ' + (deal.nom||'')).trim() : (fallbackName || '(inconnu)');
+    return {
+      deal: deal, fp: fp || null, av: av || null, isExceptionnel: isExc, excGroup: excGroup || null, prenomNom: prenomNom,
+      totalVal: fp ? computeFraisProTotal(fp) : 0,
+      montantVal: av ? (parseFloat(av.montant) || 0) : 0
+    };
+  }
+  var items = [];
+  portes.forEach(function(d) { items.push(mkItem(d, fpByDeal[String(d.id)], avByDeal[String(d.id)], false, null)); });
+  groupOrder.forEach(function(k) {
+    var g = groups[k];
+    var deal = dealById[String(g.deal_id)] || null;
+    var fb = (g.fp && g.fp.nom_consultant) || (g.av && g.av.nom_consultant) || '';
+    items.push(mkItem(deal, g.fp, g.av, true, k, fb));
+  });
+
+  // ── Filtres ──
+  var searchLc = (fraisMergedSearch || '').trim().toLowerCase();
+  var F = fraisMergedFilters;
+  var filteredItems = items.filter(function(it) {
+    var av = it.av;
+    if (searchLc && (it.prenomNom || '').toLowerCase().indexOf(searchLc) < 0) return false;
+    if (F.type && ((av && av.type_avantage) || '') !== F.type) return false;
+    if (F.bp && _fmBpValue(it.fp, av) !== F.bp) return false;
+    if (F.swile && ((av && av.chargement_swile) || 'Non') !== F.swile) return false;
+    if (F.wellpass && ((av && av.wellpass) || 'Non') !== F.wellpass) return false;
+    if (F.creches && ((av && av.creches) || 'Non') !== F.creches) return false;
+    if (F.sans_frais && it.totalVal > 0) return false;
+    if (F.sans_avantage && it.montantVal > 0) return false;
+    return true;
+  });
+
+  // ── Tri ──
+  if (fraisMergedSort.col === 'nom') {
+    filteredItems.sort(function(a, b) { var r = (a.prenomNom || '').localeCompare(b.prenomNom || '', 'fr', { sensitivity: 'base' }); return fraisMergedSort.dir === 'desc' ? -r : r; });
+  } else if (fraisMergedSort.col === 'total') {
+    filteredItems.sort(function(a, b) { var r = a.totalVal - b.totalVal; return fraisMergedSort.dir === 'desc' ? -r : r; });
+  } else if (fraisMergedSort.col === 'montant') {
+    filteredItems.sort(function(a, b) { var r = a.montantVal - b.montantVal; return fraisMergedSort.dir === 'desc' ? -r : r; });
+  }
+
+  var rowsHtml = filteredItems.map(function(it) { return buildFraisMergedRow(it, cfg, coef); }).join('');
+
+  // Dropdown mois : 12 mois en arrière, 3 en avant
+  var monthOptions = '';
+  var now = new Date();
+  for (var i = 12; i >= -3; i--) {
+    var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    var v = d.getFullYear() + '-' + ('0' + (d.getMonth()+1)).slice(-2);
+    var lbl = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    lbl = lbl.charAt(0).toUpperCase() + lbl.slice(1);
+    monthOptions += '<option value="' + v + '"' + (v === mois ? ' selected' : '') + '>' + lbl + '</option>';
+  }
+  if (monthOptions.indexOf('value="' + mois + '"') < 0) monthOptions = '<option value="' + mois + '" selected>' + mois + '</option>' + monthOptions;
+
+  var enfCol = _avantagesEnfantsColInfo();
+  var nbCols = 15 + (enfCol ? 1 : 0);
+  var emptyMsg = '';
+  if (!items.length) emptyMsg = 'Aucun porté actif sur le mois sélectionné.';
+  else if (!filteredItems.length) emptyMsg = 'Aucune ligne ne correspond aux filtres actifs.';
+  var emptyState = emptyMsg ? '<tr><td colspan="' + nbCols + '" style="padding:40px;text-align:center;color:#9E9E9E;font-size:12.5px;font-style:italic;">' + emptyMsg + '</td></tr>' : '';
+
+  var typeFilterOpts = '<option value="">Type d\'avantage : tous</option>'
+    + cfg.types_avantages.map(function(t) {
+        var nom = (t && t.nom) || '';
+        return '<option value="' + _fmEsc(nom) + '"' + (nom === F.type ? ' selected' : '') + '>' + _fmEsc(nom) + '</option>';
+      }).join('');
+
+  function sortArrow(col) {
+    if (fraisMergedSort.col !== col) return '<span style="color:#C0B8E0;font-size:10px;margin-left:4px;">▲▼</span>';
+    return '<span style="color:#4B36EC;font-size:10px;margin-left:4px;">' + (fraisMergedSort.dir === 'asc' ? '▲' : '▼') + '</span>';
+  }
+  function ouiNonFilter(field, label) {
+    return '<select onchange="setFraisMergedFilter(\'' + field + '\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
+      + '<option value=""' + (!F[field] ? ' selected' : '') + '>' + label + ' : tous</option>'
+      + '<option value="Oui"' + (F[field] === 'Oui' ? ' selected' : '') + '>' + label + ' : Oui</option>'
+      + '<option value="Non"' + (F[field] === 'Non' ? ' selected' : '') + '>' + label + ' : Non</option>'
+      + '</select>';
+  }
+  var filtersActive = !!(fraisMergedSearch || F.type || F.bp || F.swile || F.wellpass || F.creches || F.sans_frais || F.sans_avantage || fraisMergedSort.col);
+  var thL = 'padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;white-space:nowrap;';
+  var thR = 'padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;white-space:nowrap;';
+  var thC = 'padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;white-space:nowrap;';
+  var thFrais = 'background:#EEF4FF;';  // teinte bleue : groupe Frais Pro
+  var thAv = 'background:#F5F3FF;';     // teinte violette : groupe Avantages Sociaux
+
+  return ''
+    + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">'
+    +   '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    +     '<label style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Mois :</label>'
+    +     '<select onchange="setFraisMergedMois(this.value)" style="padding:7px 12px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;background:#fff;font-weight:600;cursor:pointer;font-family:inherit;">' + monthOptions + '</select>'
+    +     '<span style="font-size:11.5px;color:#6B5E9C;">· ' + filteredItems.length + ' ligne' + (filteredItems.length>1?'s':'') + (filteredItems.length !== items.length ? ' / ' + items.length : '') + '</span>'
+    +   '</div>'
+    +   '<button onclick="openFraisProExceptionnelPopup()" style="padding:8px 16px;background:linear-gradient(135deg,#372EB6,#7343EE);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">+ Ligne exceptionnelle</button>'
+    + '</div>'
+    + '<div style="background:#F5F3FF;border:1px solid #E4E0FA;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    +   '<div style="position:relative;flex:1;min-width:200px;max-width:280px;">'
+    +     '<span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9E94C4;font-size:13px;pointer-events:none;">🔍</span>'
+    +     '<input id="fraismerged-search-input" type="text" value="' + _fmEsc(fraisMergedSearch) + '" oninput="setFraisMergedSearch(this.value)" placeholder="Rechercher un candidat…" style="width:100%;padding:7px 10px 7px 32px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:12px;background:#fff;font-family:inherit;">'
+    +   '</div>'
+    +   '<span style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Filtres :</span>'
+    +   '<select onchange="setFraisMergedFilter(\'type\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">' + typeFilterOpts + '</select>'
+    +   ouiNonFilter('bp', 'Ajustement BP')
+    +   ouiNonFilter('swile', 'SWILE')
+    +   ouiNonFilter('wellpass', 'Wellpass')
+    +   ouiNonFilter('creches', 'Crèches')
+    +   '<label style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:#4B36EC;font-weight:600;cursor:pointer;padding:5px 10px;background:#fff;border:1.5px solid #E4E0FA;border-radius:7px;">'
+    +     '<input type="checkbox"' + (F.sans_frais ? ' checked' : '') + ' onchange="setFraisMergedFilter(\'sans_frais\',this.checked)" style="cursor:pointer;">Sans frais'
+    +   '</label>'
+    +   '<label style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:#4B36EC;font-weight:600;cursor:pointer;padding:5px 10px;background:#fff;border:1.5px solid #E4E0FA;border-radius:7px;">'
+    +     '<input type="checkbox"' + (F.sans_avantage ? ' checked' : '') + ' onchange="setFraisMergedFilter(\'sans_avantage\',this.checked)" style="cursor:pointer;">Sans avantage'
+    +   '</label>'
+    +   (filtersActive ? '<button onclick="resetFraisMergedFilters()" style="margin-left:auto;padding:5px 12px;background:#fff;color:#E24B4A;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">✕ Réinitialiser</button>' : '')
+    + '</div>'
+    + '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E4E0FA;overflow-x:auto;">'
+    +   '<table class="frais-merged-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:2050px;">'
+    +     '<thead>'
+    +       '<tr style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;">'
+    +         '<th colspan="6" style="padding:6px 8px;text-align:center;color:#1D4ED8;background:#E3ECFF;border-bottom:1px solid #D4DEFA;">💼 Frais Pro</th>'
+    +         '<th colspan="' + (9 + (enfCol ? 1 : 0)) + '" style="padding:6px 8px;text-align:center;color:#4B36EC;background:#EBE7FB;border-bottom:1px solid #DED7F7;">💰 Avantages Sociaux</th>'
+    +       '</tr>'
+    +       '<tr style="border-bottom:2px solid #E4E0FA;">'
+    +         '<th onclick="setFraisMergedSort(\'nom\')" style="' + thL + thFrais + 'cursor:pointer;user-select:none;" title="Trier par nom">Prénom Nom' + sortArrow('nom') + '</th>'
+    +         '<th style="' + thR + thFrais + '">Montant 1 (€)</th>'
+    +         '<th style="' + thR + thFrais + '">Montant 2 (€)</th>'
+    +         '<th style="' + thR + thFrais + '">Montant 3 (€)</th>'
+    +         '<th onclick="setFraisMergedSort(\'total\')" style="' + thR + thFrais + 'cursor:pointer;user-select:none;" title="Trier par total">Montant total' + sortArrow('total') + '</th>'
+    +         '<th style="' + thR + thFrais + '">Ajustement (÷' + coef + ')</th>'
+    +         (enfCol ? '<th style="' + thC + 'color:#0F5132;background:#F0FAF4;" title="Calculé depuis les dates de naissance de la fiche candidat">' + enfCol.label + '</th>' : '')
+    +         '<th style="' + thL + thAv + '">Type d\'avantage</th>'
+    +         '<th onclick="setFraisMergedSort(\'montant\')" style="' + thR + thAv + 'cursor:pointer;user-select:none;" title="Trier par montant d\'avantage">Montant (€)' + sortArrow('montant') + '</th>'
+    +         '<th style="' + thR + thAv + '">Ajustement (÷' + coef + ')</th>'
+    +         '<th style="' + thC + thAv + '">Wellpass</th>'
+    +         '<th style="' + thC + thAv + '">Crèches</th>'
+    +         '<th style="' + thC + thAv + '">Chargement SWILE</th>'
+    +         '<th style="' + thC + thAv + '">Ajustement BP</th>'
+    +         '<th style="' + thL + thAv + '">Commentaire</th>'
+    +         '<th style="' + thC + thAv + '">Action</th>'
+    +       '</tr>'
+    +     '</thead>'
+    +     '<tbody>' + rowsHtml + emptyState + '</tbody>'
+    +   '</table>'
+    + '</div>';
+}
+
+function buildFraisMergedRow(it, cfg, coef) {
+  var deal = it.deal, fp = it.fp, av = it.av, isExc = it.isExceptionnel;
+  var dealId = deal ? deal.id : ((fp && fp.deal_id) || (av && av.deal_id) || 0);
+  var fpId = fp ? fp.id : null, avId = av ? av.id : null;
+  var grp = it.excGroup != null ? "'" + String(it.excGroup).replace(/'/g, '') + "'" : 'null';
+  var args = dealId + ',' + (fpId || 'null') + ',' + (avId || 'null') + ',' + isExc + ',' + grp;
+  function on(field, expr) { return 'onchange="updateFraisMergedField(' + args + ',\'' + field + '\',' + expr + ')"'; }
+
+  // Frais Pro
+  var m1 = fp ? (fp.montant_1 || 0) : '', m2 = fp ? (fp.montant_2 || 0) : '', m3 = fp ? (fp.montant_3 || 0) : '';
+  var total = it.totalVal, ajustFrais = coef > 0 ? total / coef : 0;
+  // Avantages
+  var typeSel = av ? (av.type_avantage || '') : '';
+  var montant = av ? (av.montant || 0) : '';
+  var ajustAv = av ? (av.montant_ajustement || 0) : 0;
+  var swile = (av && av.chargement_swile) || 'Non';
+  var wellpass = (av && av.wellpass) || 'Non';
+  var creches = (av && av.creches) || 'Non';
+  var bp = _fmBpValue(fp, av);
+  var comment = _fmCommentValue(fp, av);
+
+  var typeDef = (cfg.types_avantages || []).find(function(t){ return t.nom === typeSel; });
+  var currentMax = typeDef ? (typeDef.montant_max || 0) : 0;
+  var montantOver = currentMax > 0 && (parseFloat(montant) || 0) > currentMax;
+  var montantStyle = 'padding:5px 8px;border:1.5px solid ' + (montantOver ? '#E24B4A' : '#E4E0FA') + ';border-radius:6px;font-size:11.5px;width:100px;text-align:right;' + (montantOver ? 'background:#FDECEC;color:#A8322A;font-weight:700;' : '');
+  var typeOptions = '<option value="">— Choisir —</option>' + cfg.types_avantages.map(function(t){
+    var nom = (t && t.nom) || '';
+    var maxLbl = (t && t.montant_max) ? ' (max ' + t.montant_max + ' €)' : '';
+    return '<option value="' + _fmEsc(nom) + '"' + (nom === typeSel ? ' selected' : '') + '>' + _fmEsc(nom) + maxLbl + '</option>';
+  }).join('');
+  // Type enregistré mais absent de la configuration (renommé / supprimé) : on l'affiche quand même, aucune donnée masquée
+  if (typeSel && !typeDef) typeOptions += '<option value="' + _fmEsc(typeSel) + '" selected>' + _fmEsc(typeSel) + ' (hors config)</option>';
+
+  var excBadge = isExc ? '<span style="background:#F0A500;color:#fff;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;margin-left:6px;text-transform:uppercase;">Exceptionnel</span>' : '';
+  var actionCell = isExc
+    ? '<button onclick="deleteFraisMergedExceptionnel(' + (fpId || 'null') + ',' + (avId || 'null') + ')" title="Supprimer cette ligne exceptionnelle" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;cursor:pointer;">✕</button>'
+    : '<span style="color:#C0B8E0;font-size:11px;">—</span>';
+
+  // Vert foncé : BP + SWILE faits ; vert pâle : BP fait seul
+  var rowBg = '';
+  if (bp === 'Oui' && swile === 'Oui') rowBg = 'background:#81C784;';
+  else if (bp === 'Oui') rowBg = 'background:#E8F5E9;';
+  var _sbLocked = !!(deal && deal.stand_by === true);
+  var trStyle = 'border-bottom:1px solid #F0EDF9;' + rowBg + (_sbLocked ? 'opacity:.55;pointer-events:none;background:#F7F5FC;' : '');
+  var _sbBadge = _sbLocked ? ' <span title="Deal en stand by — convertissez le placement pour débloquer" style="background:#7343EE;color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;vertical-align:middle;letter-spacing:0.05em;">⏸ STAND BY</span>' : '';
+
+  var enfCol = _avantagesEnfantsColInfo(), enfCell = '';
+  if (enfCol) {
+    var nEnf = deal ? _dealEnfantsInRange(deal, enfCol.min, enfCol.max) : null;
+    enfCell = '<td style="padding:10px 8px;text-align:center;font-weight:800;color:' + (nEnf ? '#0F5132' : '#B7ADD6') + ';background:#FBFEFC;">' + (nEnf === null ? '—' : nEnf) + '</td>';
+  }
+  var enfLineBadge = '';
+  (function(){
+    var nrm = _avNorm(typeSel), inf = null;
+    if (nrm.indexOf('noel') >= 0 && nrm.indexOf('enfant') >= 0) inf = { min: null, max: 15, lbl: '&lt; 16 ans' };
+    else if (nrm.indexOf('rentree') >= 0) inf = { min: 3, max: 16, lbl: '3-16 ans' };
+    if (!inf) return;
+    var nE = deal ? _dealEnfantsInRange(deal, inf.min, inf.max) : null;
+    enfLineBadge = '<div title="Calculé depuis les dates de naissance de la fiche candidat" style="margin-top:3px;font-size:10px;font-weight:700;color:' + (nE ? '#0F5132' : '#C24141') + ';">&#128118; ' + (nE === null ? '—' : nE) + ' enfant' + (nE > 1 ? 's' : '') + ' ' + inf.lbl + '</div>';
+  })();
+
+  var numStyle = 'padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:90px;text-align:right;';
+  var selStyle = 'padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:72px;cursor:pointer;';
+  function ouiNon(field, val) {
+    return '<select ' + on(field, 'this.value') + ' style="' + selStyle + '"><option value="Non"' + (val !== 'Oui' ? ' selected' : '') + '>Non</option><option value="Oui"' + (val === 'Oui' ? ' selected' : '') + '>Oui</option></select>';
+  }
+  function fmtEur(v) { return v ? v.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €' : '—'; }
+  var sepStyle = 'border-left:2px solid #DED7F7;';
+
+  return '<tr data-deal-id="' + dealId + '" data-fp-id="' + (fpId || '') + '" data-av-id="' + (avId || '') + '" style="' + trStyle + '">'
+    + '<td style="padding:10px 8px;font-weight:600;color:#1A1033;white-space:nowrap;">' + _fmEsc(it.prenomNom) + _sbBadge + excBadge + '</td>'
+    + '<td style="padding:10px 8px;text-align:right;"><input type="number" min="0" step="0.01" value="' + (m1 || '') + '" ' + on('montant_1', 'parseFloat(this.value)||0') + ' style="' + numStyle + '"></td>'
+    + '<td style="padding:10px 8px;text-align:right;"><input type="number" min="0" step="0.01" value="' + (m2 || '') + '" ' + on('montant_2', 'parseFloat(this.value)||0') + ' style="' + numStyle + '"></td>'
+    + '<td style="padding:10px 8px;text-align:right;"><input type="number" min="0" step="0.01" value="' + (m3 || '') + '" ' + on('montant_3', 'parseFloat(this.value)||0') + ' style="' + numStyle + '"></td>'
+    + '<td style="padding:10px 8px;text-align:right;font-weight:700;color:#1A1033;white-space:nowrap;">' + fmtEur(total) + '</td>'
+    + '<td style="padding:10px 8px;text-align:right;color:#1D4ED8;font-weight:600;white-space:nowrap;">' + fmtEur(ajustFrais) + '</td>'
+    + (enfCell ? enfCell.replace('style="', 'style="' + sepStyle) : '')
+    + '<td style="padding:10px 8px;' + (enfCell ? '' : sepStyle) + '"><select ' + on('type_avantage', 'this.value') + ' style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:150px;cursor:pointer;">' + typeOptions + '</select>' + enfLineBadge + '</td>'
+    + '<td style="padding:10px 8px;text-align:right;"><input type="number" min="0"' + (currentMax > 0 ? ' max="' + currentMax + '"' : '') + ' step="0.01" value="' + (montant || '') + '" ' + on('montant', 'parseFloat(this.value)||0') + ' style="' + montantStyle + '"></td>'
+    + '<td style="padding:10px 8px;text-align:right;color:#4B36EC;font-weight:600;white-space:nowrap;">' + fmtEur(ajustAv) + '</td>'
+    + '<td style="padding:10px 8px;text-align:center;">' + ouiNon('wellpass', wellpass) + '</td>'
+    + '<td style="padding:10px 8px;text-align:center;">' + ouiNon('creches', creches) + '</td>'
+    + '<td style="padding:10px 8px;text-align:center;">' + ouiNon('chargement_swile', swile) + '</td>'
+    + '<td style="padding:10px 8px;text-align:center;">' + ouiNon('ajustement_bp', bp) + '</td>'
+    + '<td style="padding:10px 8px;"><input type="text" value="' + _fmEsc(comment) + '" ' + on('commentaire', 'this.value') + ' placeholder="Commentaire…" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:170px;"></td>'
+    + '<td style="padding:10px 8px;text-align:center;">' + actionCell + '</td>'
+    + '</tr>';
+}
+
+// Écriture : chaque champ va dans son stockage d'origine.
+//   montant_1/2/3            → Frais Pro (bp_fait côté frais pour « ajustement_bp »)
+//   type_avantage, montant, wellpass, creches, chargement_swile → Avantages Sociaux
+//   ajustement_bp, commentaire → les deux enregistrements (créés si absents)
+function _fmUpsertFp(dealId, fpId, isExc, excGroup, mut) {
+  var all = getFraisPro();
+  var idx = fpId ? all.findIndex(function(a){ return a && a.id === fpId; }) : -1;
+  if (idx < 0) {
+    var e = { id: Date.now(), deal_id: dealId, mois: fraisProCurrentMois, montant_1: 0, montant_2: 0, montant_3: 0, commentaire: '', bp_fait: 'Non', exceptionnel: !!isExc, updated_ts: Date.now() };
+    if (isExc && excGroup != null) e.exc_group = (/^\d+$/.test(String(excGroup)) ? parseInt(excGroup, 10) : excGroup);
+    mut(e); all.unshift(e);
+  } else { mut(all[idx]); all[idx].updated_ts = Date.now(); }
+  saveFraisPro(all);
+}
+function _fmUpsertAv(dealId, avId, isExc, excGroup, mut) {
+  var all = getAvantagesSociaux();
+  var idx = avId ? all.findIndex(function(a){ return a && a.id === avId; }) : -1;
+  if (idx < 0) {
+    var e = { id: Date.now() + 1, deal_id: dealId, mois: fraisProCurrentMois, type_avantage: '', montant: 0, montant_ajustement: 0, ajustement_bp: 'Non', chargement_swile: 'Non', wellpass: 'Non', creches: 'Non', commentaire: '', exceptionnel: !!isExc, updated_ts: Date.now() };
+    if (isExc && excGroup != null) e.exc_group = (/^\d+$/.test(String(excGroup)) ? parseInt(excGroup, 10) : excGroup);
+    mut(e); all.unshift(e);
+  } else { mut(all[idx]); all[idx].updated_ts = Date.now(); }
+  saveAvantagesSociaux(all);
+}
+function updateFraisMergedField(dealId, fpId, avId, isExc, excGroup, field, value) {
+  var cfg = getAvantagesConfig();
+  if (field === 'montant_1' || field === 'montant_2' || field === 'montant_3') {
+    _fmUpsertFp(dealId, fpId, isExc, excGroup, function(e){ e[field] = parseFloat(value) || 0; });
+  } else if (field === 'montant') {
+    var val = parseFloat(value) || 0;
+    var cur = avId ? getAvantagesSociaux().find(function(a){ return a && a.id === avId; }) : null;
+    var typeSel = cur ? (cur.type_avantage || '') : '';
+    if (!typeSel) { alert('⚠️ Type d\'avantage requis\n\nVeuillez d\'abord choisir un type d\'avantage avant de saisir un montant.'); renderFrais(); return; }
+    var typeDef = (cfg.types_avantages || []).find(function(t){ return t.nom === typeSel; });
+    var typeMax = typeDef ? (typeDef.montant_max || 0) : 0;
+    if (typeMax > 0 && val > typeMax) { alert('⚠️ Montant refusé\n\nLe montant maximum pour "' + typeSel + '" est ' + typeMax + ' €.\n\nVous pouvez modifier ce plafond dans Paramètres → Paramètres Avantages Sociaux.'); renderFrais(); return; }
+    _fmUpsertAv(dealId, avId, isExc, excGroup, function(e){ e.montant = val; e.montant_ajustement = cfg.coefficient_ajustement > 0 ? (val / cfg.coefficient_ajustement) : 0; });
+  } else if (field === 'type_avantage' || field === 'wellpass' || field === 'creches' || field === 'chargement_swile') {
+    _fmUpsertAv(dealId, avId, isExc, excGroup, function(e){ e[field] = value; });
+  } else if (field === 'ajustement_bp') {
+    var v = (value === 'Oui') ? 'Oui' : 'Non';
+    if (fpId) _fmUpsertFp(dealId, fpId, isExc, excGroup, function(e){ e.bp_fait = v; });
+    if (avId || !fpId) _fmUpsertAv(dealId, avId, isExc, excGroup, function(e){ e.ajustement_bp = v; });
+  } else if (field === 'commentaire') {
+    var c = String(value || '');
+    if (fpId) _fmUpsertFp(dealId, fpId, isExc, excGroup, function(e){ e.commentaire = c; });
+    if (avId || !fpId) _fmUpsertAv(dealId, avId, isExc, excGroup, function(e){ e.commentaire = c; });
+  }
+  renderFrais();
+}
+function deleteFraisMergedExceptionnel(fpId, avId) {
+  if (!fpId && !avId) return;
+  if (!confirm('Supprimer cette ligne exceptionnelle ?')) return;
+  if (fpId) saveFraisPro(getFraisPro().filter(function(a){ return !(a && a.id === fpId); }));
+  if (avId) saveAvantagesSociaux(getAvantagesSociaux().filter(function(a){ return !(a && a.id === avId); }));
+  renderFrais();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -18311,7 +18683,7 @@ function buildEntreesContent() {
       if (c !== entreesFilters.contacte) return false;
     }
     if (entreesFilters.signature) {
-      var s = it.etat.signature_contrat ? 'Complété' : 'Vide';
+      var s = (it.etat.signature_contrat && it.etat.signature_contrat !== 'Non') ? 'Complété' : 'Vide';
       if (s !== entreesFilters.signature) return false;
     }
     if (entreesFilters.mutuelle) {
@@ -18322,8 +18694,11 @@ function buildEntreesContent() {
 
   // Tri
   if (entreesSort.col === 'nom') {
+    // Tri sur le NOM (puis le prénom) — et non sur « Prénom Nom »
     filteredItems.sort(function(a, b) {
-      var r = (a.prenomNom || '').localeCompare(b.prenomNom || '', 'fr', { sensitivity: 'base' });
+      var na = ((a.deal && a.deal.nom) || '').trim(), nb = ((b.deal && b.deal.nom) || '').trim();
+      var r = na.localeCompare(nb, 'fr', { sensitivity: 'base' });
+      if (r === 0) r = ((a.deal && a.deal.prenom) || '').localeCompare((b.deal && b.deal.prenom) || '', 'fr', { sensitivity: 'base' });
       return entreesSort.dir === 'desc' ? -r : r;
     });
   } else if (entreesSort.col === 'date') {
@@ -18404,8 +18779,8 @@ function buildEntreesContent() {
     +   '</select>'
     +   '<select onchange="setEntreesFilter(\'signature\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
     +     '<option value="">Signature : tous</option>'
-    +     '<option value="Complété"' + (entreesFilters.signature === 'Complété' ? ' selected' : '') + '>Signature : Complétée</option>'
-    +     '<option value="Vide"' + (entreesFilters.signature === 'Vide' ? ' selected' : '') + '>Signature : Manquante</option>'
+    +     '<option value="Complété"' + (entreesFilters.signature === 'Complété' ? ' selected' : '') + '>Signature : Oui</option>'
+    +     '<option value="Vide"' + (entreesFilters.signature === 'Vide' ? ' selected' : '') + '>Signature : Non</option>'
     +   '</select>'
     +   '<select onchange="setEntreesFilter(\'mutuelle\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
     +     '<option value="">Mutuelle : tous</option>'
@@ -18419,9 +18794,10 @@ function buildEntreesContent() {
     + '</div>'
     // Tableau
     + '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E4E0FA;overflow-x:auto;">'
-    +   '<table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:2250px;">'
+    +   '<table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:2450px;">'
     +     '<thead style="background:#F5F3FF;">'
     +       '<tr style="border-bottom:2px solid #E4E0FA;">'
+    +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;" title="Qui a appelé le porté">Appelé par</th>'
     +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Civilité</th>'
     +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Contacté</th>'
     +         '<th onclick="setEntreesSort(\'nom\')" style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;cursor:pointer;user-select:none;">Nom' + sortArrow('nom') + '</th>'
@@ -18437,6 +18813,7 @@ function buildEntreesContent() {
     +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Signature contrat</th>'
     +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Mutuelle</th>'
     +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">SWILE</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;" title="Carte Swile activée ?">Carte Swile</th>'
     +         '<th style="padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;">Forfait repas</th>'
     +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Grand dép.</th>'
     +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">CRA saisi LAYA</th>'
@@ -18461,6 +18838,8 @@ function buildEntreeRow(item) {
 
   var contacte = etat.contacte || '-';
   var signature = etat.signature_contrat || '';
+  var signatureOui = !!signature && signature !== 'Non';   // compat : les anciennes dates saisies valent « Oui »
+  var appelePar = etat.appele_par || '';
   var mutuelle = etat.mutuelle || 'En Attente';
   var commentaire = etat.commentaire || '';
   // Suivi CRA / mails (saisi ici ; reprise des valeurs saisies auparavant dans l'onglet Visite médicale)
@@ -18488,18 +18867,26 @@ function buildEntreeRow(item) {
     }
   } catch(e){}
 
-  // Lookup SWILE et forfait repas depuis deal.repas
+  // Lookup SWILE et forfait repas depuis les conditions EN VIGUEUR (dernier avenant nouvelle simu, sinon le placement)
+  var _dv = deal; try { if (typeof _dealEnVigueur === 'function') _dv = _dealEnVigueur(deal) || deal; } catch(e) { _dv = deal; }
+  var _repas = String(_dv.repas || deal.repas || ''), _repasUp = _repas.toUpperCase();
   var swileStatut = '—';
   var forfaitRepas = '—';
-  if (deal.repas === 'Swile' || deal.repas === 'SWILE') {
+  if (_repasUp === 'SWILE') {
     swileStatut = 'Oui';
-  } else if (deal.repas === 'GD' || deal.repas === 'Grand Déplacement') {
+  } else if (_repasUp === 'GD' || _repasUp === 'GRAND DÉPLACEMENT' || _repasUp === 'GRAND DEPLACEMENT') {
     swileStatut = 'Non';
-  } else if (deal.repas) {
-    swileStatut = deal.repas;
+  } else if (_repas) {
+    swileStatut = _repas;
   }
-  if (deal.montant_repas) forfaitRepas = deal.montant_repas + ' €';
-  var grandDep = (deal.repas === 'GD' || deal.repas === 'Grand Déplacement') ? 'Oui' : 'Non';
+  // Montant du forfait repas : montant saisi sur le deal, sinon le forfait journalier des paramètres (même règle que le tableau des deals)
+  if (_repasUp === 'FORFAIT' || deal.montant_repas) {
+    var _mr = parseFloat(String(_dv.montant_repas || deal.montant_repas || '').replace(',', '.'));
+    if (!isFinite(_mr) || _mr <= 0) { try { var _pfr = document.getElementById('p_forfait_repas'); _mr = _pfr && _pfr.value ? (parseFloat(_pfr.value) || 21.40) : 21.40; } catch(e) { _mr = 21.40; } }
+    forfaitRepas = _mr.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €/jour';
+  }
+  var grandDep = (_repasUp === 'GD' || _repasUp === 'GRAND DÉPLACEMENT' || _repasUp === 'GRAND DEPLACEMENT') ? 'Oui' : 'Non';
+  var carteSwile = etat.carte_swile || '';
 
   // Highlight ligne selon Contacté
   var rowBg = '';
@@ -18507,8 +18894,8 @@ function buildEntreeRow(item) {
   else if (contacte === 'Non') rowBg = 'background:#E3F2FD;';
 
   // Cellule signature colorée
-  var signatureCellBg = signature ? '#E8F5E9' : '#FDECEC';
-  var signatureCellColor = signature ? '#0F6E56' : '#C24141';
+  var signatureCellBg = signatureOui ? '#E8F5E9' : '#FDECEC';
+  var signatureCellColor = signatureOui ? '#0F6E56' : '#C24141';
 
   // Deal en stand by -> ligne verrouillée jusqu'à conversion/activation
   var trStyle = 'border-bottom:1px solid #F0EDF9;' + rowBg + (_sbLocked ? 'opacity:.55;pointer-events:none;background:#F7F5FC;' : '');
@@ -18516,6 +18903,13 @@ function buildEntreeRow(item) {
   var civilite = etat.civilite || deal.civilite || '';
 
   return '<tr data-deal-id="' + dealId + '" style="' + trStyle + '">'
+    // 0. Appelé par (Clémence / Marie / Erika)
+    + '<td style="padding:9px 8px;">'
+    +   '<select onchange="updateDemarrageField(' + dealId + ',\'appele_par\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:#fff;font-weight:600;color:' + (appelePar ? '#1A1033' : '#9E94C4') + ';">'
+    +     '<option value=""' + (appelePar === '' ? ' selected' : '') + '>—</option>'
+    +     ['Clémence','Marie','Erika'].map(function(n){ return '<option value="' + n + '"' + (appelePar === n ? ' selected' : '') + '>' + n + '</option>'; }).join('')
+    +   '</select>'
+    + '</td>'
     // 1. Civilité (manuel, stocké dans état)
     + '<td style="padding:9px 8px;">'
     +   '<select onchange="updateDemarrageField(' + dealId + ',\'civilite\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:#fff;">'
@@ -18564,7 +18958,10 @@ function buildEntreeRow(item) {
     + '</td>'
     // 13. Signature contrat (vert si complété / rouge si vide)
     + '<td style="padding:6px 6px;background:' + signatureCellBg + ';">'
-    +   '<input type="date" value="' + (signature||'') + '" onchange="updateDemarrageField(' + dealId + ',\'signature_contrat\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;width:120px;background:#fff;color:' + signatureCellColor + ';font-weight:600;">'
+    +   '<select onchange="updateDemarrageField(' + dealId + ',\'signature_contrat\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:#fff;color:' + signatureCellColor + ';font-weight:700;">'
+    +     '<option value="Non"' + (!signatureOui ? ' selected' : '') + '>Non</option>'
+    +     '<option value="Oui"' + (signatureOui ? ' selected' : '') + '>Oui</option>'
+    +   '</select>'
     + '</td>'
     // 14. Mutuelle
     + '<td style="padding:9px 8px;text-align:center;">'
@@ -18576,6 +18973,14 @@ function buildEntreeRow(item) {
     + '</td>'
     // 15. SWILE (auto)
     + '<td style="padding:9px 8px;text-align:center;color:#4B36EC;font-weight:600;">' + swileStatut + '</td>'
+    // 15b. Carte Swile (manuel : Actif / Non actif)
+    + '<td style="padding:9px 8px;text-align:center;">'
+    +   '<select onchange="updateDemarrageField(' + dealId + ',\'carte_swile\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;font-weight:700;background:' + (carteSwile === 'Actif' ? '#F0FAF4' : '#fff') + ';color:' + (carteSwile === 'Actif' ? '#0F5132' : (carteSwile ? '#8A5F00' : '#9E94C4')) + ';">'
+    +     '<option value=""' + (carteSwile === '' ? ' selected' : '') + '>—</option>'
+    +     '<option value="Actif"' + (carteSwile === 'Actif' ? ' selected' : '') + '>Actif</option>'
+    +     '<option value="Non actif"' + (carteSwile === 'Non actif' ? ' selected' : '') + '>Non actif</option>'
+    +   '</select>'
+    + '</td>'
     // 16. Forfait repas (auto)
     + '<td style="padding:9px 8px;text-align:right;color:#1A1033;font-weight:600;">' + forfaitRepas + '</td>'
     // 17. Grand déplacement (auto)
