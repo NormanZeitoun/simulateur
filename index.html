@@ -8854,6 +8854,32 @@ var dealFilterMonthEntree = '';  // '' = tous ; 'YYYY-MM' = filtre mois sur date
 // Ne s'applique PAS quand l'utilisateur a explicitement choisi "État: Annulé" dans le dropdown
 // d'à côté (priorité au filtre explicite : si on demande à voir les annulés, on les voit).
 var dealHideAnnules = true;
+// Tri du tableau des deals par clic sur l'en-tête (clé de colonne + sens). dir = '' → ordre par défaut (plus récent en haut).
+var dealSort = { key: '', dir: '' };
+function setDealsSort(key) {
+  if (dealSort.key !== key) dealSort = { key: key, dir: 'asc' };
+  else if (dealSort.dir === 'asc') dealSort.dir = 'desc';
+  else dealSort = { key: '', dir: '' };
+  if (typeof renderDeals === 'function') renderDeals();
+}
+function _dealSortValue(d, key) {
+  if (!d) return '';
+  if (key === 'candidat') return ((d.nom || '') + ' ' + (d.prenom || '')).trim();
+  if (key === 'grand_dep') return (d.repas === 'GD' || d.repas === 'Grand Déplacement') ? 'Oui' : 'Non';
+  if (key === 'telnet') return (d.abo_tel || d.abo_internet || '');
+  var v = d[key];
+  if (Array.isArray(v)) v = v.map(function (x) { return (x && (x.text || x.texte)) || x || ''; }).join(' ');
+  return v == null ? '' : v;
+}
+function _dealSortCompare(a, b, key) {
+  var va = _dealSortValue(a, key), vb = _dealSortValue(b, key);
+  var ea = (va === '' || va === null || va === undefined), eb = (vb === '' || vb === null || vb === undefined);
+  if (ea && eb) return 0; if (ea) return 1; if (eb) return -1;   // vides toujours en bas
+  if (/^date_|^signature_|^vm_|_ts$/.test(key)) { var da = new Date(va), db = new Date(vb); if (!isNaN(da) && !isNaN(db)) return da - db; }
+  var na = parseFloat(String(va).replace(/[\s  €%]/g, '').replace(',', '.')), nb = parseFloat(String(vb).replace(/[\s  €%]/g, '').replace(',', '.'));
+  if (/^(tjm|nb_jours|salaire_annuel|frais_gestion|km_aller|abo_transport|forfait_repas|delai_paiement_client|frais_)/.test(key) && isFinite(na) && isFinite(nb)) return na - nb;
+  return String(va).localeCompare(String(vb), 'fr', { sensitivity: 'base', numeric: true });
+}
 
 // ═══ PERF : cache mémoire des stores volumineux (deals / candidats / clients) ═══
 // Évite de re-parser tout le localStorage à chaque lecture. Invalidé à chaque écriture
@@ -11390,10 +11416,23 @@ function renderDeals() {
   var visColDefs = visKeys.map(function(key){ return _colMap[key]; }).filter(Boolean);
   var ECOLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
 
+  // Tri par colonne (clic sur l'en-tête) — stable : à valeur égale, ordre par défaut conservé
+  if (dealSort.key && dealSort.dir) {
+    var _sk = dealSort.key, _sd = dealSort.dir === 'desc' ? -1 : 1;
+    deals = deals.map(function(d, i){ return { d: d, i: i }; })
+      .sort(function(x, y){
+        var vx = _dealSortValue(x.d, _sk), vy = _dealSortValue(y.d, _sk);
+        var ex = (vx === '' || vx == null), ey = (vy === '' || vy == null);
+        if (ex || ey) { if (ex && ey) return x.i - y.i; return ex ? 1 : -1; }   // vides toujours en bas, quel que soit le sens
+        var c = _dealSortCompare(x.d, y.d, _sk); if (c === 0) return x.i - y.i; return (c > 0 ? 1 : -1) * _sd;
+      })
+      .map(function(x){ return x.d; });
+  }
   var html = '<div class="deals-table-wrap"><table class="deals-table"><thead><tr>';
   visColDefs.forEach(function(col){
     var fc = col.freeze==='f1' ? ' class="col-freeze"' : col.freeze==='f2' ? ' class="col-freeze2"' : '';
-    html += '<th'+fc+'>'+col.label+'</th>';
+    var _arrow = (dealSort.key === col.key && dealSort.dir) ? (dealSort.dir === 'asc' ? ' <span style="font-size:10px;">\u25B2</span>' : ' <span style="font-size:10px;">\u25BC</span>') : ' <span style="font-size:9px;opacity:.35;">\u25B2\u25BC</span>';
+    html += '<th'+fc+' onclick="setDealsSort(\''+col.key+'\')" title="Trier par '+String(col.label).replace(/"/g,'&quot;')+'" style="cursor:pointer;user-select:none;white-space:nowrap;">'+col.label+_arrow+'</th>';
   });
   html += '</tr></thead><tbody>';
 
@@ -14237,9 +14276,15 @@ function computeCandStatutAuto(cand) {
   var _sortantByDeal = {}; sortantsOfCand.forEach(function(s){ if (s.deal_id != null) _sortantByDeal[String(s.deal_id)] = s; });
   function _dateOk(v){ if (!v) return null; var d = new Date(v); return isNaN(d.getTime()) ? null : d; }
 
+  var _idsCand = {}; dealsOfCand.forEach(function(d){ if (d && d.id != null) _idsCand[String(d.id)] = 1; });
   dealsOfCand.forEach(function(d){
     var dateSortie = d.date_sortie ? new Date(d.date_sortie) : null;
     var dateFin = d.date_fin ? new Date(d.date_fin) : null;  // date de fin prévisionnelle
+
+    // Deal d'ORIGINE continué chez un nouveau client (avenant nouveau client) : la mission vit sur la
+    // continuité, c'est elle qui décide du statut. L'origine, clôturée à la veille, ne rend plus « Porté ».
+    // (Même règle que le Dashboard et la liste des portés actifs — correctif 13/10/2026.)
+    if (d.prolonge_par != null && _idsCand[String(d.prolonge_par)]) { hasPast = true; return; }
 
     if (d.etat === 'Sorti des effectifs') {
       // Sortie officielle enregistrée
@@ -22506,6 +22551,8 @@ function mergeSalairesBloques(remote) {
     base.date_deblocage = win.date_deblocage;
     base.alerte_blocage_envoyee = win.alerte_blocage_envoyee;
     base.alerte_deblocage_envoyee = win.alerte_deblocage_envoyee;
+    // Le verrou manuel appartient au changement de statut gagnant (un blocage AUTO plus récent lève un ancien verrou manuel)
+    if (win.statut_origine) { base.statut_origine = win.statut_origine; base.manual_override = (win.statut_origine === 'manuel'); }
     // Fusion des commentaires (dédoublonnage par date+texte+auteur)
     var merged = [], seen = {};
     (cur.commentaires || []).concat(r.commentaires || []).forEach(function(cm){
@@ -22712,7 +22759,7 @@ function _sbBuildAutoEntry(g, im, now, silent) {
     manager: '', manager_tel: '', manager_email: '',  // auto-remplis en Build 3 (depuis le placement)
     _override: {},
     nb_factures: g.count,
-    statut: 'bloque', origine: 'auto',
+    statut: 'bloque', origine: 'auto', statut_origine: 'auto', manual_override: false,
     statut_ts: now,
     date_blocage: new Date(now).toISOString(), date_deblocage: '',
     alerte_blocage_envoyee: !!silent,   // seed = considéré « déjà notifié » → pas d'email rétroactif
@@ -22721,6 +22768,48 @@ function _sbBuildAutoEntry(g, im, now, silent) {
     updated_at: now
   };
   return e;
+}
+
+// Verrou manuel = le statut COURANT a été posé à la main.
+// Rétro-compatibilité : les entrées anciennes n'ont pas statut_origine → on le déduit du commentaire le plus récent.
+function _sbParseCmDate(s) {
+  var m = String(s || '').match(/(\d{2})\/(\d{2})\/(\d{4})(?:\D+(\d{2}):(\d{2}))?/);
+  return m ? new Date(+m[3], +m[2] - 1, +m[1], m[4] ? +m[4] : 0, m[5] ? +m[5] : 0).getTime() : 0;
+}
+function _sbInferStatutOrigine(e) {
+  var last = null, lastTs = -1;
+  (e.commentaires || []).forEach(function(cm){ var t = _sbParseCmDate(cm && cm.date); if (t >= lastTs) { lastTs = t; last = cm; } });
+  var txt = last ? String(last.text || '').toLowerCase() : '';
+  if (/automatiquement/.test(txt)) {
+    // dernier événement automatique : cohérent avec le statut courant ?
+    if ((e.statut === 'bloque' && /bloqu/.test(txt) && !/d[ée]bloqu/.test(txt)) || (e.statut === 'debloque' && /d[ée]bloqu/.test(txt))) return 'auto';
+  }
+  if (/manuellement/.test(txt)) return 'manuel';
+  if (e.statut === 'debloque' && !/manuellement/.test(txt)) return 'auto';   // déblocage auto = sans commentaire
+  return e.manual_override ? 'manuel' : 'auto';
+}
+function _sbIsManualLocked(e) {
+  if (!e) return false;
+  if (e.origine === 'manuel' && e.statut === 'bloque') return true;
+  if (!e.statut_origine) { e.statut_origine = _sbInferStatutOrigine(e); e.manual_override = (e.statut_origine === 'manuel'); }
+  return e.statut_origine === 'manuel';
+}
+// Remet une entrée en pilotage automatique (efface le verrou manuel) puis recalcule.
+function _sbResetManual(id) {
+  var arr = getSalairesBloques();
+  var e = arr.find(function(x){ return x.id === id; });
+  if (!e) return;
+  if (!confirm('Repasser ' + e.consultant + ' (' + e.client + ') en pilotage automatique ?\n\nLe moteur recalculera le statut à partir des factures échues (≥ ' + SB_THRESHOLD_BLOCK + ' → bloqué, ≤ ' + SB_THRESHOLD_UNBLOCK + ' → débloqué).')) return;
+  var who = (typeof getCurrentUserCommercial === 'function' && getCurrentUserCommercial()) || 'Utilisateur';
+  var now = Date.now(), n = new Date();
+  e.manual_override = false; e.statut_origine = 'auto'; e.origine = 'auto';
+  e.statut_ts = 0;   // lève la garde anti-oscillation pour que le recalcul s'applique tout de suite
+  e.commentaires = e.commentaires || [];
+  e.commentaires.unshift({ date: n.toLocaleDateString('fr-FR') + ' ' + n.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}), text: 'Remis en pilotage automatique', author: who });
+  e.updated_at = now;
+  saveSalairesBloques(arr);
+  try { runSalaireBloqueEngine(); } catch(err) { console.warn('[SB] reset manual', err); }
+  if (typeof renderSalairesBloques === 'function') renderSalairesBloques();
 }
 
 // ── MOTEUR ──
@@ -22780,18 +22869,20 @@ function runSalaireBloqueEngine(opts) {
     if (!ov.commercial && im.commercial && e.commercial !== im.commercial) { e.commercial = im.commercial; changed = true; }
     if (!ov.email_relance && im.compta_email && e.email_relance !== im.compta_email) { e.email_relance = im.compta_email; changed = true; }
 
-    if (e.origine === 'manuel' || e.manual_override) return;  // blocage/déblocage manuel : jamais touché par l'auto
+    // Verrou manuel : seulement si le statut COURANT a été posé à la main (statut_origine).
+    // (Un ancien déblocage manuel ne doit pas figer un blocage automatique arrivé ensuite par la synchro.)
+    if (_sbIsManualLocked(e)) return;
 
     // Machine à états AUTO
     if (e.statut === 'debloque' && g.count >= SB_THRESHOLD_BLOCK && _sbCanFlip(e, now)) {
-      e.statut = 'bloque'; e.statut_ts = now;
+      e.statut = 'bloque'; e.statut_ts = now; e.statut_origine = 'auto'; e.manual_override = false;
       e.date_blocage = new Date(now).toISOString(); e.date_deblocage = '';
       e.alerte_blocage_envoyee = !!silent; e.alerte_deblocage_envoyee = false;
       e.commentaires.unshift(_sbAutoComment('Salaire re-bloqué automatiquement (' + g.count + ' factures impayées)'));
       e.updated_at = now; changed = true;
       if (!silent) pending.push({ entry: e, type: 'block' });
     } else if (e.statut === 'bloque' && g.count <= SB_THRESHOLD_UNBLOCK && _sbCanFlip(e, now)) {
-      e.statut = 'debloque'; e.statut_ts = now;
+      e.statut = 'debloque'; e.statut_ts = now; e.statut_origine = 'auto'; e.manual_override = false;
       e.date_deblocage = new Date(now).toISOString();
       e.alerte_deblocage_envoyee = !!silent;
       // (déblocage auto : pas de commentaire stocké — le statut « débloqué » + la date suffisent)
@@ -22806,8 +22897,8 @@ function runSalaireBloqueEngine(opts) {
     if (!e || e.origine !== 'auto') return;
     if (groups[id]) return;
     if (e.nb_factures !== 0) { e.nb_factures = 0; changed = true; }
-    if (e.statut === 'bloque' && _sbCanFlip(e, now)) {
-      e.statut = 'debloque'; e.statut_ts = now;
+    if (e.statut === 'bloque' && !_sbIsManualLocked(e) && _sbCanFlip(e, now)) {
+      e.statut = 'debloque'; e.statut_ts = now; e.statut_origine = 'auto'; e.manual_override = false;
       e.date_deblocage = new Date(now).toISOString();
       e.alerte_deblocage_envoyee = !!silent;
       // (déblocage auto : pas de commentaire stocké)
@@ -23092,7 +23183,7 @@ function _sbBlockFromFiche(candId) {
   var e = arr.find(function(x){ return x.id === id; });
   if (e) {
     e.statut = 'bloque'; e.statut_ts = now; e.date_blocage = new Date(now).toISOString(); e.date_deblocage = '';
-    e.origine = 'manuel'; e.manual_override = true; e.candidat_id = candId; e.consultant = nom; e.consultant_email = email;
+    e.origine = 'manuel'; e.manual_override = true; e.statut_origine = 'manuel'; e.candidat_id = candId; e.consultant = nom; e.consultant_email = email;
     e.alerte_blocage_envoyee = true; e.alerte_deblocage_envoyee = false;
     if (emailRelance && !e.email_relance) e.email_relance = emailRelance;
     e.commentaires = e.commentaires || []; e.commentaires.unshift(cm); e.updated_at = now;
@@ -23130,7 +23221,7 @@ function _sbUnblockFromFiche(candId) {
     var match = (e.candidat_id === candId) || (em && _sbNormEmail(e.consultant_email) === em);
     if (match && e.statut === 'bloque') {
       e.statut = 'debloque'; e.statut_ts = now; e.date_deblocage = new Date(now).toISOString();
-      e.manual_override = true; e.alerte_deblocage_envoyee = true;
+      e.manual_override = true; e.statut_origine = 'manuel'; e.alerte_deblocage_envoyee = true;
       e.commentaires = e.commentaires || [];
       e.commentaires.unshift({ date: n.toLocaleDateString('fr-FR') + ' ' + n.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}), text: 'Salaire débloqué manuellement (depuis la fiche)', author: who });
       e.updated_at = now; touched.push(e);
@@ -23347,6 +23438,7 @@ function renderSalairesBloques() {
       var action = (e.statut === 'bloque')
         ? '<button class="sb-btn unb" onclick="_sbManualUnblock(\'' + e.id + '\')">\u{1F513} Débloquer</button>'
         : '';
+      if (_sbIsManualLocked(e) || e.manual_override) action += ' <button class="sb-btn" title="Effacer le blocage/déblocage manuel et laisser le moteur recalculer selon les factures échues" onclick="_sbResetManual(\'' + e.id + '\')">\u21BA Auto</button>';
       h += '<tr' + rowCls + '>'
         + '<td style="font-weight:700;color:#1A1033;">' + consHtml + (e.origine==='manuel'?' <span title="Blocage manuel" style="font-size:10px;color:#B58A00;">\u270B</span>':'') + '</td>'
         + '<td>' + clientHtml + '</td>'
@@ -23380,7 +23472,7 @@ function _sbManualUnblock(id) {
   e.statut = 'debloque';
   e.statut_ts = now;
   e.date_deblocage = new Date(now).toISOString();
-  e.manual_override = true;
+  e.manual_override = true; e.statut_origine = 'manuel';
   e.alerte_deblocage_envoyee = true; // optimiste (remis à false si l'envoi échoue)
   e.commentaires.unshift({
     date: n.toLocaleDateString('fr-FR') + ' ' + n.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}),
