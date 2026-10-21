@@ -17122,9 +17122,10 @@ function mergeAvantagesSociaux(remote) {
   if (!remoteArr) return;
   var local = getAvantagesSociaux();
   var byId = {};
-  local.forEach(function(a){ if (a && a.id) byId[a.id] = a; });
+  var _tomb = function(id){ return typeof isTombstoned === 'function' && isTombstoned('avantages_sociaux', id); };
+  local.forEach(function(a){ if (a && a.id && !_tomb(a.id)) byId[a.id] = a; });
   remoteArr.forEach(function(a){
-    if (!a || !a.id) return;
+    if (!a || !a.id || _tomb(a.id)) return;
     var existing = byId[a.id];
     if (!existing || (a.updated_ts || 0) > (existing.updated_ts || 0)) {
       byId[a.id] = a;
@@ -17617,6 +17618,7 @@ function updateAvantageField(dealId, recordId, isExceptionnel, field, value) {
 function deleteAvantage(recordId) {
   if (!recordId) return;
   if (!confirm('Supprimer cette ligne exceptionnelle ?')) return;
+  if (typeof addTombstone === 'function') addTombstone('avantages_sociaux', recordId);
   var all = getAvantagesSociaux();
   all = all.filter(function(a){ return a.id !== recordId; });
   saveAvantagesSociaux(all);
@@ -17882,9 +17884,10 @@ function mergeFraisPro(remote) {
   if (!Array.isArray(remote)) return;
   var local = getFraisPro();
   var byId = {};
-  local.forEach(function(a){ if (a && a.id) byId[a.id] = a; });
+  var _tomb = function(id){ return typeof isTombstoned === 'function' && isTombstoned('frais_pro', id); };
+  local.forEach(function(a){ if (a && a.id && !_tomb(a.id)) byId[a.id] = a; });
   remote.forEach(function(a){
-    if (!a || !a.id) return;
+    if (!a || !a.id || _tomb(a.id)) return;
     var existing = byId[a.id];
     if (!existing || (a.updated_ts || 0) > (existing.updated_ts || 0)) {
       byId[a.id] = a;
@@ -18146,6 +18149,7 @@ function updateFraisProField(dealId, recordId, isExceptionnel, field, value) {
 function deleteFraisPro(recordId) {
   if (!recordId) return;
   if (!confirm('Supprimer cette ligne exceptionnelle ?')) return;
+  if (typeof addTombstone === 'function') addTombstone('frais_pro', recordId);
   var all = getFraisPro();
   all = all.filter(function(a){ return a.id !== recordId; });
   saveFraisPro(all);
@@ -18734,8 +18738,9 @@ function updateFraisMergedField(dealId, fpId, avId, isExc, excGroup, field, valu
 function deleteFraisMergedExceptionnel(fpId, avId) {
   if (!fpId && !avId) return;
   if (!confirm('Supprimer cette ligne exceptionnelle ?')) return;
-  if (fpId) saveFraisPro(getFraisPro().filter(function(a){ return !(a && a.id === fpId); }));
-  if (avId) saveAvantagesSociaux(getAvantagesSociaux().filter(function(a){ return !(a && a.id === avId); }));
+  // Tombstones : sans eux, la synchro avec un autre poste (qui a encore la ligne) la ressuscitait
+  if (fpId) { if (typeof addTombstone === 'function') addTombstone('frais_pro', fpId); saveFraisPro(getFraisPro().filter(function(a){ return !(a && a.id === fpId); })); }
+  if (avId) { if (typeof addTombstone === 'function') addTombstone('avantages_sociaux', avId); saveAvantagesSociaux(getAvantagesSociaux().filter(function(a){ return !(a && a.id === avId); })); }
   renderFrais();
 }
 
