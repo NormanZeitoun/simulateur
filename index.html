@@ -16826,6 +16826,51 @@ function renderFrais() {
   // 13/10/2026 : Avantages Sociaux + Frais Pro fusionnés dans un seul tableau
   // (les deux stockages sp_frais_pro_v1 / sp_avantages_sociaux_v1 sont conservés tels quels).
   container.innerHTML = buildFraisMergedContent();
+  // Prénom Nom + en-têtes figés, barre de défilement horizontale toujours visible
+  _stickyTable(container.querySelector('table.frais-merged-table'), 1, 'calc(100vh - 300px)');
+}
+
+// ── Tableau à colonnes / en-têtes figés ──
+// nCols premières colonnes collées à gauche, lignes d'en-tête collées en haut ; le conteneur
+// devient défilant verticalement (max-height) pour que la barre horizontale reste à l'écran.
+function _stickyTable(table, nCols, maxHeight) {
+  try {
+    if (!table) return;
+    var wrap = table.parentElement; if (!wrap) return;
+    wrap.style.maxHeight = maxHeight || 'calc(100vh - 300px)';
+    wrap.style.overflow = 'auto';
+    wrap.style.position = 'relative';
+    var headRows = table.tHead ? Array.prototype.slice.call(table.tHead.rows) : [];
+    var lastHead = headRows[headRows.length - 1];
+    var lefts = [];
+    if (lastHead) for (var i = 0; i < nCols && i < lastHead.cells.length; i++) lefts.push(lastHead.cells[i].offsetLeft);
+    var theadBg = '#F5F3FF';
+    try { var cs = getComputedStyle(table.tHead); if (cs.backgroundColor && cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && cs.backgroundColor !== 'transparent') theadBg = cs.backgroundColor; } catch(e) {}
+    var top = 0;
+    headRows.forEach(function(tr) {
+      var h = tr.offsetHeight;
+      Array.prototype.forEach.call(tr.cells, function(th, i) {
+        th.style.position = 'sticky'; th.style.top = top + 'px'; th.style.zIndex = (i < nCols && lefts[i] != null) ? '6' : '5';
+        var bg = getComputedStyle(th).backgroundColor;
+        if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') th.style.background = theadBg;
+        if (i < nCols && lefts[i] != null && tr === lastHead) { th.style.left = lefts[i] + 'px'; if (i === nCols - 1) th.style.boxShadow = '2px 0 0 #E4E0FA'; }
+      });
+      top += h;
+    });
+    Array.prototype.forEach.call(table.tBodies, function(tb) {
+      Array.prototype.forEach.call(tb.rows, function(tr) {
+        var rowBg = tr.style.background || tr.style.backgroundColor || '';
+        if (!rowBg) { try { var c = getComputedStyle(tr).backgroundColor; if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') rowBg = c; } catch(e) {} }
+        for (var i = 0; i < nCols && i < tr.cells.length && lefts[i] != null; i++) {
+          var td = tr.cells[i];
+          if (tr.cells.length <= nCols && td.colSpan > 1) break;   // ligne « état vide » (colspan)
+          td.style.position = 'sticky'; td.style.left = lefts[i] + 'px'; td.style.zIndex = '2';
+          if (!td.style.background && !td.style.backgroundColor) td.style.background = rowBg || '#fff';
+          if (i === nCols - 1) td.style.boxShadow = '2px 0 0 #E4E0FA';
+        }
+      });
+    });
+  } catch(e) { console.warn('[stickyTable]', e); }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -18125,7 +18170,7 @@ function confirmFraisProExceptionnel() {
 // Champs partagés (Ajustement BP, Commentaire) : écrits dans les deux enregistrements.
 // ═══════════════════════════════════════════════════════════════════
 var fraisMergedSort = { col: null, dir: 'asc' };   // 'nom' | 'total' | 'montant'
-var fraisMergedFilters = { type: '', bp: '', swile: '', wellpass: '', creches: '', avec_frais: false, avec_avantage: false };
+var fraisMergedFilters = { type: '', bp: '', swile: '', wellpass: '', creches: '', avec_frais: false, avec_avantage: false, exc: '' };  // exc : '' | 'oui' | 'non'
 var fraisMergedSearch = '';
 
 function setFraisMergedMois(v) {
@@ -18148,7 +18193,7 @@ function setFraisMergedSearch(val) {
   _debounceSearchRefocus('fraismerged', function(){ renderFrais(); }, 'fraismerged-search-input');
 }
 function resetFraisMergedFilters() {
-  fraisMergedFilters = { type: '', bp: '', swile: '', wellpass: '', creches: '', avec_frais: false, avec_avantage: false };
+  fraisMergedFilters = { type: '', bp: '', swile: '', wellpass: '', creches: '', avec_frais: false, avec_avantage: false, exc: '' };
   avantagesFilters.type = '';
   fraisMergedSort = { col: null, dir: 'asc' };
   fraisMergedSearch = '';
@@ -18227,6 +18272,8 @@ function buildFraisMergedContent() {
     if (F.swile && ((av && av.chargement_swile) || 'Non') !== F.swile) return false;
     if (F.wellpass && (_fmNum(av && av.wellpass) > 0 ? 'Oui' : 'Non') !== F.wellpass) return false;
     if (F.creches && (_fmNum(av && av.creches) > 0 ? 'Oui' : 'Non') !== F.creches) return false;
+    if (F.exc === 'oui' && !it.isExceptionnel) return false;
+    if (F.exc === 'non' && it.isExceptionnel) return false;
     if (F.avec_frais && !(it.totalVal > 0)) return false;
     if (F.avec_avantage && !(it.montantVal > 0)) return false;
     return true;
@@ -18279,7 +18326,7 @@ function buildFraisMergedContent() {
       + '<option value="Non"' + (F[field] === 'Non' ? ' selected' : '') + '>' + label + ' : ' + (lblNon || 'Non') + '</option>'
       + '</select>';
   }
-  var filtersActive = !!(fraisMergedSearch || F.type || F.bp || F.swile || F.wellpass || F.creches || F.avec_frais || F.avec_avantage || fraisMergedSort.col);
+  var filtersActive = !!(fraisMergedSearch || F.type || F.bp || F.swile || F.wellpass || F.creches || F.avec_frais || F.avec_avantage || F.exc || fraisMergedSort.col);
   var thL = 'padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;white-space:nowrap;';
   var thR = 'padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;white-space:nowrap;';
   var thC = 'padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;white-space:nowrap;';
@@ -18287,6 +18334,7 @@ function buildFraisMergedContent() {
   var thAv = 'background:#F5F3FF;';     // teinte violette : groupe Avantages Sociaux
 
   return ''
+    + buildFraisDashboard(coef)
     + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">'
     +   '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
     +     '<label style="font-size:11px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Mois :</label>'
@@ -18312,6 +18360,11 @@ function buildFraisMergedContent() {
     +   '<label style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:#4B36EC;font-weight:600;cursor:pointer;padding:5px 10px;background:#fff;border:1.5px solid #E4E0FA;border-radius:7px;">'
     +     '<input type="checkbox"' + (F.avec_avantage ? ' checked' : '') + ' onchange="setFraisMergedFilter(\'avec_avantage\',this.checked)" style="cursor:pointer;">Avec avantage'
     +   '</label>'
+    +   '<select onchange="setFraisMergedFilter(\'exc\',this.value)" style="padding:6px 10px;border:1.5px solid ' + (F.exc ? '#F0A500' : '#E4E0FA') + ';border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
+    +     '<option value=""' + (!F.exc ? ' selected' : '') + '>Lignes : toutes</option>'
+    +     '<option value="oui"' + (F.exc === 'oui' ? ' selected' : '') + '>Lignes exceptionnelles seulement</option>'
+    +     '<option value="non"' + (F.exc === 'non' ? ' selected' : '') + '>Lignes standard seulement</option>'
+    +   '</select>'
     +   (filtersActive ? '<button onclick="resetFraisMergedFilters()" style="margin-left:auto;padding:5px 12px;background:#fff;color:#E24B4A;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">✕ Réinitialiser</button>' : '')
     + '</div>'
     + '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E4E0FA;overflow-x:auto;">'
@@ -18342,6 +18395,66 @@ function buildFraisMergedContent() {
     +     '</thead>'
     +     '<tbody>' + rowsHtml + emptyState + '</tbody>'
     +   '</table>'
+    + '</div>';
+}
+
+// ── Mini tableau de bord Frais & Avantages (ajustements par catégorie, filtre année / mois) ──
+var fraisDash = { annee: String(new Date().getFullYear()), mois: '', open: false };
+function setFraisDash(field, value) { fraisDash[field] = value; renderFrais(); }
+function buildFraisDashboard(coef) {
+  var fp = getFraisPro().filter(function(r){ return r && r.mois; });
+  var av = getAvantagesSociaux().filter(function(r){ return r && r.mois; });
+  var years = {}; fp.concat(av).forEach(function(r){ years[String(r.mois).slice(0, 4)] = 1; });
+  years[fraisDash.annee] = 1; years[String(new Date().getFullYear())] = 1;
+  var yearList = Object.keys(years).sort().reverse();
+  var pref = fraisDash.annee + (fraisDash.mois ? '-' + fraisDash.mois : '');
+  var inScope = function(r){ return String(r.mois).indexOf(pref) === 0; };
+  fp = fp.filter(inScope); av = av.filter(inScope);
+  var dealName = {}; (typeof getDeals === 'function' ? getDeals() : []).forEach(function(d){ if (d) dealName[String(d.id)] = _avNorm((d.prenom || '') + ' ' + (d.nom || '')) || String(d.id); });
+  var who = function(r){ return dealName[String(r.deal_id)] || ('deal ' + r.deal_id); };
+  // catégories : { label, brut, ajust, pers:{}, moisSet:{} }
+  var cats = {}, order = [];
+  function cat(label, color) { if (!cats[label]) { cats[label] = { label: label, color: color || '#4B36EC', brut: 0, ajust: 0, pers: {} }; order.push(label); } return cats[label]; }
+  var all = { brut: 0, ajust: 0, pers: {} }, parMois = {};
+  function add(c, brut, ajust, r) { if (!(brut > 0) && !(ajust > 0)) return; c.brut += brut; c.ajust += ajust; c.pers[who(r)] = 1; all.brut += brut; all.ajust += ajust; all.pers[who(r)] = 1; var pm = parMois[r.mois] = parMois[r.mois] || { brut: 0, ajust: 0, pers: {} }; pm.brut += brut; pm.ajust += ajust; pm.pers[who(r)] = 1; }
+  cat('Frais professionnels', '#1D4ED8');
+  fp.forEach(function(r){ var t = computeFraisProTotal(r); add(cats['Frais professionnels'], t, coef > 0 ? t / coef : 0, r); });
+  av.forEach(function(r){
+    var m = parseFloat(r.montant) || 0;
+    if (m > 0) { var aj = parseFloat(r.montant_ajustement) || (coef > 0 ? m / coef : 0); add(cat(r.type_avantage || 'Avantage (type non renseigné)'), m, aj, r); }
+    var w = _fmNum(r.wellpass); if (w > 0) add(cat('Wellpass', '#0F6E56'), w, w, r);
+    var c = _fmNum(r.creches); if (c > 0) add(cat('Crèches', '#0F6E56'), c, c, r);
+  });
+  var eur = function(v){ return (v || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'; };
+  var nb = function(o){ return Object.keys(o).length; };
+  var MOIS_FR = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  var moisOpts = '<option value=""' + (!fraisDash.mois ? ' selected' : '') + '>Tous les mois</option>' + MOIS_FR.map(function(m, i){ var v = ('0' + (i + 1)).slice(-2); return '<option value="' + v + '"' + (fraisDash.mois === v ? ' selected' : '') + '>' + m.charAt(0).toUpperCase() + m.slice(1) + '</option>'; }).join('');
+  var yearOpts = yearList.map(function(y){ return '<option value="' + y + '"' + (y === fraisDash.annee ? ' selected' : '') + '>' + y + '</option>'; }).join('');
+  var rows = order.filter(function(l){ return cats[l].brut > 0 || cats[l].ajust > 0; }).map(function(l){ var c = cats[l]; return '<tr style="border-bottom:1px solid #F0EDF9;"><td style="padding:6px 10px;font-weight:600;color:' + c.color + ';">' + _fmEsc(c.label) + '</td><td style="padding:6px 10px;text-align:right;">' + eur(c.brut) + '</td><td style="padding:6px 10px;text-align:right;font-weight:700;">' + eur(c.ajust) + '</td><td style="padding:6px 10px;text-align:center;">' + nb(c.pers) + '</td></tr>'; }).join('');
+  var moisKeys = Object.keys(parMois).sort();
+  var moisRows = (!fraisDash.mois && moisKeys.length > 1) ? moisKeys.map(function(k){ var pm = parMois[k]; var mi = parseInt(k.slice(5, 7), 10) - 1; return '<tr style="border-bottom:1px solid #F0EDF9;"><td style="padding:5px 10px;">' + (MOIS_FR[mi] || k) + '</td><td style="padding:5px 10px;text-align:right;">' + eur(pm.brut) + '</td><td style="padding:5px 10px;text-align:right;font-weight:700;">' + eur(pm.ajust) + '</td><td style="padding:5px 10px;text-align:center;">' + nb(pm.pers) + '</td></tr>'; }).join('') : '';
+  var th = 'padding:7px 10px;font-size:10.5px;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;background:#F5F3FF;';
+  var kpi = function(lbl, val, color){ return '<div style="flex:1;min-width:160px;background:#fff;border:1px solid #E4E0FA;border-radius:10px;padding:10px 14px;"><div style="font-size:10.5px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">' + lbl + '</div><div style="font-size:20px;font-weight:800;color:' + color + ';margin-top:2px;">' + val + '</div></div>'; };
+  return '<div style="background:#FAF8FF;border:1px solid #E4E0FA;border-radius:12px;padding:12px 14px;margin-bottom:14px;">'
+    + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:' + (fraisDash.open ? '10px' : '0') + ';">'
+    +   '<span onclick="setFraisDash(\'open\',' + !fraisDash.open + ')" style="cursor:pointer;font-size:13px;font-weight:800;color:#372EB6;user-select:none;">' + (fraisDash.open ? '\u25BC' : '\u25B6') + ' \uD83D\uDCCA Tableau de bord ajustements</span>'
+    +   '<select onchange="setFraisDash(\'annee\',this.value)" style="padding:5px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;font-weight:600;">' + yearOpts + '</select>'
+    +   '<select onchange="setFraisDash(\'mois\',this.value)" style="padding:5px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;font-weight:600;">' + moisOpts + '</select>'
+    +   '<span style="font-size:11px;color:#9E94C4;">Ajustement = montant ÷ ' + coef + ' (frais & avantages) · Wellpass et Crèches comptés pour leur montant</span>'
+    + '</div>'
+    + (fraisDash.open ? ''
+      + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">'
+      +   kpi('Montant global ajustement', eur(all.ajust), '#372EB6')
+      +   kpi('Montant brut total', eur(all.brut), '#1A1033')
+      +   kpi('Consultants concernés', nb(all.pers), '#0F6E56')
+      +   kpi('Lignes avec montant', String(fp.filter(function(r){ return computeFraisProTotal(r) > 0; }).length + av.filter(function(r){ return (parseFloat(r.montant) || 0) > 0 || _fmNum(r.wellpass) > 0 || _fmNum(r.creches) > 0; }).length), '#6B5E9C')
+      + '</div>'
+      + '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;">'
+      +   '<div style="flex:2;min-width:420px;background:#fff;border:1px solid #E4E0FA;border-radius:10px;overflow:hidden;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr><th style="' + th + 'text-align:left;">Catégorie</th><th style="' + th + 'text-align:right;">Montant brut</th><th style="' + th + 'text-align:right;">Ajustement</th><th style="' + th + 'text-align:center;">Consultants</th></tr></thead><tbody>' + (rows || '<tr><td colspan="4" style="padding:14px;text-align:center;color:#9E94C4;font-style:italic;">Aucun montant sur la période.</td></tr>') + '</tbody>'
+      +   (rows ? '<tfoot><tr style="background:#F5F3FF;font-weight:800;"><td style="padding:7px 10px;">Total</td><td style="padding:7px 10px;text-align:right;">' + eur(all.brut) + '</td><td style="padding:7px 10px;text-align:right;color:#372EB6;">' + eur(all.ajust) + '</td><td style="padding:7px 10px;text-align:center;">' + nb(all.pers) + '</td></tr></tfoot>' : '') + '</table></div>'
+      +   (moisRows ? '<div style="flex:1;min-width:300px;background:#fff;border:1px solid #E4E0FA;border-radius:10px;overflow:hidden;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr><th style="' + th + 'text-align:left;">Mois ' + fraisDash.annee + '</th><th style="' + th + 'text-align:right;">Brut</th><th style="' + th + 'text-align:right;">Ajustement</th><th style="' + th + 'text-align:center;">Consult.</th></tr></thead><tbody>' + moisRows + '</tbody></table></div>' : '')
+      + '</div>'
+      : '')
     + '</div>';
 }
 
@@ -18667,6 +18780,8 @@ function renderEntrees() {
   var el = document.getElementById('rh-content-container');
   if (!el) return;
   el.innerHTML = buildEntreesContent();
+  // Nom / Prénom (et les 3 colonnes qui les précèdent) + en-têtes figés, barre de défilement horizontale toujours visible
+  _stickyTable(el.querySelector('table.entrees-table'), 5, 'calc(100vh - 300px)');
 }
 
 function buildEntreesContent() {
@@ -18816,7 +18931,7 @@ function buildEntreesContent() {
     + '</div>'
     // Tableau
     + '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E4E0FA;overflow-x:auto;">'
-    +   '<table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:2450px;">'
+    +   '<table class="entrees-table" style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:2450px;">'
     +     '<thead style="background:#F5F3FF;">'
     +       '<tr style="border-bottom:2px solid #E4E0FA;">'
     +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;" title="Qui a appelé le porté">Appelé par</th>'
@@ -18848,7 +18963,7 @@ function buildEntreesContent() {
     +   '</table>'
     + '</div>'
     + '<div style="margin-top:14px;padding:10px 14px;background:#F5F3FF;border-radius:8px;font-size:11px;color:#6B5E9C;line-height:1.55;">'
-    +   '💡 <strong>Contacté = Non</strong> déclenche <u>immédiatement</u> l\'envoi du mail "Premier mois" au consultant (avec le commercial en CC). Le template, les pièces jointes et l\'expéditeur se configurent dans <strong>Paramètres → 🎉 Entrées / Premier mois</strong>.'
+    +   '💡 <strong>Contacté = Mail</strong> déclenche <u>immédiatement</u> l\'envoi du mail "Premier mois" au consultant depuis la boîte du commercial (sauf si les mails automatiques sont en pause). Le template, les pièces jointes et l\'expéditeur se configurent dans <strong>Paramètres → 🎉 Entrées / Premier mois</strong>.'
     + '</div>';
 }
 
