@@ -1893,6 +1893,9 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="Perdu">Perdu</option>
           <option value="__standby__">&#9208; Stand by</option>
           <option value="__bloque__">&#128274; Salaire bloqué</option>
+          <option value="__fin_rouge__">&#128308; Fin de mission dépassée</option>
+          <option value="__fin_jaune__">&#128993; Fin de mission dans moins de 30 j</option>
+          <option value="__fin_vert__">&#128994; Fin de mission dans plus de 30 j</option>
         </select>
         <select id="cand-filter-date" onchange="renderCandidats()" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;background:#fff;cursor:pointer;">
           <option value="">Toutes dates</option>
@@ -14358,6 +14361,50 @@ function _candFreshTs(c) {
   return (c && c.id) || 0;
 }
 
+// ── Fin de mission d'un candidat porté : niveau vert / jaune / rouge ──
+// Prend les deals en cours (Signé, En cours, Nouveau placement ; hors stand by, hors origine continuée),
+// la fin effective = date de fin du deal prolongée par les avenants. Sans fin connue → vert.
+//   vert  : fin dans plus de 30 jours   ·   jaune : fin dans 0 à 30 jours   ·   rouge : fin dépassée
+function _candFinMissionInfo(cand, avIdx) {
+  try {
+    if (!cand || typeof _candMatchCtx !== 'function') return null;
+    var ctx = _candMatchCtx(cand);
+    var ds = _candDealsOf(ctx).filter(function(d){ return d && !d._deleted && d.etat !== 'Annulé' && !d.stand_by && _dealBelongsToCand(d, ctx); });
+    if (!ds.length) return null;
+    var today = new Date(); today.setHours(23, 59, 59, 999);
+    var ids = {}; ds.forEach(function(d){ ids[String(d.id)] = 1; });
+    var pd = function(v){ var x = (typeof _dgParseDate === 'function') ? _dgParseDate(v) : null; return (x && !isNaN(x.getTime())) ? x : null; };
+    var enCours = ds.filter(function(d){
+      if (d.prolonge_par != null && ids[String(d.prolonge_par)]) return false;
+      if (d.etat !== 'Signé' && d.etat !== 'En cours' && d.etat !== 'Nouveau placement') return false;
+      var so = pd(d.date_sortie); return !(so && so <= today);
+    });
+    if (!enCours.length) return null;
+    if (!avIdx) avIdx = (typeof _avenantsByDealIndex === 'function') ? _avenantsByDealIndex() : {};
+    var best = null, openEnded = false;
+    enCours.forEach(function(d){ var f = _dealFinEffective(d, avIdx); if (!f) openEnded = true; else if (!best || f > best) best = f; });
+    if (openEnded || !best) return { level: 'vert', fin: best, jours: null };
+    var jours = Math.round((best.getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000);
+    return { level: jours < 0 ? 'rouge' : (jours <= 30 ? 'jaune' : 'vert'), fin: best, jours: jours };
+  } catch(e) { return null; }
+}
+var _CAND_FIN_STYLE = {
+  vert:  { grad: 'linear-gradient(90deg,#1D9E75,#4CC38A)', fg: '#fff' },
+  jaune: { grad: 'linear-gradient(90deg,#F0A500,#F7C948)', fg: '#5A3E00' },
+  rouge: { grad: 'linear-gradient(90deg,#B42318,#E24B4A)', fg: '#fff' }
+};
+function _candFinMissionPill(fi) {
+  if (!fi) return '';
+  var st = _CAND_FIN_STYLE[fi.level];
+  var d = fi.fin ? fi.fin.toLocaleDateString('fr-FR') : '';
+  var txt, tip;
+  if (fi.level === 'rouge') { txt = '\u26A0 ' + d + ' (' + fi.jours + ' j)'; tip = 'Fin de mission dépassée de ' + (-fi.jours) + ' jour(s) sans fin de mission ni sortie déclarée : prolonger (Avenant) ou déclarer la fin'; }
+  else if (fi.level === 'jaune') { txt = '\u23F3 ' + d + ' (' + fi.jours + ' j)'; tip = 'Fin de mission le ' + d + ', dans ' + fi.jours + ' jour(s) : penser à la prolongation'; }
+  else if (!fi.fin) { txt = '\u2713 Sans date de fin'; tip = 'Mission en cours, sans date de fin renseignée'; }
+  else { txt = '\u2713 ' + d; tip = 'Mission en cours jusqu\'au ' + d + ' (dans ' + fi.jours + ' jours)'; }
+  return '<span title="' + tip + '" style="display:inline-block;max-width:100%;box-sizing:border-box;margin-top:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;color:' + st.fg + ';background:' + st.grad + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;">' + txt + '</span>';
+}
+
 function renderCandidats() {
   var el = document.getElementById('candidats-list');
   if (!el) return;
@@ -14470,6 +14517,10 @@ function renderCandidats() {
     cands = cands.filter(function(cand) { return typeof _candIsStandBy === 'function' && _candIsStandBy(cand); });
   } else if (filtStatut === '__bloque__') {
     cands = cands.filter(function(cand) { return typeof _sbIsCandBlocked === 'function' && _sbIsCandBlocked(cand); });
+  } else if (filtStatut === '__fin_rouge__' || filtStatut === '__fin_jaune__' || filtStatut === '__fin_vert__') {
+    var _lvl = filtStatut === '__fin_rouge__' ? 'rouge' : (filtStatut === '__fin_jaune__' ? 'jaune' : 'vert');
+    var _fmIdx = (typeof _avenantsByDealIndex === 'function') ? _avenantsByDealIndex() : {};
+    cands = cands.filter(function(cand) { var fi = _candFinMissionInfo(cand, _fmIdx); return !!fi && fi.level === _lvl; });
   } else if (filtStatut) {
     cands = cands.filter(function(cand) { return computeCandStatutAuto(cand) === filtStatut; });
   }
@@ -14528,6 +14579,7 @@ function renderCandidats() {
     'Perdu':              { color:'#5A1F1A', bg:'#F5D5D2' }
   };
   var html = '';
+  var _finAvIdx = (typeof _avenantsByDealIndex === 'function') ? _avenantsByDealIndex() : {};   // index des avenants (fin de mission effective), calculé 1 fois par rendu
   cands.forEach(function(cand) {
     // Matching combiné CUMULATIF : email + nom/prénom (récupère aussi les simus
     // sans email faites avant que l'email du candidat ne soit renseigné).
@@ -14580,13 +14632,15 @@ function renderCandidats() {
     } else if (statut === 'Ancien porté') {
       bgStyle = 'border-color:#E24B4A !important;background:#FFF5F5 !important;';
     }
+    var _fi = (statut === 'Porté') ? _candFinMissionInfo(cand, _finAvIdx) : null;
     html += '<div data-candid="' + cand.id + '" onclick="openCandidatFiche(parseInt(this.dataset.candid))" class="cand-card"' + (bgStyle ? ' style="' + bgStyle + '"' : '') + '>';
-    html += '<div style="position:absolute;top:0;left:0;right:0;height:4px;background:' + scfg.color + ';border-radius:12px 12px 0 0;"></div>';
+    html += '<div style="position:absolute;top:0;left:0;right:0;height:4px;background:' + (_fi ? _CAND_FIN_STYLE[_fi.level].grad : scfg.color) + ';border-radius:12px 12px 0 0;"></div>';
     html += '<div style="display:flex;align-items:flex-start;gap:10px;margin-top:6px;">';
     html += '<div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#7343EE,#4B36EC);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;">' + initials + '</div>';
     html += '<div style="flex:1;min-width:0;">';
     html += '<div style="font-size:13px;font-weight:800;color:#1A1033;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (cand.prenom||'') + ' ' + (cand.nom||'') + '</div>';
     html += '<span style="display:inline-block;padding:1px 8px;border-radius:20px;font-size:10px;font-weight:700;color:' + scfg.color + ';background:' + scfg.bg + ';margin-top:2px;">' + _statutLabel + '</span>';
+    if (_fi) html += '<div>' + _candFinMissionPill(_fi) + '</div>';
     html += '</div>';
     if (hasCv) html += '<span style="font-size:10px;color:#1D9E75;background:#F0FDF4;padding:2px 6px;border-radius:5px;flex-shrink:0;white-space:nowrap;">&#128196; CV</span>';
     html += '</div>';
