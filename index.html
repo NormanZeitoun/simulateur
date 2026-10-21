@@ -1679,6 +1679,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div id="params-premier-mois-content" style="padding:12px;">Chargement…</div>
       </div>
 
+      <div class="params-acc-header" onclick="toggleAcc('acc-mails-auto-cfg')">&#9993; Mails automatiques<span class="params-acc-arrow" id="acc-mails-auto-cfg-arrow">&#9658;</span></div>
+      <div class="params-acc-body" id="acc-mails-auto-cfg">
+        <div id="params-mails-auto-content" style="padding:12px;">Chargement…</div>
+      </div>
+
       <div class="params-acc-header" onclick="toggleAcc('acc-analyseur-cfg')">&#128202; Analyseur de Paie<span class="params-acc-arrow" id="acc-analyseur-cfg-arrow">&#9658;</span></div>
       <div class="params-acc-body" id="acc-analyseur-cfg">
         <div id="params-analyseur-content" style="padding:12px;">Chargement…</div>
@@ -2275,6 +2280,7 @@ function showTab(id) {
     try { if (typeof renderParamsProlongationAccordion === 'function') renderParamsProlongationAccordion(); } catch(e){}
     try { if (typeof renderParamsAvantagesAccordion === 'function') renderParamsAvantagesAccordion(); } catch(e){}
     try { if (typeof renderParamsPremierMoisAccordion === 'function') renderParamsPremierMoisAccordion(); } catch(e){}
+    try { if (typeof renderParamsMailsAutoAccordion === 'function') renderParamsMailsAutoAccordion(); } catch(e){}
     try { if (typeof renderParamsAnalyseurAccordion === 'function') renderParamsAnalyseurAccordion(); } catch(e){}
     try { if (typeof renderParamsAvantagesAccordion === 'function') renderParamsAvantagesAccordion(); } catch(e){}
   }
@@ -15480,8 +15486,8 @@ function _seEndOfMonthAlertScan() {
 }
 (function _waitSyncSENotif(){
   if (window._initialSyncDone === true) {
-    setTimeout(_seMonthlyNotifScan, 6000);
-    setTimeout(_seEndOfMonthAlertScan, 8000);
+    setTimeout(function(){ _seMonthlyNotifScan(); }, 6000);
+    setTimeout(function(){ _seEndOfMonthAlertScan(); }, 8000);
   } else { setTimeout(_waitSyncSENotif, 500); }
 })();
 
@@ -15790,7 +15796,7 @@ function _vmMonthlyNotifScan() {
   } catch(e){ console.warn('[VM notif]', e); }
 }
 (function _waitSyncVMNotif(){
-  if (window._initialSyncDone === true) { setTimeout(_vmMonthlyNotifScan, 5000); }
+  if (window._initialSyncDone === true) { setTimeout(function(){ _vmMonthlyNotifScan(); }, 5000); }
   else { setTimeout(_waitSyncVMNotif, 500); }
 })();
 
@@ -18099,8 +18105,8 @@ function confirmFraisProExceptionnel() {
     montant_ajustement: 0,
     ajustement_bp: 'Non',
     chargement_swile: 'Non',
-    wellpass: 'Non',
-    creches: 'Non',
+    wellpass: 0,
+    creches: 0,
     commentaire: '',
     exceptionnel: true,
     exc_group: grp,
@@ -18119,7 +18125,7 @@ function confirmFraisProExceptionnel() {
 // Champs partagés (Ajustement BP, Commentaire) : écrits dans les deux enregistrements.
 // ═══════════════════════════════════════════════════════════════════
 var fraisMergedSort = { col: null, dir: 'asc' };   // 'nom' | 'total' | 'montant'
-var fraisMergedFilters = { type: '', bp: '', swile: '', wellpass: '', creches: '', sans_frais: false, sans_avantage: false };
+var fraisMergedFilters = { type: '', bp: '', swile: '', wellpass: '', creches: '', avec_frais: false, avec_avantage: false };
 var fraisMergedSearch = '';
 
 function setFraisMergedMois(v) {
@@ -18142,7 +18148,7 @@ function setFraisMergedSearch(val) {
   _debounceSearchRefocus('fraismerged', function(){ renderFrais(); }, 'fraismerged-search-input');
 }
 function resetFraisMergedFilters() {
-  fraisMergedFilters = { type: '', bp: '', swile: '', wellpass: '', creches: '', sans_frais: false, sans_avantage: false };
+  fraisMergedFilters = { type: '', bp: '', swile: '', wellpass: '', creches: '', avec_frais: false, avec_avantage: false };
   avantagesFilters.type = '';
   fraisMergedSort = { col: null, dir: 'asc' };
   fraisMergedSearch = '';
@@ -18166,6 +18172,8 @@ function _fmCommentValue(fp, av) {
   [fp && fp.commentaire, av && av.commentaire].forEach(function(c){ c = String(c || '').trim(); if (c && parts.indexOf(c) < 0) parts.push(c); });
   return parts.join(' · ');
 }
+// Montant libre (Wellpass / Crèches) : nombre, ou ancien 'Oui'/'Non' → 0
+function _fmNum(v) { if (v == null || v === '' || v === 'Non' || v === 'Oui') return 0; var n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : 0; }
 function _fmEsc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
 
 function buildFraisMergedContent() {
@@ -18213,14 +18221,14 @@ function buildFraisMergedContent() {
   var F = fraisMergedFilters;
   var filteredItems = items.filter(function(it) {
     var av = it.av;
-    if (searchLc && (it.prenomNom || '').toLowerCase().indexOf(searchLc) < 0) return false;
+    if (searchLc && (it.prenomNom || '').toLowerCase().indexOf(searchLc) < 0 && _fmCommentValue(it.fp, av).toLowerCase().indexOf(searchLc) < 0) return false;
     if (F.type && ((av && av.type_avantage) || '') !== F.type) return false;
     if (F.bp && _fmBpValue(it.fp, av) !== F.bp) return false;
     if (F.swile && ((av && av.chargement_swile) || 'Non') !== F.swile) return false;
-    if (F.wellpass && ((av && av.wellpass) || 'Non') !== F.wellpass) return false;
-    if (F.creches && ((av && av.creches) || 'Non') !== F.creches) return false;
-    if (F.sans_frais && it.totalVal > 0) return false;
-    if (F.sans_avantage && it.montantVal > 0) return false;
+    if (F.wellpass && (_fmNum(av && av.wellpass) > 0 ? 'Oui' : 'Non') !== F.wellpass) return false;
+    if (F.creches && (_fmNum(av && av.creches) > 0 ? 'Oui' : 'Non') !== F.creches) return false;
+    if (F.avec_frais && !(it.totalVal > 0)) return false;
+    if (F.avec_avantage && !(it.montantVal > 0)) return false;
     return true;
   });
 
@@ -18264,14 +18272,14 @@ function buildFraisMergedContent() {
     if (fraisMergedSort.col !== col) return '<span style="color:#C0B8E0;font-size:10px;margin-left:4px;">▲▼</span>';
     return '<span style="color:#4B36EC;font-size:10px;margin-left:4px;">' + (fraisMergedSort.dir === 'asc' ? '▲' : '▼') + '</span>';
   }
-  function ouiNonFilter(field, label) {
+  function ouiNonFilter(field, label, lblOui, lblNon) {
     return '<select onchange="setFraisMergedFilter(\'' + field + '\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
       + '<option value=""' + (!F[field] ? ' selected' : '') + '>' + label + ' : tous</option>'
-      + '<option value="Oui"' + (F[field] === 'Oui' ? ' selected' : '') + '>' + label + ' : Oui</option>'
-      + '<option value="Non"' + (F[field] === 'Non' ? ' selected' : '') + '>' + label + ' : Non</option>'
+      + '<option value="Oui"' + (F[field] === 'Oui' ? ' selected' : '') + '>' + label + ' : ' + (lblOui || 'Oui') + '</option>'
+      + '<option value="Non"' + (F[field] === 'Non' ? ' selected' : '') + '>' + label + ' : ' + (lblNon || 'Non') + '</option>'
       + '</select>';
   }
-  var filtersActive = !!(fraisMergedSearch || F.type || F.bp || F.swile || F.wellpass || F.creches || F.sans_frais || F.sans_avantage || fraisMergedSort.col);
+  var filtersActive = !!(fraisMergedSearch || F.type || F.bp || F.swile || F.wellpass || F.creches || F.avec_frais || F.avec_avantage || fraisMergedSort.col);
   var thL = 'padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;white-space:nowrap;';
   var thR = 'padding:11px 8px;text-align:right;color:#4B36EC;font-weight:700;white-space:nowrap;';
   var thC = 'padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;white-space:nowrap;';
@@ -18296,13 +18304,13 @@ function buildFraisMergedContent() {
     +   '<select onchange="setFraisMergedFilter(\'type\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">' + typeFilterOpts + '</select>'
     +   ouiNonFilter('bp', 'Ajustement BP')
     +   ouiNonFilter('swile', 'SWILE')
-    +   ouiNonFilter('wellpass', 'Wellpass')
-    +   ouiNonFilter('creches', 'Crèches')
+    +   ouiNonFilter('wellpass', 'Wellpass', 'avec', 'sans')
+    +   ouiNonFilter('creches', 'Crèches', 'avec', 'sans')
     +   '<label style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:#4B36EC;font-weight:600;cursor:pointer;padding:5px 10px;background:#fff;border:1.5px solid #E4E0FA;border-radius:7px;">'
-    +     '<input type="checkbox"' + (F.sans_frais ? ' checked' : '') + ' onchange="setFraisMergedFilter(\'sans_frais\',this.checked)" style="cursor:pointer;">Sans frais'
+    +     '<input type="checkbox"' + (F.avec_frais ? ' checked' : '') + ' onchange="setFraisMergedFilter(\'avec_frais\',this.checked)" style="cursor:pointer;">Avec frais'
     +   '</label>'
     +   '<label style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:#4B36EC;font-weight:600;cursor:pointer;padding:5px 10px;background:#fff;border:1.5px solid #E4E0FA;border-radius:7px;">'
-    +     '<input type="checkbox"' + (F.sans_avantage ? ' checked' : '') + ' onchange="setFraisMergedFilter(\'sans_avantage\',this.checked)" style="cursor:pointer;">Sans avantage'
+    +     '<input type="checkbox"' + (F.avec_avantage ? ' checked' : '') + ' onchange="setFraisMergedFilter(\'avec_avantage\',this.checked)" style="cursor:pointer;">Avec avantage'
     +   '</label>'
     +   (filtersActive ? '<button onclick="resetFraisMergedFilters()" style="margin-left:auto;padding:5px 12px;background:#fff;color:#E24B4A;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">✕ Réinitialiser</button>' : '')
     + '</div>'
@@ -18324,8 +18332,8 @@ function buildFraisMergedContent() {
     +         '<th style="' + thL + thAv + '">Type d\'avantage</th>'
     +         '<th onclick="setFraisMergedSort(\'montant\')" style="' + thR + thAv + 'cursor:pointer;user-select:none;" title="Trier par montant d\'avantage">Montant (€)' + sortArrow('montant') + '</th>'
     +         '<th style="' + thR + thAv + '">Ajustement (÷' + coef + ')</th>'
-    +         '<th style="' + thC + thAv + '">Wellpass</th>'
-    +         '<th style="' + thC + thAv + '">Crèches</th>'
+    +         '<th style="' + thR + thAv + '">Wellpass (€)</th>'
+    +         '<th style="' + thR + thAv + '">Crèches (€)</th>'
     +         '<th style="' + thC + thAv + '">Chargement SWILE</th>'
     +         '<th style="' + thC + thAv + '">Ajustement BP</th>'
     +         '<th style="' + thL + thAv + '">Commentaire</th>'
@@ -18353,8 +18361,8 @@ function buildFraisMergedRow(it, cfg, coef) {
   var montant = av ? (av.montant || 0) : '';
   var ajustAv = av ? (av.montant_ajustement || 0) : 0;
   var swile = (av && av.chargement_swile) || 'Non';
-  var wellpass = (av && av.wellpass) || 'Non';
-  var creches = (av && av.creches) || 'Non';
+  var wellpass = _fmNum(av && av.wellpass);
+  var creches = _fmNum(av && av.creches);
   var bp = _fmBpValue(fp, av);
   var comment = _fmCommentValue(fp, av);
 
@@ -18417,8 +18425,8 @@ function buildFraisMergedRow(it, cfg, coef) {
     + '<td style="padding:10px 8px;' + (enfCell ? '' : sepStyle) + '"><select ' + on('type_avantage', 'this.value') + ' style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:150px;cursor:pointer;">' + typeOptions + '</select>' + enfLineBadge + '</td>'
     + '<td style="padding:10px 8px;text-align:right;"><input type="number" min="0"' + (currentMax > 0 ? ' max="' + currentMax + '"' : '') + ' step="0.01" value="' + (montant || '') + '" ' + on('montant', 'parseFloat(this.value)||0') + ' style="' + montantStyle + '"></td>'
     + '<td style="padding:10px 8px;text-align:right;color:#4B36EC;font-weight:600;white-space:nowrap;">' + fmtEur(ajustAv) + '</td>'
-    + '<td style="padding:10px 8px;text-align:center;">' + ouiNon('wellpass', wellpass) + '</td>'
-    + '<td style="padding:10px 8px;text-align:center;">' + ouiNon('creches', creches) + '</td>'
+    + '<td style="padding:10px 8px;text-align:right;"><input type="number" min="0" step="0.01" value="' + (wellpass || '') + '" ' + on('wellpass', 'parseFloat(this.value)||0') + ' placeholder="€" style="' + numStyle + '"></td>'
+    + '<td style="padding:10px 8px;text-align:right;"><input type="number" min="0" step="0.01" value="' + (creches || '') + '" ' + on('creches', 'parseFloat(this.value)||0') + ' placeholder="€" style="' + numStyle + '"></td>'
     + '<td style="padding:10px 8px;text-align:center;">' + ouiNon('chargement_swile', swile) + '</td>'
     + '<td style="padding:10px 8px;text-align:center;">' + ouiNon('ajustement_bp', bp) + '</td>'
     + '<td style="padding:10px 8px;"><input type="text" value="' + _fmEsc(comment) + '" ' + on('commentaire', 'this.value') + ' placeholder="Commentaire…" style="padding:5px 8px;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11.5px;width:170px;"></td>'
@@ -18444,7 +18452,7 @@ function _fmUpsertAv(dealId, avId, isExc, excGroup, mut) {
   var all = getAvantagesSociaux();
   var idx = avId ? all.findIndex(function(a){ return a && a.id === avId; }) : -1;
   if (idx < 0) {
-    var e = { id: Date.now() + 1, deal_id: dealId, mois: fraisProCurrentMois, type_avantage: '', montant: 0, montant_ajustement: 0, ajustement_bp: 'Non', chargement_swile: 'Non', wellpass: 'Non', creches: 'Non', commentaire: '', exceptionnel: !!isExc, updated_ts: Date.now() };
+    var e = { id: Date.now() + 1, deal_id: dealId, mois: fraisProCurrentMois, type_avantage: '', montant: 0, montant_ajustement: 0, ajustement_bp: 'Non', chargement_swile: 'Non', wellpass: 0, creches: 0, commentaire: '', exceptionnel: !!isExc, updated_ts: Date.now() };
     if (isExc && excGroup != null) e.exc_group = (/^\d+$/.test(String(excGroup)) ? parseInt(excGroup, 10) : excGroup);
     mut(e); all.unshift(e);
   } else { mut(all[idx]); all[idx].updated_ts = Date.now(); }
@@ -18463,7 +18471,10 @@ function updateFraisMergedField(dealId, fpId, avId, isExc, excGroup, field, valu
     var typeMax = typeDef ? (typeDef.montant_max || 0) : 0;
     if (typeMax > 0 && val > typeMax) { alert('⚠️ Montant refusé\n\nLe montant maximum pour "' + typeSel + '" est ' + typeMax + ' €.\n\nVous pouvez modifier ce plafond dans Paramètres → Paramètres Avantages Sociaux.'); renderFrais(); return; }
     _fmUpsertAv(dealId, avId, isExc, excGroup, function(e){ e.montant = val; e.montant_ajustement = cfg.coefficient_ajustement > 0 ? (val / cfg.coefficient_ajustement) : 0; });
-  } else if (field === 'type_avantage' || field === 'wellpass' || field === 'creches' || field === 'chargement_swile') {
+  } else if (field === 'wellpass' || field === 'creches') {
+    var nv = parseFloat(value) || 0;
+    _fmUpsertAv(dealId, avId, isExc, excGroup, function(e){ e[field] = nv; });
+  } else if (field === 'type_avantage' || field === 'chargement_swile') {
     _fmUpsertAv(dealId, avId, isExc, excGroup, function(e){ e[field] = value; });
   } else if (field === 'ajustement_bp') {
     var v = (value === 'Oui') ? 'Oui' : 'Non';
@@ -18497,7 +18508,11 @@ var entreesCurrentMois = (function() {
 })();
 
 var entreesSort = { col: null, dir: 'asc' };
-var entreesFilters = { contacte: '', signature: '', mutuelle: '', commercial: '' };
+var entreesFilters = { contacte: '', signature: '', mutuelle: '', commercial: '', rh: '' };
+// Couleurs « Appelé par » (une par RH)
+var ENTREES_RH_COLORS = { 'Clémence': { bg: '#E8E4FC', fg: '#4B36EC' }, 'Marie': { bg: '#FFF4D6', fg: '#8A5F00' }, 'Erika': { bg: '#FCE4EC', fg: '#AD1457' } };
+// Contacté : valeurs « Téléphone » / « Mail » (anciennes valeurs Oui → Téléphone, Non → Mail)
+function _entreesContacteNorm(v) { v = String(v || '-'); if (v === 'Oui') return 'Téléphone'; if (v === 'Non') return 'Mail'; return v; }
 var entreesSearch = '';
 
 function setEntreesSort(col) {
@@ -18518,7 +18533,7 @@ function setEntreesSearch(val) {
   _debounceSearchRefocus('entrees', renderEntrees, 'entrees-search-input');
 }
 function resetEntreesFilters() {
-  entreesFilters = { contacte: '', signature: '', mutuelle: '', commercial: '' };
+  entreesFilters = { contacte: '', signature: '', mutuelle: '', commercial: '', rh: '' };
   entreesSort = { col: null, dir: 'asc' };
   entreesSearch = '';
   renderEntrees();
@@ -18679,8 +18694,11 @@ function buildEntreesContent() {
       if (!_okComm) return false;
     }
     if (entreesFilters.contacte) {
-      var c = it.etat.contacte || '-';
+      var c = _entreesContacteNorm(it.etat.contacte);
       if (c !== entreesFilters.contacte) return false;
+    }
+    if (entreesFilters.rh) {
+      if ((it.etat.appele_par || '') !== entreesFilters.rh) return false;
     }
     if (entreesFilters.signature) {
       var s = (it.etat.signature_contrat && it.etat.signature_contrat !== 'Non') ? 'Complété' : 'Vide';
@@ -18740,13 +18758,13 @@ function buildEntreesContent() {
       : '<span style="color:#4B36EC;font-size:10px;margin-left:4px;">▼</span>';
   }
 
-  var filtersActive = !!(entreesSearch || entreesFilters.contacte || entreesFilters.signature || entreesFilters.mutuelle || entreesSort.col);
+  var filtersActive = !!(entreesSearch || entreesFilters.contacte || entreesFilters.signature || entreesFilters.mutuelle || entreesFilters.rh || entreesSort.col);
 
   return ''
     // Titre + mois
     + '<div style="margin-bottom:18px;">'
     +   '<h2 style="font-size:20px;font-weight:800;color:#1A1033;margin:0 0 4px;letter-spacing:-0.01em;">🎉 Entrées du mois</h2>'
-    +   '<div style="font-size:12.5px;color:#6B5E9C;">Suivi des nouveaux démarrages · Envoi automatique du mail "Premier mois" si Contacté = Non</div>'
+    +   '<div style="font-size:12.5px;color:#6B5E9C;">Suivi des nouveaux démarrages · Envoi automatique du mail "Premier mois" si Contacté = Mail</div>'
     + '</div>'
     + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;">'
     +   '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
@@ -18773,9 +18791,13 @@ function buildEntreesContent() {
         })()
     +   '<select onchange="setEntreesFilter(\'contacte\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
     +     '<option value="">Contacté : tous</option>'
-    +     '<option value="Oui"' + (entreesFilters.contacte === 'Oui' ? ' selected' : '') + '>Contacté : Oui</option>'
-    +     '<option value="Non"' + (entreesFilters.contacte === 'Non' ? ' selected' : '') + '>Contacté : Non</option>'
+    +     '<option value="Téléphone"' + (entreesFilters.contacte === 'Téléphone' ? ' selected' : '') + '>Contacté : Téléphone</option>'
+    +     '<option value="Mail"' + (entreesFilters.contacte === 'Mail' ? ' selected' : '') + '>Contacté : Mail</option>'
     +     '<option value="-"' + (entreesFilters.contacte === '-' ? ' selected' : '') + '>Contacté : non défini</option>'
+    +   '</select>'
+    +   '<select onchange="setEntreesFilter(\'rh\',this.value)" style="padding:6px 10px;border:1.5px solid ' + (entreesFilters.rh ? (ENTREES_RH_COLORS[entreesFilters.rh] || {}).fg || '#E4E0FA' : '#E4E0FA') + ';border-radius:7px;font-size:11.5px;background:' + (entreesFilters.rh ? (ENTREES_RH_COLORS[entreesFilters.rh] || {}).bg || '#fff' : '#fff') + ';cursor:pointer;font-family:inherit;font-weight:600;">'
+    +     '<option value="">RH : toutes</option>'
+    +     ['Clémence','Marie','Erika'].map(function(n){ return '<option value="' + n + '"' + (entreesFilters.rh === n ? ' selected' : '') + '>RH : ' + n + '</option>'; }).join('')
     +   '</select>'
     +   '<select onchange="setEntreesFilter(\'signature\',this.value)" style="padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;">'
     +     '<option value="">Signature : tous</option>'
@@ -18890,8 +18912,9 @@ function buildEntreeRow(item) {
 
   // Highlight ligne selon Contacté
   var rowBg = '';
-  if (contacte === 'Oui') rowBg = 'background:#E8F5E9;';
-  else if (contacte === 'Non') rowBg = 'background:#E3F2FD;';
+  contacte = _entreesContacteNorm(contacte);
+  if (contacte === 'Téléphone') rowBg = 'background:#E8F5E9;';   // vert
+  else if (contacte === 'Mail') rowBg = 'background:#E3F2FD;';   // bleu
 
   // Cellule signature colorée
   var signatureCellBg = signatureOui ? '#E8F5E9' : '#FDECEC';
@@ -18905,7 +18928,7 @@ function buildEntreeRow(item) {
   return '<tr data-deal-id="' + dealId + '" style="' + trStyle + '">'
     // 0. Appelé par (Clémence / Marie / Erika)
     + '<td style="padding:9px 8px;">'
-    +   '<select onchange="updateDemarrageField(' + dealId + ',\'appele_par\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:#fff;font-weight:600;color:' + (appelePar ? '#1A1033' : '#9E94C4') + ';">'
+    +   '<select onchange="updateDemarrageField(' + dealId + ',\'appele_par\',this.value)" style="padding:4px 6px;border:1px solid ' + (ENTREES_RH_COLORS[appelePar] ? ENTREES_RH_COLORS[appelePar].fg : '#E4E0FA') + ';border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:' + (ENTREES_RH_COLORS[appelePar] ? ENTREES_RH_COLORS[appelePar].bg : '#fff') + ';font-weight:700;color:' + (ENTREES_RH_COLORS[appelePar] ? ENTREES_RH_COLORS[appelePar].fg : '#9E94C4') + ';">'
     +     '<option value=""' + (appelePar === '' ? ' selected' : '') + '>—</option>'
     +     ['Clémence','Marie','Erika'].map(function(n){ return '<option value="' + n + '"' + (appelePar === n ? ' selected' : '') + '>' + n + '</option>'; }).join('')
     +   '</select>'
@@ -18918,12 +18941,12 @@ function buildEntreeRow(item) {
     +     '<option value="Mme"' + (civilite === 'Mme' ? ' selected' : '') + '>Mme</option>'
     +   '</select>'
     + '</td>'
-    // 2. Contacté (déclenche envoi mail si Non)
+    // 2. Contacté : Téléphone (ligne verte) / Mail (ligne bleue, déclenche le mail « Premier mois »)
     + '<td style="padding:9px 8px;text-align:center;">'
-    +   '<select onchange="updateDemarrageField(' + dealId + ',\'contacte\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:#fff;font-weight:600;">'
+    +   '<select onchange="updateDemarrageField(' + dealId + ',\'contacte\',this.value)" style="padding:4px 6px;border:1px solid ' + (contacte === 'Téléphone' ? '#9FE1CB' : (contacte === 'Mail' ? '#90CAF9' : '#E4E0FA')) + ';border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:#fff;font-weight:600;color:' + (contacte === 'Téléphone' ? '#0F6E56' : (contacte === 'Mail' ? '#1565C0' : '#1A1033')) + ';">'
     +     '<option value="-"' + (contacte === '-' ? ' selected' : '') + '>—</option>'
-    +     '<option value="Oui"' + (contacte === 'Oui' ? ' selected' : '') + '>Oui</option>'
-    +     '<option value="Non"' + (contacte === 'Non' ? ' selected' : '') + '>Non</option>'
+    +     '<option value="Téléphone"' + (contacte === 'Téléphone' ? ' selected' : '') + '>Téléphone</option>'
+    +     '<option value="Mail"' + (contacte === 'Mail' ? ' selected' : '') + '>Mail</option>'
     +   '</select>'
     + '</td>'
     // 3. Nom (+ badge stand by si verrouillé)
@@ -19030,8 +19053,8 @@ function updateDemarrageField(dealId, field, value) {
   }
   saveDemarrages(all);
 
-  // ── Déclenchement auto du mail si Contacté passe à "Non" ──
-  if (field === 'contacte' && value === 'Non') {
+  // ── Déclenchement auto du mail « Premier mois » si Contacté passe à « Mail » (ancienne valeur « Non ») ──
+  if (field === 'contacte' && (value === 'Mail' || value === 'Non')) {
     // Protection contre double envoi
     if (!all[idx].premier_mois_mail_sent_ts) {
       var deal = getDeals().find(function(d){ return d.id === dealId; });
@@ -28290,7 +28313,7 @@ function renderCooptations() {
   // Filtres
   html += '<div class="comm-card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'
     + '<div style="flex:2;min-width:200px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Recherche</label>'
-    +   '<input type="text" placeholder="Porté, coopteur, entreprise..." value="' + (f.search||'').replace(/"/g,'&quot;') + '" oninput="window._coopFilter.search=this.value;renderCooptations();" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    +   '<input type="text" placeholder="Porté, coopteur, entreprise..." value="' + (f.search||'').replace(/"/g,'&quot;') + '" oninput="window._coopFilter.search=this.value;_debounceSearchRefocus(\'coopt\',renderCooptations,\'coopt-search-input\');" id="coopt-search-input" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
     + '</div>'
     + '<div style="min-width:140px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Type coopteur</label>'
     +   '<select class="comm-param-input" onchange="window._coopFilter.type=this.value;renderCooptations();" style="cursor:pointer;">'
@@ -30349,6 +30372,8 @@ function buildCandFicheHTML(cand) {
     + fld('Email', cand.email, 'email', 'email')
     + fld('Téléphone', cand.tel, 'tel', 'tel')
     + fld('Matricule paie', cand.matricule, 'matricule')
+    + fld('N° sécurité sociale', cand.num_ss, 'num_ss')
+    + fld('Identifiant Silaé', cand.id_silae, 'id_silae')
     + fld('Poste', cand.poste, 'poste')
     + sel('Profil', cand.profil||'', 'profil', ['','Consultant','Manager','Expert','Architecte','Chef de projet','Autre'])
     + fld('TJM actuel (€/j)', cand.tjm_actuel, 'tjm_actuel')
@@ -40506,6 +40531,138 @@ function exportCommHistCSV() {
   a.download = 'Commissions_Historique_' + new Date().toISOString().split('T')[0] + '.csv';
   document.body.appendChild(a); a.click();
   document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// MAILS AUTOMATIQUES — interrupteur global (Paramètres) — 14/10/2026
+// En pause : les fonctions ci-dessous ne font rien (aucun envoi, aucun marquage « envoyé »),
+// l'événement est consigné dans un journal local. Les mails manuels (simulation, bouton Envoyer),
+// les alertes sécurité, le rappel de mot de passe et le workflow de demandes ne sont pas concernés.
+// Réglage partagé entre les postes (app settings synchronisés).
+// ═══════════════════════════════════════════════════════════════════
+var MAILS_AUTO_JOURNAL_KEY = 'sp_mails_auto_journal_v1';
+var MAILS_AUTO_TYPES = [
+  { fn: 'sendPremierMoisEmail',        label: 'Premier mois (Entrées du mois, Contacté = Non)' },
+  { fn: '_peSendMail',                 label: 'Période d’essai — alertes 3 mois / fin de PE' },
+  { fn: '_seMonthlyNotifScan',         label: 'Titres de séjour — point mensuel' },
+  { fn: '_seEndOfMonthAlertScan',      label: 'Titres de séjour — non reçus en fin de mois' },
+  { fn: '_vmMonthlyNotifScan',         label: 'Visites médicales — suivi du mois' },
+  { fn: 'sendProlongationRelance',     label: 'Relance prolongation client (R1 / R2)' },
+  { fn: 'runDocsRelanceScan',          label: 'Relances documents clients (KBIS…)' },
+  { fn: '_notifyADVSimModification',   label: 'Simulation placée modifiée (ADV)' },
+  { fn: '_notifyAvenantChange',        label: 'Modification d’un avenant (ADV)' },
+  { fn: '_sbSendAlert',                label: 'Salaire bloqué / débloqué' },
+  { fn: 'sendPlacementNotificationEmail', label: 'Nouveau placement (ADV + commercial)' },
+  { fn: '_maybeSendBadPayerAlert',     label: 'Client mauvais payeur (Joanne + David)' },
+  { fn: 'sendWelcomeEmailToCandidate', label: 'Bienvenue chez Seven Portage (candidat)' },
+  { fn: 'sendFinMissionEmail',         label: 'Fin de mission (commercial)' },
+  { fn: 'sendSortantNotificationEmail', label: 'Nouvelle sortie (ADV + social@)' },
+  { fn: 'sendProlongationSimpleEmail', label: 'Prolongation (interne)' },
+  { fn: 'sendAvenantMissionEmail',     label: 'Avenant mission (interne)' },
+  { fn: 'sendMissionParalleleEmail',   label: 'Mission parallèle (interne)' },
+  { fn: 'sendProlongationAvenantEmail', label: 'Avenant prolongation / nouveau client / nouvelle simulation (interne)' },
+  { fn: 'sendCooptationReminderEmail', label: 'Cooptation à payer' },
+  { fn: 'sendAvanceNotificationEmail', label: 'Nouvelle avance' }
+];
+function getMailsAutoConfig() {
+  var s = (typeof getAppSettings === 'function') ? (getAppSettings() || {}) : {};
+  var ex = Array.isArray(s.mails_auto_hors_pause) ? s.mails_auto_hors_pause : [];
+  return { pause: s.mails_auto_pause === '1', hors_pause: ex, pause_depuis: s.mails_auto_pause_ts || 0, pause_par: s.mails_auto_pause_par || '' };
+}
+function _mailsAutoSave(patch) {
+  var s = (typeof getAppSettings === 'function') ? (getAppSettings() || {}) : {};
+  Object.keys(patch).forEach(function(k){ s[k] = patch[k]; });
+  s._updated_ts = Date.now();
+  saveAppSettings(s);
+}
+function setMailsAutoPause(on) {
+  _mailsAutoSave({ mails_auto_pause: on ? '1' : '', mails_auto_pause_ts: on ? Date.now() : 0, mails_auto_pause_par: on ? _getCurrentUserName() : '' });
+  if (typeof showNotifToast === 'function') showNotifToast(on ? '⏸ Mails automatiques en pause (tous les postes)' : '▶ Mails automatiques réactivés');
+  renderParamsMailsAutoAccordion();
+}
+function toggleMailsAutoType(fn, enPause) {
+  var cfg = getMailsAutoConfig();
+  var ex = cfg.hors_pause.filter(function(x){ return x !== fn; });
+  if (!enPause) ex.push(fn);
+  _mailsAutoSave({ mails_auto_hors_pause: ex });
+  renderParamsMailsAutoAccordion();
+}
+function _mailsAutoIsPaused(fn) {
+  var cfg = getMailsAutoConfig();
+  return cfg.pause && cfg.hors_pause.indexOf(fn) < 0;
+}
+function _mailsAutoJournal() { try { return JSON.parse(localStorage.getItem(MAILS_AUTO_JOURNAL_KEY) || '[]'); } catch(e) { return []; } }
+function _mailsAutoDescribe(args) {
+  var out = [];
+  for (var i = 0; i < Math.min(args.length, 3); i++) {
+    var a = args[i];
+    if (!a || typeof a !== 'object') { if (typeof a === 'string' || typeof a === 'number') out.push(String(a)); continue; }
+    var nom = ((a.prenom || a.prenom_porte || a.porte_prenom || '') + ' ' + (a.nom || a.nom_porte || a.porte_nom || '')).trim() || a.consultant || a.name || '';
+    if (nom) out.push(nom);
+    if (a.entreprise || a.client) out.push(a.entreprise || a.client);
+  }
+  return out.filter(function(x, i, arr){ return x && arr.indexOf(x) === i; }).join(' · ');
+}
+function _mailsAutoLog(fn, label, args) {
+  try {
+    var j = _mailsAutoJournal();
+    j.unshift({ ts: Date.now(), fn: fn, label: label, detail: _mailsAutoDescribe(args), qui: _getCurrentUserName() });
+    localStorage.setItem(MAILS_AUTO_JOURNAL_KEY, JSON.stringify(j.slice(0, 300)));
+  } catch(e) {}
+  console.log('[Mails auto] EN PAUSE — non envoyé : ' + label, args);
+}
+function clearMailsAutoJournal() { localStorage.removeItem(MAILS_AUTO_JOURNAL_KEY); renderParamsMailsAutoAccordion(); }
+// Enveloppes : chaque fonction d'envoi automatique est remplacée par une version qui vérifie la pause.
+(function _mailsAutoInstall() {
+  MAILS_AUTO_TYPES.forEach(function(t) {
+    var orig = window[t.fn];
+    if (typeof orig !== 'function' || orig._mailsAutoWrapped) return;
+    var w = function() {
+      // Le scan documents en mode manuel (bouton) n'est pas un envoi automatique
+      if (t.fn === 'runDocsRelanceScan' && arguments[0] === 'manual') return orig.apply(this, arguments);
+      if (_mailsAutoIsPaused(t.fn)) { _mailsAutoLog(t.fn, t.label, Array.prototype.slice.call(arguments)); return; }
+      return orig.apply(this, arguments);
+    };
+    w._mailsAutoWrapped = true; w._mailsAutoOrig = orig;
+    window[t.fn] = w;
+  });
+})();
+function buildMailsAutoConfigCard() {
+  var cfg = getMailsAutoConfig();
+  var j = _mailsAutoJournal();
+  var fmt = function(ts){ return ts ? new Date(ts).toLocaleString('fr-FR') : ''; };
+  var banner = cfg.pause
+    ? '<div style="padding:12px 14px;background:#FFF4D6;border-left:4px solid #F0A500;border-radius:8px;font-size:12.5px;color:#8A5F00;"><b>⏸ EN PAUSE</b> depuis le ' + fmt(cfg.pause_depuis) + (cfg.pause_par ? ' (' + cfg.pause_par + ')' : '') + ' — aucun mail automatique ne part, sur aucun poste. Les événements sont consignés ci-dessous.</div>'
+    : '<div style="padding:12px 14px;background:#E8F5E9;border-left:4px solid #1D9E75;border-radius:8px;font-size:12.5px;color:#0F5132;"><b>▶ ACTIFS</b> — les mails automatiques partent normalement.</div>';
+  var btn = cfg.pause
+    ? '<button onclick="setMailsAutoPause(false)" style="padding:9px 18px;background:linear-gradient(135deg,#1D9E75,#2BB889);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;">▶ Réactiver les mails automatiques</button>'
+    : '<button onclick="if(confirm(\'Mettre en pause TOUS les mails automatiques (sur tous les postes) ?\')) setMailsAutoPause(true)" style="padding:9px 18px;background:linear-gradient(135deg,#B42318,#E24B4A);color:#fff;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;">⏸ Mettre en pause</button>';
+  var rows = MAILS_AUTO_TYPES.map(function(t){
+    var enPause = cfg.hors_pause.indexOf(t.fn) < 0;
+    return '<label style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-bottom:1px solid #F0EDF9;font-size:12px;cursor:pointer;' + (cfg.pause && enPause ? 'color:#8A5F00;' : '') + '">'
+      + '<input type="checkbox"' + (enPause ? ' checked' : '') + ' onchange="toggleMailsAutoType(\'' + t.fn + '\',this.checked)" style="accent-color:#7343EE;">'
+      + '<span style="flex:1;">' + t.label + '</span>'
+      + (cfg.pause ? '<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;' + (enPause ? 'background:#FFF4D6;color:#8A5F00;">en pause' : 'background:#E8F5E9;color:#0F5132;">envoyé') + '</span>' : '')
+      + '</label>';
+  }).join('');
+  var journal = j.length
+    ? '<table style="width:100%;border-collapse:collapse;font-size:11.5px;"><thead><tr style="background:#F5F3FF;color:#4B36EC;"><th style="padding:5px 8px;text-align:left;">Date</th><th style="padding:5px 8px;text-align:left;">Mail</th><th style="padding:5px 8px;text-align:left;">Détail</th><th style="padding:5px 8px;text-align:left;">Poste</th></tr></thead><tbody>'
+      + j.slice(0, 60).map(function(e){ return '<tr style="border-bottom:1px solid #F0EDF9;"><td style="padding:4px 8px;white-space:nowrap;">' + fmt(e.ts) + '</td><td style="padding:4px 8px;">' + (e.label||e.fn) + '</td><td style="padding:4px 8px;">' + String(e.detail||'').replace(/</g,'&lt;') + '</td><td style="padding:4px 8px;">' + String(e.qui||'').replace(/</g,'&lt;') + '</td></tr>'; }).join('')
+      + '</tbody></table>' + (j.length > 60 ? '<div style="font-size:11px;color:#9E94C4;margin-top:4px;">… ' + (j.length - 60) + ' autres</div>' : '')
+    : '<div style="font-size:11.5px;color:#9E94C4;font-style:italic;">Aucun mail retenu sur ce poste.</div>';
+  return ''
+    + banner
+    + '<div style="margin:12px 0 16px;">' + btn + '</div>'
+    + '<div style="font-size:12.5px;font-weight:700;color:#4B36EC;padding-bottom:6px;border-bottom:1.5px solid #E4E0FA;">Mails concernés par la pause <span style="font-weight:400;color:#9E94C4;font-size:11px;">(décocher pour laisser passer un type même en pause)</span></div>'
+    + '<div style="margin:6px 0 16px;border:1px solid #E4E0FA;border-radius:8px;overflow:hidden;">' + rows + '</div>'
+    + '<div style="font-size:11px;color:#6B5E9C;background:#F5F3FF;border-radius:8px;padding:9px 12px;margin-bottom:16px;line-height:1.5;">Jamais concernés : les mails envoyés à la main (simulation, boutons « Envoyer »), les alertes sécurité (copie massive, impression écran), le rappel de mot de passe et les demandes de validation. Un mail retenu pendant la pause n’est pas marqué « envoyé » : les scans (période d’essai, visites médicales…) le renverront à la reprise si la condition est toujours vraie ; les notifications liées à une action (placement, sortie…) ne sont pas rejouées.</div>'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:6px;border-bottom:1.5px solid #E4E0FA;"><span style="font-size:12.5px;font-weight:700;color:#4B36EC;">Journal des mails retenus (ce poste)</span>' + (j.length ? '<button onclick="clearMailsAutoJournal()" style="padding:4px 10px;background:#fff;color:#E24B4A;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">Vider</button>' : '') + '</div>'
+    + '<div style="margin-top:8px;max-height:280px;overflow:auto;">' + journal + '</div>';
+}
+function renderParamsMailsAutoAccordion() {
+  var el = document.getElementById('params-mails-auto-content');
+  if (el) el.innerHTML = buildMailsAutoConfigCard();
 }
 
 </script>
