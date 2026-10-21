@@ -1897,6 +1897,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="__fin_jaune__">&#128993; Fin de mission dans moins de 30 j</option>
           <option value="__fin_vert__">&#128994; Fin de mission dans plus de 30 j</option>
         </select>
+        <select id="cand-filter-rh" onchange="renderCandidats()" title="ADV en charge du dossier, d'après la première lettre du nom (Paramètres → répartition A–H / I–Z)" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;background:#fff;cursor:pointer;">
+          <option value="">RH : toutes</option>
+          <option value="clemence">RH : Clémence</option>
+          <option value="marie">RH : Marie</option>
+        </select>
         <select id="cand-filter-date" onchange="renderCandidats()" style="padding:7px 10px;border:1.5px solid #E4E0FA;border-radius:9px;font-size:12px;background:#fff;cursor:pointer;">
           <option value="">Toutes dates</option>
           <option value="week">Cette semaine</option>
@@ -14398,8 +14403,8 @@ function _candFinMissionPill(fi) {
   var st = _CAND_FIN_STYLE[fi.level];
   var d = fi.fin ? fi.fin.toLocaleDateString('fr-FR') : '';
   var txt, tip;
-  if (fi.level === 'rouge') { txt = '\u26A0 ' + d + ' (' + fi.jours + ' j)'; tip = 'Fin de mission dépassée de ' + (-fi.jours) + ' jour(s) sans fin de mission ni sortie déclarée : prolonger (Avenant) ou déclarer la fin'; }
-  else if (fi.level === 'jaune') { txt = '\u23F3 ' + d + ' (' + fi.jours + ' j)'; tip = 'Fin de mission le ' + d + ', dans ' + fi.jours + ' jour(s) : penser à la prolongation'; }
+  if (fi.level === 'rouge') { txt = '\u26A0 ' + d; tip = 'Fin de mission dépassée de ' + (-fi.jours) + ' jour(s) sans fin de mission ni sortie déclarée : prolonger (Avenant) ou déclarer la fin'; }
+  else if (fi.level === 'jaune') { txt = '\u23F3 ' + d; tip = 'Fin de mission le ' + d + ', dans ' + fi.jours + ' jour(s) : penser à la prolongation'; }
   else if (!fi.fin) { txt = '\u2713 Sans date de fin'; tip = 'Mission en cours, sans date de fin renseignée'; }
   else { txt = '\u2713 ' + d; tip = 'Mission en cours jusqu\'au ' + d + ' (dans ' + fi.jours + ' jours)'; }
   return '<span title="' + tip + '" style="display:inline-block;max-width:100%;box-sizing:border-box;margin-top:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;color:' + st.fg + ';background:' + st.grad + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;">' + txt + '</span>';
@@ -14523,6 +14528,11 @@ function renderCandidats() {
     cands = cands.filter(function(cand) { var fi = _candFinMissionInfo(cand, _fmIdx); return !!fi && fi.level === _lvl; });
   } else if (filtStatut) {
     cands = cands.filter(function(cand) { return computeCandStatutAuto(cand) === filtStatut; });
+  }
+  // Filtre RH : ADV en charge d'après la première lettre du NOM (même règle que les mails / Salaires bloqués)
+  var filtRH = document.getElementById('cand-filter-rh') ? document.getElementById('cand-filter-rh').value : '';
+  if (filtRH) {
+    cands = cands.filter(function(cand) { return typeof _getADVByLetter === 'function' && _getADVByLetter((cand.nom || '').trim().charAt(0)) === filtRH; });
   }
   var filtSB = document.getElementById('cand-filter-sb') ? document.getElementById('cand-filter-sb').value : '';
   if (filtSB === 'bloque') {
@@ -16879,14 +16889,59 @@ function renderFrais() {
   if (!container) return;
   // 13/10/2026 : Avantages Sociaux + Frais Pro fusionnés dans un seul tableau
   // (les deux stockages sp_frais_pro_v1 / sp_avantages_sociaux_v1 sont conservés tels quels).
+  window._fraisRenderToken = (window._fraisRenderToken || 0) + 1;
+  var token = window._fraisRenderToken;
   container.innerHTML = buildFraisMergedContent();
   // Prénom Nom + en-têtes figés, barre de défilement horizontale toujours visible
   _stickyTable(container.querySelector('table.frais-merged-table'), 1, 'calc(100vh - 300px)');
+  // Lignes restantes par paquets de 60 (abandonné si un nouveau rendu démarre)
+  var pending = window._fraisPendingRows; window._fraisPendingRows = null;
+  if (pending) {
+    var tbody = container.querySelector('table.frais-merged-table tbody');
+    var CHUNK = 60, i = 0;
+    var step = function() {
+      if (token !== window._fraisRenderToken || !tbody || !tbody.isConnected) return;
+      var part = pending.items.slice(i, i + CHUNK).map(function(it){ return buildFraisMergedRow(it, pending.cfg, pending.coef); }).join('');
+      tbody.insertAdjacentHTML('beforeend', part);
+      i += CHUNK;
+      if (i < pending.items.length) setTimeout(step, 0);
+    };
+    setTimeout(step, 0);
+  }
+}
+
+// Rafraîchit UNE ligne du tableau fusionné après une saisie (évite de reconstruire 600 lignes)
+function _fraisRefreshRow(dealId, excGroup) {
+  try {
+    var container = document.getElementById('frais-container'); if (!container) return false;
+    var sel = 'table.frais-merged-table tbody tr[data-deal-id="' + dealId + '"][data-exc-group="' + (excGroup != null ? String(excGroup) : '') + '"]';
+    var tr = container.querySelector(sel); if (!tr) return false;
+    var cfg = getAvantagesConfig(), coef = cfg.coefficient_ajustement || 1.46, mois = fraisProCurrentMois;
+    var deal = (typeof getDeals === 'function') ? getDeals().find(function(d){ return d && String(d.id) === String(dealId); }) : null;
+    var fp = null, av = null;
+    if (excGroup != null) {
+      var gk = String(excGroup);
+      fp = getFraisPro().find(function(a){ return a && a.exceptionnel && a.mois === mois && String(a.exc_group != null ? a.exc_group : a.id) === gk; }) || null;
+      av = getAvantagesSociaux().find(function(a){ return a && a.exceptionnel && a.mois === mois && String(a.exc_group != null ? a.exc_group : a.id) === gk; }) || null;
+    } else {
+      fp = getFraisPro().find(function(a){ return a && !a.exceptionnel && a.mois === mois && String(a.deal_id) === String(dealId); }) || null;
+      av = getAvantagesSociaux().find(function(a){ return a && !a.exceptionnel && a.mois === mois && String(a.deal_id) === String(dealId); }) || null;
+    }
+    var prenomNom = deal ? ((deal.prenom||'') + ' ' + (deal.nom||'')).trim() : ((fp && fp.nom_consultant) || (av && av.nom_consultant) || '(inconnu)');
+    var it = { deal: deal, fp: fp, av: av, isExceptionnel: excGroup != null, excGroup: excGroup != null ? excGroup : null, prenomNom: prenomNom, totalVal: fp ? computeFraisProTotal(fp) : 0, montantVal: av ? (parseFloat(av.montant) || 0) : 0 };
+    tr.outerHTML = buildFraisMergedRow(it, cfg, coef);
+    // Tableau de bord : seulement s'il est ouvert
+    var dash = document.getElementById('frais-dashboard');
+    if (dash && fraisDash.open) dash.outerHTML = buildFraisDashboard(coef);
+    return true;
+  } catch(e) { console.warn('[frais] refresh ligne', e); return false; }
 }
 
 // ── Tableau à colonnes / en-têtes figés ──
 // nCols premières colonnes collées à gauche, lignes d'en-tête collées en haut ; le conteneur
 // devient défilant verticalement (max-height) pour que la barre horizontale reste à l'écran.
+// PERF 21/10/2026 : tout en CSS (une feuille de style par tableau), aucune lecture de style par ligne —
+// l'ancienne version forçait un reflow par ligne (≈ 1 s pour 600 lignes).
 function _stickyTable(table, nCols, maxHeight) {
   try {
     if (!table) return;
@@ -16894,36 +16949,27 @@ function _stickyTable(table, nCols, maxHeight) {
     wrap.style.maxHeight = maxHeight || 'calc(100vh - 300px)';
     wrap.style.overflow = 'auto';
     wrap.style.position = 'relative';
+    if (!table.id) table.id = 'sticky-' + Math.random().toString(36).slice(2, 8);
+    var id = '#' + table.id;
     var headRows = table.tHead ? Array.prototype.slice.call(table.tHead.rows) : [];
     var lastHead = headRows[headRows.length - 1];
-    var lefts = [];
+    // Lectures (offsets) groupées AVANT toute écriture
+    var lefts = [], tops = [], h = 0;
+    headRows.forEach(function(tr){ tops.push(h); h += tr.offsetHeight; });
     if (lastHead) for (var i = 0; i < nCols && i < lastHead.cells.length; i++) lefts.push(lastHead.cells[i].offsetLeft);
-    var theadBg = '#F5F3FF';
-    try { var cs = getComputedStyle(table.tHead); if (cs.backgroundColor && cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && cs.backgroundColor !== 'transparent') theadBg = cs.backgroundColor; } catch(e) {}
-    var top = 0;
-    headRows.forEach(function(tr) {
-      var h = tr.offsetHeight;
-      Array.prototype.forEach.call(tr.cells, function(th, i) {
-        th.style.position = 'sticky'; th.style.top = top + 'px'; th.style.zIndex = (i < nCols && lefts[i] != null) ? '6' : '5';
-        var bg = getComputedStyle(th).backgroundColor;
-        if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') th.style.background = theadBg;
-        if (i < nCols && lefts[i] != null && tr === lastHead) { th.style.left = lefts[i] + 'px'; if (i === nCols - 1) th.style.boxShadow = '2px 0 0 #E4E0FA'; }
-      });
-      top += h;
+    var css = id + ' thead th{position:sticky;z-index:5;background-clip:padding-box;}';
+    css += id + ' thead th:not([style*="background"]){background:#F5F3FF;}';
+    headRows.forEach(function(tr, r){ css += id + ' thead tr:nth-child(' + (r + 1) + ') th{top:' + tops[r] + 'px;}'; });
+    lefts.forEach(function(l, i){
+      var n = i + 1, last = (i === lefts.length - 1);
+      css += id + ' thead tr:last-child th:nth-child(' + n + '){left:' + l + 'px;z-index:6;' + (last ? 'box-shadow:2px 0 0 #E4E0FA;' : '') + '}';
+      css += id + ' tbody tr td:nth-child(' + n + '){position:sticky;left:' + l + 'px;z-index:2;background:inherit;' + (last ? 'box-shadow:2px 0 0 #E4E0FA;' : '') + '}';
     });
-    Array.prototype.forEach.call(table.tBodies, function(tb) {
-      Array.prototype.forEach.call(tb.rows, function(tr) {
-        var rowBg = tr.style.background || tr.style.backgroundColor || '';
-        if (!rowBg) { try { var c = getComputedStyle(tr).backgroundColor; if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') rowBg = c; } catch(e) {} }
-        for (var i = 0; i < nCols && i < tr.cells.length && lefts[i] != null; i++) {
-          var td = tr.cells[i];
-          if (tr.cells.length <= nCols && td.colSpan > 1) break;   // ligne « état vide » (colspan)
-          td.style.position = 'sticky'; td.style.left = lefts[i] + 'px'; td.style.zIndex = '2';
-          if (!td.style.background && !td.style.backgroundColor) td.style.background = rowBg || '#fff';
-          if (i === nCols - 1) td.style.boxShadow = '2px 0 0 #E4E0FA';
-        }
-      });
-    });
+    // fond opaque des cellules figées : la ligne hérite de sa couleur (vert/bleu) sinon blanc
+    css += id + ' tbody tr{background:#fff;}';
+    var st = document.getElementById(table.id + '-sticky-css');
+    if (!st) { st = document.createElement('style'); st.id = table.id + '-sticky-css'; (table.parentNode || document.head).appendChild(st); }
+    st.textContent = css;
   } catch(e) { console.warn('[stickyTable]', e); }
 }
 
@@ -18369,7 +18415,11 @@ function buildFraisMergedContent() {
     filteredItems.sort(function(a, b) { var r = a.montantVal - b.montantVal; return fraisMergedSort.dir === 'desc' ? -r : r; });
   }
 
-  var rowsHtml = filteredItems.map(function(it) { return buildFraisMergedRow(it, cfg, coef); }).join('');
+  // PERF 21/10/2026 : le tableau peut dépasser 600 lignes × 13 champs de saisie ; on rend les 80 premières
+  // lignes tout de suite et le reste par paquets juste après l'affichage (voir renderFrais).
+  var FIRST = 80;
+  var rowsHtml = filteredItems.slice(0, FIRST).map(function(it) { return buildFraisMergedRow(it, cfg, coef); }).join('');
+  window._fraisPendingRows = filteredItems.length > FIRST ? { items: filteredItems.slice(FIRST), cfg: cfg, coef: coef } : null;
 
   // Dropdown mois : 12 mois en arrière, 3 en avant
   var monthOptions = '';
@@ -18449,7 +18499,7 @@ function buildFraisMergedContent() {
     +   (filtersActive ? '<button onclick="resetFraisMergedFilters()" style="margin-left:auto;padding:5px 12px;background:#fff;color:#E24B4A;border:1.5px solid #F5B5B5;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;">✕ Réinitialiser</button>' : '')
     + '</div>'
     + '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E4E0FA;overflow-x:auto;">'
-    +   '<table class="frais-merged-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:2050px;">'
+    +   '<table id="frais-merged-table" class="frais-merged-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:2050px;">'
     +     '<thead>'
     +       '<tr style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;">'
     +         '<th colspan="6" style="padding:6px 8px;text-align:center;color:#1D4ED8;background:#E3ECFF;border-bottom:1px solid #D4DEFA;">💼 Frais Pro</th>'
@@ -18516,7 +18566,7 @@ function buildFraisDashboard(coef) {
   var moisRows = (!fraisDash.mois && moisKeys.length > 1) ? moisKeys.map(function(k){ var pm = parMois[k]; var mi = parseInt(k.slice(5, 7), 10) - 1; return '<tr style="border-bottom:1px solid #F0EDF9;"><td style="padding:5px 10px;">' + (MOIS_FR[mi] || k) + '</td><td style="padding:5px 10px;text-align:right;">' + eur(pm.brut) + '</td><td style="padding:5px 10px;text-align:right;font-weight:700;">' + eur(pm.ajust) + '</td><td style="padding:5px 10px;text-align:center;">' + nb(pm.pers) + '</td></tr>'; }).join('') : '';
   var th = 'padding:7px 10px;font-size:10.5px;color:#6B5E9C;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;background:#F5F3FF;';
   var kpi = function(lbl, val, color){ return '<div style="flex:1;min-width:160px;background:#fff;border:1px solid #E4E0FA;border-radius:10px;padding:10px 14px;"><div style="font-size:10.5px;color:#6B5E9C;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">' + lbl + '</div><div style="font-size:20px;font-weight:800;color:' + color + ';margin-top:2px;">' + val + '</div></div>'; };
-  return '<div style="background:#FAF8FF;border:1px solid #E4E0FA;border-radius:12px;padding:12px 14px;margin-bottom:14px;">'
+  return '<div id="frais-dashboard" style="background:#FAF8FF;border:1px solid #E4E0FA;border-radius:12px;padding:12px 14px;margin-bottom:14px;">'
     + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:' + (fraisDash.open ? '10px' : '0') + ';">'
     +   '<span onclick="setFraisDash(\'open\',' + !fraisDash.open + ')" style="cursor:pointer;font-size:13px;font-weight:800;color:#372EB6;user-select:none;">' + (fraisDash.open ? '\u25BC' : '\u25B6') + ' \uD83D\uDCCA Tableau de bord ajustements</span>'
     +   '<select onchange="setFraisDash(\'annee\',this.value)" style="padding:5px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:11.5px;background:#fff;cursor:pointer;font-family:inherit;font-weight:600;">' + yearOpts + '</select>'
@@ -18608,7 +18658,7 @@ function buildFraisMergedRow(it, cfg, coef) {
   function fmtEur(v) { return v ? v.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €' : '—'; }
   var sepStyle = 'border-left:2px solid #DED7F7;';
 
-  return '<tr data-deal-id="' + dealId + '" data-fp-id="' + (fpId || '') + '" data-av-id="' + (avId || '') + '" style="' + trStyle + '">'
+  return '<tr data-deal-id="' + dealId + '" data-fp-id="' + (fpId || '') + '" data-av-id="' + (avId || '') + '" data-exc-group="' + (it.excGroup != null ? String(it.excGroup) : '') + '" style="' + trStyle + '">'
     + '<td style="padding:10px 8px;font-weight:600;color:#1A1033;white-space:nowrap;">' + _fmEsc(it.prenomNom) + _sbBadge + excBadge + '</td>'
     + '<td style="padding:10px 8px;text-align:right;"><input type="number" min="0" step="0.01" value="' + (m1 || '') + '" ' + on('montant_1', 'parseFloat(this.value)||0') + ' style="' + numStyle + '"></td>'
     + '<td style="padding:10px 8px;text-align:right;"><input type="number" min="0" step="0.01" value="' + (m2 || '') + '" ' + on('montant_2', 'parseFloat(this.value)||0') + ' style="' + numStyle + '"></td>'
@@ -18679,7 +18729,7 @@ function updateFraisMergedField(dealId, fpId, avId, isExc, excGroup, field, valu
     if (fpId) _fmUpsertFp(dealId, fpId, isExc, excGroup, function(e){ e.commentaire = c; });
     if (avId || !fpId) _fmUpsertAv(dealId, avId, isExc, excGroup, function(e){ e.commentaire = c; });
   }
-  renderFrais();
+  if (!_fraisRefreshRow(dealId, isExc ? excGroup : null)) renderFrais();
 }
 function deleteFraisMergedExceptionnel(fpId, avId) {
   if (!fpId && !avId) return;
@@ -19012,7 +19062,7 @@ function buildEntreesContent() {
     + '</div>'
     // Tableau
     + '<div style="background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E4E0FA;overflow-x:auto;">'
-    +   '<table class="entrees-table" style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:2450px;">'
+    +   '<table id="entrees-table" class="entrees-table" style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:2450px;">'
     +     '<thead style="background:#F5F3FF;">'
     +       '<tr style="border-bottom:2px solid #E4E0FA;">'
     +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;" title="Qui a appelé le porté">Appelé par</th>'
