@@ -17107,6 +17107,24 @@ function _dealEnfantsInRange(deal, minAge, maxAge) {
   }).length;
 }
 
+// Fin effective d'un deal = max(date_fin, date_fin des avenants du deal, historique des prolongations). null si aucune.
+function _avenantsByDealIndex() {
+  var idx = {};
+  try { if (typeof getAvenants === 'function') getAvenants().forEach(function(a) { if (a && a.deal_id != null && a.date_fin) (idx[String(a.deal_id)] = idx[String(a.deal_id)] || []).push(a); }); } catch(e) {}
+  return idx;
+}
+function _dealFinEffective(d, avIdx) {
+  var pd = function(v) { var x = (typeof _dgParseDate === 'function') ? _dgParseDate(v) : (v ? new Date(String(v).slice(0, 10)) : null); return (x && !isNaN(x.getTime())) ? x : null; };
+  var best = pd(d && d.date_fin);
+  try {
+    if (d) {
+      if (!avIdx) avIdx = _avenantsByDealIndex();
+      (avIdx[String(d.id)] || []).forEach(function(a) { var f = pd(a.date_fin); if (f && (!best || f > best)) best = f; });
+    }
+    (d && d.historique_prolongations || []).forEach(function(h) { var f = pd(h && h.nouvelle_date_fin); if (f && (!best || f > best)) best = f; });
+  } catch(e) {}
+  return best;
+}
 function getPortesActifsForMois(moisStr) {
   var parts = moisStr.split('-');
   var year = parseInt(parts[0]);
@@ -17116,15 +17134,24 @@ function getPortesActifsForMois(moisStr) {
   lastDay.setHours(23, 59, 59, 999);
 
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
+  // 21/10/2026 : alignement avec le Dashboard / Entrées du mois —
+  //  • états actifs = Signé, En cours, Nouveau placement (+ Fin de mission / Sorti si la fin est après le début du mois)
+  //  • la date de fin prise en compte est la fin EFFECTIVE : date_fin du deal, prolongée par les avenants
+  //    (prolongation, nouvelle simulation, nouveau client) et l'historique des prolongations
+  //  • dates lues aux formats ISO et JJ/MM/AAAA
+  var pd = function(v) { return (typeof _dgParseDate === 'function') ? _dgParseDate(v) : (v ? new Date(String(v).slice(0, 10)) : null); };
+  var _avIdx = _avenantsByDealIndex();
   var actifs = deals.filter(function(d) {
-    if (d.etat !== 'En cours' && d.etat !== 'Signé') return false;
+    if (!d || d._deleted || d.stand_by === true) return false;
+    if (d.etat !== 'En cours' && d.etat !== 'Signé' && d.etat !== 'Nouveau placement' && d.etat !== 'Fin de mission' && d.etat !== 'Sorti des effectifs') return false;
     if (!d.date_entree) return false;
-    var de = new Date(d.date_entree);
-    if (isNaN(de.getTime()) || de > lastDay) return false;
-    if (d.date_fin) {
-      var df = new Date(d.date_fin);
-      if (!isNaN(df.getTime()) && df < firstDay) return false;
-    }
+    var de = pd(d.date_entree);
+    if (!de || isNaN(de.getTime()) || de > lastDay) return false;
+    var fin = _dealFinEffective(d, _avIdx);
+    if (fin && fin < firstDay) return false;
+    var so = pd(d.date_sortie);
+    if (so && !isNaN(so.getTime()) && so < firstDay) return false;
+    if ((d.etat === 'Fin de mission' || d.etat === 'Sorti des effectifs') && !fin && !so) return false;
     return true;
   });
   // FIX 29/09/2026 : le mois d'un avenant « Nouveau client », l'origine (fin à la veille) et la
