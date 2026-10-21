@@ -33653,7 +33653,22 @@ function _candSortieDureeInfo(cand) {
     // ── Sortie des effectifs : actualisée — s'il reste une mission/avenant en cours, il n'est pas sorti ──
     var enCours = ds.some(function(d){ return d.etat !== 'Sorti des effectifs' && d.etat !== 'Fin de mission'; });
     var enInter = !enCours && ds.some(function(d){ return d.etat === 'Fin de mission'; }) && !ds.some(function(d){ return d.etat === 'Sorti des effectifs' && d.date_sortie && new Date(d.date_sortie) <= new Date(); });
-    if (enCours) { out.sortie = 'En mission'; out.sortieColor = '#1D9E75'; }
+    if (enCours) {
+      out.sortie = 'En mission'; out.sortieColor = '#1D9E75';
+      // 21/10/2026 : signaler une mission dont la date de fin (deal + avenants) est dépassée sans fin de mission / sortie déclarée
+      try {
+        var _today = new Date(); _today.setHours(23, 59, 59, 999);
+        var _avIdx = (typeof _avenantsByDealIndex === 'function') ? _avenantsByDealIndex() : {};
+        var _enCours = ds.filter(function(d){ return d.etat !== 'Sorti des effectifs' && d.etat !== 'Fin de mission' && !d.stand_by; });
+        var _fins = _enCours.map(function(d){ return (typeof _dealFinEffective === 'function') ? _dealFinEffective(d, _avIdx) : null; });
+        if (_fins.length && _fins.every(function(f){ return f && f < _today; })) {
+          var _max = _fins.reduce(function(a, b){ return (!a || b > a) ? b : a; }, null);
+          out.sortie = '\u26A0 En mission \u2014 fin d\u00e9pass\u00e9e le ' + _max.toLocaleDateString('fr-FR');
+          out.sortieColor = '#D46A00';
+          out.finDepassee = true;
+        }
+      } catch(e) {}
+    }
     else if (enInter) { out.sortie = 'En intercontrat'; out.sortieColor = '#D46A00'; }
     else {
       var maxS = 0;
@@ -34287,6 +34302,13 @@ function buildCandPlacementsHTML(cand) {
           var _dd = d.date_entree || d.date_deal || '';
           var _s = _dd ? ('Du ' + _fmt(_dd)) : '';
           if (d.date_fin) _s += (_s ? ' ' : '') + 'au ' + _fmt(d.date_fin);
+          // Alerte : mission en cours dont la fin effective (deal + avenants) est dépassée
+          try {
+            if (!isCancelled && (d.etat === 'Signé' || d.etat === 'En cours' || d.etat === 'Nouveau placement') && !d.stand_by && typeof _dealFinEffective === 'function') {
+              var _fe = _dealFinEffective(d), _td = new Date(); _td.setHours(23, 59, 59, 999);
+              if (_fe && _fe < _td) _s += ' <span title="Date de fin dépassée sans fin de mission ni sortie déclarée : prolonger (Avenant) ou déclarer la fin de mission / la sortie" style="background:#FFF4D6;color:#8A5F00;border:1px solid #F0C36D;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;">\u26A0 fin dépassée' + (_fe.getTime() !== new Date(String(d.date_fin).slice(0,10)).getTime() ? ' (avenant au ' + _fe.toLocaleDateString('fr-FR') + ')' : '') + '</span>';
+            }
+          } catch(e) {}
           return _s;
         })() + (d.commercial ? ' · ' + d.commercial : '') + managerDisplay + '</div>'
       + '</div>'
