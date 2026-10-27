@@ -1684,6 +1684,11 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
         <div id="params-mails-auto-content" style="padding:12px;">Chargement…</div>
       </div>
 
+      <div class="params-acc-header" onclick="toggleAcc('acc-mp-migration-cfg')">&#10133; Missions parallèles — migration<span class="params-acc-arrow" id="acc-mp-migration-cfg-arrow">&#9658;</span></div>
+      <div class="params-acc-body" id="acc-mp-migration-cfg">
+        <div id="params-mp-migration-content" style="padding:12px;">Chargement…</div>
+      </div>
+
       <div class="params-acc-header" onclick="toggleAcc('acc-analyseur-cfg')">&#128202; Analyseur de Paie<span class="params-acc-arrow" id="acc-analyseur-cfg-arrow">&#9658;</span></div>
       <div class="params-acc-body" id="acc-analyseur-cfg">
         <div id="params-analyseur-content" style="padding:12px;">Chargement…</div>
@@ -2023,6 +2028,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
           <option value="Fin de mission">Fin de mission</option>
           <option value="Sorti des effectifs">Sorti des effectifs</option>
           <option value="__standby__">⏸ Stand by</option>
+          <option value="__parallele__">➕ Mission parallèle</option>
         </select>
         <label id="deal-hide-annules-label" title="Quand cochée, les placements annulés sont masqués du tableau. Sélectionner 'État: Annulé' ci-contre annule temporairement ce filtre." style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12px;color:#1A1033;background:#fff;cursor:pointer;user-select:none;">
           <input type="checkbox" id="deal-hide-annules" checked onchange="dealHideAnnules=this.checked;renderDeals();" style="width:14px;height:14px;cursor:pointer;accent-color:#7343EE;margin:0;">
@@ -2289,6 +2295,7 @@ function showTab(id) {
     try { if (typeof renderParamsAvantagesAccordion === 'function') renderParamsAvantagesAccordion(); } catch(e){}
     try { if (typeof renderParamsPremierMoisAccordion === 'function') renderParamsPremierMoisAccordion(); } catch(e){}
     try { if (typeof renderParamsMailsAutoAccordion === 'function') renderParamsMailsAutoAccordion(); } catch(e){}
+    try { if (typeof renderParamsMPMigrationAccordion === 'function') renderParamsMPMigrationAccordion(); } catch(e){}
     try { if (typeof renderParamsAnalyseurAccordion === 'function') renderParamsAnalyseurAccordion(); } catch(e){}
     try { if (typeof renderParamsAvantagesAccordion === 'function') renderParamsAvantagesAccordion(); } catch(e){}
   }
@@ -3777,8 +3784,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.07.08a';
-  window.APP_BUILD = 2026070810;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  window.APP_VERSION = 'v2026.07.09a';
+  window.APP_BUILD = 2026070910;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
   // Notification de nouvelle version : détection DIRECTE du déploiement (ETag/Last-Modified
   // du fichier servi par Netlify) + repli OneDrive. Ne dépend plus qu'un autre poste "publie".
   try {
@@ -5607,7 +5614,7 @@ function buildDashboard(all) {
   // Placements = deals non annulés, filtrés sur la même période + le même commercial
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
   var placements = deals.filter(function(d) {
-    if (!d || d.etat === 'Annulé' || d._deleted || d.prolongation_avenant) return false;   // même base que le tableau des deals
+    if (!d || d.etat === 'Annulé' || d._deleted || d.prolongation_avenant || _isMPDeal(d)) return false;   // même base que le tableau des deals
     if (typeof histFilterCommercial !== 'undefined' && histFilterCommercial && histFilterCommercial !== '__all__' && (d.commercial || '') !== histFilterCommercial) return false;
     return _histMatchPeriod(d.date_deal);
   });
@@ -5823,7 +5830,7 @@ function renderDashboardKPIs() {
   // ALIGNEMENT (30/09/2026) : même base que le tableau des deals (Suivi RH) — on ignore les deals
   // supprimés (tombstone) et les lignes de continuité de contrat (avenant « nouveau client » :
   // même personne, pas un nouveau placement ni une nouvelle entrée).
-  var _dashBase = deals.filter(function(d) { return d && !d._deleted && !d.prolongation_avenant; });
+  var _dashBase = deals.filter(function(d) { return d && !d._deleted && !d.prolongation_avenant && !_isMPDeal(d); });   // mission parallèle : ni placement ni starter
   var placements = _dashBase.filter(function(d) {
     return d.etat !== 'Annulé' && !d.stand_by && _dashMatchCommercial(d) && _dashMatchPeriod(d.date_deal);
   });
@@ -10221,16 +10228,20 @@ function savePlacement() {
     savePortageCommercial();
     return;
   }
-  // Si la popup est ouverte en MODE mission parallèle : on ne crée pas de deal,
-  // on crée un avenant via savePlacementAsMissionParallele().
+  // MODE MISSION PARALLÈLE (27/10/2026) : la 2ème mission est un VRAI DEAL lié au deal d'origine
+  // (type_deal = 'mission_parallele', parallele_de = id de l'origine). Même construction qu'un placement,
+  // sans mail « nouveau placement », sans visite médicale ni cooptation (portées par l'origine).
+  var _mp = null;
   if (typeof _placementMode !== 'undefined' && _placementMode === 'mission_parallele') {
-    savePlacementAsMissionParallele();
-    return;
+    var _mpOrigin = getDeals().find(function(d){ return d && String(d.id) === String(_missionParalleleOriginDealId); });
+    if (!_mpOrigin) { alert('\u26a0 Deal d\'origine introuvable.'); return; }
+    if (!(document.getElementById('pl-entreprise').value || '').trim()) { alert('\u26a0 Renseignez l\'entreprise cliente de la 2\u00e8me mission.'); return; }
+    _mp = { origin: _mpOrigin };
   }
   var hist = getHistory();
   var sim = hist.find(function(s) { return s.timestamp === currentPlacementTs; });
   var deals = getDeals();
-  var idx = deals.findIndex(function(d) { return d.sim_ts === currentPlacementTs; });
+  var idx = _mp ? -1 : deals.findIndex(function(d) { return d.sim_ts === currentPlacementTs; });
 
   var brutMens = sim ? (parseFloat((sim.brut||'').replace(/[^0-9.,]/g,'').replace(',','.')) || 0) : 0;
   // Salaire annuel sur contrat = valeur brut_contrat_annuel stockée par calc()
@@ -10360,6 +10371,16 @@ function savePlacement() {
     if (deal.stand_by) { if (!(idx >= 0 && deals[idx] && deals[idx].stand_by_since)) deal.stand_by_since = Date.now(); }
     else deal.stand_by_since = null;
   }
+  if (_mp) {
+    deal.type_deal = 'mission_parallele';
+    deal.parallele_de = _mp.origin.id;
+    deal.origine = deal.origine || 'Mission parallèle';
+    // identité du porté = celle du deal d'origine (même personne)
+    if (!deal.email && _mp.origin.email) deal.email = _mp.origin.email;
+    if (_mp.origin.email_candidat_reel) deal.email_candidat_reel = _mp.origin.email_candidat_reel;
+    if (!deal.tel && _mp.origin.tel) deal.tel = _mp.origin.tel;
+    deal.created_at = Date.now(); deal.updated_at = Date.now();
+  }
   if (idx >= 0) deals[idx] = Object.assign({}, deals[idx], deal); else deals.unshift(deal);
   // Si la DATE DU DEAL a été MODIFIÉE manuellement (édition), elle devient prioritaire dans
   // le calcul des commissions (sinon c'est la date de création du dossier qui prime — règle actuelle).
@@ -10381,8 +10402,26 @@ function savePlacement() {
     _sendFinMission = false; // remplacé par le flux « Fin de mission » (bouton sur la carte), cf. mail sortant différencié
   }
   saveDeals(deals);
-  // Visite médicale : créer (si nouveau placement) ou mettre à jour la ligne liée
-  try { if (typeof _vmSyncFromDeal === 'function') _vmSyncFromDeal(deal, isNewDeal); } catch(e) { console.warn('[VM] sync placement:', e); }
+  // Visite médicale : créer (si nouveau placement) ou mettre à jour la ligne liée (pas pour une mission parallèle : portée par l'origine)
+  try { if (!_mp && typeof _vmSyncFromDeal === 'function') _vmSyncFromDeal(deal, isNewDeal); } catch(e) { console.warn('[VM] sync placement:', e); }
+
+  // Mission parallèle : mail dédié à l'ADV (pas le mail « nouveau placement »), fiche client rattachée, puis fin
+  if (_mp) {
+    try { saveClientFromDeal(deal); } catch(e) { console.warn('[Mission //] client:', e); }
+    try { if (typeof _maybeSendBadPayerAlert==='function' && !deal.stand_by) _maybeSendBadPayerAlert(deal); } catch(e) {}
+    try { sendMissionParalleleEmail(_mp.origin, { id: deal.id, client: deal.entreprise, manager: deal.manager, poste: deal.poste, tjm: deal.tjm, date_debut: deal.date_entree, date_fin: deal.date_fin, commercial: deal.commercial, commentaires: deal.commentaire, mission_origine_client: _mp.origin.entreprise }, sim || {}); } catch(e) { console.warn('[Mission //] email:', e); }
+    closeModal('modal-placement');
+    _resetPlacementMode();
+    setTimeout(function(){
+      if (typeof renderDeals === 'function') { try { renderDeals(); } catch(e){} }
+      if (typeof renderCandidats === 'function') { try { renderCandidats(); } catch(e){} }
+      if (typeof renderClients === 'function') { try { renderClients(); } catch(e){} }
+      if (typeof refreshCandidatFiche === 'function') { try { refreshCandidatFiche(); } catch(e){} }
+    }, 0);
+    if (typeof showNotifToast === 'function') showNotifToast('\u2713 Mission parall\u00e8le cr\u00e9\u00e9e' + (deal.stand_by ? ' (stand by : \u00e9l\u00e9ments manquants)' : ''));
+    if (typeof odAutoSync === 'function') odAutoSync();
+    return;
+  }
 
   // Envoi automatique de notification interne uniquement pour nouveau placement (pas si Stand by)
   if (isNewDeal && !deal.stand_by) {
@@ -10724,6 +10763,16 @@ function toggleSortieContratFields() {
   // toujours visibles, indépendamment du choix Oui/Non sur "Fin de contrat travail".
 }
 
+// Mission parallèle (27/10/2026) : un deal lié à son deal d'origine (type_deal = 'mission_parallele', parallele_de = id origine).
+// Exclu des placements / starters du Dashboard, des commissions (manuelles) et des Entrées du mois ;
+// PE, cooptation, visite médicale et titre de séjour sont portés par l'origine. Compté dans le CA et les Frais.
+function _isMPDeal(d) { return !!(d && d.type_deal === 'mission_parallele'); }
+function _mpSiblings(deal, deals) {
+  // les missions parallèles rattachées à un deal (ou à l'origine d'une mission parallèle)
+  if (!deal) return [];
+  var rootId = _isMPDeal(deal) ? deal.parallele_de : deal.id;
+  return (deals || getDeals()).filter(function(x){ return x && !x._deleted && _isMPDeal(x) && String(x.parallele_de) === String(rootId) && String(x.id) !== String(deal.id); });
+}
 // Chaîne de continuité de contrat : un deal, ses continuités (prolonge_par) et ses origines
 // (prolongation_avenant.deal_origine_id). Une sortie des effectifs ou une fin de mission saisie sur
 // n'importe quel maillon doit se refléter sur toute la chaîne : c'est la même personne, le même
@@ -10812,6 +10861,20 @@ function saveSortie() {
   deals[dealIdx].raison_sortie = raison;
   deals[dealIdx].commentaire_sortie = commentaire;
 
+  // ── Sortie des effectifs : les missions parallèles du porté se terminent aussi (même contrat de travail) ──
+  if (finContratTrav !== 'Non') {
+    try {
+      _mpSiblings(deals[dealIdx], deals).forEach(function(x){
+        if (x.etat === 'Annulé' || x.etat === 'Sorti des effectifs') return;
+        x.etat = 'Sorti des effectifs'; x.date_sortie = dateFinContrat || finMission; x.raison_sortie = x.raison_sortie || raison;
+        x.updated_at = Date.now(); x.updated_ts = Date.now();
+      });
+      if (_isMPDeal(deals[dealIdx])) {
+        var _o = deals.find(function(x){ return x && String(x.id) === String(deals[dealIdx].parallele_de); });
+        if (_o && _o.etat !== 'Annulé' && _o.etat !== 'Sorti des effectifs') { _o.etat = 'Sorti des effectifs'; _o.date_sortie = dateFinContrat || finMission; _o.raison_sortie = _o.raison_sortie || raison; _o.updated_at = Date.now(); _o.updated_ts = Date.now(); }
+      }
+    } catch(e) { console.warn('[sortie] propagation missions parallèles :', e); }
+  }
   // ── Propagation vers les ORIGINES de la continuité (haut → bas), jamais vers les continuités ──
   try {
     _dealOrigins(deals[dealIdx], deals).forEach(function(x){
@@ -11278,6 +11341,7 @@ function renderDeals() {
     deals = deals.filter(function(d) { return d.etat !== 'Annulé'; });
   }
   if (dealFilterEtat === '__standby__') deals = deals.filter(function(d) { return d.stand_by === true; });
+  else if (dealFilterEtat === '__parallele__') deals = deals.filter(function(d) { return _isMPDeal(d); });
   else if (dealFilterEtat !== '__all__') deals = deals.filter(function(d) { return d.etat === dealFilterEtat && !d.stand_by; });
   if (dealFilterComm === '__mine__') {
     var myName = (typeof getCurrentUserCommercial === 'function') ? getCurrentUserCommercial() : '';
@@ -11348,7 +11412,7 @@ function renderDeals() {
     var _mDeals = dealFilterMonthDeal || dealFilterMonthEntree || '';
     var _mStart = dealFilterMonthEntree || dealFilterMonthDeal || '';
     // Un placement en stand by n'est pas un deal → exclu des compteurs.
-    var _real = _dealsHorsMois.filter(function(d){ return d && d.stand_by !== true; });
+    var _real = _dealsHorsMois.filter(function(d){ return d && d.stand_by !== true && !_isMPDeal(d); });   // mission parallèle : pas un placement
     var _nDeals = _mDeals
       ? _real.filter(function(d){ return _dealMonthKey(d.date_deal) === _mDeals; }).length
       : _real.length;
@@ -11369,7 +11433,7 @@ function renderDeals() {
       _nChgt = getDeals().filter(function(d){
         if (!d || d._deleted || !d.prolongation_avenant || d.stand_by === true) return false;
         if (d.etat === 'Annulé' && (dealHideAnnules || dealFilterEtat !== 'Annulé')) return false;
-        if (dealFilterEtat !== '__all__' && dealFilterEtat !== '__standby__' && d.etat !== dealFilterEtat) return false;
+        if (dealFilterEtat !== '__all__' && dealFilterEtat !== '__standby__' && dealFilterEtat !== '__parallele__' && d.etat !== dealFilterEtat) return false;
         if (dealFilterComm === '__mine__') { if (_myN && !(typeof _sameCommercial === 'function' ? _sameCommercial(d.commercial, _myN) : (d.commercial||'').trim().toLowerCase() === _myN.toLowerCase())) return false; }
         else if (dealFilterComm !== '__all__' && !(typeof _sameCommercial === 'function' ? _sameCommercial(d.commercial, dealFilterComm) : (d.commercial||'') === dealFilterComm)) return false;
         return _mDeals ? _dealMonthKey(d.date_deal) === _mDeals : true;
@@ -11584,9 +11648,10 @@ function deleteDeal(id) {
   }, function(){ _deleteDealConfirmed(id); });
 }
 function _deleteDealConfirmed(id) {
-  if (!confirm('Supprimer ce deal ?')) return;
   // FIX : comparaison tolérante au type (string ou number)
   var _delDeal = getDeals().find(function(d) { return String(d.id) === String(id); });
+  var _mpKids = (_delDeal && typeof _mpSiblings === 'function' && !_isMPDeal(_delDeal)) ? _mpSiblings(_delDeal) : [];
+  if (!confirm('Supprimer ce deal ?' + (_mpKids.length ? '\n\n⚠ ' + _mpKids.length + ' mission(s) parallèle(s) y sont rattachées : elles seront conservées mais ne seront plus reliées à un deal d\'origine.' : ''))) return;
   var deals = getDeals().filter(function(d) { return String(d.id) !== String(id); });
   // Continuité de contrat : la suppression de la ligne de continuité rend au deal d'origine
   // sa date de fin et retire le lien prolonge_par.
@@ -12349,7 +12414,7 @@ function getCellValue(d, key){
   var ETAT_COLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
   var fmt=function(v){ return (v===null||v===undefined||v==='') ? '—' : String(v); };
   switch(key){
-    case 'etat': if (d.stand_by) return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:#7343EE;white-space:nowrap;">\u23f8 Stand by</span>'; var co=ETAT_COLORS[d.etat]||'#6B5E9C'; return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:'+co+';white-space:nowrap;">'+(d.etat||'—')+'</span>';
+    case 'etat': if (d.stand_by) return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:#7343EE;white-space:nowrap;">\u23f8 Stand by</span>'; var co=ETAT_COLORS[d.etat]||'#6B5E9C'; var _mpB = (typeof _isMPDeal === 'function' && _isMPDeal(d)) ? (function(){ var o = null; try { o = getDeals().find(function(x){ return x && String(x.id) === String(d.parallele_de); }); } catch(e){} return ' <span title="2\u00e8me mission en parall\u00e8le' + (o ? ' de ' + String(o.entreprise||'').replace(/"/g,'&quot;') : '') + '" style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:800;color:#fff;background:#1A4F96;white-space:nowrap;">Mission parall\u00e8le</span>'; })() : ''; return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:'+co+';white-space:nowrap;">'+(d.etat||'—')+'</span>' + _mpB;
     case 'candidat': return '<span onclick="event.stopPropagation();openCandidatByEmail(\''+(d.email||'')+'\')" style="font-weight:600;color:#7343EE;cursor:pointer;text-decoration:underline;" title="Voir la fiche candidat">'+(d.prenom||'')+' '+_NOMUC(d.nom)+'</span>';
     case 'email': return fmt(d.email);
     case 'tel': return fmt(d.tel);
@@ -15017,7 +15082,7 @@ function _peBaseDeals() {
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
   return deals.filter(function(d) {
     if (!d || d.etat === 'Annulé' || d.etat === 'Sorti des effectifs' || d.etat === 'Fin de mission') return false;
-    if (d.prolongation_avenant) return false; // continuité de contrat : la période d'essai est celle du deal d'origine
+    if (d.prolongation_avenant || _isMPDeal(d)) return false; // continuité de contrat / mission parallèle : la période d'essai est celle du deal d'origine
     if (d.stand_by === true) return false;
     if (d.etat !== 'En cours' && d.etat !== 'Signé' && d.etat !== 'Nouveau placement') return false;
     if (!(d.date_entree || d.pe_date_debut)) return false;
@@ -15278,7 +15343,7 @@ function _seDeals() {
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
   return deals.filter(function(d) {
     if (!d || d.salarie_etranger !== true) return false;
-    if (d.prolongation_avenant) return false; // continuité de contrat : le titre de séjour est suivi sur le deal d'origine
+    if (d.prolongation_avenant || _isMPDeal(d)) return false; // continuité / mission parallèle : le titre de séjour est suivi sur le deal d'origine
     if (d.etat === 'Annulé' || d.etat === 'Sorti des effectifs') return false;
     return true;
   });
@@ -18627,6 +18692,7 @@ function buildFraisMergedRow(it, cfg, coef) {
   if (typeSel && !typeDef) typeOptions += '<option value="' + _fmEsc(typeSel) + '" selected>' + _fmEsc(typeSel) + ' (hors config)</option>';
 
   var excBadge = isExc ? '<span style="background:#F0A500;color:#fff;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;margin-left:6px;text-transform:uppercase;">Exceptionnel</span>' : '';
+  if (deal && typeof _isMPDeal === 'function' && _isMPDeal(deal)) excBadge += '<span title="Mission parallèle — client : ' + _fmEsc(deal.entreprise || '') + '" style="background:#1A4F96;color:#fff;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;margin-left:6px;text-transform:uppercase;white-space:nowrap;">mission // ' + _fmEsc(deal.entreprise || '') + '</span>';
   var actionCell = isExc
     ? '<button onclick="deleteFraisMergedExceptionnel(' + (fpId || 'null') + ',' + (avId || 'null') + ')" title="Supprimer cette ligne exceptionnelle" style="padding:4px 10px;background:#FDECEC;color:#C24141;border:1.5px solid #F5B5B5;border-radius:6px;font-size:11px;cursor:pointer;">✕</button>'
     : '<span style="color:#C0B8E0;font-size:11px;">—</span>';
@@ -18878,7 +18944,7 @@ function getPortesDemarrantDansMois(moisStr) {
   var deals = (typeof getDeals === 'function') ? getDeals() : [];
   return deals.filter(function(d) {
     if (!d || d.etat === 'Annulé') return false;
-    if (d._deleted || d.prolongation_avenant || d.stand_by === true) return false;   // ALIGNEMENT Dashboard / tableau des deals (30/09/2026)
+    if (d._deleted || d.prolongation_avenant || d.stand_by === true || _isMPDeal(d)) return false;   // ALIGNEMENT Dashboard / tableau des deals (30/09/2026) ; mission parallèle exclue
     if (!d.date_entree) return false;
     // Même lecture du mois que le tableau des deals / Dashboard (formats ISO et JJ/MM/AAAA)
     if (typeof _dealMonthKey === 'function') return _dealMonthKey(d.date_entree) === moisStr;
@@ -20131,7 +20197,8 @@ function avSetMonth(m){ AVENANTS_FILTER.month=(m==='all')?'all':parseInt(m,10); 
 function avSetYear(y){ AVENANTS_FILTER.year=parseInt(y,10); renderAvenants(); }
 
 function buildAvenantsContent() {
-  var avenants = getAvenants();
+  // Anciens avenants « Mission parallèle » migrés en deals (27/10/2026) : conservés dans le stockage, masqués ici
+  var avenants = getAvenants().filter(function(a){ return a && !a.migre_vers_deal_id; });
 
   var filtered = avenants.filter(function(a){
     if (AVENANTS_FILTER.statut === 'a_traiter' && _avIsFinalise(a)) return false;
@@ -20453,7 +20520,7 @@ function buildAvenantsContent() {
     html += '<tr>'
       + '<td class="avfix avfix1" style="font-weight:700;">' + _fmtAvDate(a.date_demande) + '</td>'
       + '<td class="avfix avfix2">' + (a.commercial || '—') + '</td>'
-      + '<td class="avfix avfix3" style="font-weight:600;">' + nomComplet + '</td>'
+      + '<td class="avfix avfix3" style="font-weight:600;">' + nomComplet + ((_fd && typeof _isMPDeal === 'function' && _isMPDeal(_fd)) ? ' <span title="Avenant sur une mission parall\u00e8le" style="padding:1px 6px;border-radius:9px;background:#EEF4FF;color:#1A4F96;font-size:9.5px;font-weight:800;white-space:nowrap;">mission //</span>' : '') + '</td>'
       + '<td>' + _advCell + '</td>'
       + '<td>' + (function(){
           var _mm = { prolongation: ['Prolongation','#0F5132','#F0FAF4'], nouveau_client: ['Nouveau client','#8A5F00','#FFF8E8'],
@@ -20463,8 +20530,20 @@ function buildAvenantsContent() {
           return '<span style="display:inline-block;padding:2px 8px;border-radius:5px;font-size:10.5px;font-weight:700;white-space:nowrap;background:' + _x[2] + ';color:' + _x[1] + ';">' + _x[0] + '</span>';
         })() + '</td>'
       + '<td>' + ((a.poste || '').replace(/</g,'&lt;') || '—') + '</td>'
-      + '<td>' + ((a.client || '').replace(/</g,'&lt;') || '—') + '</td>'
-      + '<td>' + ((a.manager || '').replace(/</g,'&lt;') || '—') + '</td>'
+      + (function(){
+          // 21/10/2026 — ancien flux « Avenant mission » : le client enregistré est celui du placement
+          // d'origine, même quand la simulation rattachée vise un AUTRE client. On affiche alors le client
+          // de la simulation (c'est lui que concerne l'avenant), en signalant le placement d'origine.
+          var _cl = (a.client || ''), _simEnt = (a.mode === 'avenant_mission' && _fs && _fs.entreprise) ? String(_fs.entreprise).trim() : '';
+          if (_simEnt && _simEnt.toLowerCase() !== _cl.trim().toLowerCase()) {
+            return '<td title="Client de la simulation rattachée (placement d\'origine : ' + _cl.replace(/"/g,'&quot;') + ')"><span style="font-weight:700;">' + _simEnt.replace(/</g,'&lt;') + '</span><div style="font-size:10px;color:#9E94C4;">origine : ' + (_cl.replace(/</g,'&lt;') || '—') + '</div></td>';
+          }
+          return '<td>' + (_cl.replace(/</g,'&lt;') || '—') + '</td>';
+        })()
+      + (function(){
+          var _mg = (a.manager || ''), _simMg = (a.mode === 'avenant_mission' && _fs && _fs.manager && _fs.entreprise && String(_fs.entreprise).trim().toLowerCase() !== String(a.client||'').trim().toLowerCase()) ? String(_fs.manager).trim() : '';
+          return '<td>' + ((_simMg || _mg).replace(/</g,'&lt;') || '—') + '</td>';
+        })()
       + (function(){
           var _sg = (_fd && _fd.nom_signataire) || (_fc && _fc.nom_signataire) || '';
           var _cpN = ((_fd && ((_fd.prenom_compta||'') + ' ' + (_fd.nom_compta||'')).trim()) || (_fc && ((_fc.prenom_compta||'') + ' ' + (_fc.nom_compta||'')).trim()) || '');
@@ -22398,11 +22477,23 @@ function _avExtractFraisFromSim(sim) {
 }
 
 // Helper : comparer une nouvelle SIMU au placement (deal) actuel pour détecter les changements
+// Dernier avenant de la mission portant une simulation (base du comparatif « avant / après ») — 27/10/2026
+function _avLastSimAvenant(deal) {
+  if (!deal) return null;
+  var list = [];
+  try { list = getAvenants().filter(function(a){ return a && String(a.deal_id) === String(deal.id) && a.sim_ts != null && a.sim_ts !== '' && !a.migre_vers_deal_id && a.mode !== 'mission_parallele' && !(typeof isTombstoned === 'function' && isTombstoned('avenants', a.id)); }); } catch(e) {}
+  if (!list.length) return null;
+  list.sort(function(x, y){ var sx = x.created_at || 0, sy = y.created_at || 0; if (sx !== sy) return sy - sx; return String(y.date_avenant || y.date_demande || '').localeCompare(String(x.date_avenant || x.date_demande || '')); });
+  return list[0];
+}
 function _avCompareWithPlacement(newFrais, deal) {
-  // On reconstruit les frais "actuels" depuis la SIMU originelle attachée au deal
+  // Base « avant » = conditions EN VIGUEUR : simulation du dernier avenant (nouvelle simulation / prolongation avec simu),
+  // sinon la simulation d'origine du placement. (Avant le 27/10/2026 : toujours la simu d'origine → comparatif faux dès le 2ème avenant.)
   var oldSim = null;
-  if (deal && deal.sim_ts) {
-    var hist = (typeof getHistory === 'function') ? getHistory() : [];
+  var hist = (typeof getHistory === 'function') ? getHistory() : [];
+  var lastAv = _avLastSimAvenant(deal);
+  if (lastAv) oldSim = hist.find(function(s){ return String(s.timestamp) === String(lastAv.sim_ts); }) || null;
+  if (!oldSim && deal && deal.sim_ts) {
     oldSim = hist.find(function(s){ return s.timestamp === deal.sim_ts; });
   }
   var oldFrais = _avExtractFraisFromSim(oldSim);
@@ -22507,7 +22598,9 @@ function openProlongationAvenantPopup(dealId, mode) {
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(20,10,60,0.55);backdrop-filter:blur(4px);z-index:10001;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 0;';
 
   // SIMU par défaut : la plus récente, hors celle déjà liée au deal
-  var defaultSim = simsCandidat.find(function(s){ return s.timestamp !== deal.sim_ts; }) || simsCandidat[0];
+  var _usedTs = {}; if (deal.sim_ts != null) _usedTs[String(deal.sim_ts)] = 1;
+  try { getAvenants().forEach(function(a){ if (a && String(a.deal_id) === String(deal.id) && a.sim_ts != null) _usedTs[String(a.sim_ts)] = 1; }); } catch(e) {}
+  var defaultSim = simsCandidat.find(function(s){ return !_usedTs[String(s.timestamp)]; }) || simsCandidat.find(function(s){ return s.timestamp !== deal.sim_ts; }) || simsCandidat[0];
 
   modal.innerHTML = '<div id="av-popup-content" style="background:#fff;border-radius:14px;width:96%;max-width:900px;margin:auto;box-shadow:0 8px 40px rgba(115,67,238,0.25);">'
     + '<div style="background:linear-gradient(135deg,' + modeColor + ',' + modeColor + 'aa);padding:16px 22px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10;">'
@@ -22865,7 +22958,7 @@ function confirmProlongationAvenant(dealId, mode) {
     avenant_id: avenantId,
     sim_ts: simTs,
     ancien_sim_ts: deal.sim_ts || null,  // pour retrouver la SIMU originale dans la timeline
-    ancienne_date_fin: deal.date_fin || '',
+    ancienne_date_fin: (function(){ try { var f = (typeof _dealFinEffective === 'function') ? _dealFinEffective(deal) : null; return f ? (f.getFullYear() + '-' + ('0' + (f.getMonth() + 1)).slice(-2) + '-' + ('0' + f.getDate()).slice(-2)) : (deal.date_fin || ''); } catch(e) { return deal.date_fin || ''; } })(),
     nouvelle_date_fin: dateFin,
     type_avenant: typeAvenant,
     motif: motif,
@@ -34312,15 +34405,17 @@ function buildCandPlacementsHTML(cand) {
   });
   if (!candDeals.length) return '<div style="color:#C0B8E0;font-size:12px;padding:20px 0;">Aucun placement.</div>';
   var ECOLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
-  return candDeals.map(function(d) {
+  var _cardOf = function(d) {
     var color = ECOLORS[d.etat] || '#6B5E9C';
     var isCancelled = d.etat === 'Annulé';
     var isSorti = d.etat === 'Sorti des effectifs';
+    var isMP = _isMPDeal(d);
 
-    // Style carte : atténué si annulé, normal sinon
+    // Style carte : atténué si annulé, normal sinon ; mission parallèle : cadre bleu, décalée sous son origine
     var cardStyle = isCancelled
       ? 'background:#FDECEC;border:1px solid #F5B5B5;border-radius:8px;padding:10px 14px;margin-bottom:8px;opacity:0.85;'
-      : 'background:#F5F3FF;border-radius:8px;padding:10px 14px;margin-bottom:8px;';
+      : (isMP ? 'background:#F6F9FF;border:1.5px solid #9FC0F5;border-radius:8px;padding:10px 14px;margin-bottom:8px;margin-left:26px;position:relative;'
+              : 'background:#F5F3FF;border-radius:8px;padding:10px 14px;margin-bottom:8px;');
 
     // Actions : Annuler / Restaurer / Sortant / Éditer sortant
     var actionsHtml = '';
@@ -34343,7 +34438,7 @@ function buildCandPlacementsHTML(cand) {
       // ── Bouton Mission parallèle (2ème mission simultanée) ──
       // Le consultant démarre une 2ème mission EN PARALLÈLE de celle-ci.
       // Ne crée PAS de nouveau deal : rattache une nouvelle simu + génère un avenant.
-      actionsHtml += '<button onclick="closeCandFiche();setTimeout(function(){openMissionParallelePopup(' + d.id + ')},100);" title="Le consultant démarre une 2ème mission en parallèle — rattache une nouvelle simulation, crée un avenant (pas un nouveau deal)" style="padding:4px 10px;background:#EEF4FF;color:#1A4F96;border:1.5px solid #A9C8F0;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">➕ Mission parallèle</button>';
+      if (!isMP) actionsHtml += '<button onclick="closeCandFiche();setTimeout(function(){openMissionParallelePopup(' + d.id + ')},100);" title="Le consultant démarre une 2ème mission en parallèle — crée un deal lié à celui-ci (simulation, client, avenants propres)" style="padding:4px 10px;background:#EEF4FF;color:#1A4F96;border:1.5px solid #A9C8F0;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">➕ Mission parallèle</button>';
 
       // Bouton Sortant : visible si placement actif (pas annulé, pas déjà sorti)
       var existingSortant = (typeof findSortantByDealId === 'function') ? findSortantByDealId(d.id) : null;
@@ -34367,6 +34462,9 @@ function buildCandPlacementsHTML(cand) {
     }
     // Ligne de continuité (avenant nouveau client) : absente du tableau des deals, donc
     // sans accès au bouton de suppression. On l'expose ici (mot de passe admin via deleteDeal).
+    if (isMP) {
+      actionsHtml += '<button onclick="closeCandFiche();setTimeout(function(){deleteDeal(' + d.id + ')},100);" title="Supprimer cette mission parallèle (mot de passe admin, propagé à tous les postes)" style="padding:4px 10px;background:#fff;color:#9E9E9E;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">🗑 Supprimer</button>';
+    }
     if (d.prolongation_avenant) {
       actionsHtml += '<button onclick="closeCandFiche();setTimeout(function(){deleteDeal(' + d.id + ')},100);" title="Supprimer cette ligne de continuité — le placement d\'origine retrouve sa date de fin" style="padding:4px 10px;background:#fff;color:#9E9E9E;border:1.5px solid #E4E0FA;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;">🗑 Supprimer</button>';
     }
@@ -34405,7 +34503,7 @@ function buildCandPlacementsHTML(cand) {
     return '<div style="' + cardStyle + '">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">'
       + '<div>'
-      + '<div style="font-size:12px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#1A1033') + ';">' + clientDisplay + (d.poste ? ' · ' + d.poste : '') + sortantBadge + '</div>'
+      + '<div style="font-size:12px;font-weight:700;color:' + (isCancelled ? '#9E4545' : '#1A1033') + ';">' + (isMP ? '<span title="2\u00e8me mission en parall\u00e8le de ' + String(_mpOriginName(d) || '').replace(/"/g,'&quot;') + '" style="display:inline-block;margin-right:7px;padding:2px 8px;border-radius:10px;background:#1A4F96;color:#fff;font-size:9.5px;font-weight:800;letter-spacing:0.05em;vertical-align:middle;">MISSION PARALL\u00c8LE</span>' : '') + clientDisplay + (d.poste ? ' · ' + d.poste : '') + sortantBadge + (isMP ? ' <span style="font-size:10.5px;color:#6B5E9C;font-weight:600;">\u00b7 li\u00e9e \u00e0 ' + String(_mpOriginName(d) || '?').replace(/</g,'&lt;') + '</span>' : '') + (!isMP && _mpSiblingsOf(d).length ? ' <span title="Missions en parall\u00e8le de ce placement" style="font-size:10.5px;color:#1A4F96;font-weight:700;">\u00b7 ' + _mpSiblingsOf(d).length + ' mission' + (_mpSiblingsOf(d).length > 1 ? 's' : '') + ' en parall\u00e8le</span>' : '') + '</div>'
       + '<div style="font-size:11px;color:' + (isCancelled ? '#B47979' : '#6B5E9C') + ';">' + (function(){
           var _fmt = function(v){ try { return (typeof _fmtAvDate === 'function') ? _fmtAvDate(v) : v; } catch(e){ return v; } };
           var _dd = d.date_entree || d.date_deal || '';
@@ -34429,7 +34527,19 @@ function buildCandPlacementsHTML(cand) {
       + '</div>'
       + _renderPlacementHistory(d)
       + '</div>';
-  }).join('');
+  };
+  // Ordonnancement : chaque placement suivi de ses missions parallèles ; une mission parallèle dont
+  // l'origine n'est pas dans la liste est affichée seule.
+  var _mpOriginName = function(d){ var o = deals.find(function(x){ return x && String(x.id) === String(d.parallele_de); }); return o ? (o.entreprise || '') : ''; };
+  var _mpSiblingsOf = function(d){ return candDeals.filter(function(x){ return _isMPDeal(x) && String(x.parallele_de) === String(d.id); }); };
+  var shown = {}, html = '';
+  candDeals.forEach(function(d){
+    if (_isMPDeal(d)) return;
+    html += _cardOf(d); shown[String(d.id)] = 1;
+    _mpSiblingsOf(d).forEach(function(m){ html += _cardOf(m); shown[String(m.id)] = 1; });
+  });
+  candDeals.forEach(function(d){ if (!shown[String(d.id)]) html += _cardOf(d); });
+  return html;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -34545,8 +34655,10 @@ function _renderPlacementHistory(deal) {
   hist = hist.filter(function(h){ return !(h && h.avenant_id && typeof isTombstoned === 'function' && isTombstoned('avenants', h.avenant_id)); });
   if (deal.prolonge_par) hist = hist.filter(function(h){ return !(h && h.type === 'avenant_nouveau_client'); }); // origine d'une continuité : trace affichée sur la continuité seulement
   function _avStart(h){ try { if (h && h.avenant_id && typeof getAvenants === 'function') { var _a = getAvenants().find(function(x){ return x && x.id === h.avenant_id; }); if (_a && _a.date_debut) return _a.date_debut; } } catch(e){} return h ? h.ancienne_date_fin : ''; }
+  var _migres = {}; try { getAvenants().forEach(function(a){ if (a && a.migre_vers_deal_id) _migres[String(a.id)] = 1; }); } catch(e) {}
   var avMission = (Array.isArray(deal.avenants_mission) ? deal.avenants_mission : [])
-    .filter(function(_av){ return !(_av && _av.avenant_id && typeof isTombstoned === 'function' && isTombstoned('avenants', _av.avenant_id)); });
+    .filter(function(_av){ return !(_av && _av.avenant_id && typeof isTombstoned === 'function' && isTombstoned('avenants', _av.avenant_id)); })
+    .filter(function(_av){ return !(_av && _av.avenant_id && _migres[String(_av.avenant_id)]); });   // migré en deal « mission parallèle » (27/10/2026)
   if (hist.length === 0 && avMission.length === 0) return '';
 
   function fmtDate(v) {
@@ -34697,8 +34809,15 @@ function _renderPlacementHistory(deal) {
           + '<span style="color:#1A1033;font-weight:600;">' + String(val).replace(/</g,'&lt;') + '</span>'
           + '</div>';
       }
-      detailsRows += _detailLine('Client', av.client);
-      detailsRows += _detailLine('Manager', av.manager);
+      // Ancien flux : la vignette n'a pas de client → on prend celui de la simulation rattachée s'il diffère du placement
+      var _vClient = av.client || '', _vManager = av.manager || '';
+      if (!_vClient && av.sim_ts) {
+        try { var _vs = (typeof _simIndex === 'function') ? _simIndex().byTs[String(av.sim_ts)] : null;
+          if (_vs && _vs.entreprise && String(_vs.entreprise).trim().toLowerCase() !== String(deal.entreprise||'').trim().toLowerCase()) { _vClient = _vs.entreprise + ' (client de la simulation)'; _vManager = _vManager || _vs.manager || ''; }
+        } catch(_e) {}
+      }
+      detailsRows += _detailLine('Client', _vClient);
+      detailsRows += _detailLine('Manager', _vManager);
       detailsRows += _detailLine('TJM', av.tjm ? (av.tjm + ' €/j') : '');
       detailsRows += _detailLine('Début', av.date_debut ? fmtDate(av.date_debut) : '');
       detailsRows += _detailLine('Fin', av.date_fin ? fmtDate(av.date_fin) : '');
@@ -39003,6 +39122,7 @@ function getCommDealsForPeriod(commercial, year, month /* 0-11, null = toute l'a
     var dealComm = (d.commercial || '').trim().toLowerCase();
     var wanted = (commercial || '').trim().toLowerCase();
     if (wanted && dealComm !== wanted) return false;
+    if (_isMPDeal(d)) return false;   // mission parallèle : commission manuelle (décision 27/10/2026)
     // Continuité de contrat (avenant nouveau client) : c'est un NOUVEAU deal, commissionné
     // dans le mois de sa création (date_deal = date de l'avenant) — MAIS seulement si le placement
     // précédent (chez l'ancien client) a duré au moins 3 mois (règle du 02/10/2026).
@@ -40936,6 +41056,129 @@ function buildMailsAutoConfigCard() {
 function renderParamsMailsAutoAccordion() {
   var el = document.getElementById('params-mails-auto-content');
   if (el) el.innerHTML = buildMailsAutoConfigCard();
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// MISSIONS PARALLÈLES — migration des anciens avenants « mission_parallele » en deals liés (27/10/2026)
+// Lecture seule : mpMigrationRapport()  ·  Exécution (après confirmation) : mpMigrer()
+// L'ancien avenant n'est jamais supprimé : il reçoit migre_vers_deal_id et disparaît du tableau Avenants.
+// ═══════════════════════════════════════════════════════════════════
+function _mpIsoToday() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+// Rapprochement tolérant du client (accents, casse, tirets, espaces, « & ») sur les fiches existantes :
+// « CRISTAL SOLUTIONS » ↔ « Cristal-solutions » = même fiche. Retourne le nom EXACT de la fiche existante, sinon le nom tel quel.
+function _mpCanonClient(name) {
+  var n = String(name || '').trim(); if (!n) return n;
+  var norm = function(v){ return String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
+  var k = norm(n); if (!k) return n;
+  var exact = null, loose = null;
+  try { getClients().forEach(function(c){ if (!c || !c.name) return; if (String(c.name).trim().toLowerCase() === n.toLowerCase()) exact = exact || c.name; else if (norm(c.name) === k) loose = loose || c.name; }); } catch(e) {}
+  return exact || loose || n;
+}
+function _mpDealFromSim(sim) {
+  if (!sim) return {};
+  var brutMens = parseFloat(String(sim.brut || '').replace(/[^0-9.,]/g, '').replace(',', '.')) || 0;
+  var nbJ = parseFloat(sim.nb_jours) || 0;
+  var sal = (sim.brut_contrat_annuel && parseInt(sim.brut_contrat_annuel) > 0) ? String(parseInt(sim.brut_contrat_annuel)) : (brutMens > 0 && typeof _computeSalaireAnnuelContrat === 'function' ? String(_computeSalaireAnnuelContrat(brutMens, nbJ)) : '');
+  return {
+    tjm: sim.tjm, nb_jours: sim.nb_jours, salaire_annuel: sal,
+    brut: sim.brut, net_payer: sim.net_payer, net_avant: sim.net_avant,
+    cout_global: sim.cout_global, total_pat: sim.total_pat || '', total_sal: sim.total_sal || '',
+    taux_restitution: sim.taux_restitution, frais_gestion: sim.marge || '', fg_reel: sim.fg_reel || '',
+    mutuelle: sim.mutuelle || '', cp: sim.cp || '', rtt: sim.rtt || 0, repas: sim.repas || '',
+    tt: (sim.tt ? 'Oui' : 'Non'), gd_lieu: sim.gd_lieu || '', gd_perso_montant: parseFloat(sim.gd_perso_montant) || 0,
+    ik_1ere: (sim.ik_1ere ? 'Oui' : 'Non'), km_aller: sim.km_aller || '', puissance_fiscale: sim.puissance || '',
+    abo_transport: sim.abo_transport || '', abo_tel: sim.abo_tel || '', abo_internet: sim.abo_internet || '',
+    frais_formation: sim.frais_formation || '', frais_materiel: sim.frais_materiel || '',
+    taux_impot: sim.taux_impot || '', frais_jour: sim.frais_jour || '', email_client: sim.email_client || ''
+  };
+}
+// Analyse (lecture seule) : une ligne par ancien avenant « mission parallèle » non migré
+function mpMigrationRapport() {
+  var deals = getDeals(), byId = {}; deals.forEach(function(d){ if (d) byId[String(d.id)] = d; });
+  var simIx = (typeof _simIndex === 'function') ? _simIndex().byTs : {};
+  var today = _mpIsoToday();
+  var avs = getAvenants().filter(function(a){ return a && a.mode === 'mission_parallele' && !a.migre_vers_deal_id && !(typeof isTombstoned === 'function' && isTombstoned('avenants', a.id)); });
+  var rows = avs.map(function(a) {
+    var o = byId[String(a.deal_id)] || null;
+    var sim = (a.sim_ts != null) ? (simIx[String(a.sim_ts)] || null) : null;
+    var fin = String(a.date_fin || '').slice(0, 10), debut = String(a.date_debut || a.date_avenant || '').slice(0, 10);
+    var alertes = [];
+    if (!o) alertes.push('deal d’origine introuvable → non migré');
+    if (fin && debut && fin < debut) alertes.push('date de fin antérieure au début (à corriger dans la fiche après migration)');
+    var clientCanon = _mpCanonClient(a.client);
+    if (clientCanon !== String(a.client || '').trim()) alertes.push('client rapproché de la fiche « ' + clientCanon + ' »');
+    if (o && String(clientCanon).trim().toLowerCase() === String(o.entreprise || '').trim().toLowerCase()) alertes.push('même client que l’origine');
+    if (!sim) alertes.push('simulation introuvable (TJM/conditions de l’avenant seuls)');
+    var etat = (fin && fin < today) ? 'Fin de mission' : 'Signé';
+    return { avenant: a, origine: o, sim: sim, etat: etat, alertes: alertes, migrable: !!o,
+      porte: ((a.prenom_porte || '') + ' ' + (a.nom_porte || '')).trim(), client: clientCanon || '', origine_client: o ? (o.entreprise || '') : (a.mission_origine_client || ''), debut: debut, fin: fin };
+  });
+  // chevauchements chez le même client pour le même porté (information)
+  rows.forEach(function(r){
+    rows.forEach(function(x){ if (x === r || x.porte !== r.porte || String(x.client).toLowerCase() !== String(r.client).toLowerCase()) return; if (r.debut && x.fin && r.debut <= x.fin && (!r.fin || !x.debut || x.debut <= r.fin)) { if (r.alertes.indexOf('périodes qui se chevauchent chez ce client') < 0) r.alertes.push('périodes qui se chevauchent chez ce client'); } });
+  });
+  return rows;
+}
+// Exécution : crée les deals, marque les avenants. Retourne le rapport.
+function mpMigrer(silent) {
+  var rows = mpMigrationRapport();
+  var todo = rows.filter(function(r){ return r.migrable; });
+  if (!todo.length) { if (!silent) alert('Aucune mission parallèle à migrer.'); return rows; }
+  if (!silent && !confirm('Migrer ' + todo.length + ' mission(s) parallèle(s) en deals liés ?\n\nLes anciens avenants sont conservés (marqués « migré ») et masqués du tableau Avenants.\nOpération à faire sur UN seul poste, OneDrive connecté.')) return rows;
+  var deals = getDeals(), avs = getAvenants(), now = Date.now(), seq = 0;
+  todo.forEach(function(r) {
+    var a = r.avenant, o = r.origine, sim = r.sim;
+    var id = now + (seq++);
+    var deal = Object.assign({}, _mpDealFromSim(sim), {
+      id: id, type_deal: 'mission_parallele', parallele_de: o.id, migre_de_avenant: a.id, sim_ts: (a.sim_ts != null && a.sim_ts !== '') ? a.sim_ts : null,
+      prenom: o.prenom || a.prenom_porte || '', nom: o.nom || a.nom_porte || '', email: o.email || '', email_candidat_reel: o.email_candidat_reel || '', tel: o.tel || '', civilite: o.civilite || '',
+      entreprise: r.client || a.client || '', manager: a.manager || '', poste: a.poste || o.poste || '', secteur: o.secteur || '',
+      commercial: a.commercial || o.commercial || '', origine: 'Mission parallèle',
+      date_deal: (a.created_at ? new Date(a.created_at) : new Date(a.date_demande || r.debut || today())).toISOString().slice(0, 10),
+      date_entree: r.debut || '', date_fin: r.fin || '', etat: r.etat, contrat: o.contrat || '', type_contrat: o.type_contrat || '',
+      connait_tjm: o.connait_tjm || '', commentaire: a.commentaires || '', salarie_etranger: false, stand_by: false,
+      date_created: new Date().toLocaleDateString('fr-FR'), created_at: now, updated_at: now, date_signature: r.debut || ''
+    });
+    if (a.tjm && !deal.tjm) deal.tjm = a.tjm;
+    if (a.new_salaire_annuel && !deal.salaire_annuel) deal.salaire_annuel = a.new_salaire_annuel;
+    deals.unshift(deal);
+    var ai = avs.findIndex(function(x){ return x && x.id === a.id; });
+    if (ai >= 0) { avs[ai].migre_vers_deal_id = id; avs[ai].updated_at = now; }
+    r.deal_id = id;
+  });
+  function today() { return _mpIsoToday(); }
+  saveDeals(deals); saveAvenants(avs);
+  try { todo.forEach(function(r){ var d = deals.find(function(x){ return x && x.id === r.deal_id; }); if (d && typeof saveClientFromDeal === 'function') saveClientFromDeal(d); }); } catch(e) { console.warn('[MP migration] clients', e); }
+  try { if (typeof odForceSyncNow === 'function') odForceSyncNow(); else if (typeof odAutoSync === 'function') odAutoSync(); } catch(e) {}
+  if (!silent) { try { renderParamsMPMigrationAccordion(); } catch(e) {} alert('✓ ' + todo.length + ' mission(s) parallèle(s) migrée(s) en deals.\n\nVérifie les fiches concernées, puis fais recharger les autres postes.'); }
+  return rows;
+}
+function buildMPMigrationCard() {
+  var rows = mpMigrationRapport();
+  var nbMig = getAvenants().filter(function(a){ return a && a.mode === 'mission_parallele' && a.migre_vers_deal_id; }).length;
+  var nbDeals = getDeals().filter(function(d){ return d && !d._deleted && _isMPDeal(d); }).length;
+  var html = '<div style="font-size:12px;color:#6B5E9C;line-height:1.5;margin-bottom:10px;">Depuis le 27/10/2026, une mission parallèle est un <b>deal lié à son deal d’origine</b> (visible dans la fiche candidat, le tableau des deals et les Frais ; exclu des placements, commissions et entrées du mois). Les missions parallèles créées avant cette date sont des avenants : ce bouton les convertit, <b>une seule fois, sur un seul poste</b>.</div>'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">'
+    + '<div style="padding:8px 12px;border-radius:8px;background:#FFF4D6;color:#8A5F00;font-weight:700;">' + rows.length + ' à migrer</div>'
+    + '<div style="padding:8px 12px;border-radius:8px;background:#E8F5E9;color:#0F5132;font-weight:700;">' + nbMig + ' déjà migré(s)</div>'
+    + '<div style="padding:8px 12px;border-radius:8px;background:#EEF4FF;color:#1A4F96;font-weight:700;">' + nbDeals + ' deal(s) « mission parallèle »</div>'
+    + '</div>';
+  if (rows.length) {
+    html += '<div style="max-height:320px;overflow:auto;border:1px solid #E4E0FA;border-radius:8px;"><table style="width:100%;border-collapse:collapse;font-size:11.5px;"><thead><tr style="background:#F5F3FF;color:#4B36EC;"><th style="padding:5px 8px;text-align:left;">Porté</th><th style="padding:5px 8px;text-align:left;">Client</th><th style="padding:5px 8px;text-align:left;">Origine</th><th style="padding:5px 8px;">Début</th><th style="padding:5px 8px;">Fin</th><th style="padding:5px 8px;">État après</th><th style="padding:5px 8px;text-align:left;">Remarques</th></tr></thead><tbody>'
+      + rows.map(function(r){ return '<tr style="border-top:1px solid #F0EDF9;' + (r.migrable ? '' : 'opacity:.55;') + '"><td style="padding:5px 8px;font-weight:600;">' + _fmEsc(r.porte) + '</td><td style="padding:5px 8px;">' + _fmEsc(r.client) + '</td><td style="padding:5px 8px;color:#6B5E9C;">' + _fmEsc(r.origine_client) + '</td><td style="padding:5px 8px;text-align:center;">' + (r.debut ? _fmtAvDate(r.debut) : '—') + '</td><td style="padding:5px 8px;text-align:center;">' + (r.fin ? _fmtAvDate(r.fin) : '—') + '</td><td style="padding:5px 8px;text-align:center;">' + r.etat + '</td><td style="padding:5px 8px;color:' + (r.alertes.length ? '#8A5F00' : '#9E94C4') + ';">' + (r.alertes.length ? _fmEsc(r.alertes.join(' · ')) : '—') + '</td></tr>'; }).join('')
+      + '</tbody></table></div>'
+      + '<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+      + '<button onclick="mpMigrer()" style="padding:9px 16px;background:linear-gradient(135deg,#1A4F96,#2A1E82);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">➕ Migrer ' + rows.filter(function(r){ return r.migrable; }).length + ' mission(s) parallèle(s) en deals</button>'
+      + '<span style="font-size:11px;color:#9E94C4;">Les lignes grisées ne sont pas migrables (deal d’origine introuvable).</span></div>';
+  } else {
+    html += '<div style="font-size:12px;color:#0F5132;font-weight:600;">✓ Rien à migrer.</div>';
+  }
+  return html;
+}
+function renderParamsMPMigrationAccordion() {
+  var el = document.getElementById('params-mp-migration-content');
+  if (el) { try { el.innerHTML = buildMPMigrationCard(); } catch(e) { el.innerHTML = '<div style="color:#B42318;">Erreur : ' + String(e.message || e).replace(/</g,'&lt;') + '</div>'; } }
 }
 
 </script>
