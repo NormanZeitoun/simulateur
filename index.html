@@ -3784,8 +3784,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.07.09a';
-  window.APP_BUILD = 2026070910;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  window.APP_VERSION = 'v2026.07.09c';
+  window.APP_BUILD = 2026070912;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
   // Notification de nouvelle version : détection DIRECTE du déploiement (ETag/Last-Modified
   // du fichier servi par Netlify) + repli OneDrive. Ne dépend plus qu'un autre poste "publie".
   try {
@@ -5772,6 +5772,20 @@ function resetDashFilters() {
   renderDashboardPage();
 }
 
+// Changement de client (ligne de continuité) : la date de RÉFÉRENCE est le DÉBUT chez le nouveau client
+// (date_entree de la continuité), pas la date de saisie de l'avenant — décision du 27/10/2026 : 25 des 35
+// « changements de client » d'octobre 2026 étaient de l'historique (2022 → 07/2026) saisi en octobre.
+// Une date de deal modifiée à la main reste prioritaire (date_deal_modified).
+function _chgtClientRefDate(d) {
+  if (!d || !d.prolongation_avenant) return null;
+  if (d.date_deal_modified && d.date_deal) { var m = _dgParseDate(d.date_deal); if (m) return m; }
+  var pa = d.prolongation_avenant || {};
+  return _dgParseDate(d.date_entree) || _dgParseDate(pa.date) || _dgParseDate(d.date_deal) || null;
+}
+function _chgtClientRefIso(d) {
+  var x = _chgtClientRefDate(d); if (!x) return d ? (d.date_deal || '') : '';
+  return x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2);
+}
 function _dashMatchPeriod(dateStr) {
   if (!dateStr) return false;
   var d;
@@ -5837,7 +5851,7 @@ function renderDashboardKPIs() {
   // Changements de client (avenant « nouveau client ») : décision du 30/09/2026 — ils COMPTENT comme
   // placements du mois (date deal = date de l'avenant), et sont aussi affichés à part.
   var chgtClient = deals.filter(function(d) {
-    return d && !d._deleted && d.prolongation_avenant && d.etat !== 'Annulé' && !d.stand_by && _dashMatchCommercial(d) && _dashMatchPeriod(d.date_deal);
+    return d && !d._deleted && d.prolongation_avenant && d.etat !== 'Annulé' && !d.stand_by && _dashMatchCommercial(d) && _dashMatchPeriod(_chgtClientRefIso(d));   // mois du début chez le nouveau client (27/10/2026)
   });
   var nbChgtClient = chgtClient.length;
   var nbPlacements = placements.length + nbChgtClient;
@@ -6121,7 +6135,7 @@ function renderDashboardKPIs() {
     + '<div class="dash-section-title">📊 Volumes du mois</div>'
     + '<div class="dash-grid cols-3">'
     +   kpi('kpi-violet', '📋', nbPlacements, '', 'Placements', 'créés dans la période' + (nbChgtClient ? ' · dont ' + nbChgtClient + ' changement' + (nbChgtClient > 1 ? 's' : '') + ' de client' : ''), '_dashGo(\'placements\');')
-    +   kpi('kpi-purple', '🔁', nbChgtClient, '', 'Changements de client', 'avenants « nouveau client » de la période', '_dashGo(\'chgt_client\');')
+    +   kpi('kpi-purple', '🔁', nbChgtClient, '', 'Changements de client', 'début chez le nouveau client dans la période', '_dashGo(\'chgt_client\');')
     +   kpi('kpi-green',  '🚀', nbStarters,   '', 'Starters',   'entrées effectives', '_dashGo(\'starters\');')
     +   kpi('kpi-red',    '🚪', nbSortants,   '', 'Sortants',   'fins de contrat de travail (tous types)', '_dashGo(\'sortants\');')
     +   kpi('kpi-orange', '⏸', nbFinMission, '', 'Fins de mission sans sortie', 'mission terminée, porté toujours chez Seven', '_dashGo(\'fin_mission\');')
@@ -10766,6 +10780,36 @@ function toggleSortieContratFields() {
 // Mission parallèle (27/10/2026) : un deal lié à son deal d'origine (type_deal = 'mission_parallele', parallele_de = id origine).
 // Exclu des placements / starters du Dashboard, des commissions (manuelles) et des Entrées du mois ;
 // PE, cooptation, visite médicale et titre de séjour sont portés par l'origine. Compté dans le CA et les Frais.
+// ═══ Suivi RH — croisements Sortants / Impayés / Salaires bloqués (03/11/2026) ═══
+// Clé personne depuis un « Prénom Nom » (impayés, salaires bloqués) ou un couple prénom/nom.
+function _rhKey(prenom, nom) {
+  if (nom === undefined) { var np = (typeof _splitFullName === 'function') ? _splitFullName(prenom || '') : { prenom: '', nom: prenom || '' }; prenom = np.prenom; nom = np.nom; }
+  return (typeof _personKey === 'function') ? _personKey(prenom, nom) : String((prenom || '') + ' ' + (nom || '')).trim().toLowerCase();
+}
+// Index « sortant » : fiche Sortant existante (Suivi RH › Sortants) ou deal « Sorti des effectifs ».
+function _rhSortantIndex() {
+  var ix = {};
+  try { getSortants().forEach(function(st){ if (!st) return; var k = _rhKey(st.prenom, st.nom); if (k) ix[k] = ix[k] || 'fiche sortant' + (st.fin_mission ? ' (fin de mission ' + String(st.fin_mission).slice(0, 10).split('-').reverse().join('/') + ')' : ''); }); } catch(e) {}
+  try { getDeals().forEach(function(d){ if (!d || d._deleted || d.etat !== 'Sorti des effectifs') return; var k = _rhKey(d.prenom, d.nom); if (k && !ix[k]) ix[k] = 'deal « Sorti des effectifs »' + (d.date_sortie ? ' le ' + String(d.date_sortie).slice(0, 10).split('-').reverse().join('/') : ''); }); } catch(e) {}
+  return ix;
+}
+function _rhSortantInfo(nomComplet, ix) {
+  ix = ix || _rhSortantIndex();
+  var k = _rhKey(nomComplet); var m = k ? ix[k] : null;
+  return { oui: !!m, motif: m || 'ni fiche sortant, ni deal sorti des effectifs' };
+}
+function _rhSortantBadge(nomComplet, ix) {
+  var i = _rhSortantInfo(nomComplet, ix);
+  return '<span title="' + String(i.motif).replace(/"/g, '&quot;') + '" style="display:inline-block;padding:2px 9px;border-radius:10px;font-size:10.5px;font-weight:700;background:' + (i.oui ? '#FDECEC' : '#F5F3FF') + ';color:' + (i.oui ? '#C24141' : '#9E94C4') + ';">' + (i.oui ? 'Oui' : 'Non') + '</span>';
+}
+// Factures impayées (non payées, clients exclus retirés) par personne → { key: [impayés] }
+function _rhImpayesIndex() {
+  var ix = {}, excl = [];
+  try { excl = (_sbGetExclusions().clients || []).map(function(c){ return _sbNormClient(c); }); } catch(e) {}
+  try { getImpayes().forEach(function(r){ if (!r || r.statut === 'paye') return; try { if (excl.indexOf(_sbNormClient(r.client)) >= 0) return; } catch(e) {} var k = _rhKey(r.consultant); if (!k) return; (ix[k] = ix[k] || []).push(r); }); } catch(e) {}
+  return ix;
+}
+function _rhImpayesCount(prenom, nom, ix) { ix = ix || _rhImpayesIndex(); var l = ix[_rhKey(prenom, nom)]; return l ? l.length : 0; }
 function _isMPDeal(d) { return !!(d && d.type_deal === 'mission_parallele'); }
 function _mpSiblings(deal, deals) {
   // les missions parallèles rattachées à un deal (ou à l'origine d'une mission parallèle)
@@ -11436,7 +11480,7 @@ function renderDeals() {
         if (dealFilterEtat !== '__all__' && dealFilterEtat !== '__standby__' && dealFilterEtat !== '__parallele__' && d.etat !== dealFilterEtat) return false;
         if (dealFilterComm === '__mine__') { if (_myN && !(typeof _sameCommercial === 'function' ? _sameCommercial(d.commercial, _myN) : (d.commercial||'').trim().toLowerCase() === _myN.toLowerCase())) return false; }
         else if (dealFilterComm !== '__all__' && !(typeof _sameCommercial === 'function' ? _sameCommercial(d.commercial, dealFilterComm) : (d.commercial||'') === dealFilterComm)) return false;
-        return _mDeals ? _dealMonthKey(d.date_deal) === _mDeals : true;
+        return _mDeals ? _dealMonthKey(_chgtClientRefIso(d)) === _mDeals : true;   // mois du début chez le nouveau client (27/10/2026)
       }).length;
     } catch(e) {}
     var _cEl = document.getElementById('deal-counter');
@@ -18986,6 +19030,15 @@ function renderEntrees() {
   _stickyTable(el.querySelector('table.entrees-table'), 5, 'calc(100vh - 300px)');
 }
 
+function _entreesFichesRSelect(d) {
+  var manual = (d.fiches_r !== undefined && d.fiches_r !== null && d.fiches_r !== '') ? d.fiches_r : null;
+  var hasDoc = (typeof _candHasDoc === 'function' && typeof _dealCandidat === 'function') ? _candHasDoc(_dealCandidat(d), 'fiche_renseignement') : false;
+  var current = hasDoc ? 'Oui' : (manual != null ? manual : 'Non');
+  var bg = current === 'Oui' ? '#1D9E75' : '#E24B4A';
+  if (hasDoc) return '<span title="Fiche de renseignement chargée dans les documents du candidat" style="display:inline-block;padding:3px 10px;border-radius:6px;background:' + bg + ';color:#fff;font-size:10.5px;font-weight:700;">Oui 📎</span>';
+  var opts = ['Oui', 'Non'].map(function(o){ return '<option value="' + o + '"' + (o === current ? ' selected' : '') + '>' + o + '</option>'; }).join('');
+  return '<select onchange="updateDealField(' + d.id + ',\'fiches_r\',this.value);setTimeout(renderEntrees,50);" title="' + (manual != null ? 'Valeur saisie à la main' : 'Aucune fiche de renseignement dans les documents du candidat — à saisir') + '" style="padding:4px 6px;border-radius:5px;border:1px solid #E4E0FA;font-size:11px;font-weight:700;background:' + bg + ';color:#fff;cursor:pointer;font-family:inherit;">' + opts + '</select>';
+}
 function buildEntreesContent() {
   var portes = getPortesDemarrantDansMois(entreesCurrentMois);
 
@@ -19150,6 +19203,7 @@ function buildEntreesContent() {
     +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Mail manager</th>'
     +         '<th style="padding:11px 8px;text-align:left;color:#4B36EC;font-weight:700;">Commentaire</th>'
     +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Signature contrat</th>'
+    +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;" title="Oui automatiquement si une « Fiche de renseignement » est chargée dans les documents du candidat ; sinon à saisir">Fiche renseign.</th>'
     +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">Mutuelle</th>'
     +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;">SWILE</th>'
     +         '<th style="padding:11px 8px;text-align:center;color:#4B36EC;font-weight:700;" title="Carte Swile activée ?">Carte Swile</th>'
@@ -19303,6 +19357,8 @@ function buildEntreeRow(item) {
     +     '<option value="Oui"' + (signatureOui ? ' selected' : '') + '>Oui</option>'
     +   '</select>'
     + '</td>'
+    // 13b. Fiche de renseignement reçue : auto (document chargé) ou manuel — même champ que la colonne « Fiches R » du tableau des deals
+    + '<td style="padding:6px 6px;text-align:center;">' + _entreesFichesRSelect(deal) + '</td>'
     // 14. Mutuelle
     + '<td style="padding:9px 8px;text-align:center;">'
     +   '<select onchange="updateDemarrageField(' + dealId + ',\'mutuelle\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:#fff;">'
@@ -24168,8 +24224,9 @@ function renderSalairesBloques() {
   if (!list.length) {
     h += '<div style="text-align:center;padding:50px 20px;color:#9E94C4;font-size:14px;">Aucune entrée pour ce filtre.</div>';
   } else {
+    var _sbSortIx = _rhSortantIndex();   // colonne Sortant (03/11/2026)
     h += '<div style="overflow-x:auto;"><table class="sb-table"><thead><tr>'
-      + '<th>Consultant</th><th>Client</th><th>Manager</th><th>Commercial</th><th>Banque</th><th>Email relance</th>'
+      + '<th>Consultant</th><th title="Fiche sortant existante ou deal sorti des effectifs">Sortant</th><th>Client</th><th>Manager</th><th>Commercial</th><th>Banque</th><th>Email relance</th>'
       + '<th>Fact. échues</th><th>Statut</th><th>Blocage</th><th>Déblocage</th><th>Hist.</th><th></th>'
       + '</tr></thead><tbody>';
     list.forEach(function(e){
@@ -24213,6 +24270,7 @@ function renderSalairesBloques() {
       if (_sbIsManualLocked(e) || e.manual_override) action += ' <button class="sb-btn" title="Effacer le blocage/déblocage manuel et laisser le moteur recalculer selon les factures échues" onclick="_sbResetManual(\'' + e.id + '\')">\u21BA Auto</button>';
       h += '<tr' + rowCls + '>'
         + '<td style="font-weight:700;color:#1A1033;">' + consHtml + (e.origine==='manuel'?' <span title="Blocage manuel" style="font-size:10px;color:#B58A00;">\u270B</span>':'') + '</td>'
+        + '<td style="text-align:center;">' + _rhSortantBadge(e.consultant, _sbSortIx) + '</td>'
         + '<td>' + clientHtml + '</td>'
         + '<td>' + mgr + '</td>'
         + '<td>' + _sbEsc(e.commercial || '—') + '</td>'
@@ -24738,6 +24796,7 @@ function buildImpayesContent() {
     else if (cls === 'red') pillCount90++;
   });
 
+  var _impSortIx = _rhSortantIndex();   // colonne Sortant (03/11/2026)
   // ── Tri configurable (modif #2) ──
   var sortCol = IMPAYES_FILTER.sort_col || 'retard';
   var sortDir = IMPAYES_FILTER.sort_dir || 'desc';
@@ -24764,6 +24823,9 @@ function buildImpayesContent() {
       case 'consultant':
         va = (a.consultant||'').toLowerCase(); vb = (b.consultant||'').toLowerCase();
         return va.localeCompare(vb, 'fr') * dirMul;
+      case 'sortant':
+        va = _rhSortantInfo(a.consultant, _impSortIx).oui ? 1 : 0; vb = _rhSortantInfo(b.consultant, _impSortIx).oui ? 1 : 0;
+        return (va - vb) * dirMul || (a.consultant||'').toLowerCase().localeCompare((b.consultant||'').toLowerCase(), 'fr');
       case 'commercial':
         va = (a.commercial||'').toLowerCase(); vb = (b.commercial||'').toLowerCase();
         return va.localeCompare(vb, 'fr') * dirMul;
@@ -25043,8 +25105,9 @@ function buildImpayesContent() {
     +   '<col style="width:6%">'     // HT
     +   '<col style="width:6%">'     // TTC
     +   '<col style="width:9%">'     // Banque
-    +   '<col style="width:10%">'    // Consultant
-    +   '<col style="width:8%">'     // Commercial
+    +   '<col style="width:9%">'     // Consultant
+    +   '<col style="width:5%">'     // Sortant
+    +   '<col style="width:7%">'     // Commercial
     +   '<col style="width:13%">'    // Contact compta
     +   '<col style="width:18%">'    // Commentaire
     + '</colgroup>'
@@ -25057,6 +25120,7 @@ function buildImpayesContent() {
     + _impSortableTh('ttc', 'TTC', 'right')
     + _impSortableTh('banque', 'Banque', 'left')
     + _impSortableTh('consultant', 'Consultant', 'left')
+    + _impSortableTh('sortant', 'Sortant', 'center')
     + _impSortableTh('commercial', 'Commercial', 'left')
     + '<th>Contact compta</th>'
     + '<th>Commentaire</th>'
@@ -25114,6 +25178,7 @@ function buildImpayesContent() {
       + '<td class="imp-amount nowrap" style="color:' + (cls==='red'?'#8A0A0A':(cls==='orange'?'#8A5F00':(cls==='green'?'#8A5F00':(cls==='notyet'?'#0F5132':'#1A1033')))) + ';font-weight:700;">' + _fmtImpayeEur(r.mt_ttc) + '</td>'
       + '<td style="font-size:10.5px;" title="' + (r.banque||'').replace(/"/g,'&quot;') + '">' + (r.banque || '—') + '</td>'
       + '<td title="' + (r.consultant||'').replace(/"/g,'&quot;') + '">' + (r.consultant || '') + '</td>'
+      + '<td style="text-align:center;">' + _rhSortantBadge(r.consultant, _impSortIx) + '</td>'
       + '<td title="' + (r.commercial||'').replace(/"/g,'&quot;') + '">' + (r.commercial || '') + '</td>'
       + '<td style="font-size:10.5px;" title="' + (comptaTxt + (comptaEmail?' • '+comptaEmail:'')).replace(/"/g,'&quot;') + '">' + comptaCell + '</td>'
       + '<td class="ccol">'
@@ -27719,6 +27784,8 @@ function renderSortants() {
   if (typeof f.month === 'undefined') f.month = '__all__';  // compat avec ancien state
   if (typeof f.cdi_year === 'undefined') f.cdi_year = '__all__';
   if (typeof f.cdi_month === 'undefined') f.cdi_month = '__all__';
+  if (typeof f.impayes === 'undefined') f.impayes = '__all__';
+  var _impIx = _rhImpayesIndex();   // factures impayées par porté (03/11/2026)
 
   // Valeurs distinctes
   var comms = {}, raisons = {}, types = {}, years = {}, cdiYears = {};
@@ -27782,6 +27849,12 @@ function renderSortants() {
       var q = f.search.toLowerCase();
       var hay = [(s.prenom||''), (s.nom||''), (s.entreprise||''), (s.commercial||'')].join(' ').toLowerCase();
       if (hay.indexOf(q) < 0) return false;
+    }
+    if (f.impayes !== '__all__') {
+      var _ni = _rhImpayesCount(s.prenom, s.nom, _impIx);
+      if (f.impayes === '2plus' && _ni < 2) return false;
+      if (f.impayes === '1plus' && _ni < 1) return false;
+      if (f.impayes === '0' && _ni > 0) return false;
     }
     return true;
   });
@@ -27873,6 +27946,14 @@ function renderSortants() {
     +     '<option value="Non"' + (f.fin_contrat==='Non'?' selected':'') + '>⚠️ Non (encore sous contrat)</option>'
     +   '</select>'
     + '</div>'
+    + '<div style="min-width:150px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Factures impayées</label>'
+    +   '<select class="comm-param-input" onchange="window._sortantsFilter.impayes=this.value;renderSortants();" style="cursor:pointer;">'
+    +     '<option value="__all__"' + (f.impayes==='__all__'?' selected':'') + '>Toutes</option>'
+    +     '<option value="2plus"' + (f.impayes==='2plus'?' selected':'') + '>🔴 2 factures ou plus</option>'
+    +     '<option value="1plus"' + (f.impayes==='1plus'?' selected':'') + '>Au moins 1 facture</option>'
+    +     '<option value="0"' + (f.impayes==='0'?' selected':'') + '>Aucune facture impayée</option>'
+    +   '</select>'
+    + '</div>'
     + '<div style="min-width:110px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Fin mission · Année</label>'
     +   '<select class="comm-param-input" onchange="window._sortantsFilter.year=this.value;renderSortants();" style="cursor:pointer;">' + yearOpts + '</select>'
     + '</div>'
@@ -27887,7 +27968,7 @@ function renderSortants() {
     + '</div>'
     + '<div style="display:flex;gap:6px;">'
     +   '<button onclick="exportSortantsCSV()" style="padding:9px 14px;background:#1D9E75;color:#fff;border:none;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">⬇ CSV</button>'
-    +   '<button onclick="window._sortantsFilter={commercial:\'__all__\',raison:\'__all__\',type:\'__all__\',fin_contrat:\'__all__\',year:\'__all__\',month:\'__all__\',cdi_year:\'__all__\',cdi_month:\'__all__\',search:\'\'};renderSortants();" style="padding:9px 14px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">↻</button>'
+    +   '<button onclick="window._sortantsFilter={commercial:\'__all__\',raison:\'__all__\',type:\'__all__\',fin_contrat:\'__all__\',year:\'__all__\',month:\'__all__\',cdi_year:\'__all__\',cdi_month:\'__all__\',impayes:\'__all__\',search:\'\'};renderSortants();" style="padding:9px 14px;background:#FFF5F5;color:#E24B4A;border:1.5px solid #FECACA;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">↻</button>'
     + '</div>'
     + '</div>';
 
@@ -27908,6 +27989,7 @@ function renderSortants() {
       +   '<th style="min-width:110px;">Prénom</th>'
       +   '<th style="min-width:110px;">Nom</th>'
       +   '<th style="min-width:140px;">Entreprise</th>'
+      +   '<th style="min-width:110px;text-align:center;" title="Factures non payées du porté (onglet Impayés, clients exclus retirés)">Fact. impayées</th>'
       +   '<th style="min-width:110px;">Fin mission</th>'
       +   '<th style="min-width:100px;">Fin CDI</th>'
       +   '<th style="min-width:120px;">Date fin CDI</th>'
@@ -27925,12 +28007,13 @@ function renderSortants() {
       var escId = s.id.replace(/'/g, "\\'");
       var finMissionDisplay = s.fin_mission ? new Date(s.fin_mission).toLocaleDateString('fr-FR') : '—';
       var dateFinCdiDisplay = s.date_fin_contrat ? new Date(s.date_fin_contrat).toLocaleDateString('fr-FR') : '—';
-      html += '<tr>'
+      html += '<tr' + (_rhImpayesCount(s.prenom, s.nom, _impIx) >= 2 ? ' style="background:#FFF1F1;"' : '') + '>'
         + '<td>' + (s.date_demande || '—') + '</td>'
         + '<td>' + (s.commercial || '—') + '</td>'
         + '<td style="font-weight:600;">' + (s.prenom || '—') + '</td>'
         + '<td style="font-weight:600;">' + (_NOMUC(s.nom) || '—') + '</td>'
         + '<td>' + (s.entreprise || '—') + '</td>'
+        + (function(){ var n = _rhImpayesCount(s.prenom, s.nom, _impIx); var l = _impIx[_rhKey(s.prenom, s.nom)] || []; var tip = l.map(function(r){ return (r.num_fact || '?') + ' · ' + (r.client || '') + ' · ' + (typeof _fmtImpayeEur === 'function' ? _fmtImpayeEur(r.mt_ttc) : (r.mt_ttc || '')); }).join('&#10;'); return '<td style="text-align:center;" title="' + tip.replace(/"/g, '&quot;') + '">' + (n >= 2 ? '<span style="display:inline-block;min-width:26px;padding:3px 9px;border-radius:10px;background:#E24B4A;color:#fff;font-weight:800;font-size:12px;">' + n + '</span>' : (n === 1 ? '<span style="display:inline-block;min-width:26px;padding:3px 9px;border-radius:10px;background:#FFF4D6;color:#8A5F00;font-weight:800;font-size:12px;">1</span>' : '<span style="color:#C0B8E0;">0</span>')) + '</td>'; })()
         + '<td>' + finMissionDisplay + '</td>'
         + '<td>' + renderSortantBadge(s.fin_contrat_travail) + '</td>'
         + '<td>' + dateFinCdiDisplay + '</td>'
@@ -39038,6 +39121,8 @@ function getDealReferenceDate(deal) {
     var _dm = new Date(deal.date_deal);
     if (!isNaN(_dm.getTime())) return _dm;
   }
+  // Changement de client (27/10/2026) : mois du début chez le nouveau client.
+  if (deal && deal.prolongation_avenant) { var _cr = _chgtClientRefDate(deal); if (_cr) return _cr; }
   // OPTION A (décision 08/2026) : la DATE DU DEAL fait foi pour le mois de rattachement.
   // (Ancienne règle supprimée : date du plus ancien document du candidat — elle rattachait
   //  le 2e placement d'un candidat au mois du 1er, et un deal signé en août au mois du dossier.)
@@ -39606,7 +39691,7 @@ function renderCommCurrentView() {
         + '<div class="comm-card-title"><span class="comm-card-title-dot" style="background:#F0A500;"></span><span>&#128257; Changements de client non compt\u00e9s (placement pr\u00e9c\u00e9dent de moins de 3 mois)</span></div>'
         + '<div style="font-size:12.5px;color:#1A1033;line-height:1.7;">'
         + _att.map(function(x){ var d = x.deal; return '<div>&bull; <strong>' + ((d.prenom||'') + ' ' + (d.nom||'')).trim() + '</strong> \u2192 ' + (d.entreprise||'?') + ' : ' + x.statut.motif + '</div>'; }).join('')
-        + '<div style="margin-top:6px;font-size:11.5px;color:#8A5F00;">Un changement de client compte comme un deal du mois de l\u2019avenant si le placement pr\u00e9c\u00e9dent (chez l\u2019ancien client) a dur\u00e9 au moins 3 mois.</div>'
+        + '<div style="margin-top:6px;font-size:11.5px;color:#8A5F00;">Un changement de client compte comme un deal du mois du <b>d\u00e9but chez le nouveau client</b> si le placement pr\u00e9c\u00e9dent (chez l\u2019ancien client) a dur\u00e9 au moins 3 mois.</div>'
         + '</div></div>';
     }
   } catch(e) {}
@@ -41180,6 +41265,86 @@ function renderParamsMPMigrationAccordion() {
   var el = document.getElementById('params-mp-migration-content');
   if (el) { try { el.innerHTML = buildMPMigrationCard(); } catch(e) { el.innerHTML = '<div style="color:#B42318;">Erreur : ' + String(e.message || e).replace(/</g,'&lt;') + '</div>'; } }
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+// SUIVI RH — tri alphabétique par clic sur n'importe quel en-tête (03/11/2026)
+// S'applique à tous les tableaux des sous-onglets (Nom, Prénom, Société, dates, montants…).
+// Les en-têtes qui ont déjà leur propre tri (tableau des deals, impayés, Entrées Nom/Date) sont laissés tels quels.
+// Le tri est mémorisé par tableau (sous-onglet + en-têtes) et ré-appliqué à chaque rafraîchissement.
+// ═══════════════════════════════════════════════════════════════════
+var _rhSortState = {}, _rhSorting = false, _rhSortTimer = null;
+function _rhSortSig(table) {
+  var ths = table.querySelectorAll('thead th');
+  var txt = Array.prototype.map.call(ths, function(th){ return (th.textContent || '').replace(/[▲▼⇅]/g, '').trim().slice(0, 24); }).join('|');
+  return (typeof currentRHSubTab !== 'undefined' ? currentRHSubTab : '') + '#' + txt;
+}
+function _rhCellKey(td) {
+  var t = (td ? (td.textContent || '') : '').replace(/\s+/g, ' ').trim();
+  var inp = td ? td.querySelector('input,select') : null;
+  if (inp) { if (inp.tagName === 'SELECT') { var o = inp.options[inp.selectedIndex]; t = o ? (o.textContent || '').trim() : ''; } else t = (inp.value || '').trim(); }
+  var m = t.match(/^(\d{1,2})\/(\d{2})\/(\d{4})/); if (m) return { n: new Date(+m[3], +m[2] - 1, +m[1]).getTime(), s: t.toLowerCase() };
+  var num = t.replace(/[€%\s ]/g, '').replace(',', '.'); if (num !== '' && num !== '—' && num !== '-' && /^[-+]?\d+(\.\d+)?$/.test(num)) return { n: parseFloat(num), s: t.toLowerCase() };
+  if (!t || t === '—' || t === '-') return { n: null, s: '' };
+  return { n: null, s: t.toLowerCase() };
+}
+function _rhSortTable(table, idx, dir) {
+  var tbody = table.tBodies[0]; if (!tbody) return;
+  var nCols = table.querySelectorAll('thead th').length;
+  var rows = Array.prototype.slice.call(tbody.rows), groups = [], cur = null;
+  rows.forEach(function(r){
+    var isHead = r.cells.length >= Math.max(1, nCols - 3) && !/detail|sub|expand|child/i.test(r.className || '');
+    if (isHead || !cur) { cur = { row: r, extra: [], key: _rhCellKey(r.cells[idx]) }; groups.push(cur); } else cur.extra.push(r);
+  });
+  var mul = dir === 'desc' ? -1 : 1;
+  groups.forEach(function(g, i){ g.i = i; });
+  groups.sort(function(a, b){
+    var ka = a.key, kb = b.key, c = 0;
+    if (ka.s === '' && kb.s !== '') return 1; if (kb.s === '' && ka.s !== '') return -1;   // vides en fin
+    if (ka.n != null && kb.n != null) c = ka.n - kb.n; else c = ka.s.localeCompare(kb.s, 'fr', { numeric: true, sensitivity: 'base' });
+    return (c * mul) || (a.i - b.i);
+  });
+  _rhSorting = true;
+  try { groups.forEach(function(g){ tbody.appendChild(g.row); g.extra.forEach(function(x){ tbody.appendChild(x); }); }); } finally { setTimeout(function(){ _rhSorting = false; }, 0); }
+  Array.prototype.forEach.call(table.querySelectorAll('thead th .rh-sort-ind'), function(sp){ sp.textContent = sp.getAttribute('data-idle') || ' ⇅'; sp.style.opacity = '.35'; });
+  var th = table.querySelectorAll('thead th')[idx], ind = th && th.querySelector('.rh-sort-ind');
+  if (ind) { ind.textContent = dir === 'desc' ? ' ▼' : ' ▲'; ind.style.opacity = '1'; }
+}
+function _rhInstallSort(root) {
+  root = root || document.getElementById('tab-deals'); if (!root) return;
+  Array.prototype.forEach.call(root.querySelectorAll('table'), function(table){
+    if (!table.tHead || !table.tBodies[0] || table.tBodies[0].rows.length < 2) return;
+    var ths = table.querySelectorAll('thead th'); if (!ths.length) return;
+    var sig = _rhSortSig(table);
+    if (!table.getAttribute('data-rh-sort')) {
+      table.setAttribute('data-rh-sort', '1');
+      Array.prototype.forEach.call(ths, function(th, idx){
+        if (th.getAttribute('onclick') || th.onclick || !(th.textContent || '').trim() || th.querySelector('input,select,button')) return;
+        th.style.cursor = 'pointer'; th.style.userSelect = 'none'; th.title = (th.title ? th.title + ' — ' : '') + 'Cliquer pour trier';
+        var ind = document.createElement('span'); ind.className = 'rh-sort-ind'; ind.textContent = ' ⇅'; ind.style.cssText = 'font-size:9px;opacity:.35;'; th.appendChild(ind);
+        th.addEventListener('click', function(ev){
+          ev.stopPropagation();
+          var st = _rhSortState[sig]; var dir = (st && st.idx === idx && st.dir === 'asc') ? 'desc' : 'asc';
+          _rhSortState[sig] = { idx: idx, dir: dir }; _rhSortTable(table, idx, dir);
+          table.setAttribute('data-rh-sorted-' + table.tBodies[0].rows.length, '1');
+        });
+      });
+    }
+    var st = _rhSortState[sig];
+    if (st && ths[st.idx] && !table.getAttribute('data-rh-sorted-' + table.tBodies[0].rows.length)) {
+      table.setAttribute('data-rh-sorted-' + table.tBodies[0].rows.length, '1');
+      _rhSortTable(table, st.idx, st.dir);
+    }
+  });
+}
+(function(){
+  function boot(){
+    var root = document.getElementById('tab-deals'); if (!root || !window.MutationObserver) return;
+    var mo = new MutationObserver(function(){ if (_rhSortTimer) clearTimeout(_rhSortTimer); _rhSortTimer = setTimeout(function(){ _rhSortTimer = null; try { _rhInstallSort(root); } catch(e) { console.warn('[rhSort]', e); } }, 80); });
+    mo.observe(root, { childList: true, subtree: true });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
 
 </script>
 <!-- ═══ MODAL ENVOI ═══ -->
