@@ -3784,8 +3784,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.07.09c';
-  window.APP_BUILD = 2026070912;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  window.APP_VERSION = 'v2026.07.09f';
+  window.APP_BUILD = 2026070915;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
   // Notification de nouvelle version : détection DIRECTE du déploiement (ETag/Last-Modified
   // du fichier servi par Netlify) + repli OneDrive. Ne dépend plus qu'un autre poste "publie".
   try {
@@ -10806,7 +10806,8 @@ function _rhSortantBadge(nomComplet, ix) {
 function _rhImpayesIndex() {
   var ix = {}, excl = [];
   try { excl = (_sbGetExclusions().clients || []).map(function(c){ return _sbNormClient(c); }); } catch(e) {}
-  try { getImpayes().forEach(function(r){ if (!r || r.statut === 'paye') return; try { if (excl.indexOf(_sbNormClient(r.client)) >= 0) return; } catch(e) {} var k = _rhKey(r.consultant); if (!k) return; (ix[k] = ix[k] || []).push(r); }); } catch(e) {}
+  // 04/11/2026 : seules les factures ARRIVÉES À ÉCHÉANCE comptent (échéance dépassée ou le jour même) — pas celles à venir
+  try { getImpayes().forEach(function(r){ if (!r || r.statut === 'paye') return; var dj = _daysSinceEcheance(r.date_echeance); if (dj === null || dj < 0) return; try { if (excl.indexOf(_sbNormClient(r.client)) >= 0) return; } catch(e) {} var k = _rhKey(r.consultant); if (!k) return; (ix[k] = ix[k] || []).push(r); }); } catch(e) {}
   return ix;
 }
 function _rhImpayesCount(prenom, nom, ix) { ix = ix || _rhImpayesIndex(); var l = ix[_rhKey(prenom, nom)]; return l ? l.length : 0; }
@@ -12993,7 +12994,10 @@ function _dealVMSelect(d, vmField) {
 }
 function _dealFichesRSelect(d) {
   var manual = (d.fiches_r !== undefined && d.fiches_r !== null && d.fiches_r !== '') ? d.fiches_r : null;
-  var auto = _candHasDoc(_dealCandidat(d), 'fiche_renseignement') ? 'Oui' : 'Non';
+  var hasDoc = _candHasDoc(_dealCandidat(d), 'fiche_renseignement');
+  var auto = hasDoc ? 'Oui' : 'Non';
+  // 03/11/2026 : document chargé dans la fiche candidat → Oui, quoi qu'ait été saisi à la main (même règle que « Entrées du mois »)
+  if (hasDoc) return '<span title="Fiche de renseignement chargée dans les documents du candidat" style="display:inline-block;padding:2px 8px;border-radius:5px;background:#1D9E75;color:#fff;font-size:10px;font-weight:700;">Oui 📎</span>';
   var current = manual != null ? manual : auto;
   var bg = current==='Oui' ? '#1D9E75' : '#E24B4A';
   var opts = ['Oui','Non'].map(function(o){ return '<option value="'+o+'"'+(o===current?' selected':'')+'>'+o+'</option>'; }).join('');
@@ -27928,7 +27932,7 @@ function renderSortants() {
   // Filtres
   html += '<div class="comm-card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'
     + '<div style="flex:2;min-width:200px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Recherche</label>'
-    +   '<input type="text" placeholder="Nom, prénom, entreprise…" value="' + (f.search||'').replace(/"/g,'&quot;') + '" oninput="window._sortantsFilter.search=this.value;renderSortants();" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    +   '<input type="text" placeholder="Nom, prénom, entreprise…" value="' + (f.search||'').replace(/"/g,'&quot;') + '" id="sortants-search-input" oninput="window._sortantsFilter.search=this.value;_debounceSearchRefocus(\'sortants\', renderSortants, \'sortants-search-input\');" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
     + '</div>'
     + '<div style="flex:1;min-width:150px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Commercial</label>'
     +   '<select class="comm-param-input" onchange="window._sortantsFilter.commercial=this.value;renderSortants();" style="cursor:pointer;">' + commOpts + '</select>'
@@ -27989,7 +27993,7 @@ function renderSortants() {
       +   '<th style="min-width:110px;">Prénom</th>'
       +   '<th style="min-width:110px;">Nom</th>'
       +   '<th style="min-width:140px;">Entreprise</th>'
-      +   '<th style="min-width:110px;text-align:center;" title="Factures non payées du porté (onglet Impayés, clients exclus retirés)">Fact. impayées</th>'
+      +   '<th style="min-width:110px;text-align:center;" title="Factures échues non payées du porté (onglet Impayés, clients exclus retirés ; les factures pas encore à échéance ne comptent pas)">Fact. échues impayées</th>'
       +   '<th style="min-width:110px;">Fin mission</th>'
       +   '<th style="min-width:100px;">Fin CDI</th>'
       +   '<th style="min-width:120px;">Date fin CDI</th>'
@@ -29955,7 +29959,7 @@ function renderAvances() {
   // Filtres
   html += '<div class="comm-card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'
     + '<div style="flex:2;min-width:200px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Recherche</label>'
-    +   '<input type="text" placeholder="Nom, commercial, modalité, commentaire..." value="' + (f.search||'').replace(/"/g,'&quot;') + '" oninput="window._avancesFilter.search=this.value;renderAvances();" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
+    +   '<input type="text" placeholder="Nom, commercial, modalité, commentaire..." value="' + (f.search||'').replace(/"/g,'&quot;') + '" id="avances-search-input" oninput="window._avancesFilter.search=this.value;_debounceSearchRefocus(\'avances\', renderAvances, \'avances-search-input\');" style="width:100%;padding:8px 11px;border:1.5px solid #E4E0FA;border-radius:8px;font-size:12.5px;box-sizing:border-box;font-family:inherit;">'
     + '</div>'
     + '<div style="min-width:150px;"><label style="font-size:10px;font-weight:700;color:#6B5E9C;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:0.06em;">Statut</label>'
     +   '<select class="comm-param-input" onchange="window._avancesFilter.statut=this.value;renderAvances();" style="cursor:pointer;">'
@@ -41319,7 +41323,8 @@ function _rhInstallSort(root) {
     if (!table.getAttribute('data-rh-sort')) {
       table.setAttribute('data-rh-sort', '1');
       Array.prototype.forEach.call(ths, function(th, idx){
-        if (th.getAttribute('onclick') || th.onclick || !(th.textContent || '').trim() || th.querySelector('input,select,button')) return;
+        if (th.getAttribute('onclick') || th.onclick) { th.addEventListener('click', function(){ delete _rhSortState[sig]; }, true); return; }   // tri natif : prioritaire
+        if (!(th.textContent || '').trim() || th.querySelector('input,select,button')) return;
         th.style.cursor = 'pointer'; th.style.userSelect = 'none'; th.title = (th.title ? th.title + ' — ' : '') + 'Cliquer pour trier';
         var ind = document.createElement('span'); ind.className = 'rh-sort-ind'; ind.textContent = ' ⇅'; ind.style.cssText = 'font-size:9px;opacity:.35;'; th.appendChild(ind);
         th.addEventListener('click', function(ev){
