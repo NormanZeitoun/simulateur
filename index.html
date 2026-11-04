@@ -3784,8 +3784,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.07.09f';
-  window.APP_BUILD = 2026070915;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  window.APP_VERSION = 'v2026.07.09g';
+  window.APP_BUILD = 2026070916;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
   // Notification de nouvelle version : détection DIRECTE du déploiement (ETag/Last-Modified
   // du fichier servi par Netlify) + repli OneDrive. Ne dépend plus qu'un autre poste "publie".
   try {
@@ -4152,8 +4152,18 @@ document.addEventListener('click', function(e) {
 // ═══════════════════════════════════════════════════════════
 var currentDest = 'candidat';
 
+function _envoiRefreshLabel(v) {
+  var lab = document.getElementById('envoi-email-label'), inp = document.getElementById('envoi-email');
+  if (lab) lab.innerHTML = (v === 'client' ? 'Email client' : 'Email candidat') + ' <span style="color:#E24B4A">*</span>';
+  if (inp) inp.placeholder = (v === 'client' ? 'client@entreprise.fr' : 'candidat@exemple.fr');
+  var ent = document.getElementById('envoi-entreprise-row');
+  if (ent) ent.style.display = (v === 'client' || v === 'les_deux') ? 'block' : 'none';
+  var entIn = document.getElementById('envoi-entreprise'); var simEnt = document.getElementById('entreprise');
+  if (entIn && simEnt && ent && ent.style.display === 'block') entIn.value = simEnt.value || '';
+}
 function setDest(v) {
   currentDest = v;
+  _envoiRefreshLabel(v);
   // Afficher champ email client si les_deux
   var ecr = document.getElementById('envoi-email-client-row');
   if (ecr) ecr.style.display = v === 'les_deux' ? 'block' : 'none';
@@ -4207,6 +4217,7 @@ function openEnvoiModal() {
     if (emailClientInput) emailClientInput.value = emailClient || '';
   }
   document.getElementById('envoi-warning').style.display = 'none';
+  _envoiRefreshLabel(currentDest);
   openModal('modal-envoi');
 }
 
@@ -4459,6 +4470,16 @@ function doEnvoi() {
     warn.textContent = 'Veuillez saisir l\'email client.';
     warn.style.display = 'block';
     return;
+  }
+  // 04/11/2026 : envoi au client → l'entreprise est obligatoire (c'est elle qui rattache la simulation à la fiche client)
+  // et l'adresse saisie dans le popup est reportée dans le simulateur (email_client) pour créer / compléter le manager.
+  if (currentDest === 'client' || currentDest === 'les_deux') {
+    var _entIn = document.getElementById('envoi-entreprise');
+    var _entVal = _entIn ? _entIn.value.trim() : '';
+    if (!_entVal) { warn.textContent = 'Veuillez saisir l\'entreprise cliente (la simulation est enregistrée sous cette fiche).'; warn.style.display = 'block'; return; }
+    var _simEnt = document.getElementById('entreprise'); if (_simEnt && _simEnt.value.trim() !== _entVal) { _simEnt.value = _entVal; }
+    var _clientMail = currentDest === 'client' ? email : emailClient;
+    var _simEc = document.getElementById('email_client'); if (_simEc && _clientMail && !_simEc.value.trim()) _simEc.value = _clientMail;
   }
 
   var data = getSimData();
@@ -41369,8 +41390,13 @@ function _rhInstallSort(root) {
         </div>
       </div>
       <div style="margin-bottom:14px;">
-        <label style="display:block;font-size:12px;color:#6B5E9C;font-weight:600;margin-bottom:4px;">Email candidat <span style="color:#E24B4A">*</span></label>
+        <label id="envoi-email-label" style="display:block;font-size:12px;color:#6B5E9C;font-weight:600;margin-bottom:4px;">Email candidat <span style="color:#E24B4A">*</span></label>
         <input id="envoi-email" type="email" placeholder="candidat@exemple.fr" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;">
+        <div id="envoi-entreprise-row" style="display:none;margin-top:8px;">
+          <label style="display:block;font-size:12px;color:#6B5E9C;font-weight:600;margin-bottom:4px;">Entreprise cliente <span style="color:#E24B4A">*</span></label>
+          <input id="envoi-entreprise" type="text" placeholder="Nom du client (fiche Clients)" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;">
+          <div style="font-size:10.5px;color:#9E94C4;margin-top:3px;">La simulation est enregistrée sous cette fiche client (créée si elle n'existe pas).</div>
+        </div>
         <div id="envoi-email-client-row" style="display:none;margin-top:8px;">
           <label style="display:block;font-size:12px;color:#6B5E9C;font-weight:600;margin-bottom:4px;">Email client <span style="color:#E24B4A">*</span></label>
           <input id="envoi-email-client" type="email" placeholder="client@entreprise.fr" style="width:100%;padding:8px 10px;border:1.5px solid #E4E0FA;border-radius:7px;font-size:13px;box-sizing:border-box;">
