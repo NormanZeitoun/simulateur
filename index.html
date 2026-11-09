@@ -3784,8 +3784,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.07.09k';
-  window.APP_BUILD = 2026070920;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  window.APP_VERSION = 'v2026.07.09l';
+  window.APP_BUILD = 2026070921;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
   // Notification de nouvelle version : détection DIRECTE du déploiement (ETag/Last-Modified
   // du fichier servi par Netlify) + repli OneDrive. Ne dépend plus qu'un autre poste "publie".
   try {
@@ -32050,6 +32050,10 @@ function mergeCandidats(remote) {
         if (typeof isTombstoned === 'function' && isTombstoned('simulations', s.timestamp)) return;
         if (!tsSet[s.timestamp]) sims.push(s);
       });
+      // 09/11/2026 : simulations DÉTACHÉES d'une fiche (rattachement erroné corrigé) — liste `sims_detachees`
+      // fusionnée en union, et retirée de la liste finale ; sinon l'union ci-dessus les ramenait à chaque synchro.
+      var _det = {}; (localMatch.sims_detachees || []).concat(rc.sims_detachees || []).forEach(function(t){ _det[String(t)] = 1; });
+      if (Object.keys(_det).length) { localMatch.sims_detachees = Object.keys(_det).map(Number); sims = sims.filter(function(s){ return !_det[String(s.timestamp)]; }); }
       sims.sort(function(a,b){ return (b.timestamp||0)-(a.timestamp||0); });
       localMatch.simulations = sims;
       // ── Fusion des TAGS (union insensible à la casse ; partage entre postes) ──
