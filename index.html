@@ -3784,8 +3784,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.07.09g';
-  window.APP_BUILD = 2026070916;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  window.APP_VERSION = 'v2026.07.09k';
+  window.APP_BUILD = 2026070920;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
   // Notification de nouvelle version : détection DIRECTE du déploiement (ETag/Last-Modified
   // du fichier servi par Netlify) + repli OneDrive. Ne dépend plus qu'un autre poste "publie".
   try {
@@ -4473,6 +4473,9 @@ function doEnvoi() {
   }
   // 04/11/2026 : envoi au client → l'entreprise est obligatoire (c'est elle qui rattache la simulation à la fiche client)
   // et l'adresse saisie dans le popup est reportée dans le simulateur (email_client) pour créer / compléter le manager.
+  if (currentDest === 'candidat' || currentDest === 'les_deux') {   // 09/11/2026 : l'email candidat du popup = email de la fiche candidat
+    var _simEm = document.getElementById('email'); if (_simEm && email && !_simEm.value.trim()) _simEm.value = email;
+  }
   if (currentDest === 'client' || currentDest === 'les_deux') {
     var _entIn = document.getElementById('envoi-entreprise');
     var _entVal = _entIn ? _entIn.value.trim() : '';
@@ -12481,7 +12484,7 @@ function getCellValue(d, key){
   var fmt=function(v){ return (v===null||v===undefined||v==='') ? '—' : String(v); };
   switch(key){
     case 'etat': if (d.stand_by) return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:#7343EE;white-space:nowrap;">\u23f8 Stand by</span>'; var co=ETAT_COLORS[d.etat]||'#6B5E9C'; var _mpB = (typeof _isMPDeal === 'function' && _isMPDeal(d)) ? (function(){ var o = null; try { o = getDeals().find(function(x){ return x && String(x.id) === String(d.parallele_de); }); } catch(e){} return ' <span title="2\u00e8me mission en parall\u00e8le' + (o ? ' de ' + String(o.entreprise||'').replace(/"/g,'&quot;') : '') + '" style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:800;color:#fff;background:#1A4F96;white-space:nowrap;">Mission parall\u00e8le</span>'; })() : ''; return '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:'+co+';white-space:nowrap;">'+(d.etat||'—')+'</span>' + _mpB;
-    case 'candidat': return '<span onclick="event.stopPropagation();openCandidatByEmail(\''+(d.email||'')+'\')" style="font-weight:600;color:#7343EE;cursor:pointer;text-decoration:underline;" title="Voir la fiche candidat">'+(d.prenom||'')+' '+_NOMUC(d.nom)+'</span>';
+    case 'candidat': return '<span onclick="event.stopPropagation();openCandidatByEmail(\''+String(d.email||'').replace(/'/g,'')+'\', \''+String((d.prenom||'')+' '+(d.nom||'')).replace(/'/g,' ')+'\')" style="font-weight:600;color:#7343EE;cursor:pointer;text-decoration:underline;" title="Voir la fiche candidat">'+(d.prenom||'')+' '+_NOMUC(d.nom)+'</span>';
     case 'email': return fmt(d.email);
     case 'tel': return fmt(d.tel);
     case 'poste': return fmt(d.poste);
@@ -13148,6 +13151,9 @@ function updateDealField(dealId, key, value) {
   var _triggerKeys = _isPC
     ? (key === 'signature_cdps' || key === 'contrat_client')
     : (key === 'signature_cdps' || key === 'signature_contrat_travail');
+  if (key === 'signature_contrat_travail') {   // miroir vers « Signature contrat » des Entrées du mois (05/11/2026)
+    try { var _dm = getDemarrages(), _dmi = _dm.findIndex(function(a){ return String(a.deal_id) === String(dealId); }); if (_dmi >= 0 && String(_dm[_dmi].signature_contrat || '') !== String(value || '')) { _dm[_dmi].signature_contrat = value || ''; _dm[_dmi].updated_ts = Date.now(); if (typeof saveDemarrages === 'function') saveDemarrages(_dm); } } catch(e) {}
+  }
   if (_triggerKeys) {
     var currentEtat = deals[idx].etat || '';
     if (currentEtat !== 'Annulé' && currentEtat !== 'Sorti des effectifs' && currentEtat !== 'Fin de mission') {
@@ -13814,10 +13820,14 @@ function _findCandidatIdx(cands, entry) {
   }
   // 1bis) Match par TÉLÉPHONE (>=8 chiffres) + contrôle nom. Évite les doublons quand l'email
   //       candidat diffère, est vide, ou a été pollué par un email CLIENT (cas Mohamed/Fineisel).
+  // 09/11/2026 : garde-fou EMAIL — si la simu porte un email candidat et que la fiche a un AUTRE email,
+  // ce n'est pas la même personne (cas Yahyaoui rattaché à la fiche « Mohamed » de Benhamouda via le téléphone).
+  var _otherEmail = function(c){ var ce = (c.email || '').trim().toLowerCase(); return !!(email && ce && ce !== email); };
   var _telN = (entry.tel || '').toString().replace(/[\s.\-+()]/g, '');
   if (_telN.length >= 8) {
     var _np0 = _splitFullName(entry.consultant);
     var byTel = cands.findIndex(function(c){
+      if (_otherEmail(c)) return false;
       var ctel = (c.tel || '').toString().replace(/[\s.\-+()]/g, '');
       if (ctel !== _telN) return false;
       var cp=(c.prenom||'').toLowerCase().trim(), cn=(c.nom||'').toLowerCase().trim();
@@ -13832,6 +13842,7 @@ function _findCandidatIdx(cands, entry) {
   var entKey = _personKey(np.prenom, np.nom);
   if (!entKey) return -1; // ni email correspondant ni nom exploitable
   return cands.findIndex(function(c){
+    if (_otherEmail(c)) return false;
     return _personKey(c.prenom, c.nom) === entKey;
   });
 }
@@ -13871,6 +13882,12 @@ function saveCandidatFromEntry(entry) {
       var _np = _splitFullName(entry.consultant);
       if (_np.prenom) cands[idx].prenom = _np.prenom;
       if (_np.nom)    cands[idx].nom = _np.nom;
+    } else if (entry.consultant) {
+      // 09/11/2026 : fiche matchée par téléphone ou par nom partiel (ex. « Mohamed » sans nom) → on COMPLÈTE
+      // les champs vides avec la simulation (cas Mohamed Yahyaoui : la fiche restait « Mohamed », introuvable).
+      var _np2 = _splitFullName(entry.consultant);
+      if (!(cands[idx].prenom || '').trim() && _np2.prenom) cands[idx].prenom = _np2.prenom;
+      if (!(cands[idx].nom || '').trim() && _np2.nom) cands[idx].nom = _np2.nom;
     }
     // Email candidat : on ne le renseigne QUE s'il est vide ET qu'on a un email
     // candidat RÉEL. Jamais l'email client, jamais d'écrasement d'un email existant.
@@ -19257,6 +19274,7 @@ function buildEntreeRow(item) {
   var contacte = etat.contacte || '-';
   var signature = etat.signature_contrat || '';
   var signatureOui = !!signature && signature !== 'Non';   // compat : les anciennes dates saisies valent « Oui »
+  if (!signatureOui && deal && String(deal.signature_contrat_travail || '') === 'Oui') signatureOui = true;   // 05/11/2026 : même info que « Signature Contrat travail » du tableau des deals
   var appelePar = etat.appele_par || '';
   var mutuelle = etat.mutuelle || 'En Attente';
   var commentaire = etat.commentaire || '';
@@ -19377,7 +19395,7 @@ function buildEntreeRow(item) {
     + '</td>'
     // 13. Signature contrat (vert si complété / rouge si vide)
     + '<td style="padding:6px 6px;background:' + signatureCellBg + ';">'
-    +   '<select onchange="updateDemarrageField(' + dealId + ',\'signature_contrat\',this.value)" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:#fff;color:' + signatureCellColor + ';font-weight:700;">'
+    +   '<select onchange="updateDemarrageField(' + dealId + ',\'signature_contrat\',this.value);try{updateDealField(' + dealId + ',\'signature_contrat_travail\',this.value);}catch(e){}" style="padding:4px 6px;border:1px solid #E4E0FA;border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:#fff;color:' + signatureCellColor + ';font-weight:700;">'
     +     '<option value="Non"' + (!signatureOui ? ' selected' : '') + '>Non</option>'
     +     '<option value="Oui"' + (signatureOui ? ' selected' : '') + '>Oui</option>'
     +   '</select>'
@@ -22492,8 +22510,16 @@ function _avExtractFraisFromSim(sim) {
   // Transport en commun (abonnement)
   var transLbl = trans > 0 ? (trans.toLocaleString('fr-FR') + ' €/mois') : 'Non';
 
-  // Télétravail
+  // Télétravail — 05/11/2026 : le MONTANT entre dans le libellé (sinon un changement de montant TT passait inaperçu dans le comparatif avenant)
   var ttLbl = tt ? 'Oui' : 'Non';
+  if (tt) {
+    var _ttMois = parseFloat(String(_resolve('frais_tt') || '').replace(',', '.')) || 0;
+    var _ttNbJ = parseFloat(String(_resolve('nb_jours') || '').replace(',', '.')) || 0;
+    if (_ttMois > 0) {
+      var _ttJour = _ttNbJ > 0 ? (_ttMois / _ttNbJ) : 0;
+      ttLbl = 'Oui · ' + (_ttJour > 0 ? _ttJour.toFixed(2).replace('.', ',') + ' €/jour (' : '') + _ttMois.toFixed(2).replace('.', ',') + ' €/mois' + (_ttJour > 0 ? ')' : '');
+    }
+  }
 
   // Tel + Internet (somme)
   var telnetTotal = tel + net;
@@ -33552,7 +33578,7 @@ function buildClientPageHTML(cl) {
             var _em = (s.email_candidat_reel || s.email || '').trim();
             if (!_nm) return '<td style="padding:8px 10px;color:#9E94C4;">—</td>';
             var _safe = _nm.replace(/</g,'&lt;');
-            if (_em) return '<td style="padding:8px 10px;"><a href="#" data-email="' + _em.replace(/"/g,'&quot;') + '" onclick="event.preventDefault();openCandidatByEmail(this.dataset.email);return false;" style="color:#4B36EC;text-decoration:none;font-weight:600;border-bottom:1px dashed #4B36EC;">' + _safe + '</a></td>';
+            return '<td style="padding:8px 10px;"><a href="#" data-email="' + _em.replace(/"/g,'&quot;') + '" data-nom="' + _nm.replace(/"/g,'&quot;') + '" onclick="event.preventDefault();openCandidatByEmail(this.dataset.email, this.dataset.nom);return false;" style="color:#4B36EC;text-decoration:none;font-weight:600;border-bottom:1px dashed #4B36EC;">' + _safe + '</a></td>';
             return '<td style="padding:8px 10px;color:#1A1033;font-weight:600;">' + _safe + '</td>';
           })()
         + '<td style="padding:8px 10px;color:#6B5E9C;">' + ((s.poste || '—') + '').replace(/</g,'&lt;') + '</td>'
@@ -34379,11 +34405,16 @@ function addManager(id) {
 }
 
 
-function openCandidatByEmail(email) {
-  if (!email) return;
-  var cands = getCandidats();
-  var cand = cands.find(function(c){ return (c.email||'').toLowerCase() === email.toLowerCase(); });
-  if (!cand) { alert('Candidat non trouv\u00e9 dans la base.'); return; }
+function openCandidatByEmail(email, nomComplet) {
+  if (!email && !nomComplet) return;
+  var cands = getCandidats().filter(function(c){ return c && !c._deleted; });
+  var cand = email ? cands.find(function(c){ return (c.email||'').toLowerCase() === String(email).toLowerCase(); }) : null;
+  // 09/11/2026 : repli sur le nom/prénom (simulation sans email candidat, ou email = email client)
+  if (!cand && nomComplet && typeof _splitFullName === 'function') {
+    var _np = _splitFullName(nomComplet), _k = _personKey(_np.prenom, _np.nom);
+    if (_k) cand = cands.find(function(c){ return _personKey(c.prenom, c.nom) === _k; });
+  }
+  if (!cand) { alert('Candidat non trouv\u00e9 dans la base' + (nomComplet ? ' pour \u00ab ' + nomComplet + ' \u00bb' : '') + '.\n\nUne simulation envoy\u00e9e uniquement au client ne cr\u00e9e pas de fiche candidat.'); return; }
   closeMgrFiche();
   closeClientFiche();
   mainNavTo('candidats');
