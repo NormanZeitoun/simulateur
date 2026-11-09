@@ -2688,6 +2688,7 @@ function syncTelnetField() {
 function resetSimulateur() {
   // Déverrouiller le simulateur (on quitte toute simulation rattachée)
   try { window._currentReopenedSimTs = null; if (typeof _applySimLock === 'function') _applySimLock(null); } catch(e) {}
+  try { if (typeof _restoreBaremesReference === 'function') _restoreBaremesReference(); } catch(e) {}   // 09/11/2026
   try { var _sc = document.getElementById('sim-comment'); if (_sc) _sc.value = ''; var _scm = document.getElementById('sim-comment-meta'); if (_scm) _scm.textContent = ''; } catch(e) {}
   // Remet tous les champs du simulateur aux valeurs initiales définies dans le HTML
   // sans recharger la page (pas de synchro déclenchée).
@@ -3723,6 +3724,133 @@ function calc() {
 // ============================================
 // INIT
 // ============================================
+
+// ═══════════════════════════════════════════════════════════════════
+// BARÈMES DE RÉFÉRENCE (09/11/2026) — le fichier déployé fait foi sur TOUS les postes.
+// Appliqués à chaque ouverture (écrasent la valeur locale), ignorés par la synchro des paramètres.
+// Pour changer un barème : modifier ici, redéployer. Déverrouillage ponctuel : mot de passe PARAMS_PASSWORD
+// (la valeur saisie ne survit pas au rechargement).
+// ═══════════════════════════════════════════════════════════════════
+var PARAMS_PASSWORD = 'seven2027';
+var BAREMES_REFERENCE_VERSION = '2026-11-09';
+var BAREMES_REFERENCE = {
+  'ik_b1': '0.370',
+  'ik_b10': '0.470',
+  'ik_b2': '0.370',
+  'ik_b3': '0.370',
+  'ik_b4': '0.407',
+  'ik_b5': '0.427',
+  'ik_b6': '0.447',
+  'ik_b7': '0.470',
+  'ik_b8': '0.470',
+  'ik_b9': '0.470',
+  'ik_h1': '0.529',
+  'ik_h10': '0.697',
+  'ik_h2': '0.529',
+  'ik_h3': '0.529',
+  'ik_h4': '0.606',
+  'ik_h5': '0.636',
+  'ik_h6': '0.665',
+  'ik_h7': '0.697',
+  'ik_h8': '0.697',
+  'ik_h9': '0.697',
+  'p_af': '3.45',
+  'p_af_compl': '1.8',
+  'p_ags': '0.20',
+  'p_apec_pat': '0.036',
+  'p_apec_sal': '0.024',
+  'p_at': '0.55',
+  'p_ceg1': '1.29',
+  'p_ceg1_sal': '0.86',
+  'p_ceg2': '1.62',
+  'p_ceg2_sal': '1.08',
+  'p_cet1': '0.21',
+  'p_cet1_sal': '0.14',
+  'p_cet2': '0.21',
+  'p_cet2_sal': '0.14',
+  'p_chom': '4.05',
+  'p_cp_diviseur': '1.11',
+  'p_crds': '2.90',
+  'p_csa': '0.30',
+  'p_csg_ded': '6.80',
+  'p_fnal': '0.10',
+  'p_forfait_repas': '21.40',
+  'p_formation': '2.28',
+  'p_gd_autre': '84.70',
+  'p_gd_idf': '101.5',
+  'p_mal': '7',
+  'p_mal_compl': '6',
+  'p_med': '0.39',
+  'p_mobilite': '3.20',
+  'p_mut_fam': '2.185',
+  'p_mut_fam_sal': '2.185',
+  'p_mut_isol': '0.995',
+  'p_mut_isol_sal': '0.995',
+  'p_parit': '0.01',
+  'p_pmss': '4005',
+  'p_prev_ta': '0.385',
+  'p_prev_ta_sal': '0.385',
+  'p_prev_tb': '0.595',
+  'p_prev_tb_sal': '0.595',
+  'p_ret1': '4.72',
+  'p_ret1_sal': '3.15',
+  'p_ret2': '12.95',
+  'p_ret2_sal': '8.64',
+  'p_smic': '1766.92',
+  'p_swile': '14',
+  'p_synd': '0.016',
+  'p_vieux_dep': '2.02',
+  'p_vieux_dep_sal': '0.40',
+  'p_vieux_plaf': '8.55',
+  'p_vieux_sal': '6.90'
+};
+function _isBaremeRef(k) { return Object.prototype.hasOwnProperty.call(BAREMES_REFERENCE, k); }
+function _applyBaremesReference(opts) {
+  opts = opts || {};
+  var changed = [];
+  var existing = {}; try { existing = JSON.parse(localStorage.getItem('sp_params_v2') || '{}') || {}; } catch(e) {}
+  Object.keys(BAREMES_REFERENCE).forEach(function(k){
+    var v = BAREMES_REFERENCE[k];
+    var el = document.getElementById(k);
+    if (el && String(el.value) !== String(v)) { el.value = v; }
+    if (String(existing[k]) !== String(v)) { changed.push(k + ' : ' + (existing[k] === undefined ? '(vide)' : existing[k]) + ' → ' + v); existing[k] = v; }
+  });
+  if (changed.length) {
+    try { localStorage.setItem('sp_params_v2', JSON.stringify(existing)); } catch(e) {}
+    if (!opts.silent) console.log('[Barèmes] référence ' + BAREMES_REFERENCE_VERSION + ' appliquée — ' + changed.length + ' valeur(s) alignée(s) :\n' + changed.join('\n'));
+    try { if (typeof calc === 'function' && document.getElementById('tjm')) calc(); } catch(e) {}
+  }
+  window._baremesRefApplied = true;
+  return changed;
+}
+// Instantané des barèmes en vigueur (stocké dans chaque nouvelle simulation)
+function _getBaremesSnapshot() {
+  var o = { _version: BAREMES_REFERENCE_VERSION };
+  Object.keys(BAREMES_REFERENCE).forEach(function(k){ var el = document.getElementById(k); o[k] = el ? el.value : BAREMES_REFERENCE[k]; });
+  return o;
+}
+// Application TEMPORAIRE des barèmes d'une simulation rouverte (pour la relire à l'identique)
+var _baremesTemp = null;   // { ts, label } quand des barèmes d'une simu sont appliqués
+function _applyBaremesTemp(bar, ts, label) {
+  if (!bar) return false;
+  Object.keys(BAREMES_REFERENCE).forEach(function(k){ var el = document.getElementById(k); if (el && bar[k] !== undefined) el.value = bar[k]; });
+  _baremesTemp = { ts: ts, label: label || '' };
+  _showBaremesTempBanner();
+  return true;
+}
+function _restoreBaremesReference() {
+  var had = !!_baremesTemp;
+  Object.keys(BAREMES_REFERENCE).forEach(function(k){ var el = document.getElementById(k); if (el) el.value = BAREMES_REFERENCE[k]; });
+  _baremesTemp = null;
+  if (had) _showBaremesTempBanner();
+}
+function _showBaremesTempBanner() {
+  var b = document.getElementById('baremes-temp-banner');
+  if (!b) { b = document.createElement('div'); b.id = 'baremes-temp-banner'; b.style.cssText = 'display:none;margin:0 0 10px;padding:8px 12px;border-radius:8px;background:#EEF4FF;border:1px solid #BFD3FF;color:#1A4F96;font-size:12px;font-weight:600;'; var host = document.getElementById('sim-lock-banner'); if (host && host.parentNode) host.parentNode.insertBefore(b, host.nextSibling); else { var tm = document.getElementById('tab-mission'); if (tm) tm.insertBefore(b, tm.firstChild); else document.body.appendChild(b); } }
+  if (_baremesTemp) { b.style.display = 'block'; b.innerHTML = '🔒 Barèmes figés de la simulation ' + (_baremesTemp.label || '') + ' appliqués — chiffres identiques à l’envoi. Pour une nouvelle simulation, utilisez « + Version » ou « Remise à zéro ».'; }
+  else b.style.display = 'none';
+}
+
 function saveParamsCommercial() {
   var saved = {};
   try { saved = JSON.parse(localStorage.getItem('sp_params_v2') || '{}'); } catch(e){}
@@ -3784,8 +3912,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // ═══ VERSION DE L'APP ═══
   // Repère visible (bandeau OneDrive) + console, pour vérifier que tous les postes
   // tournent bien sur la MÊME version. À incrémenter à chaque déploiement.
-  window.APP_VERSION = 'v2026.07.09l';
-  window.APP_BUILD = 2026070921;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
+  window.APP_VERSION = 'v2026.07.10b';
+  window.APP_BUILD = 2026071011;  // numéro monotone (comparaison de versions) — incrémenter à chaque déploiement
   // Notification de nouvelle version : détection DIRECTE du déploiement (ETag/Last-Modified
   // du fichier servi par Netlify) + repli OneDrive. Ne dépend plus qu'un autre poste "publie".
   try {
@@ -3895,6 +4023,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const el = document.getElementById(k);
         if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT')) el.value = obj[k];
       });
+      try { _applyBaremesReference(); } catch(e) { console.warn('[Barèmes]', e); }   // 09/11/2026 : le fichier fait foi
       // PAGE DE DÉMARRAGE PERSONNALISÉE : si l'utilisateur a choisi une page,
       // y naviguer automatiquement. Sinon, garder Simulateur (défaut).
       var homepage = obj['p_commercial_homepage'];
@@ -3914,7 +4043,7 @@ window.addEventListener('DOMContentLoaded', () => {
         }, 350);
       }
     } catch(e) { console.warn('[Homepage] erreur restauration', e); }
-  }
+  } else { try { _applyBaremesReference({ silent: true }); } catch(e) {} }
 
   // Save params on change
   // ═══ FIX ANTI-PERTE : on merge avec la version stockée au lieu d'écraser ═══
@@ -4483,6 +4612,12 @@ function doEnvoi() {
     var _simEnt = document.getElementById('entreprise'); if (_simEnt && _simEnt.value.trim() !== _entVal) { _simEnt.value = _entVal; }
     var _clientMail = currentDest === 'client' ? email : emailClient;
     var _simEc = document.getElementById('email_client'); if (_simEc && _clientMail && !_simEc.value.trim()) _simEc.value = _clientMail;
+  }
+
+  if (typeof _baremesTemp !== 'undefined' && _baremesTemp && !(window._currentReopenedSimTs && _baremesTemp.ts === window._currentReopenedSimTs && window._simUnlocked && window._simUnlocked[_baremesTemp.ts])) {
+    warn.textContent = 'Cette simulation est affichée avec ses barèmes figés (' + (_baremesTemp.label || '') + '). Pour en envoyer une nouvelle, utilisez « + Version » ou « Remise à zéro ».';
+    warn.style.display = 'block';
+    return;
   }
 
   var data = getSimData();
@@ -6492,6 +6627,7 @@ function saveHistorique(data, dest, email, consultantName) {
     commentaire_auteur: _simComment ? _simCommentWho : '',
     dest: dest,
     email: email,
+    baremes: (function(){ try { return _getBaremesSnapshot(); } catch(e) { return null; } })(),   // 09/11/2026 : barèmes figés de la simulation
     // FIX : entry.email peut contenir l'email CLIENT (quand dest='client', le popup
     // d'envoi met l'email client dans le champ). On stocke donc séparément le VRAI
     // email du candidat, lu directement du champ candidat du simulateur (#email).
@@ -6715,11 +6851,16 @@ function reopenSim(ts) {
     alert('Cette simulation ne peut pas être rouverte (données manquantes).');
     return;
   }
+  // 09/11/2026 : une simulation sans barèmes figés (antérieure au 09/11/2026) ne peut pas être recalculée à l'identique
+  // → on affiche ses chiffres ENREGISTRÉS (fiche figée), sauf demande explicite d'ouverture dans le simulateur.
+  if (!entry.baremes && !window._forceSimulatorOpen) { openSimFigee(ts); return; }
+  window._forceSimulatorOpen = false;
   // Naviguer vers le simulateur D'ABORD
   window._currentReopenedSimTs = ts;
   mainNavTo('mission');
   // Puis restaurer le snapshot après que la navigation soit effective
   setTimeout(function() {
+    if (entry.baremes) _applyBaremesTemp(entry.baremes, ts, 'du ' + (entry.date || '')); else _restoreBaremesReference();
     restoreSnapshot(entry.snapshot);
     _loadSimCommentFromEntry(entry);
     // Recalculer pour afficher les résultats
@@ -6727,6 +6868,35 @@ function reopenSim(ts) {
     // Verrou : si la simu est rattachée à un placement/avenant → lecture seule
     try { if (typeof _applySimLock === 'function') _applySimLock(_isSimLocked(ts)); } catch(e) {}
   }, 100);
+}
+// Fiche figée : chiffres enregistrés à l'envoi, sans recalcul
+function _closeSimFigee() { var m = document.getElementById('sim-figee-modal'); if (m) m.remove(); }
+function openSimFigee(ts) {
+  var entry = getHistory().find(function(h){ return h.timestamp === ts; });
+  if (!entry) { alert('Simulation introuvable.'); return; }
+  var esc = function(v){ return String(v == null ? '' : v).replace(/</g, '&lt;'); };
+  var eur = function(v){ if (v === '' || v == null) return '—'; var n = parseFloat(String(v).replace(/[^0-9,.-]/g, '').replace(/\s/g, '').replace(',', '.')); return isNaN(n) ? esc(v) : n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'; };
+  var row = function(l, v, strong){ return '<tr><td style="padding:6px 10px;color:#6B5E9C;font-size:12px;">' + l + '</td><td style="padding:6px 10px;text-align:right;font-weight:' + (strong ? '800' : '600') + ';color:#1A1033;">' + v + '</td></tr>'; };
+  var locked = (typeof _isSimLocked === 'function') ? _isSimLocked(ts) : null;
+  var lockedTxt = locked ? (typeof locked === 'object' ? ((locked.type === 'avenant' ? 'avenant' : 'placement') + (locked.nom ? ' ' + locked.nom : '')) : String(locked)) : '';
+  var gd = (typeof _formatGDLieuLabel === 'function') ? _formatGDLieuLabel(entry.gd_lieu, entry.gd_perso_montant) : (entry.gd_lieu || '');
+  var html = '<div id="sim-figee-modal" style="position:fixed;inset:0;background:rgba(26,16,51,.55);z-index:10050;display:flex;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)this.remove()">'
+    + '<div style="background:#fff;border-radius:14px;max-width:760px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">'
+    + '<div style="padding:16px 20px;background:linear-gradient(135deg,#4B36EC,#7343EE);color:#fff;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">'
+    +   '<div><div style="font-size:16px;font-weight:800;">📊 Simulation du ' + esc(entry.date) + (entry.heure ? ' ' + esc(entry.heure) : '') + '</div><div style="font-size:12px;opacity:.9;margin-top:3px;">' + esc(entry.consultant) + (entry.entreprise ? ' · ' + esc(entry.entreprise) : '') + (entry.commercial ? ' · ' + esc(entry.commercial) : '') + (lockedTxt ? ' · 🔒 ' + esc(lockedTxt) : '') + '</div></div>'
+    +   '<button onclick="_closeSimFigee()" style="background:rgba(255,255,255,.2);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button></div>'
+    + '<div style="font-size:12px;color:#8A5F00;background:#FFF8E6;margin:14px 20px 0;border-radius:8px;padding:10px 12px;border:1px solid #F5D98A;">Chiffres <b>enregistrés à l’envoi</b>, affichés sans recalcul. Cette simulation est antérieure au figement des barèmes (09/11/2026) : la rouvrir dans le simulateur la recalculerait avec les barèmes actuels et pourrait donner des montants différents.</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px 20px;">'
+    +   '<table style="width:100%;border-collapse:collapse;background:#F8F7FF;border-radius:10px;overflow:hidden;">' + row('TJM', eur(entry.tjm) + '/j') + row('Jours / mois', esc(entry.nb_jours)) + row('Facturation', eur(entry.facturation)) + row('Frais de gestion', esc(entry.marge) + ' %' + (entry.fg_reel ? ' (réel ' + esc(entry.fg_reel) + ' %)' : '')) + row('Brut mensuel', eur(entry.brut)) + row('Salaire annuel brut', entry.brut_contrat_annuel ? eur(entry.brut_contrat_annuel) : '—') + row('Coût global', eur(entry.cout_global)) + row('Charges patronales', eur(entry.total_pat)) + row('Charges salariales', eur(entry.total_sal)) + '</table>'
+    +   '<table style="width:100%;border-collapse:collapse;background:#F0FDF4;border-radius:10px;overflow:hidden;">' + row('Net avant impôt', eur(entry.net_avant)) + row('Frais exonérés', eur(entry.frais)) + row('<b>Net à payer</b>', eur(entry.net_payer), true) + row('Taux de restitution', esc(entry.taux_restitution)) + row('Mutuelle', esc(entry.mutuelle)) + row('Congés payés', esc(entry.cp)) + row('RTT', esc(entry.rtt || 0)) + row('Repas', esc(entry.repas) + (entry.repas === 'GD' && gd ? ' · ' + esc(gd) : '')) + row('Télétravail', entry.tt ? 'Oui' + (entry.frais_tt ? ' · ' + eur(entry.frais_tt) + '/mois' : '') : 'Non') + '</table>'
+    + '</div>'
+    + '<div style="padding:0 20px 6px;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><tr style="color:#6B5E9C;"><td style="padding:4px 10px;">Détail frais / mois</td><td style="padding:4px 10px;text-align:right;">Repas ' + eur(entry.frais_repas) + '</td><td style="padding:4px 10px;text-align:right;">IK ' + eur(entry.frais_ik) + '</td><td style="padding:4px 10px;text-align:right;">TT ' + eur(entry.frais_tt) + '</td><td style="padding:4px 10px;text-align:right;">Transport ' + eur(entry.frais_transport) + '</td><td style="padding:4px 10px;text-align:right;">Tel/Int ' + eur(entry.frais_telnet) + '</td></tr></table></div>'
+    + '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;padding:12px 20px 18px;border-top:1px solid #F0EDF9;">'
+    +   '<button onclick="_closeSimFigee();newVersionSim(' + ts + ')" style="padding:9px 14px;background:#1D9E75;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">➕ Version (nouvelle simulation, barèmes actuels)</button>'
+    +   '<button onclick="_closeSimFigee();window._forceSimulatorOpen=true;reopenSim(' + ts + ')" style="padding:9px 14px;background:#fff;color:#4B36EC;border:1.5px solid #4B36EC;border-radius:8px;font-weight:700;cursor:pointer;" title="Recalcule avec les barèmes actuels — les montants peuvent différer de ceux enregistrés">Ouvrir dans le simulateur</button>'
+    + '</div></div></div>';
+  var old = document.getElementById('sim-figee-modal'); if (old) old.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
 }
 
 function newVersionSim(ts) {
@@ -6739,6 +6909,7 @@ function newVersionSim(ts) {
   window._currentReopenedSimTs = null;
   mainNavTo('mission');
   setTimeout(function() {
+    try { _restoreBaremesReference(); } catch(e) {}   // duplication = barèmes de référence actuels
     restoreSnapshot(entry.snapshot);
     _loadSimCommentFromEntry(entry);
     try { if (typeof calc === 'function') calc(); } catch(e) {}
@@ -7244,9 +7415,9 @@ function hideBanner() {
 
 // Raccourci depuis la roue ⚙️ de la nav principale : va sur Simulateur puis onglet Paramètres
 function toggleParamsLock() {
-  // Le mot de passe est maintenant unifié avec celui de l'admin commissions.
-  // Source unique : getCommParams().admin_password (défaut 'seven2026', modifiable depuis Commissions).
-  var adminPwd = (typeof getCommParams === 'function') ? (getCommParams().admin_password || 'seven2026') : 'seven2026';
+  // 09/11/2026 : mot de passe DÉDIÉ aux paramètres / barèmes (PARAMS_PASSWORD, fixé dans le fichier).
+  // Les barèmes de référence sont ré-appliqués à chaque ouverture : une modification locale est ponctuelle.
+  var adminPwd = (typeof PARAMS_PASSWORD !== 'undefined') ? PARAMS_PASSWORD : ((typeof getCommParams === 'function') ? (getCommParams().admin_password || 'seven2026') : 'seven2026');
   var protected_el = document.getElementById('params-protected');
   var bar = document.getElementById('params-lock-bar');
   var btn = document.getElementById('params-lock-btn');
@@ -7266,7 +7437,7 @@ function toggleParamsLock() {
     bar.classList.add('unlocked');
     btn.textContent = 'Verrouiller';
     btn.style.background = '#1D9E75';
-    lbl.innerHTML = '&#128275; Paramètres déverrouillés';
+    lbl.innerHTML = '&#128275; Paramètres déverrouillés — <span style="font-weight:600;color:#8A5F00;">barèmes de référence ' + (typeof BAREMES_REFERENCE_VERSION !== 'undefined' ? BAREMES_REFERENCE_VERSION : '') + ' : toute modification est ponctuelle (rétablie au rechargement)</span>';
   } else {
     protected_el.style.pointerEvents = 'none';
     protected_el.style.opacity = '0.45';
@@ -7288,7 +7459,7 @@ function toggleParamsLock() {
 // Utilise le token OneDrive déjà connecté (scope Mail.Send activé).
 function sendParamsPasswordRecovery() {
   var recoveryEmail = 'norman@seven-portage.fr';
-  var adminPwd = (typeof getCommParams === 'function') ? (getCommParams().admin_password || 'seven2026') : 'seven2026';
+  var adminPwd = (typeof PARAMS_PASSWORD !== 'undefined') ? PARAMS_PASSWORD : ((typeof getCommParams === 'function') ? (getCommParams().admin_password || 'seven2026') : 'seven2026');
 
   if (typeof odToken === 'undefined' || !odToken) {
     alert('⚠ Pas de connexion OneDrive active.\n\nConnectez-vous à OneDrive (bouton "Se connecter" dans les paramètres) pour pouvoir recevoir le mot de passe par email.');
@@ -12479,7 +12650,17 @@ function _dealEnVigueur(deal) {
   return d;
 }
 
-function getCellValue(d, key){
+// 09/11/2026 : montant repas / jour FIGÉ dans la simulation d'origine (frais_repas mensuel ÷ nb jours) — sinon null
+function _simRepasJour(d) {
+  try {
+    var sim = (typeof _simIndex === 'function' && d && d.sim_ts != null) ? _simIndex().byTs[String(d.sim_ts)] : null;
+    if (!sim) return null;
+    var m = parseFloat(sim.frais_repas), nj = parseFloat(sim.nb_jours);
+    if (!(m > 0) || !(nj > 0)) return null;
+    return m / nj;
+  } catch(e) { return null; }
+}
+function getCellValue(d, key) {
   var ETAT_COLORS = {'Nouveau placement':'#0078D4','En cours':'#F0A500','Signé':'#1D9E75','Annulé':'#E24B4A','Sorti des effectifs':'#6B5E9C'};
   var fmt=function(v){ return (v===null||v===undefined||v==='') ? '—' : String(v); };
   switch(key){
@@ -12633,7 +12814,8 @@ function getCellValue(d, key){
       if (d.repas === 'Non') return '\u2014';
       if (d.repas === 'GD' || d.repas === 'gd') return '\u2014';
       if (d.repas === 'Forfait' || d.repas === 'forfait') return '\u2014';  // Forfait = autre colonne
-      // Cas Swile (TR) ou Réel → afficher le montant
+      // Cas Swile (TR) ou Réel → afficher le montant (figé dans la simulation si disponible)
+      var _sj = _simRepasJour(d); if (_sj != null) return _sj.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
       var swileEl = document.getElementById('p_swile');
       var swileVal = swileEl ? (parseFloat(swileEl.value) || 14) : 14;
       var swileType = '';
@@ -12644,6 +12826,7 @@ function getCellValue(d, key){
       // Affiche le montant journalier Forfait repas depuis les paramètres (p_forfait_repas)
       // Mutuellement exclusif avec Swile/TR — uniquement si d.repas === 'Forfait'
       if (d.repas !== 'Forfait' && d.repas !== 'forfait') return '\u2014';
+      var _fj = _simRepasJour(d); if (_fj != null) return _fj.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
       var forfaitEl = document.getElementById('p_forfait_repas');
       var forfaitVal = forfaitEl ? (parseFloat(forfaitEl.value) || 21.40) : 21.40;
       return forfaitVal.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
@@ -12760,6 +12943,7 @@ function getCellValue(d, key){
     case 'grand_dep':
       // Seulement si repas === 'GD' — on affiche le montant journalier (taux GD par jour)
       if (d.repas !== 'GD' && d.repas !== 'gd') return '\u2014';
+      var _gj = _simRepasJour(d); if (_gj != null) return _gj.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' €';
       var gdIdfEl = document.getElementById('p_gd_idf');
       var gdAutreEl = document.getElementById('p_gd_autre');
       var _tauxIdf   = gdIdfEl   ? (parseFloat(gdIdfEl.value)   || 101.5) : 101.5;
@@ -32027,6 +32211,10 @@ function mergeCandidats(remote) {
       var remotePrenom = (rc.prenom||'').toLowerCase().trim();
       var remoteNom = (rc.nom||'').toLowerCase().trim();
       var nameMatches = (localPrenom && localPrenom === remotePrenom) || (localNom && localNom === remoteNom);
+      // 09/11/2026 : deux emails renseignés et différents → deux personnes, même téléphone ou pas
+      // (cas Yahyaoui absorbé par la fiche Benhamouda sur les autres postes à chaque synchro)
+      var _lmEmail = (localMatch.email || '').trim().toLowerCase();
+      if (emailKey && _lmEmail && _lmEmail !== emailKey) nameMatches = false;
       if (!nameMatches) {
         localMatch = null;  // Téléphone match mais nom différent → c'est un autre candidat
       } else {
@@ -32312,6 +32500,8 @@ function mergeParams(remote) {
   if (!remote) return;
   if (remote.commercial) {
     var local = JSON.parse(localStorage.getItem('sp_params_v2') || '{}');
+    // 09/11/2026 : les barèmes de référence (fichier) ne sont jamais écrasés par un autre poste
+    if (typeof BAREMES_REFERENCE !== 'undefined' && remote && typeof remote === 'object') { Object.keys(BAREMES_REFERENCE).forEach(function(k){ if (remote[k] !== undefined) remote[k] = local[k] !== undefined ? local[k] : BAREMES_REFERENCE[k]; }); }
     // Champs personnels par poste : on ne fait que remplir les trous (comportement historique)
     var _perso = ['p_commercial_nom','p_commercial_tel','p_commercial_email','p_commercial_homepage','od-commercial-select'];
     var rTs = remote.params_shared_ts || {};
